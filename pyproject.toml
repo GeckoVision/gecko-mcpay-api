@@ -1,0 +1,45 @@
+[project]
+name = "gecko-workspace"
+version = "0.1.0"
+description = "Builder Bootstrap Platform — turn an idea into a knowledge base, business plan, validation report, and PRD."
+requires-python = ">=3.11"
+
+[tool.uv.workspace]
+members = [
+    "packages/gecko-core",
+    "packages/gecko-mcp",
+    "packages/gecko-api",
+    "apps/cli",
+]
+
+[tool.uv.sources]
+gecko-core = { workspace = true }
+gecko-mcp  = { workspace = true }
+gecko-api  = { workspace = true }
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["packages", "apps"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "packages", "apps"]
+python_files = "test_*.py"
+addopts = "-q --strict-markers"
+asyncio_mode = "auto"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]

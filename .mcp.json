@@ -1,0 +1,41 @@
+{
+  "mcpServers": {
+    "supabase": {
+      "command": "npx",
+      "args": ["-y", "@supabase/mcp-server-supabase@latest"],
+      "env": {
+        "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}"
+      }
+    },
+    "helius": {
+      "command": "npx",
+      "args": ["-y", "helius-mcp@latest"],
+      "env": {
+        "HELIUS_API_KEY": "${HELIUS_API_KEY}"
+      }
+    },
+    "solana-dev": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote@latest", "https://mcp.solana.com/mcp"]
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@latest"]
+    },
+    "context-mode": {
+      "command": "npx",
+      "args": ["-y", "context-mode@latest"]
+    },
+    "memsearch": {
+      "command": "npx",
+      "args": ["-y", "memsearch-mcp@latest"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      }
+    }
+  }
+}
