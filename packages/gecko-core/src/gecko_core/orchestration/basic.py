@@ -1,0 +1,281 @@
+"""Basic-tier orchestration: a single GPT-4o-mini call grounded in RAG context.
+
+Returns a partial `ResearchResult` (the workflow layer stamps `session_id`,
+`tier`, and `sources`). One retry on Pydantic validation failure, with the
+validation error fed back into the prompt so the model can fix its output.
+
+Citations are post-validated: every `source_url` referenced by the model
+must appear in the session's `sources` table (the RAG context). A mismatch
+raises `OrchestrationError` rather than silently shipping a hallucination.
+"""
+
+from __future__ import annotations
+
+import logging
+from uuid import UUID
+
+import tiktoken
+from openai import AsyncOpenAI
+from pydantic import BaseModel, ValidationError
+
+from gecko_core.models import (
+    PRD,
+    BusinessPlan,
+    Citation,
+    ResearchResult,
+    Tier,
+    ValidationReport,
+)
+from gecko_core.orchestration.settings import get_orchestration_settings
+from gecko_core.rag.query import RagChunk, rag_query
+from gecko_core.sessions.store import SessionStore
+
+logger = logging.getLogger(__name__)
+
+_enc = tiktoken.get_encoding("cl100k_base")
+
+
+class OrchestrationError(Exception):
+    """Raised when the LLM output can't be salvaged after retry, or when
+    citations don't match indexed sources."""
+
+
+class _LLMOutput(BaseModel):
+    """Shape we ask the LLM to produce. We stamp the rest in the workflow."""
+
+    business_plan: BusinessPlan
+    validation_report: ValidationReport
+    prd: PRD
+
+
+_SYSTEM_PROMPT = """You are a startup research analyst. You will receive:
+- An idea (one line).
+- Context chunks from a curated knowledge base, each labeled like
+  [n] (source: <url>) <text>.
+
+Produce a single JSON object with EXACTLY three top-level keys:
+business_plan, validation_report, prd.
+
+Schemas:
+business_plan: {problem, icp, solution, market, business_model, channels,
+  risks: list[str], citations: list[Citation]}
+validation_report: {market_size_signal, competitor_analysis, demand_evidence,
+  risk_flags: list[str], citations: list[Citation]}
+prd: {v1_scope, v2_scope, v3_scope, acceptance_criteria, non_functional,
+  success_metrics: each list[str], citations: list[Citation]}
+
+Citation = {source_url: <one of the urls in the context>, chunk_index: int,
+  similarity: float in [0,1]}.
+
+Rules:
+- Every document MUST include at least one citation.
+- Every citation's source_url MUST be one of the URLs that appears in the
+  context block. Never invent URLs.
+- Ground every concrete claim in the context. If the context is thin, say so
+  in the relevant field rather than fabricating market data.
+- Output JSON only. No prose around the JSON. No markdown fences."""
+
+
+def _format_context(chunks: list[RagChunk]) -> str:
+    if not chunks:
+        return "(no indexed sources — generating from idea description only)"
+    return "\n\n".join(
+        f"[{i}] (source: {c.source_url}) (chunk_index={c.chunk_index}, "
+        f"similarity={c.similarity:.3f})\n{c.text}"
+        for i, c in enumerate(chunks, 1)
+    )
+
+
+def _truncate_to_token_budget(text: str, max_tokens: int) -> str:
+    """Truncate `text` to `max_tokens` cl100k tokens. Defensive — see CLAUDE.md."""
+    tokens = _enc.encode(text)
+    if len(tokens) <= max_tokens:
+        return text
+    return _enc.decode(tokens[:max_tokens])
+
+
+def _user_prompt(idea: str, context: str) -> str:
+    return f"Idea: {idea}\n\nContext:\n{context}\n\nReturn JSON only."
+
+
+# Per-1M-token rates (USD) for fallback cost estimation when the LLM provider
+# doesn't return an explicit cost header. Used only to seed the economics view;
+# real cost lives in ClawRouter's `x-clawrouter-cost-usd` header when present.
+# Numbers are approximate and intentionally on the high side — better to
+# overestimate margin pressure than to silently undercount on the dashboard.
+_MODEL_RATES_USD_PER_1M: dict[str, tuple[float, float]] = {
+    # (input, output)
+    "gpt-4o": (2.50, 10.00),
+    "openai/gpt-4o": (2.50, 10.00),
+    "gpt-4o-mini": (0.15, 0.60),
+    "openai/gpt-4o-mini": (0.15, 0.60),
+    "claude-sonnet-4.6": (3.00, 15.00),
+    "anthropic/claude-sonnet-4.6": (3.00, 15.00),
+    "claude-opus-4.6": (15.00, 75.00),
+    "anthropic/claude-opus-4.6": (15.00, 75.00),
+}
+
+
+def _estimate_cost_usd(model: str, prompt_tokens: int, completion_tokens: int) -> float:
+    """Fallback when the provider doesn't expose a per-call cost header.
+
+    Matches by exact key first, then by prefix — OpenAI returns dated model
+    names like ``gpt-4o-mini-2024-07-18`` that wouldn't otherwise resolve.
+    """
+    rates = _MODEL_RATES_USD_PER_1M.get(model)
+    if rates is None:
+        # Prefix match — pick the longest matching key so versioned names
+        # resolve to the right rate (e.g. "gpt-4o-mini-..." → "gpt-4o-mini").
+        for key in sorted(_MODEL_RATES_USD_PER_1M.keys(), key=len, reverse=True):
+            if model.startswith(key):
+                rates = _MODEL_RATES_USD_PER_1M[key]
+                break
+    if rates is None:
+        return 0.0
+    in_rate, out_rate = rates
+    return (prompt_tokens * in_rate + completion_tokens * out_rate) / 1_000_000
+
+
+async def _call_llm(
+    *,
+    client: AsyncOpenAI,
+    model: str,
+    system: str,
+    user: str,
+    temperature: float,
+) -> tuple[str, float]:
+    """Run a chat completion and return (content, estimated_cost_usd).
+
+    Cost resolution order:
+    1. `x-clawrouter-cost-usd` response header (preferred — real spend).
+    2. Token-based estimate from `usage` * `_MODEL_RATES_USD_PER_1M`.
+    3. 0.0 (unknown model, no header) — surfaces as zero on the dashboard.
+    """
+    raw = await client.chat.completions.with_raw_response.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        response_format={"type": "json_object"},
+        temperature=temperature,
+    )
+    resp = raw.parse()
+    content = resp.choices[0].message.content
+    if not content:
+        raise OrchestrationError("LLM returned empty content")
+
+    cost_usd = 0.0
+    header = raw.headers.get("x-clawrouter-cost-usd")
+    if header:
+        try:
+            cost_usd = float(header)
+        except ValueError:
+            cost_usd = 0.0
+    if cost_usd == 0.0 and resp.usage is not None:
+        cost_usd = _estimate_cost_usd(
+            resp.model or model,
+            resp.usage.prompt_tokens or 0,
+            resp.usage.completion_tokens or 0,
+        )
+    return content, cost_usd
+
+
+def _validate_citations(out: _LLMOutput, allowed_urls: set[str]) -> None:
+    """Every citation must point at a URL we actually indexed for this session."""
+
+    def _check(citations: list[Citation], where: str) -> None:
+        for c in citations:
+            if str(c.source_url) not in allowed_urls:
+                raise OrchestrationError(
+                    f"citation in {where} references unknown URL: {c.source_url}"
+                )
+
+    _check(out.business_plan.citations, "business_plan")
+    _check(out.validation_report.citations, "validation_report")
+    _check(out.prd.citations, "prd")
+
+
+async def generate(
+    session_id: UUID,
+    idea: str,
+    store: SessionStore,
+    *,
+    top_k: int = 12,
+    openai_client: AsyncOpenAI | None = None,
+) -> ResearchResult:
+    """Single-pass basic generation. See module docstring for contract."""
+    chunks = await rag_query(session_id, idea, top_k=top_k, store=store)
+    sources = await store.list_sources(session_id)
+    allowed_urls = {str(s.url) for s in sources}
+
+    orch = get_orchestration_settings()
+    if openai_client is not None:
+        client = openai_client
+    else:
+        client = AsyncOpenAI(
+            api_key=orch.llm_api_key,
+            base_url=orch.llm_endpoint,
+        )
+
+    context = _format_context(chunks)
+    # Truncate the *context* portion only — system + idea are tiny and known.
+    # Reserve room for the system prompt and the wrapper text.
+    sys_tokens = len(_enc.encode(_SYSTEM_PROMPT))
+    overhead = sys_tokens + len(_enc.encode(idea)) + 256
+    budget = max(orch.max_input_tokens - overhead, 1024)
+    context = _truncate_to_token_budget(context, budget)
+
+    user = _user_prompt(idea, context)
+    raw, cost1 = await _call_llm(
+        client=client,
+        model=orch.chat_model,
+        system=_SYSTEM_PROMPT,
+        user=user,
+        temperature=orch.temperature,
+    )
+    await store.add_cost(session_id, "llm", cost1)
+
+    out: _LLMOutput
+    try:
+        out = _LLMOutput.model_validate_json(raw)
+    except ValidationError as ve:
+        # One retry — feed the validation error in so the model can self-correct.
+        retry_user = (
+            user
+            + "\n\nYour previous response failed Pydantic validation:\n"
+            + str(ve)
+            + "\n\nReturn corrected JSON only."
+        )
+        raw2, cost2 = await _call_llm(
+            client=client,
+            model=orch.chat_model,
+            system=_SYSTEM_PROMPT,
+            user=retry_user,
+            temperature=orch.temperature,
+        )
+        await store.add_cost(session_id, "llm", cost2)
+        try:
+            out = _LLMOutput.model_validate_json(raw2)
+        except ValidationError as ve2:
+            raise OrchestrationError(f"LLM output failed validation after retry: {ve2}") from ve2
+
+    _validate_citations(out, allowed_urls)
+
+    return ResearchResult(
+        session_id=str(session_id),
+        tier="basic",
+        business_plan=out.business_plan,
+        validation_report=out.validation_report,
+        prd=out.prd,
+        sources=sources,
+    )
+
+
+# Re-export typing helpers callers may want (kept here so tier dispatcher stays narrow).
+def _ensure_tier(tier: Tier) -> None:
+    if tier == "pro":
+        raise NotImplementedError("Pro tier ships in Phase 6")
+
+
+__all__ = ["OrchestrationError", "_ensure_tier", "generate"]

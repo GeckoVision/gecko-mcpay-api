@@ -8,6 +8,15 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "python-dotenv>=1.0",
+    "x402[svm]>=2.8.0",
+    "cachetools>=5.0",
+    "slowapi>=0.1.9",
+    "httpx>=0.27",
+]
+
+[dependency-groups]
+dev = [
+    "respx>=0.21",
 ]
 
 [project.scripts]

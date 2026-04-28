@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Gecko — Pitch Deck · Colosseum Frontier</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;700;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  html, body { margin: 0; padding: 0; background: #000; font-family: 'Inter', sans-serif; }
+  * { box-sizing: border-box; }
+</style>
+
+<script type="application/json" id="speaker-notes">
+[
+  "Hey - Ernani and Leticia here, we’re building Gecko Protocol. \nOne line: in creator marketing, the brand cannot cancel, because the code says so. \nWe hold campaign funds in escrow on Solana and release them based on verified real-world data. \nWe're at Colosseum because you can't do this trustlessly without a blockchain.",
+  "Creator marketing looks huge from the outside. \nZoom in on how deals actually close, though, and it's all emails, PDFs, and Telegram. \nThree things break: brands ghost creators after the content ships, creators underdeliver and face no consequences, and most deals are too small to sue over. 92% of the time, whoever has more leverage wins. \nThe whole industry runs on trust - and trust doesn't scale.",
+  "Most startups attack this with more transparency — a dashboard, a better invoice, another middleman. We think that's the wrong frame. Transparency only tells you something went wrong. Enforceability changes what can happen in the first place. That's the wedge. Lock commitment in code, enforce release onchain, tie payout to predefined conditions — not to a support ticket.\n",
+  "Here's the whole product in five moves — live on Solana devnet right now, not a mockup. Brand funds a vault with USDC. Creators get their slice locked in. Content goes live — 10% pays out automatically. Campaign hits its targets — the next chunk unlocks. Deadline passes — leftover money goes home. Nobody presses a button. Nobody signs off. The code runs the deal.\n",
+  "Why Solana? Because this only works if the rails are fast, cheap, and programmable. Payouts settle in under half a second — creators feel paid instantly. Fees are fractions of a cent — we can verify campaign data as often as we need. On Ethereum, checking a single milestone would cost more than the milestone itself. And Solana lets the rules of the deal — vaults, splits, deadlines — live in code, not in a contract nobody reads. This isn't payments on a blockchain. It's a campaign primitive that needs Solana.",
+  "Global market: $21 billion. The slice where enforcement actually matters — mid-market campaigns — is $4.2 billion. Year one, we're targeting $42 million flowing through the protocol. But TAM slides are cheap. The wedge is what matters. Three beachheads: Trexx — LATAM esports hub, 16 teams, one integration lands 16 rosters. Crypto-native brands — Phantom, Helius, Jupiter — already running creator campaigns, already frustrated with the Web2 detour. And Solana gaming studios running creator programs with measurable outcomes. All three already live onchain. Zero education needed.",
+  "Competition. Traditional agencies handle this with invoices and fifteen-to-twenty-five percent take rates — no enforcement. Lever.io does escrow, but they can freeze funds; that's centralized. Lumanu is a dominant Web2 SaaS — great compliance, but any brand can log in and reverse. Influur does onchain payments but on Ethereum — ten times slower, ten times more expensive per transaction, no cliff. Escrow is table stakes. The cliff — payout that can't be reversed once conditions hit — is the moat. Nobody else has it.",
+  "Me and Leticia. I build the infra — former Santander and Itaú engineer, shipped and scaled a no-code AI training tool with a founding team. Leticia runs product and pilots — she led open-innovation projects at Liga Ventures for BASF, Saint-Gobain, Sodexo, Mercedes-Benz, and she administers a high-trust Corinthians fan community that gives us a direct distribution channel into football creators. We're raising two-hundred-fifty-K for twelve months of runway — forty to mainnet and audits, thirty-five to three paid pilots, twenty-five to team and ops. The wedge is creator marketing. The destination is bigger — Gecko is the settlement layer for any onchain agreement between a brand and a person. Thanks."
+]
+</script>
+
+<script src="deck-stage.js"></script>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+
+<deck-stage width="1920" height="1080">
+  <div id="s1"></div>
+  <div id="s2"></div>
+  <div id="s3"></div>
+  <div id="s4"></div>
+  <div id="s5"></div>
+  <div id="s6"></div>
+  <div id="s7"></div>
+  <div id="s8"></div>
+</deck-stage>
+
+<script type="text/babel" src="components/common.jsx"></script>
+<script type="text/babel" src="components/slides-a.jsx"></script>
+<script type="text/babel" src="components/slides-b.jsx"></script>
+
+<script type="text/babel">
+  // Render each slide into its host div so deck-stage treats them as slotted slides.
+  const mounts = [
+    ['s1', <Slide01Cover />],
+    ['s2', <Slide02Problem />],
+    ['s3', <Slide03Reframe />],
+    ['s4', <Slide04HowItWorks />],
+    ['s5', <Slide05WhySolana />],
+    ['s6', <Slide06Market />],
+    ['s7', <Slide07Competition />],
+    ['s8', <Slide08TeamAsk />],
+  ];
+  mounts.forEach(([id, el]) => {
+    ReactDOM.createRoot(document.getElementById(id)).render(el);
+  });
+</script>
+
+</body>
+</html>

@@ -10,12 +10,14 @@ members = [
     "packages/gecko-mcp",
     "packages/gecko-api",
     "apps/cli",
+    "apps/demo-agent",
 ]
 
 [tool.uv.sources]
 gecko-core = { workspace = true }
 gecko-mcp  = { workspace = true }
 gecko-api  = { workspace = true }
+gecko-demo-agent = { workspace = true }
 
 [tool.ruff]
 line-length = 100
@@ -42,4 +44,6 @@ dev = [
     "mypy>=1.10",
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    "respx>=0.21",
+    "types-cachetools>=5.0",
 ]

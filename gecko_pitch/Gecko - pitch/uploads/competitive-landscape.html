@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Gecko — Competitive Landscape</title>
+<style>
+  :root {
+    --bg: #0d0f14;
+    --surface: #161b25;
+    --border: #242b3a;
+    --accent: #22d3a0;
+    --accent2: #6366f1;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --muted: #64748b;
+    --text: #e2e8f0;
+    --text-dim: #94a3b8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    line-height: 1.6;
+    padding: 2rem;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 2rem; font-weight: 700; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.25rem; font-weight: 600; color: var(--accent); margin: 2rem 0 1rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  h3 { font-size: 1rem; font-weight: 600; margin-bottom: 0.25rem; }
+  p { color: var(--text-dim); margin-bottom: 0.5rem; font-size: 0.9rem; }
+  .meta { color: var(--muted); font-size: 0.8rem; margin-bottom: 2rem; }
+  .badge {
+    display: inline-block;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+  .live    { background: #052e16; color: #4ade80; border: 1px solid #166534; }
+  .beta    { background: #1e3a5f; color: #60a5fa; border: 1px solid #1d4ed8; }
+  .dead    { background: #3b1212; color: #f87171; border: 1px solid #991b1b; }
+  .off     { background: #2d2204; color: #fbbf24; border: 1px solid #92400e; }
+  .threat-high   { background: #3b1212; color: #f87171; }
+  .threat-med    { background: #2d2204; color: #fbbf24; }
+  .threat-low    { background: #052e16; color: #4ade80; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; }
+  .grid-2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem;
+  }
+  .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; gap: 0.5rem; }
+  .card-title { font-size: 1rem; font-weight: 700; }
+  .card-chain { font-size: 0.7rem; color: var(--muted); margin-top: 0.15rem; }
+  .pill-row { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+  .detail-row { display: flex; gap: 0.5rem; margin-bottom: 0.35rem; font-size: 0.82rem; }
+  .detail-label { color: var(--muted); min-width: 80px; }
+  .detail-val { color: var(--text); }
+  .strength { color: #4ade80; }
+  .weakness { color: #f87171; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Matrix */
+  .matrix-wrap { position: relative; overflow-x: auto; }
+  .matrix {
+    width: 100%;
+    min-height: 400px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+  }
+  .quadrant {
+    border: 1px solid var(--border);
+    padding: 1rem;
+    min-height: 180px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .quad-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 0.5rem; font-weight: 600; }
+  .dot {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+  }
+  .dot-gecko { border-color: var(--accent); color: var(--accent); background: rgba(34,211,160,0.08); font-weight: 700; }
+  .axis-x, .axis-y {
+    position: absolute;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--muted);
+  }
+  .axis-x { bottom: -1.5rem; width: 100%; text-align: center; }
+  .axis-y { left: -1.5rem; top: 50%; transform: rotate(-90deg) translateX(-50%); transform-origin: left center; white-space: nowrap; }
+
+  /* crowdedness bar */
+  .crowd-bar-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; }
+  .crowd-bar { height: 8px; border-radius: 999px; background: linear-gradient(90deg, #4ade80 0%, #fbbf24 50%, #ef4444 100%); margin: 0.75rem 0; position: relative; }
+  .crowd-marker { position: absolute; top: -4px; transform: translateX(-50%); width: 16px; height: 16px; border-radius: 50%; background: white; border: 3px solid var(--accent2); }
+  .crowd-labels { display: flex; justify-content: space-between; font-size: 0.65rem; color: var(--muted); }
+
+  /* moat */
+  .moat-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; }
+  .moat-item { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 0.9rem; }
+  .moat-score { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.25rem; }
+  .moat-name { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+
+  /* differentiation box */
+  .diff-box { background: rgba(34,211,160,0.07); border: 1px solid rgba(34,211,160,0.25); border-radius: 10px; padding: 1.5rem; }
+  .diff-box h3 { color: var(--accent); margin-bottom: 0.75rem; }
+  .diff-box li { color: var(--text-dim); font-size: 0.88rem; margin-left: 1.25rem; margin-bottom: 0.4rem; }
+
+  /* ICP section */
+  .icp-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem;
+  }
+  .icp-card.priority-1 { border-color: rgba(34,211,160,0.4); background: rgba(34,211,160,0.05); }
+  .icp-card.priority-2 { border-color: rgba(99,102,241,0.35); background: rgba(99,102,241,0.04); }
+  .icp-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.6rem; }
+  .icp-num { font-size: 0.65rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.2rem; }
+  .icp-title { font-size: 0.95rem; font-weight: 700; }
+  .icp-type { font-size: 0.7rem; color: var(--muted); }
+  .icp-row { display: flex; gap: 0.5rem; margin-bottom: 0.3rem; font-size: 0.82rem; }
+  .icp-label { color: var(--muted); min-width: 65px; flex-shrink: 0; }
+  .icp-val { color: var(--text); }
+  .timeline-badge {
+    font-size: 0.68rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .t-now    { background: #052e16; color: #4ade80; border: 1px solid #166534; }
+  .t-60     { background: #1e3a5f; color: #60a5fa; border: 1px solid #1d4ed8; }
+  .t-90     { background: #2d2204; color: #fbbf24; border: 1px solid #92400e; }
+  .t-180    { background: #1a1a2e; color: #a78bfa; border: 1px solid #6d28d9; }
+
+  .icp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
+
+  @media (max-width: 600px) {
+    body { padding: 1rem; }
+    .moat-grid { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Gecko — Competitive Landscape</h1>
+<p class="meta">Updated April 2026 · Gecko: oracle-enforced campaign settlement protocol on Solana · Brands lock → Creators earn yield + milestones · Protocol fee 0.5% on settlement</p>
+
+<!-- CROWDEDNESS -->
+<h2>Market Crowdedness</h2>
+<div class="crowd-bar-wrap">
+  <p>The exact combination of on-chain budget cliff-locking + guaranteed floor yield + oracle-scored milestone auto-release for brand-to-creator campaign settlement on Solana is <strong>sparse</strong>. Adjacent spaces (off-chain escrow via Lumanu, social amplification via Daisy, ETH-ecosystem on-chain payments via Influur) are populated but solve a different problem with different architecture. No direct competitor holds all four pillars simultaneously.</p>
+  <div class="crowd-bar">
+    <!-- Sparse ≈ 22% -->
+    <div class="crowd-marker" style="left: 22%"></div>
+  </div>
+  <div class="crowd-labels">
+    <span>Empty</span><span>Sparse</span><span>Moderate</span><span>Crowded</span><span>Saturated</span>
+  </div>
+  <p style="margin-top: 0.75rem; font-size:0.8rem;">Rating: <strong style="color: #4ade80;">Sparse</strong> — 3 named adjacent competitors, 0 direct clones. Gecko sits in an uncontested quadrant: on-chain enforcement × full platform.</p>
+</div>
+
+<!-- POSITIONING MATRIX -->
+<h2>Positioning Matrix</h2>
+<div class="matrix-wrap" style="padding-bottom: 2.5rem;">
+  <div class="matrix">
+    <!-- Q1: top-left = weak enforcement, developer-facing -->
+    <div class="quadrant" style="border-top-left-radius: 10px;">
+      <div class="quad-label">Weak Enforcement · Dev-Facing</div>
+      <span class="dot">GitHub Escrow repos</span>
+      <span class="dot">Generic Solana escrow</span>
+    </div>
+    <!-- Q2: top-right = strong enforcement, developer-facing -->
+    <div class="quadrant" style="border-top-right-radius: 10px;">
+      <div class="quad-label">Strong Enforcement · Platform</div>
+      <span class="dot dot-gecko">★ Gecko</span>
+      <span class="dot" style="color:var(--muted); font-size:0.7rem;">Nobody else here</span>
+    </div>
+    <!-- Q3: bottom-left = weak enforcement, consumer-facing -->
+    <div class="quadrant" style="border-bottom-left-radius: 10px;">
+      <div class="quad-label">Weak Enforcement · Consumer</div>
+      <span class="dot">Lumanu (centralized)</span>
+      <span class="dot">Lever.io (centralized)</span>
+      <span class="dot">Daisy Pay (boosts)</span>
+      <span class="dot" style="color:var(--danger);">Friend.tech ☠</span>
+    </div>
+    <!-- Q4: bottom-right = some on-chain, consumer -->
+    <div class="quadrant" style="border-bottom-right-radius: 10px;">
+      <div class="quad-label">Partial On-chain · Consumer</div>
+      <span class="dot">Influur (ETH payments)</span>
+      <span class="dot">Only1 (subscriptions)</span>
+      <span class="dot">Sollinked</span>
+      <span class="dot" style="color:var(--danger);">DeSo ☠</span>
+    </div>
+  </div>
+  <div style="position:relative; margin-top: 0.4rem;">
+    <div style="text-align:center; font-size:0.65rem; letter-spacing:0.07em; color: var(--muted); text-transform:uppercase;">← Off-chain / Centralized &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; On-chain / Enforced →</div>
+  </div>
+</div>
+<p style="font-size:0.78rem; color: var(--muted);">Y-axis: Enforcement strength. X-axis: Architecture (centralized vs on-chain). Gecko is alone in the top-right — strong enforcement, fully on-chain.</p>
+
+<!-- TOP 3 CLOSEST COMPETITORS -->
+<h2>Top 3 Closest Competitors</h2>
+<div class="grid">
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title"><a href="https://daisypay.io" target="_blank">Daisy Pay</a></div>
+        <div class="card-chain">Solana stablecoins · TikTok / Instagram · $3.9M seed 2025</div>
+      </div>
+      <div>
+        <div class="pill-row">
+          <span class="badge live">Live</span>
+          <span class="badge threat-med">Med Threat</span>
+        </div>
+      </div>
+    </div>
+    <div class="detail-row"><span class="detail-label">What:</span><span class="detail-val">Brands pay micro-creators to "boost" brand content via social engagement (comments, likes, shares). Moving to Solana stablecoin payment rails. $3.9M seed 2025.</span></div>
+    <div class="detail-row"><span class="detail-label">Traction:</span><span class="detail-val">2,000 creators, 50 brand clients, $1M revenue in 7 months, $300K/quarter paid to creators.</span></div>
+    <div class="detail-row"><span class="detail-label strength">Strength:</span><span class="detail-val">Real Web2→Web3 bridge, genuine brand revenue, Solana payment rails, growing creator network.</span></div>
+    <div class="detail-row"><span class="detail-label weakness">Weakness:</span><span class="detail-val">Micro-engagement ≠ campaigns. No vault, no cliff, no yield, no milestone auto-release. Brand can cancel. Creator can ghost. Centralized payment despite Solana rail.</span></div>
+    <div class="detail-row"><span class="detail-label">Gecko edge:</span><span class="detail-val">Daisy is a payment router. Gecko is an enforcement protocol. Daisy's brand can still DM the creator on Telegram to cancel — Gecko's program prevents it.</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title"><a href="https://www.lumanu.com" target="_blank">Lumanu</a></div>
+        <div class="card-chain">Off-chain SaaS · Global ACH/SEPA/wire · Enterprise influencer payments</div>
+      </div>
+      <div>
+        <div class="pill-row">
+          <span class="badge live">Live</span>
+          <span class="badge threat-high">High Threat</span>
+        </div>
+      </div>
+    </div>
+    <div class="detail-row"><span class="detail-label">What:</span><span class="detail-val">Enterprise B2B SaaS for influencer payments. Centralized escrow, milestone-based payout triggers, W-9/1099 compliance, global rails (ACH, SEPA, Faster Payments). Single vendor of record for brands paying 50–500 creators.</span></div>
+    <div class="detail-row"><span class="detail-label">Traction:</span><span class="detail-val">Dominant in Web2 influencer payment space. Used by major agencies and DTC brands. Real revenue, real enterprise clients.</span></div>
+    <div class="detail-row"><span class="detail-label strength">Strength:</span><span class="detail-val">Established brand trust, compliance solved (W-9/AML/OFAC), global payment rails, milestone triggers already familiar to brand teams.</span></div>
+    <div class="detail-row"><span class="detail-label weakness">Weakness:</span><span class="detail-val">Any brand can log in and reverse a payment. "Escrow" is a Lumanu bank account — they are the intermediary. No on-chain verifiability. No yield on locked capital. US-centric compliance breaks for LATAM/Web3 native creators. Brand can dispute and Lumanu adjudicates.</span></div>
+    <div class="detail-row"><span class="detail-label">Gecko edge:</span><span class="detail-val">Lumanu IS Lever.io at enterprise scale. Gecko's cliff makes reversal impossible by design — not by policy. For web3-native brands, using Lumanu is an embarrassing web2 detour. Yield on locked capital is pure upside Lumanu can never offer.</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title"><a href="https://www.influur.com" target="_blank">Influur</a></div>
+        <div class="card-chain">Ethereum ecosystem · Smart contract payments · 30K+ crypto-native creators</div>
+      </div>
+      <div>
+        <div class="pill-row">
+          <span class="badge live">Live</span>
+          <span class="badge threat-med">Med Threat</span>
+        </div>
+      </div>
+    </div>
+    <div class="detail-row"><span class="detail-label">What:</span><span class="detail-val">Web3-native influencer marketplace with smart contract payment disbursement. Database of 30,000+ NFT artists, DAO operators, and crypto-native KOLs. Built for crypto projects promoting to crypto-native audiences.</span></div>
+    <div class="detail-row"><span class="detail-label">Traction:</span><span class="detail-val">30K+ creator profiles, real Web3 brand clients, on-chain payment history. ETH-focused.</span></div>
+    <div class="detail-row"><span class="detail-label strength">Strength:</span><span class="detail-val">Largest Web3-native creator database, on-chain payment transparency, smart contracts prevent basic disputes.</span></div>
+    <div class="detail-row"><span class="detail-label weakness">Weakness:</span><span class="detail-val">Marketplace model (discovery), not protocol model (enforcement). No cliff enforcement, no yield, no oracle scoring, no milestone auto-release. ETH ecosystem — no Solana presence. Creator vetting is centralized.</span></div>
+    <div class="detail-row"><span class="detail-label">Gecko edge:</span><span class="detail-val">Influur connects brands and creators. Gecko enforces what they agree to. No overlap on discovery — full overlap on the settlement layer. Gecko on Solana = 10× cheaper, 10× faster per tx than Influur on ETH.</span></div>
+  </div>
+
+</div>
+
+<!-- DIRECT COMPETITORS (broader) -->
+<h2>Direct Competitors (Extended)</h2>
+<div class="grid">
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title"><a href="https://lever.io" target="_blank">Lever.io</a></div>
+        <div class="card-chain">Off-chain escrow · Crypto KOL marketplace</div>
+      </div>
+      <div class="pill-row">
+        <span class="badge live">Live</span>
+        <span class="badge threat-med">Med Threat</span>
+      </div>
+    </div>
+    <div class="detail-row"><span class="detail-label">What:</span><span class="detail-val">Crypto KOL marketplace with escrow-protected payments. Brands pick vetted influencers, funds held in escrow until content delivered. DeFi protocol focus.</span></div>
+    <div class="detail-row"><span class="detail-label strength">Strength:</span><span class="detail-val">Live with real DeFi brand clients, vetted creator network, distribution in DeFi marketing space.</span></div>
+    <div class="detail-row"><span class="detail-label weakness">Weakness:</span><span class="detail-val">Off-chain/centralized escrow — Lever can freeze funds. No smart contract, no yield on locked funds, no cliff, no milestone oracle.</span></div>
+    <div class="detail-row"><span class="detail-label">Gap vs Gecko:</span><span class="detail-val">No on-chain enforcement. Brand can dispute and Lever adjudicates. Creators bear counterparty risk against a company, not code.</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Traditional Influencer Agencies</div>
+        <div class="card-chain">Coinbound · TokenMinds · Socially Powerful · NinjaPromo</div>
+      </div>
+      <div class="pill-row">
+        <span class="badge live">Live</span>
+        <span class="badge off">Off-chain</span>
+        <span class="badge threat-high">High Threat</span>
+      </div>
+    </div>
+    <div class="detail-row"><span class="detail-label">What:</span><span class="detail-val">Managed agencies that broker brand-creator deals via invoices, contracts, PayPal/wire. 15–25% agency take. No on-chain enforcement.</span></div>
+    <div class="detail-row"><span class="detail-label strength">Strength:</span><span class="detail-val">Established relationships, large creator rosters, brands trust the agency model. Handle disputes manually.</span></div>
+    <div class="detail-row"><span class="detail-label weakness">Weakness:</span><span class="detail-val">Net-30/60 payment delays, creators bear payment risk, no composability, no yield, no transparency. 92% of disputes favor whoever has more leverage.</span></div>
+    <div class="detail-row"><span class="detail-label">Why users stay:</span><span class="detail-val">Low friction — no wallet required. Brands default to familiar off-chain contracts.</span></div>
+    <div class="detail-row"><span class="detail-label">Gecko angle:</span><span class="detail-val">Agencies are distribution partners, not enemies. They can offer "Gecko-enforced contracts" as a premium upsell to both brands and creators.</span></div>
+  </div>
+
+</div>
+
+<!-- SUBSTITUTES -->
+<h2>Substitutes (Same Problem, Different Approach)</h2>
+<div class="grid">
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title"><a href="https://solanacompass.com/projects/only1" target="_blank">Only1 / Wink</a></div>
+        <div class="card-chain">Solana · NFT subscriptions · Series A $5M</div>
+      </div>
+      <div class="pill-row">
+        <span class="badge live">Live</span>
+        <span class="badge threat-low">Low Threat</span>
+      </div>
+    </div>
+    <div class="detail-row"><span class="detail-label">What:</span><span class="detail-val">OnlyFans-style subscription platform on Solana. Creators sell NFT memberships and token-gated content to fans — not brands.</span></div>
+    <div class="detail-row"><span class="detail-label strength">Strength:</span><span class="detail-val">$5M Series A, growing MAUs, genuine creator monetization, Solana native.</span></div>
+    <div class="detail-row"><span class="detail-label weakness">Weakness:</span><span class="detail-val">Fan-to-creator only. No brand campaign primitives, no escrow, no yield, no milestones.</span></div>
+    <div class="detail-row"><span class="detail-label">Why users stay:</span><span class="detail-val">Subscription revenue is recurring — creators own their subscriber bases.</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Pump.fun Ascend</div>
+        <div class="card-chain">Solana · Token launchpad · Creator earnings</div>
+      </div>
+      <div class="pill-row">
+        <span class="badge live">Live</span>
+        <span class="badge threat-low">Low Threat</span>
+      </div>
+    </div>
+    <div class="detail-row"><span class="detail-label">What:</span><span class="detail-val">Initiative to make pump.fun a "hub for creators" with 10× revenue share via PumpSwap fees.</span></div>
+    <div class="detail-row"><span class="detail-label strength">Strength:</span><span class="detail-val">Massive existing traffic, strong Solana ecosystem presence.</span></div>
+    <div class="detail-row"><span class="detail-label weakness">Weakness:</span><span class="detail-val">Memecoin/launchpad focus, not brand campaigns, no escrow, speculative user base, no oracle.</span></div>
+    <div class="detail-row"><span class="detail-label">Why users stay:</span><span class="detail-val">Distribution flywheel — highest degenerate concentration on Solana.</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Trexx <span style="font-size:0.7rem; color: var(--accent);">← SDK partner opportunity</span></div>
+        <div class="card-chain">Brazil · Own L1 on Tanssi · Esports fan loyalty · 16+ teams</div>
+      </div>
+      <div class="pill-row">
+        <span class="badge live">Live</span>
+        <span class="badge threat-low">Low Threat</span>
+      </div>
+    </div>
+    <div class="detail-row"><span class="detail-label">What:</span><span class="detail-val">Brazilian esports hub with 16+ teams. Fan loyalty, credit scoring, AI-driven monetization. Launched own L1 on Tanssi (EVM, fan rewards). Visa Everywhere Initiative winner, TechCrunch Disrupt finalist.</span></div>
+    <div class="detail-row"><span class="detail-label">Overlap:</span><span class="detail-val">Both solve brand-creator payment problems in esports. Trexx focuses on fan loyalty (B2C); Gecko focuses on brand-creator settlement (B2B).</span></div>
+    <div class="detail-row"><span class="detail-label">Key insight:</span><span class="detail-val">80%+ of their esports teams operate at a loss, relying on brand sponsorships they don't control. Trexx's own L1 handles fan loyalty; Gecko handles brand→creator settlement. Complementary, not competing.</span></div>
+    <div class="detail-row"><span class="detail-label strength">Gecko angle:</span><span class="detail-val"><strong>Primary SDK integration target.</strong> One Trexx integration = brand partners use Gecko vaults for all 16 teams' creator deals. Protocol fee on every vault regardless of Trexx's L1.</span></div>
+  </div>
+
+</div>
+
+<!-- DEAD PROJECTS -->
+<h2>Dead & Failed Projects — Landmines to Avoid</h2>
+<div class="grid">
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Friend.tech</div>
+        <div class="card-chain">Base (Ethereum L2) · Social tokens</div>
+      </div>
+      <span class="badge dead">Dead 2024</span>
+    </div>
+    <p>Allowed users to buy/sell "shares" in X (Twitter) accounts. Peak: $50M TVL, 400K tx/day (Oct 2023). Founders abandoned project late 2024.</p>
+    <div class="detail-row"><span class="detail-label weakness">Why failed:</span><span class="detail-val">Pure speculation loop — no real brand-creator utility. 92% user churn within 30 days. No sustainable value beyond novelty.</span></div>
+    <div class="detail-row"><span class="detail-label">Landmine:</span><span class="detail-val">Gecko avoids speculative token mechanics. On-chain yield + milestones = real utility. USDC only, no Gecko token that can dump.</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">DeSo (BitClout)</div>
+        <div class="card-chain">Own L1 · Creator coins</div>
+      </div>
+      <span class="badge dead">SEC Charged 2024</span>
+    </div>
+    <p>$257M raised from top VCs for a "decentralized social" L1. Founder charged by SEC with fraud and unregistered securities offering in July 2024.</p>
+    <div class="detail-row"><span class="detail-label weakness">Why failed:</span><span class="detail-val">Creator coins = unregistered securities. Building your own chain without regulatory clarity is catastrophic.</span></div>
+    <div class="detail-row"><span class="detail-label">Landmine:</span><span class="detail-val">Gecko uses USDC (not a new token). No creator coin issuance = no securities risk. Solana is not our own chain.</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">SocialFi wave (2023–2024)</div>
+        <div class="card-chain">Multi-chain · ~200 projects</div>
+      </div>
+      <span class="badge dead">64% Dead</span>
+    </div>
+    <p>64% of SocialFi projects launched 2023–2025 are now dead. TVL dropped from $50M → near zero. 92% of users churned within 30 days.</p>
+    <div class="detail-row"><span class="detail-label weakness">Root causes:</span><span class="detail-val">No coherent roadmap post-launch, novelty-driven engagement, no real-world utility for brands. All consumer-facing, zero B2B infrastructure.</span></div>
+    <div class="detail-row"><span class="detail-label">Landmine:</span><span class="detail-val">Never say "SocialFi." Gecko is brand campaign infrastructure. B2B retention model is fundamentally different from consumer social.</span></div>
+  </div>
+
+</div>
+
+<!-- ICP SECTION -->
+<h2>Ideal Customer Profiles — Top 10</h2>
+<p style="margin-bottom: 1rem;">ICPs ranked by speed-to-close and protocol volume potential. Wave 1 = crypto-native brands as sponsors + LATAM esports SDK partners. Wave 2 = agencies and content platforms as infrastructure resellers.</p>
+
+<div class="icp-grid">
+
+  <div class="icp-card priority-1">
+    <div class="icp-card-header">
+      <div>
+        <div class="icp-num">#1 · Primary SDK Target</div>
+        <div class="icp-title"><a href="https://trexx.com.br" target="_blank">Trexx</a></div>
+        <div class="icp-type">Esports hub · Brazil/LATAM · 16+ teams</div>
+      </div>
+      <span class="timeline-badge t-now">Now</span>
+    </div>
+    <div class="icp-row"><span class="icp-label">Pain:</span><span class="icp-val">80%+ of esports teams operate at a loss. Brand sponsorships are the lifeline but done over Telegram/email — brands ghost creators, no enforcement layer.</span></div>
+    <div class="icp-row"><span class="icp-label">Fit:</span><span class="icp-val">SDK integration. Trexx's brand partners (energy drinks, gaming peripherals, crypto exchanges) create Gecko vaults for their creators. Trexx owns the L1 for fan loyalty — Gecko handles brand-creator settlement.</span></div>
+    <div class="icp-row"><span class="icp-label">Volume:</span><span class="icp-val">1 integration = 16 teams × their creator rosters. First real protocol volume.</span></div>
+    <div class="icp-row"><span class="icp-label">Signal:</span><span class="icp-val">Already blockchain-native (own L1 on Tanssi), Visa Everywhere winner, TechCrunch Disrupt finalist. Understands smart contracts.</span></div>
+  </div>
+
+  <div class="icp-card priority-1">
+    <div class="icp-card-header">
+      <div>
+        <div class="icp-num">#2 · Fastest Conversion</div>
+        <div class="icp-title">Crypto-native Brands as Sponsors</div>
+        <div class="icp-type">Phantom · Helius · Backpack · Jupiter · Kamino</div>
+      </div>
+      <span class="timeline-badge t-now">Now</span>
+    </div>
+    <div class="icp-row"><span class="icp-label">Pain:</span><span class="icp-val">Already run creator campaigns. Paying KOLs via Lumanu/bank wire is an embarrassing web2 detour. Finance team hates 50 individual vendor setups. No oracle to verify content deliverables.</span></div>
+    <div class="icp-row"><span class="icp-label">Fit:</span><span class="icp-val">Direct app user. Already have USDC and Solana wallets. Campaign wizard in 5 min. Shikenso oracle scores video performance. Milestone auto-release when threshold hit.</span></div>
+    <div class="icp-row"><span class="icp-label">Volume:</span><span class="icp-val">$20K–$500K annual KOL budgets per protocol. 10+ likely prospects in Solana ecosystem alone.</span></div>
+    <div class="icp-row"><span class="icp-label">Signal:</span><span class="icp-val">Lever.io already proves this ICP pays for escrow. Gecko is Lever.io but the brand cannot cancel.</span></div>
+  </div>
+
+  <div class="icp-card priority-1">
+    <div class="icp-card-header">
+      <div>
+        <div class="icp-num">#3 · Web3 Gaming Sponsor</div>
+        <div class="icp-title">Solana Gaming Studios</div>
+        <div class="icp-type">Aurory · Star Atlas · Nyan Heroes · Stepn</div>
+      </div>
+      <span class="timeline-badge t-now">Now</span>
+    </div>
+    <div class="icp-row"><span class="icp-label">Pain:</span><span class="icp-val">Run KOL campaigns to drive user acquisition. Pay upfront or 50/50 — if KOL underperforms (200 views not 200K), no recourse. No oracle, no milestone auto-release.</span></div>
+    <div class="icp-row"><span class="icp-label">Fit:</span><span class="icp-val">Direct app user. Campaign wizard → vault per KOL → Shikenso scores video performance → milestone auto-releases at threshold. Budget: $5K–$100K per campaign.</span></div>
+    <div class="icp-row"><span class="icp-label">Volume:</span><span class="icp-val">Active KOL programs, frequent campaigns, high frequency of new game launches needing creator push.</span></div>
+  </div>
+
+  <div class="icp-card priority-2">
+    <div class="icp-card-header">
+      <div>
+        <div class="icp-num">#4 · SDK Distribution</div>
+        <div class="icp-title">LOUD</div>
+        <div class="icp-type">Brazil's #1 gaming org · 10M+ followers · 50+ creators</div>
+      </div>
+      <span class="timeline-badge t-60">60 days</span>
+    </div>
+    <div class="icp-row"><span class="icp-label">Pain:</span><span class="icp-val">Brand deals with Itaú, Burger King, Claro done over email. Managing 50 creator contracts simultaneously is a compliance nightmare. International crypto brands add payment friction.</span></div>
+    <div class="icp-row"><span class="icp-label">Fit:</span><span class="icp-val">SDK integration. LOUD uses Gecko as settlement infrastructure for incoming brand deals. They pitch "Gecko-enforced contracts" to brands as a premium. Each new brand deal = new vault = protocol fee.</span></div>
+    <div class="icp-row"><span class="icp-label">Volume:</span><span class="icp-val">50+ active creator contracts at any time. Major brand deals $50K+.</span></div>
+  </div>
+
+  <div class="icp-card priority-2">
+    <div class="icp-card-header">
+      <div>
+        <div class="icp-num">#5 · SDK Distribution</div>
+        <div class="icp-title">Furia Esports</div>
+        <div class="icp-type">Brazil/North America · CS2 · Adidas / Red Bull partners</div>
+      </div>
+      <span class="timeline-badge t-60">60 days</span>
+    </div>
+    <div class="icp-row"><span class="icp-label">Pain:</span><span class="icp-val">Crypto-native sponsors (exchanges, wallets) want to run Furia creator campaigns but have no web3-native enforcement layer. Cross-border payments to Brazilian creators take weeks.</span></div>
+    <div class="icp-row"><span class="icp-label">Fit:</span><span class="icp-val">Crypto brand sponsors → Gecko vault for Furia creators → USDC cliff-locked → Furia creators know money is real before they post. SDK integration means Furia doesn't custody funds.</span></div>
+    <div class="icp-row"><span class="icp-label">Volume:</span><span class="icp-val">Growing FURIA Content division. Active crypto-brand pipeline (esports + DeFi convergence).</span></div>
+  </div>
+
+  <div class="icp-card priority-2">
+    <div class="icp-card-header">
+      <div>
+        <div class="icp-num">#6 · DeFi Ambassador Programs</div>
+        <div class="icp-title">DeFi Protocols (Brand side)</div>
+        <div class="icp-type">Jupiter · Drift · Kamino · MarginFi ambassador programs</div>
+      </div>
+      <span class="timeline-badge t-now">Now</span>
+    </div>
+    <div class="icp-row"><span class="icp-label">Pain:</span><span class="icp-val">Ambassador deals done ad-hoc via Telegram, payments via manual wallet transfer. No performance tracking. Ambassador can take USDC and post nothing. Protocol can underpay claiming content "didn't hit targets."</span></div>
+    <div class="icp-row"><span class="icp-label">Fit:</span><span class="icp-val">Protocol treasury locks funds in Gecko vault per ambassador. Oracle verifies content output. Milestone bonuses release automatically. Yield earned on locked budget during campaign period.</span></div>
+    <div class="icp-row"><span class="icp-label">Volume:</span><span class="icp-val">$10K–$200K annual ambassador budgets per major DeFi protocol.</span></div>
+  </div>
+
+  <div class="icp-card">
+    <div class="icp-card-header">
+      <div>
+        <div class="icp-num">#7 · Creator Talent Agencies</div>
+        <div class="icp-title">Creator Management Agencies</div>
+        <div class="icp-type">Loaded (LATAM) · Night Media · Web3-native agencies</div>
+      </div>
+      <span class="timeline-badge t-90">90 days</span>
+    </div>
+    <div class="icp-row"><span class="icp-label">Pain:</span><span class="icp-val">30% of their time chasing brand payments, managing milestones manually, resolving disputes. They want enforcement infrastructure that protects their creator clients without the agency being liable for failed deals.</span></div>
+    <div class="icp-row"><span class="icp-label">Fit:</span><span class="icp-val">SDK integration. Agency builds on Gecko — "Gecko-enforced contracts" becomes their standard format for all brand deals. Upsold as a premium service to both brands and creators.</span></div>
+    <div class="icp-row"><span class="icp-label">Volume:</span><span class="icp-val">Each agency manages 20–200 creators. One agency integration = multiplied volume.</span></div>
+  </div>
+
+  <div class="icp-card">
+    <div class="icp-card-header">
+      <div>
+        <div class="icp-num">#8 · NFT / DAO Treasuries</div>
+        <div class="icp-title">NFT Projects & DAOs</div>
+        <div class="icp-type">DeGods · Mad Lads · Okay Bears · DAO treasuries</div>
+      </div>
+      <span class="timeline-badge t-60">60 days</span>
+    </div>
+    <div class="icp-row"><span class="icp-label">Pain:</span><span class="icp-val">Community treasuries fund creator outreach but post-vote spending is politically sensitive. One failed creator spend = governance drama. No oracle proves creator delivered.</span></div>
+    <div class="icp-row"><span class="icp-label">Fit:</span><span class="icp-val">Community votes to create the vault (cliff-locked, milestone-based). Oracle auto-releases only when creator delivers. No governance drama post-vote because the code handles it.</span></div>
+    <div class="icp-row"><span class="icp-label">Volume:</span><span class="icp-val">Active treasury spend programs, quarterly creator campaigns, high crypto-sophistication.</span></div>
+  </div>
+
+  <div class="icp-card">
+    <div class="icp-card-header">
+      <div>
+        <div class="icp-num">#9 · Web3 Content Platforms</div>
+        <div class="icp-title">On-chain Content Platforms</div>
+        <div class="icp-type">DSCVR · Paragraph · Mirror · Farcaster Frames apps</div>
+      </div>
+      <span class="timeline-badge t-60">60 days</span>
+    </div>
+    <div class="icp-row"><span class="icp-label">Pain:</span><span class="icp-val">Have the creator audience but no brand deal infrastructure. Building an escrow vault from scratch is 6+ months of Anchor work. Their creators already sign transactions.</span></div>
+    <div class="icp-row"><span class="icp-label">Fit:</span><span class="icp-val">SDK integration. Platform embeds GeckoVault widget (10 lines of code). Brands create vaults through their UI. Platform keeps UX; Gecko handles enforcement and settlement.</span></div>
+    <div class="icp-row"><span class="icp-label">Volume:</span><span class="icp-val">Protocol-first distribution — one integration multiplies reach across all their brand partners.</span></div>
+  </div>
+
+  <div class="icp-card">
+    <div class="icp-card-header">
+      <div>
+        <div class="icp-num">#10 · Long-term Enterprise</div>
+        <div class="icp-title">Traditional Gaming Publishers (LATAM)</div>
+        <div class="icp-type">Riot Games Brazil · Epic Games · Ubisoft Brazil</div>
+      </div>
+      <span class="timeline-badge t-180">6 months</span>
+    </div>
+    <div class="icp-row"><span class="icp-label">Pain:</span><span class="icp-val">Marketing managers run quarterly KOL campaigns ($1M+ annual spend). Existing tools (Lumanu) don't support on-chain verification or yield. LATAM creator payments take weeks via traditional rails.</span></div>
+    <div class="icp-row"><span class="icp-label">Fit:</span><span class="icp-val">Direct app + enterprise SDK. Pitch: "We're Lumanu but the brand cannot cancel and the creator earns yield while waiting for the cliff." One Riot deal = 100+ creator vaults/quarter.</span></div>
+    <div class="icp-row"><span class="icp-label">Volume:</span><span class="icp-val">Massive deal size but long sales cycle. Land one, reference the rest of the industry.</span></div>
+  </div>
+
+</div>
+
+<!-- ICP SUMMARY TABLE -->
+<h2>ICP Priority Table</h2>
+<div style="overflow-x:auto; margin-bottom: 1rem;">
+<table style="width:100%; border-collapse:collapse; font-size:0.82rem;">
+<thead>
+<tr style="border-bottom: 1px solid var(--border); color: var(--muted);">
+  <th style="text-align:left; padding:0.5rem;">#</th>
+  <th style="text-align:left; padding:0.5rem;">ICP</th>
+  <th style="text-align:left; padding:0.5rem;">Type</th>
+  <th style="text-align:left; padding:0.5rem;">Fit</th>
+  <th style="text-align:left; padding:0.5rem;">Timeline</th>
+  <th style="text-align:left; padding:0.5rem;">Wave</th>
+</tr>
+</thead>
+<tbody>
+<tr style="border-bottom:1px solid var(--border); background:rgba(34,211,160,0.05);">
+  <td style="padding:0.5rem; color:var(--accent);">1</td>
+  <td style="padding:0.5rem; font-weight:600;"><a href="https://trexx.com.br" target="_blank">Trexx</a></td>
+  <td style="padding:0.5rem;">SDK partner</td>
+  <td style="padding:0.5rem; color:#4ade80;">Very High</td>
+  <td style="padding:0.5rem;"><span class="timeline-badge t-now">Now</span></td>
+  <td style="padding:0.5rem; color:#4ade80;">1</td>
+</tr>
+<tr style="border-bottom:1px solid var(--border);">
+  <td style="padding:0.5rem;">2</td>
+  <td style="padding:0.5rem;">Crypto-native brands (Phantom, Helius…)</td>
+  <td style="padding:0.5rem;">Direct app</td>
+  <td style="padding:0.5rem; color:#4ade80;">Very High</td>
+  <td style="padding:0.5rem;"><span class="timeline-badge t-now">Now</span></td>
+  <td style="padding:0.5rem; color:#4ade80;">1</td>
+</tr>
+<tr style="border-bottom:1px solid var(--border);">
+  <td style="padding:0.5rem;">3</td>
+  <td style="padding:0.5rem;">Solana Gaming Studios</td>
+  <td style="padding:0.5rem;">Direct app</td>
+  <td style="padding:0.5rem; color:#4ade80;">High</td>
+  <td style="padding:0.5rem;"><span class="timeline-badge t-now">Now</span></td>
+  <td style="padding:0.5rem; color:#4ade80;">1</td>
+</tr>
+<tr style="border-bottom:1px solid var(--border);">
+  <td style="padding:0.5rem;">4</td>
+  <td style="padding:0.5rem;">LOUD</td>
+  <td style="padding:0.5rem;">SDK partner</td>
+  <td style="padding:0.5rem; color:#4ade80;">High</td>
+  <td style="padding:0.5rem;"><span class="timeline-badge t-60">60 days</span></td>
+  <td style="padding:0.5rem; color:#60a5fa;">2</td>
+</tr>
+<tr style="border-bottom:1px solid var(--border);">
+  <td style="padding:0.5rem;">5</td>
+  <td style="padding:0.5rem;">Furia Esports</td>
+  <td style="padding:0.5rem;">SDK partner</td>
+  <td style="padding:0.5rem; color:#fbbf24;">Med-High</td>
+  <td style="padding:0.5rem;"><span class="timeline-badge t-60">60 days</span></td>
+  <td style="padding:0.5rem; color:#60a5fa;">2</td>
+</tr>
+<tr style="border-bottom:1px solid var(--border);">
+  <td style="padding:0.5rem;">6</td>
+  <td style="padding:0.5rem;">DeFi Ambassador Programs</td>
+  <td style="padding:0.5rem;">Direct app</td>
+  <td style="padding:0.5rem; color:#4ade80;">High</td>
+  <td style="padding:0.5rem;"><span class="timeline-badge t-now">Now</span></td>
+  <td style="padding:0.5rem; color:#4ade80;">1</td>
+</tr>
+<tr style="border-bottom:1px solid var(--border);">
+  <td style="padding:0.5rem;">7</td>
+  <td style="padding:0.5rem;">Creator talent agencies</td>
+  <td style="padding:0.5rem;">SDK/direct</td>
+  <td style="padding:0.5rem; color:#fbbf24;">Medium</td>
+  <td style="padding:0.5rem;"><span class="timeline-badge t-90">90 days</span></td>
+  <td style="padding:0.5rem; color:#60a5fa;">2</td>
+</tr>
+<tr style="border-bottom:1px solid var(--border);">
+  <td style="padding:0.5rem;">8</td>
+  <td style="padding:0.5rem;">NFT Projects / DAOs</td>
+  <td style="padding:0.5rem;">Direct app</td>
+  <td style="padding:0.5rem; color:#fbbf24;">Medium</td>
+  <td style="padding:0.5rem;"><span class="timeline-badge t-60">60 days</span></td>
+  <td style="padding:0.5rem; color:#60a5fa;">2</td>
+</tr>
+<tr style="border-bottom:1px solid var(--border);">
+  <td style="padding:0.5rem;">9</td>
+  <td style="padding:0.5rem;">Web3 Content Platforms</td>
+  <td style="padding:0.5rem;">SDK partner</td>
+  <td style="padding:0.5rem; color:#4ade80;">High</td>
+  <td style="padding:0.5rem;"><span class="timeline-badge t-60">60 days</span></td>
+  <td style="padding:0.5rem; color:#60a5fa;">2</td>
+</tr>
+<tr style="border-bottom:1px solid var(--border);">
+  <td style="padding:0.5rem;">10</td>
+  <td style="padding:0.5rem;">Traditional Gaming Publishers (LATAM)</td>
+  <td style="padding:0.5rem;">Direct app</td>
+  <td style="padding:0.5rem; color:#fbbf24;">Med-Low</td>
+  <td style="padding:0.5rem;"><span class="timeline-badge t-180">6 months</span></td>
+  <td style="padding:0.5rem; color:#a78bfa;">3</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<!-- MOAT ANALYSIS -->
+<h2>Moat Analysis</h2>
+<div class="moat-grid">
+  <div class="moat-item">
+    <div class="moat-score" style="color: #4ade80;">★★★★☆</div>
+    <div class="moat-name">Distribution / Ecosystem Lock-in</div>
+    <p style="font-size:0.78rem; margin-top:0.4rem;">Kamino yield integration, Privy wallets, Anchor program create dependency chains. SDK partners (Trexx, LOUD) embed Gecko vaults — switching means rebuilding their settlement layer.</p>
+  </div>
+  <div class="moat-item">
+    <div class="moat-score" style="color: #4ade80;">★★★☆☆</div>
+    <div class="moat-name">Brand / Trust</div>
+    <p style="font-size:0.78rem; margin-top:0.4rem;">On-chain track record for both brands and creators accumulates. "Gecko-verified campaign" becomes a trust signal. Creator reputation tied to campaign history on-chain.</p>
+  </div>
+  <div class="moat-item">
+    <div class="moat-score" style="color: #fbbf24;">★★☆☆☆</div>
+    <div class="moat-name">Network Effects</div>
+    <p style="font-size:0.78rem; margin-top:0.4rem;">More creators → more attractive to brands. More brands → more creator income. Flywheel exists but needs critical mass. LATAM esports (Trexx, LOUD, Furia) = fastest path to bootstrapping.</p>
+  </div>
+  <div class="moat-item">
+    <div class="moat-score" style="color: #fbbf24;">★★☆☆☆</div>
+    <div class="moat-name">Technical Complexity</div>
+    <p style="font-size:0.78rem; margin-top:0.4rem;">Anchor program + Kamino integration replicable by a good Solana team in months. Real but temporary. Moat erodes as SocialFi tooling matures. Oracle pluggability is harder to clone.</p>
+  </div>
+  <div class="moat-item">
+    <div class="moat-score" style="color: #ef4444;">★☆☆☆☆</div>
+    <div class="moat-name">Data Advantages</div>
+    <p style="font-size:0.78rem; margin-top:0.4rem;">Campaign performance data could become valuable over time, but no ML model or proprietary index yet. Future opportunity, not present moat.</p>
+  </div>
+  <div class="moat-item">
+    <div class="moat-score" style="color: #fbbf24;">★★★☆☆</div>
+    <div class="moat-name">Switching Costs</div>
+    <p style="font-size:0.78rem; margin-top:0.4rem;">Brands build integrations around Gecko vault addresses. Creators build reputation on-chain tied to campaign history. SDK partners build UX on top of Gecko primitives. Moderate lock-in once embedded.</p>
+  </div>
+</div>
+
+<!-- DIFFERENTIATION -->
+<h2>Differentiation Recommendation</h2>
+<div class="diff-box">
+  <h3>Gecko's Unfair Advantage: The "Brand Can't Rug" Guarantee</h3>
+  <p>No competitor combines all four: on-chain budget cliff-locking + guaranteed floor yield + oracle-scored delivery + milestone auto-release. Lumanu has milestone triggers but a human can reverse them. Daisy has Solana rails but no enforcement. Influur has on-chain payments but no yield or cliff. Gecko owns the intersection.</p>
+  <ul style="margin-top: 0.75rem;">
+    <li><strong>Lead with the creator guarantee, not the tech.</strong> "Your campaign payment is locked on-chain. The brand cannot cancel before the cliff." This is the headline.</li>
+    <li><strong>Lumanu is the proof the market exists.</strong> Enterprise brands already pay for escrow-like infrastructure. Gecko is Lumanu but irreversible — and the locked capital earns yield while waiting.</li>
+    <li><strong>LATAM first.</strong> Trexx, LOUD, Furia = fastest distribution. LATAM creators have the worst experience with international brand payment delays — Gecko's USDC cliff-lock is a direct solution.</li>
+    <li><strong>Yield is a bonus, not the pitch.</strong> Kamino integration is a differentiator from Lever.io/Lumanu but don't lead with it — "yield" sounds DeFi-y to Web2 creators. Say "your locked budget earns interest while the campaign runs."</li>
+    <li><strong>Never say SocialFi.</strong> The 2023–2024 SocialFi wave is toxic. Position as "creator payment infrastructure" or "brand campaign protocol."</li>
+    <li><strong>Squad campaigns are unique.</strong> No competitor has a native multi-creator allocation primitive with on-chain enforcement. Lead with this for agencies running team-based esports campaigns.</li>
+    <li><strong>Protocol fee is the business model.</strong> 0.5% on every vault regardless of who built the UI. SDK partners bring distribution — Gecko captures economics at settlement layer.</li>
+  </ul>
+</div>
+
+<!-- FEATURE COMPARISON TABLE -->
+<h2>Feature Comparison Table</h2>
+<div style="overflow-x:auto;">
+<table style="width:100%; border-collapse:collapse; font-size:0.82rem;">
+<thead>
+<tr style="border-bottom: 1px solid var(--border); color: var(--muted);">
+  <th style="text-align:left; padding:0.5rem;">Project</th>
+  <th style="text-align:left; padding:0.5rem;">Status</th>
+  <th style="text-align:left; padding:0.5rem;">Chain</th>
+  <th style="text-align:left; padding:0.5rem;">On-chain vault</th>
+  <th style="text-align:left; padding:0.5rem;">Cliff lock</th>
+  <th style="text-align:left; padding:0.5rem;">Yield</th>
+  <th style="text-align:left; padding:0.5rem;">Oracle score</th>
+  <th style="text-align:left; padding:0.5rem;">Rug protection</th>
+  <th style="text-align:left; padding:0.5rem;">SDK</th>
+  <th style="text-align:left; padding:0.5rem;">Threat</th>
+</tr>
+</thead>
+<tbody>
+<tr style="border-bottom:1px solid var(--border); background:rgba(34,211,160,0.05);">
+  <td style="padding:0.5rem; font-weight:700; color: var(--accent);">★ Gecko</td>
+  <td style="padding:0.5rem;"><span class="badge beta">Devnet</span></td>
+  <td style="padding:0.5rem;">Solana</td>
+  <td style="padding:0.5rem; color: #4ade80;">✓</td>
+  <td style="padding:0.5rem; color: #4ade80;">✓</td>
+  <td style="padding:0.5rem; color: #4ade80;">✓ Kamino</td>
+  <td style="padding:0.5rem; color: #4ade80;">✓ Shikenso</td>
+  <td style="padding:0.5rem; color: #4ade80;">✓ Code enforced</td>
+  <td style="padding:0.5rem; color: #4ade80;">✓</td>
+  <td style="padding:0.5rem;">—</td>
+</tr>
+<tr style="border-bottom:1px solid var(--border);">
+  <td style="padding:0.5rem; font-weight:600;">Daisy Pay</td>
+  <td style="padding:0.5rem;"><span class="badge live">Live</span></td>
+  <td style="padding:0.5rem;">Solana rails</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem;"><span class="badge threat-med">Medium</span></td>
+</tr>
+<tr style="border-bottom:1px solid var(--border);">
+  <td style="padding:0.5rem; font-weight:600;">Lumanu</td>
+  <td style="padding:0.5rem;"><span class="badge live">Live</span></td>
+  <td style="padding:0.5rem;">Off-chain</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #fbbf24;">Lumanu holds</td>
+  <td style="padding:0.5rem; color: #fbbf24;">API only</td>
+  <td style="padding:0.5rem;"><span class="badge threat-high">High</span></td>
+</tr>
+<tr style="border-bottom:1px solid var(--border);">
+  <td style="padding:0.5rem; font-weight:600;">Influur</td>
+  <td style="padding:0.5rem;"><span class="badge live">Live</span></td>
+  <td style="padding:0.5rem;">Ethereum</td>
+  <td style="padding:0.5rem; color: #fbbf24;">Partial</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem;"><span class="badge threat-med">Medium</span></td>
+</tr>
+<tr style="border-bottom:1px solid var(--border);">
+  <td style="padding:0.5rem; font-weight:600;">Lever.io</td>
+  <td style="padding:0.5rem;"><span class="badge live">Live</span></td>
+  <td style="padding:0.5rem;">Off-chain</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #fbbf24;">Lever holds</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem;"><span class="badge threat-med">Medium</span></td>
+</tr>
+<tr style="border-bottom:1px solid var(--border);">
+  <td style="padding:0.5rem;">Trad. Agencies</td>
+  <td style="padding:0.5rem;"><span class="badge live">Live</span></td>
+  <td style="padding:0.5rem;">Off-chain</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #fbbf24;">Manual</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem;"><span class="badge threat-high">High</span></td>
+</tr>
+<tr style="border-bottom:1px solid var(--border);">
+  <td style="padding:0.5rem; color: var(--muted);">Friend.tech ☠</td>
+  <td style="padding:0.5rem;"><span class="badge dead">Dead 2024</span></td>
+  <td style="padding:0.5rem;">Base</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem; color: #f87171;">✗</td>
+  <td style="padding:0.5rem;"><span class="badge dead">Dead</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<p style="margin-top: 2rem; font-size: 0.75rem; color: var(--muted);">Research: Solana Compass · Lumanu.com · DaisyPay.io · Influur.com · Lever.io · Trexx/Tanssi announcement (Nov 2025) · Hipther Esports · Esports Insider · Coinbound · Colosseum Copilot gap analysis · The Grid · April 2026</p>
+
+</body>
+</html>

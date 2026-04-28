@@ -5,11 +5,17 @@ __pycache__/
 .venv/
 .uv-cache/
 
-# Env + secrets
+# Env + secrets — ALL .env variants except .env.example are sensitive
 .env
-.env.local
+.env.*
+!.env.example
 *.local.md
 CLAUDE.local.md
+# Per-project Gecko state (wallet refs, api tokens cached locally)
+.gecko/
+# Solana keypairs anywhere in the tree
+*.keypair.json
+gecko-demo-treasury.json
 
 # Build
 dist/
@@ -27,3 +33,5 @@ build/
 .ruff_cache/
 htmlcov/
 .coverage
+
+instructions/

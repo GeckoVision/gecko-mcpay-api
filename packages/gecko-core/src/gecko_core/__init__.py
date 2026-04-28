@@ -14,7 +14,7 @@ from gecko_core.models import (
     SourceInfo,
     Tier,
 )
-from gecko_core.workflows import ask, research, sources
+from gecko_core.workflows import ask, list_sources, research, sources
 
 __all__ = [
     "AskResult",
@@ -22,6 +22,7 @@ __all__ = [
     "SourceInfo",
     "Tier",
     "ask",
+    "list_sources",
     "research",
     "sources",
 ]

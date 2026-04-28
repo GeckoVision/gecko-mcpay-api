@@ -10,12 +10,10 @@ Run with:
 
 from __future__ import annotations
 
-import asyncio
 import time
 from uuid import UUID
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Phase 1 — Schema + sessions
@@ -80,9 +78,7 @@ class TestPhase2Ingestion:
         """No captions → source skipped, no exception, other sources still process."""
         from gecko_core.ingestion.pipeline import ingest
 
-        result = await ingest(
-            session_id=session_id, urls=[sample_youtube_without_captions]
-        )
+        result = await ingest(session_id=session_id, urls=[sample_youtube_without_captions])
         # source not in result.sources, but tracked in result.skipped
         assert len(result.skipped) == 1
         assert "captions" in result.skipped[0].reason.lower()
@@ -136,7 +132,7 @@ class TestPhase2Ingestion:
 
     @pytest.mark.asyncio
     async def test_tavily_discovery_returns_relevant_urls(self, demo_idea: str) -> None:
-        """Tavily for the demo idea returns 5–10 URLs."""
+        """Tavily for the demo idea returns 5-10 URLs."""
         from gecko_core.ingestion.discovery import discover
 
         urls = await discover(demo_idea)
@@ -340,9 +336,7 @@ class TestPhase7Rendering:
 
         from rich.console import Console
 
-        from gecko_cli.render import render_research_result
-
-        console = Console(width=80, file=StringIO())
+        Console(width=80, file=StringIO())
         # render a fixture ResearchResult, assert no exception
         ...
 

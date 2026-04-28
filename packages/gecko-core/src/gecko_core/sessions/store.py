@@ -1,0 +1,665 @@
+"""Session persistence layer.
+
+`SessionStore` is the single seam between gecko-core business logic and the
+Supabase `sessions` / `sources` tables. Async surface; the underlying
+supabase-py client is sync, so calls are dispatched via asyncio.to_thread to
+avoid blocking the event loop.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from datetime import datetime
+from typing import Any, Literal, cast
+from uuid import UUID
+
+from pydantic import BaseModel
+from supabase import Client
+
+from gecko_core.db import create_supabase_client
+from gecko_core.models import SessionStatus, SourceInfo, Tier
+
+PaymentMode = Literal["stub", "live", "frames"]
+
+CostKind = Literal["llm", "embed", "tavily", "deepgram"]
+
+
+class SessionEconomics(BaseModel):
+    """Read model for the per-session unit economics view.
+
+    `margin_usd = price_usd - sum(cost_*)`. On devnet `price_usd` may be 0
+    or NULL — that's fine, the cost columns still get the real numbers.
+    """
+
+    session_id: UUID
+    price_usd: float | None
+    cost_llm_usd: float
+    cost_embed_usd: float
+    cost_tavily_usd: float
+    cost_deepgram_usd: float
+    cost_total_usd: float
+    margin_usd: float | None
+    x402_tx_signature: str | None
+
+    model_config = {"frozen": True}
+
+
+class SessionRecord(BaseModel):
+    """Internal projection of a `sessions` row.
+
+    Distinct from the public `ResearchResult` — this carries persistence
+    metadata (status, payment, timestamps) that callers outside gecko-core
+    don't need to see.
+    """
+
+    id: UUID
+    idea: str
+    tier: Tier
+    status: SessionStatus
+    payment_intent_id: str | None = None
+    payment_mode: PaymentMode = "stub"
+    x402_tx_signature: str | None = None
+    project_id: UUID | None = None
+    paid_from_wallet_address: str | None = None
+    created_at: datetime
+    completed_at: datetime | None = None
+    deleted_at: datetime | None = None
+
+    model_config = {"frozen": True}
+
+
+class SessionStore:
+    """Async wrapper over the Supabase service-role client for session CRUD."""
+
+    SESSIONS_TABLE = "sessions"
+    SOURCES_TABLE = "sources"
+    CHUNKS_TABLE = "chunks"
+
+    def __init__(self, client: Client) -> None:
+        self._client = client
+
+    @classmethod
+    def from_env(cls) -> SessionStore:
+        """Build a store using SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY from env.
+
+        Server-side only. Never call this from gecko-mcpay-app.
+        """
+        return cls(create_supabase_client())
+
+    async def create(
+        self,
+        idea: str,
+        tier: Tier,
+        payment_mode: PaymentMode = "stub",
+    ) -> UUID:
+        """Insert a new session row and return its UUID. Status starts at 'pending'."""
+        payload: dict[str, Any] = {
+            "idea": idea,
+            "tier": tier,
+            "payment_mode": payment_mode,
+            "status": "pending",
+        }
+
+        def _insert() -> dict[str, Any]:
+            res = self._client.table(self.SESSIONS_TABLE).insert(payload).execute()
+            data = res.data or []
+            if not data:
+                raise RuntimeError("session insert returned no rows")
+            return cast(dict[str, Any], data[0])
+
+        row = await asyncio.to_thread(_insert)
+        return UUID(str(row["id"]))
+
+    async def set_payment_intent(self, session_id: UUID, intent_id: str) -> None:
+        """Persist the x402 idempotency key for this session.
+
+        Called by the payment gate before `client.charge()` so that retries
+        reuse the same key. Unique constraint on `payment_intent_id` prevents
+        accidental double-charges across processes.
+        """
+        patch: dict[str, Any] = {"payment_intent_id": intent_id}
+
+        def _update() -> None:
+            (
+                self._client.table(self.SESSIONS_TABLE)
+                .update(patch)
+                .eq("id", str(session_id))
+                .execute()
+            )
+
+        await asyncio.to_thread(_update)
+
+    async def set_tx_signature(self, session_id: UUID, tx_signature: str) -> None:
+        """Persist the on-chain x402 transaction signature for this session.
+
+        Called by the gecko-api payment middleware integration after a
+        successful settle so the session row can be correlated with the
+        Solana explorer link shown on stage during the demo.
+        """
+        patch: dict[str, Any] = {"x402_tx_signature": tx_signature}
+
+        def _update() -> None:
+            (
+                self._client.table(self.SESSIONS_TABLE)
+                .update(patch)
+                .eq("id", str(session_id))
+                .execute()
+            )
+
+        await asyncio.to_thread(_update)
+
+    async def set_price(self, session_id: UUID, price_usd: float) -> None:
+        """Persist the price the user was charged (USD).
+
+        Recorded after the x402 settle succeeds, so the row's `margin_usd`
+        generated column reflects revenue minus accumulated costs.
+        """
+        patch: dict[str, Any] = {"price_usd": price_usd}
+
+        def _update() -> None:
+            (
+                self._client.table(self.SESSIONS_TABLE)
+                .update(patch)
+                .eq("id", str(session_id))
+                .execute()
+            )
+
+        await asyncio.to_thread(_update)
+
+    async def add_cost(self, session_id: UUID, kind: CostKind, amount_usd: float) -> None:
+        """Atomically increment a cost line for a session.
+
+        Uses the `gecko_add_session_cost` Postgres function (migration
+        20260427000000) so concurrent adapters can't race on read-modify-write.
+        Zero-or-negligible amounts are short-circuited locally to avoid an
+        unnecessary RPC round-trip.
+        """
+        if amount_usd <= 0:
+            return
+
+        def _rpc() -> None:
+            self._client.rpc(
+                "gecko_add_session_cost",
+                {
+                    "p_session_id": str(session_id),
+                    "p_kind": kind,
+                    "p_amount_usd": amount_usd,
+                },
+            ).execute()
+
+        await asyncio.to_thread(_rpc)
+
+    async def get_economics(self, session_id: UUID) -> SessionEconomics | None:
+        """Return the unit-economics view for a session, or None if missing."""
+
+        def _select() -> list[dict[str, Any]]:
+            res = (
+                self._client.table(self.SESSIONS_TABLE)
+                .select(
+                    "id,price_usd,cost_llm_usd,cost_embed_usd,cost_tavily_usd,"
+                    "cost_deepgram_usd,cost_total_usd,margin_usd,x402_tx_signature"
+                )
+                .eq("id", str(session_id))
+                .is_("deleted_at", None)
+                .limit(1)
+                .execute()
+            )
+            return cast(list[dict[str, Any]], res.data or [])
+
+        rows = await asyncio.to_thread(_select)
+        if not rows:
+            return None
+        row = rows[0]
+        return SessionEconomics(
+            session_id=UUID(str(row["id"])),
+            price_usd=_as_float_or_none(row.get("price_usd")),
+            cost_llm_usd=float(row.get("cost_llm_usd") or 0),
+            cost_embed_usd=float(row.get("cost_embed_usd") or 0),
+            cost_tavily_usd=float(row.get("cost_tavily_usd") or 0),
+            cost_deepgram_usd=float(row.get("cost_deepgram_usd") or 0),
+            cost_total_usd=float(row.get("cost_total_usd") or 0),
+            margin_usd=_as_float_or_none(row.get("margin_usd")),
+            x402_tx_signature=row.get("x402_tx_signature"),
+        )
+
+    async def set_result(self, session_id: UUID, result: dict[str, Any]) -> None:
+        """Persist the final ResearchResult JSON on the session row.
+
+        Called from the background research task once the workflow finishes;
+        the GET /sessions/{id}/result endpoint reads it back via get_result.
+        """
+
+        def _update() -> None:
+            (
+                self._client.table(self.SESSIONS_TABLE)
+                .update({"result_json": result})
+                .eq("id", str(session_id))
+                .execute()
+            )
+
+        await asyncio.to_thread(_update)
+
+    async def get_result(self, session_id: UUID) -> dict[str, Any] | None:
+        """Return the persisted ResearchResult JSON, or None if not yet ready."""
+
+        def _select() -> list[dict[str, Any]]:
+            res = (
+                self._client.table(self.SESSIONS_TABLE)
+                .select("result_json")
+                .eq("id", str(session_id))
+                .is_("deleted_at", None)
+                .limit(1)
+                .execute()
+            )
+            return cast(list[dict[str, Any]], res.data or [])
+
+        rows = await asyncio.to_thread(_select)
+        if not rows:
+            return None
+        result = rows[0].get("result_json")
+        return cast(dict[str, Any] | None, result if isinstance(result, dict) else None)
+
+    async def set_error(self, session_id: UUID, message: str) -> None:
+        """Mark a session failed and persist the error message."""
+
+        def _update() -> None:
+            (
+                self._client.table(self.SESSIONS_TABLE)
+                .update({"status": "failed", "error_message": message[:2000]})
+                .eq("id", str(session_id))
+                .execute()
+            )
+
+        await asyncio.to_thread(_update)
+
+    async def get_error(self, session_id: UUID) -> str | None:
+        """Read back a failure message persisted by set_error."""
+
+        def _select() -> list[dict[str, Any]]:
+            res = (
+                self._client.table(self.SESSIONS_TABLE)
+                .select("error_message,status")
+                .eq("id", str(session_id))
+                .is_("deleted_at", None)
+                .limit(1)
+                .execute()
+            )
+            return cast(list[dict[str, Any]], res.data or [])
+
+        rows = await asyncio.to_thread(_select)
+        if not rows:
+            return None
+        return rows[0].get("error_message") if rows[0].get("status") == "failed" else None
+
+    async def update_status(self, session_id: UUID, status: SessionStatus) -> None:
+        """Transition a session's status. Sets completed_at on terminal 'complete'."""
+        patch: dict[str, Any] = {"status": status}
+        if status == "complete":
+            patch["completed_at"] = datetime.now().astimezone().isoformat()
+
+        def _update() -> None:
+            (
+                self._client.table(self.SESSIONS_TABLE)
+                .update(patch)
+                .eq("id", str(session_id))
+                .execute()
+            )
+
+        await asyncio.to_thread(_update)
+
+    async def get(self, session_id: UUID) -> SessionRecord | None:
+        """Fetch a single session row, or None if not found / soft-deleted."""
+
+        def _select() -> list[dict[str, Any]]:
+            res = (
+                self._client.table(self.SESSIONS_TABLE)
+                .select("*")
+                .eq("id", str(session_id))
+                .is_("deleted_at", None)
+                .limit(1)
+                .execute()
+            )
+            return cast(list[dict[str, Any]], res.data or [])
+
+        rows = await asyncio.to_thread(_select)
+        if not rows:
+            return None
+        return SessionRecord.model_validate(rows[0])
+
+    async def list_sources(self, session_id: UUID) -> list[SourceInfo]:
+        """Return indexed sources for a session, ordered by indexed_at ascending."""
+
+        def _select() -> list[dict[str, Any]]:
+            res = (
+                self._client.table(self.SOURCES_TABLE)
+                .select("url,type,chunk_count,indexed_at")
+                .eq("session_id", str(session_id))
+                .order("indexed_at", desc=False)
+                .execute()
+            )
+            return cast(list[dict[str, Any]], res.data or [])
+
+        rows = await asyncio.to_thread(_select)
+        return [SourceInfo.model_validate(r) for r in rows]
+
+    async def insert_source(
+        self,
+        session_id: UUID,
+        url: str,
+        url_hash: str,
+        type_: Literal["youtube", "web"],
+    ) -> UUID | None:
+        """Insert a source row idempotently.
+
+        Returns the new row's UUID, or None if the (session_id, url_hash)
+        already exists. Uses upsert with ignore_duplicates so re-ingest of the
+        same URL is a no-op rather than an error.
+        """
+        payload: dict[str, Any] = {
+            "session_id": str(session_id),
+            "url": url,
+            "url_hash": url_hash,
+            "type": type_,
+        }
+
+        def _upsert() -> list[dict[str, Any]]:
+            res = (
+                self._client.table(self.SOURCES_TABLE)
+                .upsert(
+                    payload,
+                    on_conflict="session_id,url_hash",
+                    ignore_duplicates=True,
+                )
+                .execute()
+            )
+            return cast(list[dict[str, Any]], res.data or [])
+
+        rows = await asyncio.to_thread(_upsert)
+        if not rows:
+            return None
+        return UUID(str(rows[0]["id"]))
+
+    async def insert_chunks(
+        self,
+        session_id: UUID,
+        source_id: UUID,
+        chunks: list[tuple[int, str, list[float]]],
+    ) -> int:
+        """Bulk-insert chunks for a source. Returns the count inserted.
+
+        `chunks` is a list of (chunk_index, text, embedding) tuples.
+        """
+        if not chunks:
+            return 0
+        rows: list[dict[str, Any]] = [
+            {
+                "session_id": str(session_id),
+                "source_id": str(source_id),
+                "chunk_index": idx,
+                "text": text,
+                "embedding": embedding,
+            }
+            for idx, text, embedding in chunks
+        ]
+
+        def _insert() -> list[dict[str, Any]]:
+            res = self._client.table(self.CHUNKS_TABLE).insert(rows).execute()
+            return cast(list[dict[str, Any]], res.data or [])
+
+        inserted = await asyncio.to_thread(_insert)
+        return len(inserted)
+
+    # ------------------------------------------------------------------
+    # Projects (per-project vaults)
+    # ------------------------------------------------------------------
+    #
+    # v1 model: a project is a named, budgeted grouping of sessions owned by
+    # a single frames.ag user. Budget enforcement is client-side — callers
+    # check `project_budget_remaining` before issuing a paid run. The
+    # `wallet_address` / `wallet_provider` columns exist for v2 forward-compat
+    # (Privy direct wallets) and are NULL / 'frames-policy' in v1.
+
+    PROJECTS_TABLE = "projects"
+
+    async def create_project(
+        self,
+        username: str,
+        name: str,
+        budget_usd: float | None = None,
+    ) -> UUID:
+        """Insert a new project row for `username`. Returns its UUID.
+
+        Unique on (frames_username, name); the supabase-py client will raise
+        on conflict so callers can map that to a 409.
+        """
+        payload: dict[str, Any] = {
+            "frames_username": username,
+            "name": name,
+            "budget_usd": budget_usd,
+        }
+
+        def _insert() -> dict[str, Any]:
+            res = self._client.table(self.PROJECTS_TABLE).insert(payload).execute()
+            data = res.data or []
+            if not data:
+                raise RuntimeError("project insert returned no rows")
+            return cast(dict[str, Any], data[0])
+
+        row = await asyncio.to_thread(_insert)
+        return UUID(str(row["id"]))
+
+    async def get_project(self, username: str, name: str) -> dict[str, Any] | None:
+        """Look up a project by (owner, name). None if missing or soft-deleted."""
+
+        def _select() -> list[dict[str, Any]]:
+            res = (
+                self._client.table(self.PROJECTS_TABLE)
+                .select("*")
+                .eq("frames_username", username)
+                .eq("name", name)
+                .is_("deleted_at", None)
+                .limit(1)
+                .execute()
+            )
+            return cast(list[dict[str, Any]], res.data or [])
+
+        rows = await asyncio.to_thread(_select)
+        return rows[0] if rows else None
+
+    async def list_projects(self, username: str) -> list[dict[str, Any]]:
+        """Return all live projects for a frames.ag user, newest first."""
+
+        def _select() -> list[dict[str, Any]]:
+            res = (
+                self._client.table(self.PROJECTS_TABLE)
+                .select("*")
+                .eq("frames_username", username)
+                .is_("deleted_at", None)
+                .order("created_at", desc=True)
+                .execute()
+            )
+            return cast(list[dict[str, Any]], res.data or [])
+
+        return await asyncio.to_thread(_select)
+
+    async def set_session_project(
+        self,
+        session_id: UUID,
+        project_id: UUID,
+        paid_from_wallet_address: str | None = None,
+    ) -> None:
+        """Bind a session to a project and snapshot the paying wallet.
+
+        Called from the api_client right after the payment intent is created
+        so the audit trail captures which wallet actually paid, even if the
+        project's wallet later rotates.
+        """
+        patch: dict[str, Any] = {"project_id": str(project_id)}
+        if paid_from_wallet_address is not None:
+            patch["paid_from_wallet_address"] = paid_from_wallet_address
+
+        def _update() -> None:
+            (
+                self._client.table(self.SESSIONS_TABLE)
+                .update(patch)
+                .eq("id", str(session_id))
+                .execute()
+            )
+
+        await asyncio.to_thread(_update)
+
+    async def project_budget_remaining(self, project_id: UUID) -> float | None:
+        """Return budget_usd - SUM(cost_total_usd) via the SQL RPC.
+
+        None when the project has no budget set (unlimited) or doesn't
+        exist. Negative values signal an overrun — surface that to callers
+        rather than clamping at 0.
+        """
+
+        def _rpc() -> Any:
+            res = self._client.rpc(
+                "gecko_project_budget_remaining",
+                {"p_project_id": str(project_id)},
+            ).execute()
+            return res.data
+
+        data = await asyncio.to_thread(_rpc)
+        return _as_float_or_none(data)
+
+    async def project_total_spent(self, project_id: UUID) -> float:
+        """Sum cost_total_usd across all live sessions in a project.
+
+        Implemented as a direct aggregation (not the RPC) so callers that
+        only want spend — not remaining — don't pay for the project lookup.
+        """
+
+        def _select() -> list[dict[str, Any]]:
+            res = (
+                self._client.table(self.SESSIONS_TABLE)
+                .select("cost_total_usd")
+                .eq("project_id", str(project_id))
+                .is_("deleted_at", None)
+                .execute()
+            )
+            return cast(list[dict[str, Any]], res.data or [])
+
+        rows = await asyncio.to_thread(_select)
+        return float(sum((r.get("cost_total_usd") or 0) for r in rows))
+
+    async def set_source_chunk_count(self, source_id: UUID, count: int) -> None:
+        """Update sources.chunk_count after chunk insert."""
+
+        def _update() -> None:
+            (
+                self._client.table(self.SOURCES_TABLE)
+                .update({"chunk_count": count})
+                .eq("id", str(source_id))
+                .execute()
+            )
+
+        await asyncio.to_thread(_update)
+
+    # ------------------------------------------------------------------
+    # Projects (Phase B5 v1) — supplemental helpers.
+    #
+    # The core CRUD (create_project, get_project, list_projects,
+    # project_budget_remaining, project_total_spent, set_session_project)
+    # is implemented above by the data-engineer. The two helpers below are
+    # CLI-driven niceties (`gecko project budget --set`, `gecko project show`)
+    # that don't need their own RPC.
+    # ------------------------------------------------------------------
+
+    async def delete_project(self, username: str, name: str) -> bool:
+        """Soft-delete a project by (owner, name). Returns True if a row updated.
+
+        Sets ``deleted_at`` to now(); subsequent reads filter on
+        ``deleted_at IS NULL`` so the project disappears from list/get.
+        """
+        now_iso = datetime.now().astimezone().isoformat()
+
+        def _update() -> list[dict[str, Any]]:
+            res = (
+                self._client.table(self.PROJECTS_TABLE)
+                .update({"deleted_at": now_iso})
+                .eq("frames_username", username)
+                .eq("name", name)
+                .is_("deleted_at", None)
+                .execute()
+            )
+            return cast(list[dict[str, Any]], res.data or [])
+
+        rows = await asyncio.to_thread(_update)
+        return bool(rows)
+
+    async def set_project_budget(self, project_id: UUID, budget_usd: float | None) -> None:
+        """Update the project's budget_usd ceiling."""
+
+        def _update() -> None:
+            (
+                self._client.table(self.PROJECTS_TABLE)
+                .update({"budget_usd": budget_usd})
+                .eq("id", str(project_id))
+                .execute()
+            )
+
+        await asyncio.to_thread(_update)
+
+    async def list_project_sessions(
+        self,
+        project_id: UUID,
+        limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        """Recent sessions for a project — id, idea, status, cost, created_at."""
+
+        def _select() -> list[dict[str, Any]]:
+            res = (
+                self._client.table(self.SESSIONS_TABLE)
+                .select("id,idea,status,cost_total_usd,created_at")
+                .eq("project_id", str(project_id))
+                .is_("deleted_at", None)
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            )
+            return cast(list[dict[str, Any]], res.data or [])
+
+        return await asyncio.to_thread(_select)
+
+    async def _project_spend(self, project_id: UUID) -> tuple[float, int]:
+        """Sum cost_total_usd + count sessions for a project.
+
+        Helper for the free `/sessions/spent-by-project/{id}` endpoint —
+        avoids two round-trips when the caller wants both.
+        """
+
+        def _select() -> list[dict[str, Any]]:
+            res = (
+                self._client.table(self.SESSIONS_TABLE)
+                .select("cost_total_usd")
+                .eq("project_id", str(project_id))
+                .is_("deleted_at", None)
+                .execute()
+            )
+            return cast(list[dict[str, Any]], res.data or [])
+
+        rows = await asyncio.to_thread(_select)
+        total = float(sum((r.get("cost_total_usd") or 0) for r in rows))
+        return total, len(rows)
+
+
+def _as_float_or_none(v: object) -> float | None:
+    if v is None:
+        return None
+    try:
+        return float(v)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+__all__ = [
+    "CostKind",
+    "PaymentMode",
+    "SessionEconomics",
+    "SessionRecord",
+    "SessionStore",
+]

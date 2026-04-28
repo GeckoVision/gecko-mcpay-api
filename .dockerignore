@@ -1,0 +1,59 @@
+# =============================================================================
+# Files NOT shipped into the gecko-api Docker image.
+# Keep the image lean: only gecko-core + gecko-api source + the venv.
+# =============================================================================
+
+# Local dev / scratch
+.venv
+.git
+.github
+*.pyc
+__pycache__
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# Secrets — never bake into images
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Repo bits not needed at runtime
+docs
+infra
+scripts
+tests
+ideation
+gecko_pitch
+
+# CLI + demo agent are separate runtimes; gecko-api doesn't import them.
+# We DO need their pyproject.toml at resolve time (workspace members), so
+# exclude only their src/ + tests/ — not the manifests.
+apps/cli/src
+apps/cli/tests
+apps/demo-agent/src
+apps/demo-agent/tests
+
+# IDE
+.vscode
+.idea
+.claude
+.claude.json
+.mcp.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs / tmp
+*.log
+tmp
+build
+dist
+
+# uv cache (install pulls fresh in-image; local cache wastes layers)
+.uv

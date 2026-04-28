@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 
 Tier = Literal["basic", "pro"]
 SourceType = Literal["youtube", "web"]
@@ -23,6 +23,19 @@ class SourceInfo(BaseModel):
     type: SourceType
     chunk_count: int = Field(ge=0)
     indexed_at: datetime
+
+
+class SourceCandidate(BaseModel):
+    """A candidate source surfaced by discovery, before user approval / ingestion.
+
+    Crosses CLI/MCP/API boundaries (the approval flow shows these to the user),
+    so it lives in `models.py` alongside the other public types.
+    """
+
+    url: HttpUrl
+    title: str = ""
+    type: SourceType
+    score: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 class Citation(BaseModel):
@@ -45,6 +58,16 @@ class BusinessPlan(BaseModel):
     risks: list[str]
     citations: list[Citation]
 
+    @field_validator(
+        "problem", "icp", "solution", "market", "business_model", "channels", mode="before"
+    )
+    @classmethod
+    def _coerce_to_string(cls, v: object) -> object:
+        # LLMs often return prose fields as bullet lists. Join into a sentence.
+        if isinstance(v, list):
+            return "; ".join(str(item) for item in v)
+        return v
+
 
 class ValidationReport(BaseModel):
     """Quantified validation of the idea."""
@@ -54,6 +77,13 @@ class ValidationReport(BaseModel):
     demand_evidence: str
     risk_flags: list[str]
     citations: list[Citation]
+
+    @field_validator("market_size_signal", "competitor_analysis", "demand_evidence", mode="before")
+    @classmethod
+    def _coerce_to_string(cls, v: object) -> object:
+        if isinstance(v, list):
+            return "; ".join(str(item) for item in v)
+        return v
 
 
 class PRD(BaseModel):

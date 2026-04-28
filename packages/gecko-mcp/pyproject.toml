@@ -8,6 +8,10 @@ dependencies = [
     "mcp>=1.0",
     "click>=8.1",
     "python-dotenv>=1.0",
+    "solders>=0.21",
+    "cryptography>=42",
+    "httpx>=0.27",
+    "x402[svm]>=2.8.0",
 ]
 
 [project.scripts]

@@ -1,0 +1,370 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: gecko-api – ECS Fargate stack (single service, ALB, port 8000)
+
+# =============================================================================
+# Adapted from ../gecko-social-fi-creators-api/infra/ecs-stack.yml.
+# Key differences:
+#   - Container port 8000 (uvicorn) instead of 3001 (Node)
+#   - Health check path /healthz instead of /health
+#   - SSM prefix /gecko-api
+#   - All gecko-api config (X402_MODE, X402_NETWORK, RESEARCH_BASIC_PRICE,
+#     etc.) is wired through `secrets:` so you can flip devnet→mainnet via
+#     SSM update + `aws ecs update-service --force-new-deployment` — no
+#     CloudFormation churn.
+# =============================================================================
+
+Parameters:
+
+  Image:
+    Type: String
+    Default: PLACEHOLDER_SET_BY_DEPLOY_SCRIPT
+
+  SSMPrefix:
+    Type: String
+    Default: /gecko-api
+
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+
+  CertificateArn:
+    Type: String
+    Default: ''
+    Description: ACM certificate ARN for HTTPS. Leave empty to use HTTP only.
+
+  ExecutionRoleArn:
+    Type: String
+    Default: ''
+
+  TaskRoleArn:
+    Type: String
+    Default: ''
+
+Conditions:
+  UseDefaultExecutionRole: !Equals [!Ref ExecutionRoleArn, '']
+  UseDefaultTaskRole:      !Equals [!Ref TaskRoleArn, '']
+  HasCertificate:          !Not [!Equals [!Ref CertificateArn, '']]
+
+Resources:
+
+  # ── Networking ────────────────────────────────────────────────
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{Key: Name, Value: gecko-api-vpc}]
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  IGWAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.0.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags: [{Key: Name, Value: gecko-api-public-1}]
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags: [{Key: Name, Value: gecko-api-public-2}]
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags: [{Key: Name, Value: gecko-api-private-1}]
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags: [{Key: Name, Value: gecko-api-private-2}]
+
+  NatEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: IGWAttachment
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: {VpcId: !Ref VPC}
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: IGWAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref PublicSubnet1, RouteTableId: !Ref PublicRouteTable}
+
+  PublicSubnet2RouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref PublicSubnet2, RouteTableId: !Ref PublicRouteTable}
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: {VpcId: !Ref VPC}
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet1RouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref PrivateSubnet1, RouteTableId: !Ref PrivateRouteTable}
+
+  PrivateSubnet2RouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref PrivateSubnet2, RouteTableId: !Ref PrivateRouteTable}
+
+  # ── ECS Cluster ───────────────────────────────────────────────
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: gecko-api
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  # ── ALB ───────────────────────────────────────────────────────
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ALB - allow HTTP/HTTPS from internet
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 80,  ToPort: 80,  CidrIp: 0.0.0.0/0}
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0}
+      SecurityGroupEgress:
+        - {IpProtocol: -1, CidrIp: 0.0.0.0/0}
+
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: gecko-api-alb
+      Scheme: internet-facing
+      Type: application
+      Subnets: [!Ref PublicSubnet1, !Ref PublicSubnet2]
+      SecurityGroups: [!Ref ALBSecurityGroup]
+      # Force HTTP/1.1 only. frames.ag's edge (and several other Node-fetch
+      # x402 clients we tested) cannot complete TLS+ALPN handshakes when
+      # ALB negotiates HTTP/2 — they fast-fail with "Failed to reach target"
+      # in ~500ms. Disabling h2 eliminates that class of failure entirely
+      # at negligible perf cost for a low-RPS API.
+      LoadBalancerAttributes:
+        - Key: routing.http2.enabled
+          Value: 'false'
+
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: gecko-api-tg
+      Port: 8000
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      TargetType: ip
+      HealthCheckPath: /healthz
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: '200'
+
+  ALBListenerHTTP:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - !If
+          - HasCertificate
+          - Type: redirect
+            RedirectConfig:
+              Protocol: HTTPS
+              Port: '443'
+              StatusCode: HTTP_301
+          - Type: forward
+            TargetGroupArn: !Ref ALBTargetGroup
+
+  ALBListenerHTTPS:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HasCertificate
+    Properties:
+      LoadBalancerArn: !Ref ALB
+      Port: 443
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+
+  # ── api service (public, behind ALB) ─────────────────────────
+
+  ApiSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: api (:8000) - allow from ALB
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+      SecurityGroupEgress:
+        - {IpProtocol: -1, CidrIp: 0.0.0.0/0}
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/gecko-api
+      RetentionInDays: 30
+
+  ApiTaskDef:
+    Type: AWS::ECS::TaskDefinition
+    DependsOn: ApiLogGroup
+    Properties:
+      Family: gecko-api
+      Cpu: '512'
+      Memory: '1024'
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !If
+        - UseDefaultExecutionRole
+        - !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskExecutionRole
+        - !Ref ExecutionRoleArn
+      TaskRoleArn: !If
+        - UseDefaultTaskRole
+        - !Sub arn:aws:iam::${AWS::AccountId}:role/EcsTaskRole
+        - !Ref TaskRoleArn
+      ContainerDefinitions:
+        - Name: api
+          Image: !Ref Image
+          Essential: true
+          PortMappings:
+            - {ContainerPort: 8000, Protocol: tcp}
+          # Hard-coded env vars only — config that's hot-swappable (network,
+          # price, mode) is in `Secrets` so it can rotate via SSM without
+          # touching CloudFormation.
+          Environment:
+            - {Name: PORT,        Value: '8000'}
+            - {Name: ENVIRONMENT, Value: !Ref Environment}
+            - {Name: PYTHONUNBUFFERED,     Value: '1'}
+            - {Name: PYTHONDONTWRITEBYTECODE, Value: '1'}
+          Secrets:
+            # ── Database / external APIs ─────────────────────────
+            - Name: SUPABASE_URL
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/SUPABASE_URL
+            - Name: SUPABASE_SERVICE_ROLE_KEY
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/SUPABASE_SERVICE_ROLE_KEY
+            - Name: TAVILY_API_KEY
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/TAVILY_API_KEY
+            - Name: OPENAI_API_KEY
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OPENAI_API_KEY
+            # Optional: YouTube caption-fallback. Leave SSM param empty if not used.
+            - Name: DEEPGRAM_API_KEY
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/DEEPGRAM_API_KEY
+            # ── x402 (devnet ↔ mainnet via SSM) ───────────────────
+            - Name: X402_MODE
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/X402_MODE
+            - Name: X402_NETWORK
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/X402_NETWORK
+            - Name: X402_FACILITATOR_URL
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/X402_FACILITATOR_URL
+            - Name: GECKO_WALLET_ADDRESS
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/GECKO_WALLET_ADDRESS
+            - Name: RESEARCH_BASIC_PRICE
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/RESEARCH_BASIC_PRICE
+            - Name: RESEARCH_PRO_PRICE
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/RESEARCH_PRO_PRICE
+            # ── LLM endpoint (ClawRouter or OpenAI direct) ────────
+            - Name: GECKO_LLM_ENDPOINT
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/GECKO_LLM_ENDPOINT
+            - Name: GECKO_LLM_API_KEY
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/GECKO_LLM_API_KEY
+            - Name: CHAT_MODEL
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/CHAT_MODEL
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: /ecs/gecko-api
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  ApiService:
+    Type: AWS::ECS::Service
+    DependsOn: [ALBListenerHTTP]
+    Properties:
+      ServiceName: gecko-api
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref ApiTaskDef
+      LaunchType: FARGATE
+      DesiredCount: 1
+      HealthCheckGracePeriodSeconds: 60
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: [!Ref PrivateSubnet1, !Ref PrivateSubnet2]
+          SecurityGroups: [!Ref ApiSecurityGroup]
+          AssignPublicIp: DISABLED
+      LoadBalancers:
+        - ContainerName: api
+          ContainerPort: 8000
+          TargetGroupArn: !Ref ALBTargetGroup
+
+Outputs:
+
+  ALBDNSName:
+    Description: ALB DNS — point api.geckovision.tech A-alias here
+    Value: !GetAtt ALB.DNSName
+    Export:
+      Name: GeckoApiALBDNSName
+
+  ClusterName:
+    Value: !Ref ECSCluster
+    Export:
+      Name: GeckoApiClusterName
+
+  ServiceName:
+    Value: !GetAtt ApiService.Name
+    Export:
+      Name: GeckoApiServiceName

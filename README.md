@@ -61,6 +61,10 @@ uv run gecko-mcp doctor                      # verify env
 uv run gecko-mcp serve                       # start over stdio
 ```
 
+## Projects (per-project budgets)
+
+Group runs into named, budgeted envelopes. v1 ships a logical budget bucket: payments still flow from your frames.ag main wallet, but each project tracks its own spend with a client-side budget pre-flight before the paid call. `gecko project init <name> --budget 5.00` creates the project (server-side row + `.gecko/project.json` in your cwd); `gecko project list / show / budget / policy` round out the surface. `bb research` auto-attaches the cwd's project; pass `--project <uuid|name>` to override. v2 (post-Shipathon) replaces the wallet plumbing with per-project Privy wallets — the CLI surface stays the same. See `docs/phase-b5-v1-shipped.md`.
+
 ## Skill-based onboarding (for Claude Code users)
 
 ```

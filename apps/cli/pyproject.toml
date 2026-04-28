@@ -11,8 +11,8 @@ dependencies = [
 ]
 
 [project.scripts]
-bb = "gecko_cli.main:main"
-gecko = "gecko_cli.main:main"
+bb = "gecko_cli.main:cli"
+gecko = "gecko_cli.main:cli"
 
 [build-system]
 requires = ["hatchling"]
