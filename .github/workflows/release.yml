@@ -102,7 +102,10 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
-          skip-existing: true
+          # Fail loudly when the version already exists on PyPI — usually
+          # means we forgot to bump pyproject.toml before tagging. The silent
+          # skip on v0.1.2 (where versions stayed at 0.1.1) cost a few hours.
+          skip-existing: false
 
   publish-mcp:
     name: Publish gecko-mcp to PyPI
@@ -124,4 +127,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
-          skip-existing: true
+          # Fail loudly when the version already exists on PyPI — usually
+          # means we forgot to bump pyproject.toml before tagging. The silent
+          # skip on v0.1.2 (where versions stayed at 0.1.1) cost a few hours.
+          skip-existing: false
