@@ -78,6 +78,9 @@ async def test_list_tools_exposes_three_tools() -> None:
         "gecko_ask",
         "gecko_sources",
         "gecko_project_economics",
+        "gecko_classify",
+        "gecko_precedents",
+        "gecko_available_sources",
     }
     by_name = {t.name: t for t in tools}
     assert by_name["gecko_research"].inputSchema["required"] == ["idea"]

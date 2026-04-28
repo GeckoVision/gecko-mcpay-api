@@ -21,11 +21,13 @@ from typing import Any
 from gecko_core.orchestration.pro.agents import build_groupchat
 from gecko_core.orchestration.pro.budget import BudgetExceeded, BudgetGuard
 from gecko_core.orchestration.pro.events import AgentEvent
+from gecko_core.orchestration.pro.precedents import render_precedent_block
 from gecko_core.orchestration.pro.transcript import (
     AgentTurn,
     DebateTranscript,
     transcript_from_events,
 )
+from gecko_core.sessions.store import GeckoPrecedent
 
 __all__ = [
     "AgentEvent",
@@ -46,18 +48,29 @@ _AGENT_ORDER: tuple[str, ...] = ("analyst", "critic", "architect", "scoper", "ju
 _RAG_CONTEXT_CHAR_CAP = 8000
 
 
-def _opening_prompt(idea: str, rag_context: str) -> str:
+def _opening_prompt(
+    idea: str,
+    rag_context: str,
+    precedents: list[GeckoPrecedent] | None = None,
+) -> str:
     """Templated kickoff for the analyst.
 
     rag_context is sliced to keep round-1 cheap. Subsequent speakers see the
     full chat history (their own + prior turns) but not the original context
     again — AG2 prepends the system message per-agent.
+
+    The Gecko precedent block (S2X-06) is rendered ABOVE the rag_context so
+    the analyst sees prior verdicts before market-survey context. We always
+    render the section — even when retrieval is empty — because absence of
+    precedent is itself signal (new category for Gecko).
     """
     sliced = rag_context[:_RAG_CONTEXT_CHAR_CAP]
     if len(rag_context) > _RAG_CONTEXT_CHAR_CAP:
         sliced += "\n\n[context truncated for budget]"
+    precedent_block = render_precedent_block(precedents or [])
     return (
         f"Idea to validate: {idea}\n\n"
+        f"{precedent_block}\n\n"
         f"Knowledge-base context (sources curated by the user):\n{sliced}\n\n"
         "Analyst — start. Then pass to critic, architect, scoper, and judge "
         "in that order. Each speaker contributes once."
@@ -143,6 +156,7 @@ async def generate(
     on_event: Callable[[AgentEvent], Awaitable[None]] | None = None,
     budget: BudgetGuard | None = None,
     model_matrix: dict[str, str] | None = None,
+    precedents: list[GeckoPrecedent] | None = None,
 ) -> DebateTranscript:
     """Run the 5-agent debate.
 
@@ -179,7 +193,7 @@ async def generate(
 
     # The opening message seeds the transcript so each agent has something
     # to react to. Recorded as the analyst's "user message" — not a turn.
-    opening = _opening_prompt(idea, rag_context)
+    opening = _opening_prompt(idea, rag_context, precedents)
     chat.messages = [{"role": "user", "name": "user", "content": opening}]
 
     budget.start()

@@ -8,6 +8,12 @@ Per-source failures are *swallowed* on purpose: a flaky third-party API must
 never take down the whole research session. Failed sources surface as
 `SourceResult(fired=False, error=...)` so the orchestrator can choose
 whether to mention them in the final brief.
+
+This module also exposes a lightweight catalog registry
+(`register_source`, `available_sources`) so the MCP / CLI surfaces can
+introspect which signal providers Gecko knows about without hard-coding the
+list at every call site. The registry is populated as a side effect of
+importing the concrete source modules.
 """
 
 from __future__ import annotations
@@ -55,6 +61,55 @@ class Source(Protocol):
         ...
 
 
+@dataclass(frozen=True)
+class SourceCatalogEntry:
+    """Static metadata describing a source Gecko can query.
+
+    Distinct from `SourceResult` (per-call output) and `Source` (a runtime
+    instance). This is what the introspection surfaces (`gecko sources
+    --catalog`, `gecko_available_sources` MCP tool) render.
+    """
+
+    name: str
+    description: str
+    gating: str
+    cost_per_call: str
+
+
+# Module-level catalog. Populated via `register_source` from each concrete
+# source module's import side-effect. We deliberately keep this a plain list
+# (rather than a dict) so the registration order is preserved for stable
+# rendering — the catalog is small enough that linear lookup doesn't matter.
+_SOURCE_CATALOG: list[SourceCatalogEntry] = []
+
+
+def register_source(entry: SourceCatalogEntry) -> SourceCatalogEntry:
+    """Register a source's static metadata. Idempotent on `name`.
+
+    Concrete source modules call this at import time. Re-registration with
+    the same name silently replaces the prior entry — supports dev reloads
+    and tests that import source modules multiple times.
+    """
+    global _SOURCE_CATALOG
+    _SOURCE_CATALOG = [e for e in _SOURCE_CATALOG if e.name != entry.name]
+    _SOURCE_CATALOG.append(entry)
+    return entry
+
+
+def available_sources() -> list[SourceCatalogEntry]:
+    """All registered source catalog entries.
+
+    Triggers an import of the concrete source modules so the registry is
+    populated even when callers haven't imported them themselves. Returns a
+    copy so callers can't mutate the canonical list.
+    """
+    # Import for side-effects: each module calls `register_source`. Done
+    # lazily here to avoid a circular import at package init time.
+    from gecko_core.sources import _catalog as _catalog
+
+    return list(_SOURCE_CATALOG)
+
+
 async def dispatch_sources(
     *,
     idea: str,
@@ -95,4 +150,11 @@ async def dispatch_sources(
     return {r.source_name: r for r in results}
 
 
-__all__ = ["Source", "SourceResult", "dispatch_sources"]
+__all__ = [
+    "Source",
+    "SourceCatalogEntry",
+    "SourceResult",
+    "available_sources",
+    "dispatch_sources",
+    "register_source",
+]

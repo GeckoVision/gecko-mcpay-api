@@ -20,6 +20,7 @@ dependencies = [
     "deepgram-sdk>=3.7",
     "yt-dlp>=2025.1",
     "numpy>=1.26",
+    "motor>=3.5",
 ]
 
 [build-system]

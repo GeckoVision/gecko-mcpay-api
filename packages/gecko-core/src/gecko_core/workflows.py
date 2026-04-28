@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from openai import AsyncOpenAI
@@ -179,6 +179,22 @@ async def research(
     # Step 7 — mark complete and return.
     await store.update_status(session_id, "complete")
     _emit(progress_callback, "Done")
+
+    # Step 7b — flywheel write (S2X-04). Pro-only; best-effort. The user
+    # response is already determined; this only writes to gecko_precedent
+    # for future-session retrieval. Errors are logged + swallowed inside
+    # write_precedent — never refund or fail a Pro session for this.
+    if tier == "pro":
+        from gecko_core.flywheel import write_precedent
+
+        await write_precedent(
+            session_id=session_id,
+            idea=idea,
+            transcript=cast("dict[str, Any] | None", result.transcript),
+            user_id=None,  # frames.ag user provisioning hasn't landed yet
+            store=store,
+        )
+
     return result
 
 
@@ -206,6 +222,11 @@ async def _run_pro_debate(
     rag_context = "\n\n".join(
         f"[{i}] (source: {c.source_url}) {c.text}" for i, c in enumerate(chunks, 1)
     )
+
+    # S2X-06: fetch flywheel precedents BEFORE the debate so the agents see
+    # prior verdicts in their opening prompt. Failures are non-fatal — a
+    # cold flywheel must not block the pro debate.
+    precedents = await _retrieve_pro_precedents(idea, store)
 
     orch = get_orchestration_settings()
 
@@ -302,6 +323,7 @@ async def _run_pro_debate(
             on_event=_on_event,
             budget=BudgetGuard(),
             model_matrix=agent_matrix,
+            precedents=precedents,
         )
     except ImportError as exc:
         logger.warning("AG2 not installed; pro tier degraded to basic: %s", exc)
@@ -323,6 +345,46 @@ async def _run_pro_debate(
             "pro_session_summary": summary,
         }
     )
+
+
+async def _retrieve_pro_precedents(
+    idea: str,
+    store: SessionStore,
+) -> list[Any]:
+    """Embed `idea` once and dispatch the GeckoPrecedentSource for retrieval.
+
+    Returns a list of `GeckoPrecedent` (or empty on failure / cold corpus).
+    Embedding cost is small (1 input, ~10-50 tokens for an idea sentence) so
+    we don't bother attributing it to the session ledger here — the basic
+    pass already paid for embeddings during ingestion. Wrapped in a try/except
+    so a transient flywheel outage degrades to "no prior precedents found"
+    rather than killing the pro debate.
+    """
+    try:
+        from gecko_core.ingestion.embedder import embed
+        from gecko_core.sources import dispatch_sources
+        from gecko_core.sources.gecko_precedent import GeckoPrecedentSource
+
+        vectors, _ = await embed([idea])
+        if not vectors:
+            return []
+        source = GeckoPrecedentSource(embedding=vectors[0], store=store)
+        results = await dispatch_sources(
+            idea=idea,
+            categories=set(),
+            sources=[source],
+            timeout_seconds=10.0,
+        )
+        result = results.get(source.name)
+        if result is None or not result.fired:
+            return []
+        from gecko_core.sessions.store import GeckoPrecedent
+
+        rows = result.payload.get("precedents", [])
+        return [GeckoPrecedent.model_validate(r) for r in rows]
+    except Exception as exc:  # pragma: no cover — degrade gracefully
+        logger.warning("flywheel precedent retrieval failed: %s", exc)
+        return []
 
 
 # Token-pricing fallback for pro per-agent cost attribution. Numbers match

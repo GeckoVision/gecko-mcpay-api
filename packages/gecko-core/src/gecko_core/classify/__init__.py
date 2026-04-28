@@ -93,4 +93,42 @@ async def classify_idea(
     return {cat for cat, sim in ranked[:2] if sim >= threshold}
 
 
-__all__ = ["CATEGORIES", "classify_idea"]
+async def classify_idea_with_scores(
+    idea: str,
+    *,
+    threshold: float = 0.40,
+    client: AsyncOpenAI | None = None,
+) -> tuple[list[str], dict[str, float]]:
+    """Like `classify_idea` but also returns per-category cosine scores.
+
+    Used by the introspection surfaces (MCP `gecko_classify`, CLI `gecko
+    classify`) where users want to see *why* the classifier returned what
+    it did. The scores dict has one entry per category in `CATEGORIES`,
+    even ones below threshold, so callers can render a full table.
+
+    The selected categories are still gated by `threshold` and capped at
+    top-2 — same contract as `classify_idea`, returned as an
+    order-preserving list (highest score first) instead of a set so the
+    rendering order is stable.
+    """
+    seed_cats, seed_embs = _load_seeds()
+    idea_vecs, _tokens = await embed([idea], client=client)
+    idea_emb = np.array(idea_vecs[0], dtype=np.float32)
+    idea_norm = float(np.linalg.norm(idea_emb))
+    if idea_norm < 1e-12:
+        return [], {c: 0.0 for c in CATEGORIES}
+    idea_unit = idea_emb / idea_norm
+    sims = seed_embs @ idea_unit
+
+    max_per_cat: dict[str, float] = {c: 0.0 for c in CATEGORIES}
+    for cat, sim in zip(seed_cats, sims, strict=True):
+        s = float(sim)
+        if s > max_per_cat.get(cat, -1.0):
+            max_per_cat[cat] = s
+
+    ranked = sorted(max_per_cat.items(), key=lambda kv: kv[1], reverse=True)
+    selected = [cat for cat, sim in ranked[:2] if sim >= threshold]
+    return selected, max_per_cat
+
+
+__all__ = ["CATEGORIES", "classify_idea", "classify_idea_with_scores"]

@@ -65,6 +65,28 @@ _SOURCES_DESCRIPTION = (
     "running `gecko_ask`."
 )
 
+_CLASSIFY_DESCRIPTION = (
+    "Classify a startup idea into Gecko's category taxonomy (crypto, defi, "
+    "devtools, saas, regulated, hackathon-team) using embedding nearest-"
+    "neighbor cosine similarity. Returns the selected categories (top-2 "
+    "above threshold) plus the full score map so callers can see why. "
+    "Free — no x402 payment required."
+)
+
+_PRECEDENTS_DESCRIPTION = (
+    "Look up prior Gecko verdicts on similar ideas (the flywheel). Embeds "
+    "the idea, runs an internal cosine search over `gecko_precedent`, and "
+    "returns the top-K precedent rows with verdict + key_comparables. Free "
+    "— no x402 payment required."
+)
+
+_AVAILABLE_SOURCES_DESCRIPTION = (
+    "List the catalog of signal sources Gecko queries (Tavily, HN, Reddit, "
+    "twit.sh, Colosseum, gecko_precedent flywheel, …) with description, "
+    "gating rule, and per-call cost. Distinct from `gecko_sources`, which "
+    "lists indexed sources for a specific session. Free."
+)
+
 _PROJECT_ECONOMICS_DESCRIPTION = (
     "Per-project economics snapshot (S2-09): privy wallet address, live USDC "
     "balance, budget cap + spend, and the 5 most recent paid sessions. Use "
@@ -158,6 +180,46 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="gecko_classify",
+            description=_CLASSIFY_DESCRIPTION,
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "idea": {
+                        "type": "string",
+                        "description": "Plain-language startup idea (1-2 sentences).",
+                    },
+                },
+                "required": ["idea"],
+            },
+        ),
+        Tool(
+            name="gecko_precedents",
+            description=_PRECEDENTS_DESCRIPTION,
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "idea": {
+                        "type": "string",
+                        "description": "Plain-language startup idea to look up.",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "default": 5,
+                        "minimum": 1,
+                        "maximum": 25,
+                        "description": "Max number of precedent rows to return.",
+                    },
+                },
+                "required": ["idea"],
+            },
+        ),
+        Tool(
+            name="gecko_available_sources",
+            description=_AVAILABLE_SOURCES_DESCRIPTION,
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
             name="gecko_project_economics",
             description=_PROJECT_ECONOMICS_DESCRIPTION,
             inputSchema={
@@ -207,11 +269,60 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         sources = await client.list_sources(session_id=str(arguments["session_id"]))
         return [TextContent(type="text", text=json.dumps(sources, indent=2))]
 
+    if name == "gecko_classify":
+        result = await _run_classify(idea=str(arguments["idea"]))
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    if name == "gecko_precedents":
+        top_k_raw = arguments.get("top_k", 5)
+        top_k = int(top_k_raw) if top_k_raw is not None else 5
+        result_list = await _run_precedents(idea=str(arguments["idea"]), top_k=top_k)
+        return [TextContent(type="text", text=json.dumps(result_list, indent=2))]
+
+    if name == "gecko_available_sources":
+        result_list = _run_available_sources()
+        return [TextContent(type="text", text=json.dumps(result_list, indent=2))]
+
     if name == "gecko_project_economics":
         result = await client.get_project_economics(project_id=str(arguments["project_id"]))
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
     raise ValueError(f"unknown tool: {name}")
+
+
+async def _run_classify(*, idea: str) -> dict[str, Any]:
+    """Call `gecko_core.classify.classify_idea_with_scores`.
+
+    Free path — bypasses GeckoAPIClient / x402. We import lazily so the
+    embedder + numpy aren't pulled into the MCP startup path for users
+    who never invoke the classifier.
+    """
+    from gecko_core.classify import classify_idea_with_scores
+
+    selected, scores = await classify_idea_with_scores(idea)
+    return {"categories": selected, "scores": scores}
+
+
+async def _run_precedents(*, idea: str, top_k: int) -> list[dict[str, Any]]:
+    """Embed `idea` and retrieve top-K Gecko flywheel precedents."""
+    from gecko_core.ingestion.embedder import embed
+    from gecko_core.sessions.store import SessionStore
+
+    vecs, _tokens = await embed([idea])
+    if not vecs:
+        return []
+    store = SessionStore.from_env()
+    rows = await store.retrieve_gecko_precedent(embedding=vecs[0], limit=top_k)
+    return [r.model_dump(mode="json") for r in rows]
+
+
+def _run_available_sources() -> list[dict[str, Any]]:
+    """Return the static source catalog as JSON-safe dicts."""
+    from dataclasses import asdict
+
+    from gecko_core.sources import available_sources
+
+    return [asdict(e) for e in available_sources()]
 
 
 async def serve() -> None:

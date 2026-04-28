@@ -43,7 +43,17 @@ from pathlib import Path
 
 REQUIRED_AGENTS = ("analyst", "critic", "architect", "scoper", "judge")
 
-_DEFAULT_PROMPTS_PATH = Path(__file__).parent / "_default_prompts.json"
+# Bundled prompt versions. v5 is current default (S2X-11 — adds V1 source
+# guidance for gecko_precedent / hn / reddit / twit_sh / colosseum). v4 is
+# kept on disk as the rollback target — set GECKO_PRO_PROMPTS_VERSION=v4 to
+# pin the prior bundle without code changes.
+_PROMPTS_DIR = Path(__file__).parent
+_BUNDLED_VERSIONS: dict[str, Path] = {
+    "v4": _PROMPTS_DIR / "_default_prompts.json",
+    "v5": _PROMPTS_DIR / "_default_prompts_v5.json",
+}
+_DEFAULT_VERSION = "v5"
+_DEFAULT_PROMPTS_PATH = _BUNDLED_VERSIONS[_DEFAULT_VERSION]
 
 
 class PromptsConfigError(ValueError):
@@ -71,9 +81,26 @@ def load_prompts() -> dict[str, str]:
 
     Returns a ``{agent_name: system_message}`` dict containing exactly the 5
     required entries. Caches the result so re-imports don't re-parse the file.
+
+    Resolution order:
+
+    1. ``GECKO_PROMPTS_PATH`` (full path override) — wins when set.
+    2. ``GECKO_PRO_PROMPTS_VERSION`` (``v4`` or ``v5``) — selects which
+       bundled file to load. Default is ``v5`` (S2X-11). ``v4`` is the
+       rollback target.
+    3. Bundled default (``v5``).
     """
     override = os.environ.get("GECKO_PROMPTS_PATH")
-    path = Path(override).expanduser() if override else _DEFAULT_PROMPTS_PATH
+    if override:
+        path = Path(override).expanduser()
+    else:
+        version = os.environ.get("GECKO_PRO_PROMPTS_VERSION", _DEFAULT_VERSION).strip()
+        if version not in _BUNDLED_VERSIONS:
+            raise PromptsConfigError(
+                f"GECKO_PRO_PROMPTS_VERSION={version!r} is not a known bundled version "
+                f"(known: {sorted(_BUNDLED_VERSIONS)})"
+            )
+        path = _BUNDLED_VERSIONS[version]
 
     if not path.is_file():
         if override:
