@@ -274,8 +274,9 @@ async def generate(
 
 # Re-export typing helpers callers may want (kept here so tier dispatcher stays narrow).
 def _ensure_tier(tier: Tier) -> None:
-    if tier == "pro":
-        raise NotImplementedError("Pro tier ships in Phase 6")
+    # Pro tier is now wired in workflows.research(); kept as a no-op so
+    # legacy callers that imported this don't break.
+    return None
 
 
 __all__ = ["OrchestrationError", "_ensure_tier", "generate"]

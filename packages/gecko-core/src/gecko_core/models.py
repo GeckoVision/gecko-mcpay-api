@@ -107,6 +107,14 @@ class ResearchResult(BaseModel):
     validation_report: ValidationReport
     prd: PRD
     sources: list[SourceInfo]
+    # Pro tier only — populated when `tier == "pro"`. Shape lives in
+    # `gecko_core.orchestration.pro.transcript.DebateTranscript`. We keep the
+    # field weakly-typed (dict | None) here so models.py stays free of an
+    # orchestration import cycle. Pro callers serialize via model_dump().
+    transcript: dict[str, object] | None = None
+    # Pro tier only — the judge's final paragraph, surfaced as a quick
+    # readout. None for basic tier and for pro runs that halted early.
+    pro_session_summary: str | None = None
 
 
 class AskResult(BaseModel):

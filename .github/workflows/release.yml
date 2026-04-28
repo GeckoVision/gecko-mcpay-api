@@ -1,0 +1,127 @@
+name: Release to PyPI
+
+# Triggers:
+#   - Push a tag like v0.1.1 or v0.1.1-mcp / v0.1.1-core to release a specific package
+#   - Manual dispatch from the Actions tab for emergency re-publish
+#
+# Trusted Publisher setup (PyPI side):
+#   gecko-mcp  → owner: ernanibmurtinho, repo: gecko-mcpay-api, workflow: release.yml, env: release
+#   gecko-core → owner: ernanibmurtinho, repo: gecko-mcpay-api, workflow: release.yml, env: release
+#
+# Both PyPI projects must have the publisher configured before the first OIDC publish works.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Which package to publish"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - gecko-core
+          - gecko-mcp
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build distributions
+    runs-on: ubuntu-latest
+    outputs:
+      target: ${{ steps.target.outputs.target }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.30"
+
+      - name: Determine target packages
+        id: target
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "target=${{ inputs.package }}" >> "$GITHUB_OUTPUT"
+          else
+            tag="${GITHUB_REF#refs/tags/}"
+            case "$tag" in
+              *-mcp)  echo "target=gecko-mcp"  >> "$GITHUB_OUTPUT" ;;
+              *-core) echo "target=gecko-core" >> "$GITHUB_OUTPUT" ;;
+              *)      echo "target=all"       >> "$GITHUB_OUTPUT" ;;
+            esac
+          fi
+
+      - name: Build gecko-core
+        if: steps.target.outputs.target == 'all' || steps.target.outputs.target == 'gecko-core'
+        run: |
+          uv build --package gecko-core --out-dir dist/core
+
+      - name: Build gecko-mcp
+        if: steps.target.outputs.target == 'all' || steps.target.outputs.target == 'gecko-mcp'
+        run: |
+          uv build --package gecko-mcp --out-dir dist/mcp
+
+      - name: Upload core dists
+        if: steps.target.outputs.target == 'all' || steps.target.outputs.target == 'gecko-core'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gecko-core-dist
+          path: dist/core/*
+
+      - name: Upload mcp dists
+        if: steps.target.outputs.target == 'all' || steps.target.outputs.target == 'gecko-mcp'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gecko-mcp-dist
+          path: dist/mcp/*
+
+  publish-core:
+    name: Publish gecko-core to PyPI
+    needs: build
+    if: needs.build.outputs.target == 'all' || needs.build.outputs.target == 'gecko-core'
+    runs-on: ubuntu-latest
+    environment:
+      name: release
+      url: https://pypi.org/project/gecko-core/
+    permissions:
+      id-token: write   # required for PyPI OIDC trusted publishing
+    steps:
+      - name: Download core dists
+        uses: actions/download-artifact@v4
+        with:
+          name: gecko-core-dist
+          path: dist
+      - name: Publish gecko-core
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          skip-existing: true
+
+  publish-mcp:
+    name: Publish gecko-mcp to PyPI
+    needs: build
+    if: needs.build.outputs.target == 'all' || needs.build.outputs.target == 'gecko-mcp'
+    runs-on: ubuntu-latest
+    environment:
+      name: release
+      url: https://pypi.org/project/gecko-mcp/
+    permissions:
+      id-token: write
+    steps:
+      - name: Download mcp dists
+        uses: actions/download-artifact@v4
+        with:
+          name: gecko-mcp-dist
+          path: dist
+      - name: Publish gecko-mcp
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          skip-existing: true

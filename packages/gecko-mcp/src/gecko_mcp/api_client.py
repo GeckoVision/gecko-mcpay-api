@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 # Production URL — gecko-api is deployed there. Override via GECKO_API_URL
 # for local dev (`http://localhost:8000`) or staging.
 DEFAULT_API_URL = "https://api.geckovision.tech"
-DEFAULT_MAX_PAYMENT_USD = "0.50"
+DEFAULT_MAX_PAYMENT_USD = "1.00"
 # Generous: research POSTs may run a full pipeline (discover → embed → generate).
 _DEFAULT_TIMEOUT = httpx.Timeout(300.0, connect=10.0)
 
@@ -295,6 +295,7 @@ class GeckoAPIClient:
         estimated_cost_usd: float | None = None,
         poll_interval_s: float = 4.0,
         poll_deadline_s: float = 300.0,
+        progress: Any | None = None,
     ) -> dict[str, Any]:
         """POST /research (basic) or /research/pro. Pays + polls for result.
 
@@ -332,8 +333,50 @@ class GeckoAPIClient:
             # Non-async API contract — old server, treat ack as the full result.
             return ack
 
-        # 2. Poll until done.
+        # 2a. Pro tier with an events_token: stream the debate live, then
+        # fall back to /result for the canonical ResearchResult payload.
+        if tier == "pro" and ack.get("events_url") and ack.get("events_token"):
+            try:
+                await self._consume_pro_sse(ack, progress)
+            except Exception as exc:
+                logger.warning("pro SSE failed, falling back to poll: %s", exc)
+
+        # 2b. Poll until done (works for both basic and pro).
         return await self._poll_result(sid, poll_interval_s, poll_deadline_s, ack)
+
+    async def _consume_pro_sse(
+        self,
+        ack: dict[str, Any],
+        progress: Any | None,
+    ) -> None:
+        """Open the SSE stream for a pro session and pump events to `progress`.
+
+        Tolerates one transient drop. On a second drop we return cleanly so
+        the caller falls through to the poll loop — no exception bubbles up.
+        """
+        from gecko_mcp.sse_client import stream_pro_events
+
+        events_url = str(ack["events_url"])
+        events_token = str(ack["events_token"])
+        # `events_url` from the API is a relative path; absolutize against api_url.
+        if events_url.startswith("/"):
+            events_url = f"{self.api_url}{events_url}"
+
+        async def _on_progress(line: str) -> None:
+            if progress is None:
+                return
+            if asyncio.iscoroutinefunction(progress):
+                await progress(line)
+            else:
+                progress(line)
+
+        await stream_pro_events(
+            events_url=events_url,
+            events_token=events_token,
+            progress=_on_progress,
+            timeout_s=300.0,
+            reconnect_once=True,
+        )
 
     async def _poll_result(
         self,

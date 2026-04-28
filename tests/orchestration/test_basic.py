@@ -170,6 +170,9 @@ async def test_generate_rejects_unknown_citation_url(
         await basic_mod.generate(sid, "idea", store, openai_client=client)
 
 
-def test_ensure_tier_rejects_pro() -> None:
-    with pytest.raises(NotImplementedError, match="Phase 6"):
-        basic_mod._ensure_tier("pro")
+def test_ensure_tier_now_accepts_pro() -> None:
+    """Pro tier shipped in Phase 6 — `_ensure_tier` is now a no-op kept for
+    backwards compat with any caller that still imports it.
+    """
+    assert basic_mod._ensure_tier("pro") is None
+    assert basic_mod._ensure_tier("basic") is None

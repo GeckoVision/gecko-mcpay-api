@@ -35,3 +35,11 @@ htmlcov/
 .coverage
 
 instructions/
+
+# Session transcripts (contain sensitive tokens; for grant submission only)
+claude-session.jsonl
+codex-session.jsonl
+
+# Generated artifacts (reproducible from .md sources)
+*.pdf
+colosseum-report.html

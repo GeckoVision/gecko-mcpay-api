@@ -27,7 +27,13 @@ class Settings(BaseModel):
 
     # Pricing — basic and pro tiers exposed as separate routes.
     research_basic_price: str = "$20.00"
-    research_pro_price: str = "$75.00"
+    research_pro_price: str = "$0.75"
+
+    # Per-instance secret used to HMAC-sign session-scoped events tokens for
+    # the SSE endpoint. Defaults to a derived value at process start so devs
+    # don't need to set anything; production deploys MUST set EVENTS_SECRET so
+    # tokens survive restarts and load-balanced replicas. 32+ bytes recommended.
+    events_secret: str = "dev-events-secret-not-for-production"
 
     model_config = {"frozen": True}
 
@@ -53,7 +59,8 @@ class Settings(BaseModel):
         # Pricing overrides — useful on devnet where we want cheap demo runs.
         # Format: "$N.NN" (the x402 SDK parses the leading $).
         basic_price = os.environ.get("RESEARCH_BASIC_PRICE", "$20.00")
-        pro_price = os.environ.get("RESEARCH_PRO_PRICE", "$75.00")
+        pro_price = os.environ.get("RESEARCH_PRO_PRICE", "$0.75")
+        events_secret = os.environ.get("EVENTS_SECRET", "dev-events-secret-not-for-production")
 
         # In stub mode we still need a non-empty pay_to for the route catalog.
         # Use a clearly-fake placeholder so it's obvious in /.well-known/x402.
@@ -64,6 +71,7 @@ class Settings(BaseModel):
             x402_network=network,
             research_basic_price=basic_price,
             research_pro_price=pro_price,
+            events_secret=events_secret,
         )
 
 

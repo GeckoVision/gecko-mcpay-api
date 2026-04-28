@@ -1,6 +1,6 @@
 [project]
 name = "gecko-core"
-version = "0.1.0"
+version = "0.1.1"
 description = "Builder Bootstrap Platform SDK — pure business logic. CLI, MCP, and API import this."
 requires-python = ">=3.11"
 dependencies = [
@@ -15,6 +15,7 @@ dependencies = [
     "pydantic-settings>=2.4",
     "tenacity>=8.5",
     "pyautogen>=0.2",
+    "ag2[openai]>=0.8",
     "deepgram-sdk>=3.7",
     "yt-dlp>=2025.1",
 ]

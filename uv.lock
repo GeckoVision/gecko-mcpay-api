@@ -17,6 +17,31 @@ members = [
 ]
 
 [[package]]
+name = "ag2"
+version = "0.12.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "fast-depends", extra = ["pydantic"] },
+    { name = "httpx" },
+    { name = "packaging" },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "pyyaml" },
+    { name = "termcolor" },
+    { name = "tiktoken" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6d/fd/09a7b8a5f0cce94f7f413ad6e82616b9442bb41a9989ff49f6d2ebc3f4c1/ag2-0.12.1.tar.gz", hash = "sha256:71cd60b49603dfc257a13dc292ebb319ea56d3fdf672b57457cf2a41ea1ec9f2", size = 4182208, upload-time = "2026-04-24T22:17:31.885Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/33/d8/a405f7ae51de6bf6bc6b811ed04bcd2fef588bf1f8a7641ee8b5b74feea2/ag2-0.12.1-py3-none-any.whl", hash = "sha256:f507c2aa18bc9d259641c304c14b642de5b37e1efd3ae5eaca2b56d5f830808d", size = 1200749, upload-time = "2026-04-24T22:17:28.67Z" },
+]
+
+[package.optional-dependencies]
+openai = [
+    { name = "openai" },
+]
+
+[[package]]
 name = "annotated-doc"
 version = "0.0.4"
 source = { registry = "https://pypi.org/simple" }
@@ -436,6 +461,24 @@ wheels = [
 ]
 
 [[package]]
+name = "fast-depends"
+version = "3.0.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f8/6d/787a21ca8043a8fdb737cf28f645e94a46fc30b44a31de54573299156bad/fast_depends-3.0.8.tar.gz", hash = "sha256:896b16f79a512b6ea1df721b0aa1708a192a06f964be6597e01fcf5412559101", size = 18382, upload-time = "2026-03-02T19:54:28.649Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1d/1d/e4843e4eeb65f51447b8c22d200d12d8f94f27c97e77bb7162515cc8d61f/fast_depends-3.0.8-py3-none-any.whl", hash = "sha256:4c52c8a3907bca46d43e70e4364d6d016872d9a3aae4bc0c1c85e72e0a6a21c7", size = 25507, upload-time = "2026-03-02T19:54:27.594Z" },
+]
+
+[package.optional-dependencies]
+pydantic = [
+    { name = "pydantic" },
+]
+
+[[package]]
 name = "fastapi"
 version = "0.136.1"
 source = { registry = "https://pypi.org/simple" }
@@ -507,9 +550,10 @@ requires-dist = [
 
 [[package]]
 name = "gecko-core"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/gecko-core" }
 dependencies = [
+    { name = "ag2", extra = ["openai"] },
     { name = "beautifulsoup4" },
     { name = "deepgram-sdk" },
     { name = "httpx" },
@@ -527,6 +571,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "ag2", extras = ["openai"], specifier = ">=0.8" },
     { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "deepgram-sdk", specifier = ">=3.7" },
     { name = "httpx", specifier = ">=0.27" },
@@ -563,7 +608,7 @@ requires-dist = [
 
 [[package]]
 name = "gecko-mcp"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/gecko-mcp" }
 dependencies = [
     { name = "click" },
@@ -1218,7 +1263,7 @@ wheels = [
 
 [[package]]
 name = "openai"
-version = "2.32.0"
+version = "1.109.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1230,9 +1275,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ed/59/bdcc6b759b8c42dd73afaf5bf8f902c04b37987a5514dbc1c64dba390fef/openai-2.32.0.tar.gz", hash = "sha256:c54b27a9e4cb8d51f0dd94972ffd1a04437efeb259a9e60d8922b8bd26fe55e0", size = 693286, upload-time = "2026-04-15T22:28:19.434Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c6/a1/a303104dc55fc546a3f6914c842d3da471c64eec92043aef8f652eb6c524/openai-1.109.1.tar.gz", hash = "sha256:d173ed8dbca665892a6db099b4a2dfac624f94d20a93f46eb0b56aae940ed869", size = 564133, upload-time = "2025-09-24T13:00:53.075Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1e/c1/d6e64ccd0536bf616556f0cad2b6d94a8125f508d25cfd814b1d2db4e2f1/openai-2.32.0-py3-none-any.whl", hash = "sha256:4dcc9badeb4bf54ad0d187453742f290226d30150890b7890711bda4f32f192f", size = 1162570, upload-time = "2026-04-15T22:28:17.714Z" },
+    { url = "https://files.pythonhosted.org/packages/1d/2a/7dd3d207ec669cacc1f186fd856a0f61dbc255d24f6fdc1a6715d6051b0f/openai-1.109.1-py3-none-any.whl", hash = "sha256:6bcaf57086cf59159b8e27447e4e7dd019db5d29a438072fbd49c290c7e65315", size = 948627, upload-time = "2025-09-24T13:00:50.754Z" },
 ]
 
 [[package]]
@@ -2273,6 +2318,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/47/c6/ee486fd809e357697ee8a44d3d69222b344920433d3b6666ccd9b374630c/tenacity-9.1.4.tar.gz", hash = "sha256:adb31d4c263f2bd041081ab33b498309a57c77f9acf2db65aadf0898179cf93a", size = 49413, upload-time = "2026-02-07T10:45:33.841Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d7/c1/eb8f9debc45d3b7918a32ab756658a0904732f75e555402972246b0b8e71/tenacity-9.1.4-py3-none-any.whl", hash = "sha256:6095a360c919085f28c6527de529e76a06ad89b23659fa881ae0649b867a9d55", size = 28926, upload-time = "2026-02-07T10:45:32.24Z" },
+]
+
+[[package]]
+name = "termcolor"
+version = "3.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/46/79/cf31d7a93a8fdc6aa0fbb665be84426a8c5a557d9240b6239e9e11e35fc5/termcolor-3.3.0.tar.gz", hash = "sha256:348871ca648ec6a9a983a13ab626c0acce02f515b9e1983332b17af7979521c5", size = 14434, upload-time = "2025-12-29T12:55:21.882Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/33/d1/8bb87d21e9aeb323cc03034f5eaf2c8f69841e40e4853c2627edf8111ed3/termcolor-3.3.0-py3-none-any.whl", hash = "sha256:cf642efadaf0a8ebbbf4bc7a31cec2f9b5f21a9f726f4ccbb08192c9c26f43a5", size = 7734, upload-time = "2025-12-29T12:55:20.718Z" },
 ]
 
 [[package]]

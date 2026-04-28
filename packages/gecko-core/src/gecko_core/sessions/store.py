@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Literal, cast
 from uuid import UUID
 
@@ -22,6 +23,30 @@ from gecko_core.models import SessionStatus, SourceInfo, Tier
 PaymentMode = Literal["stub", "live", "frames"]
 
 CostKind = Literal["llm", "embed", "tavily", "deepgram"]
+
+ProEventType = Literal["turn_start", "turn_end", "final", "error"]
+
+
+class ProEventRow(BaseModel):
+    """One row from the `pro_events` SSE buffer table.
+
+    `id` is the BIGSERIAL primary key the SSE handler tails on
+    (`WHERE id > $last_id`). `seq` is producer-assigned per-session and
+    enforces ordering invariants via the UNIQUE (session_id, seq) constraint.
+    """
+
+    id: int
+    session_id: UUID
+    seq: int
+    event_type: ProEventType
+    agent: str | None
+    content: str
+    tokens_in: int
+    tokens_out: int
+    ts: float
+    created_at: datetime
+
+    model_config = {"frozen": True}
 
 
 class SessionEconomics(BaseModel):
@@ -625,6 +650,154 @@ class SessionStore:
 
         return await asyncio.to_thread(_select)
 
+    # ------------------------------------------------------------------
+    # Pro tier SSE event buffer (migration 010_pro_events).
+    #
+    # Append-only log; producers (the AG2 GroupChat runner) call
+    # `append_pro_event` per turn, the SSE endpoint poll-tails via
+    # `tail_pro_events`. No business logic here — both helpers are thin
+    # passthroughs over the supabase-py client to match the rest of this
+    # store's pattern.
+    # ------------------------------------------------------------------
+
+    PRO_EVENTS_TABLE = "pro_events"
+
+    async def append_pro_event(
+        self,
+        session_id: UUID,
+        seq: int,
+        event_type: ProEventType,
+        agent: str | None,
+        content: str,
+        tokens_in: int,
+        tokens_out: int,
+        ts: float,
+    ) -> int:
+        """Append a Pro-tier event row. Returns the new BIGSERIAL `id`.
+
+        Raises if the (session_id, seq) UNIQUE constraint is violated —
+        callers are responsible for monotonically incrementing `seq`.
+        """
+        payload: dict[str, Any] = {
+            "session_id": str(session_id),
+            "seq": seq,
+            "event_type": event_type,
+            "agent": agent,
+            "content": content,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "ts": ts,
+        }
+
+        def _insert() -> dict[str, Any]:
+            res = self._client.table(self.PRO_EVENTS_TABLE).insert(payload).execute()
+            data = res.data or []
+            if not data:
+                raise RuntimeError("pro_events insert returned no rows")
+            return cast(dict[str, Any], data[0])
+
+        row = await asyncio.to_thread(_insert)
+        return int(row["id"])
+
+    async def tail_pro_events(
+        self,
+        session_id: UUID,
+        after_id: int,
+        limit: int = 50,
+    ) -> list[ProEventRow]:
+        """Return events for `session_id` with `id > after_id`, ascending.
+
+        Backed by `idx_pro_events_tail (session_id, id)`. The SSE handler
+        loops on this with the highest `id` it last emitted; pass 0 on the
+        first call to drain from the start.
+        """
+
+        def _select() -> list[dict[str, Any]]:
+            res = (
+                self._client.table(self.PRO_EVENTS_TABLE)
+                .select("*")
+                .eq("session_id", str(session_id))
+                .gt("id", after_id)
+                .order("id", desc=False)
+                .limit(limit)
+                .execute()
+            )
+            return cast(list[dict[str, Any]], res.data or [])
+
+        rows = await asyncio.to_thread(_select)
+        return [ProEventRow.model_validate(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Pro tier per-agent cost ledger (migration 009_session_costs_agent).
+    #
+    # Distinct from the rolled-up `sessions.cost_*` columns Basic tier uses.
+    # Pro tier writes one row per LLM call (with `agent` populated) so the
+    # per-agent rollup in the Pro UI doesn't have to re-derive attribution
+    # from event logs.
+    # ------------------------------------------------------------------
+
+    SESSION_COSTS_TABLE = "session_costs"
+
+    async def append_session_cost(
+        self,
+        session_id: UUID,
+        line_item: Literal["llm", "embed", "tavily", "deepgram"],
+        agent: str | None,
+        cost_usd: Decimal,
+    ) -> int:
+        """Append a per-call cost row. Returns the new BIGSERIAL `id`.
+
+        Pro tier callers populate `agent` on `line_item='llm'` rows; Basic
+        tier should not write here (it uses the rolled-up sessions.cost_*
+        columns via `add_cost`).
+        """
+        payload: dict[str, Any] = {
+            "session_id": str(session_id),
+            "line_item": line_item,
+            "agent": agent,
+            "cost_usd": str(cost_usd),
+        }
+
+        def _insert() -> dict[str, Any]:
+            res = self._client.table(self.SESSION_COSTS_TABLE).insert(payload).execute()
+            data = res.data or []
+            if not data:
+                raise RuntimeError("session_costs insert returned no rows")
+            return cast(dict[str, Any], data[0])
+
+        row = await asyncio.to_thread(_insert)
+        return int(row["id"])
+
+    async def get_pro_agent_costs(self, session_id: UUID) -> dict[str, Decimal]:
+        """Per-agent LLM cost rollup for a Pro session.
+
+        Returns `{agent: total_cost_usd}` over `line_item='llm' AND agent IS
+        NOT NULL`. Empty dict if the session has no Pro-tier LLM rows yet.
+        """
+
+        def _select() -> list[dict[str, Any]]:
+            res = (
+                self._client.table(self.SESSION_COSTS_TABLE)
+                .select("agent,cost_usd")
+                .eq("session_id", str(session_id))
+                .eq("line_item", "llm")
+                .not_.is_("agent", None)
+                .execute()
+            )
+            return cast(list[dict[str, Any]], res.data or [])
+
+        rows = await asyncio.to_thread(_select)
+        totals: dict[str, Decimal] = {}
+        for r in rows:
+            agent = r.get("agent")
+            if not agent:
+                continue
+            cost = r.get("cost_usd")
+            if cost is None:
+                continue
+            totals[agent] = totals.get(agent, Decimal("0")) + Decimal(str(cost))
+        return totals
+
     async def _project_spend(self, project_id: UUID) -> tuple[float, int]:
         """Sum cost_total_usd + count sessions for a project.
 
@@ -659,6 +832,8 @@ def _as_float_or_none(v: object) -> float | None:
 __all__ = [
     "CostKind",
     "PaymentMode",
+    "ProEventRow",
+    "ProEventType",
     "SessionEconomics",
     "SessionRecord",
     "SessionStore",

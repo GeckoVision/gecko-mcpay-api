@@ -17,6 +17,7 @@ This is a thin transport layer — all business logic lives in `gecko_core`.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from collections.abc import AsyncIterator
@@ -29,13 +30,13 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from gecko_core.models import AskResult, ResearchResult, SourceInfo, Tier
+from gecko_core.models import AskResult, SourceInfo, Tier
 from gecko_core.sessions.store import SessionStore
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, StreamingResponse
 from x402 import x402ResourceServer
 from x402.http.facilitator_client import HTTPFacilitatorClient
 from x402.http.facilitator_client_base import FacilitatorClient, FacilitatorConfig
@@ -44,6 +45,7 @@ from x402.http.types import PaymentOption, RouteConfig
 from x402.mechanisms.svm.exact import ExactSvmServerScheme
 
 from gecko_api.auth import verify_frames_token
+from gecko_api.events_token import EventsTokenError, issue_token, verify_token
 from gecko_api.settings import Settings
 from gecko_api.x402_stub import StubFacilitatorClient
 
@@ -306,13 +308,170 @@ async def _run_research_background(session_id: UUID, req: ResearchRequest) -> No
         await store.set_error(session_id, f"{type(exc).__name__}: {exc}")
 
 
-@app.post("/research/pro", response_model=ResearchResult)
-async def research_pro(req: ResearchRequest, request: Request) -> ResearchResult:
-    """Pro tier — Phase 7, deferred. Returns 501 after payment verifies."""
-    # Phase 7 will replace this with the AutoGen GroupChat workflow.
-    raise HTTPException(
-        status_code=501,
-        detail="pro tier orchestration not yet implemented (Phase 7)",
+@app.post("/research/pro", status_code=202)
+async def research_pro(req: ResearchRequest, request: Request) -> dict[str, Any]:
+    """Kick off a pro-tier research session (5-agent debate via AG2).
+
+    Async contract identical to /research:
+        202 → {session_id, status, poll_url, events_url, events_token}
+    The events_token is HMAC-signed, scoped to this session, and expires in
+    10 minutes. Clients pass it as `?token=...` (or Authorization: Bearer ...)
+    on GET /research/pro/{session_id}/events to subscribe to the SSE stream.
+    """
+    store = SessionStore.from_env()
+    session_id: UUID = await store.create(idea=req.idea, tier="pro")
+
+    payload = getattr(request.state, "payment_payload", None)
+    if payload is not None:
+        try:
+            await store.set_tx_signature(session_id, "pending-settle")
+            await store.set_price(session_id, _route_price_usd("POST /research/pro"))
+        except Exception as exc:  # pragma: no cover — best-effort
+            logger.warning("failed to persist pro payment marker: %s", exc)
+
+    if req.project_id:
+        try:
+            project_uuid = UUID(req.project_id)
+            paid_from = f"{req.frames_username}:main" if req.frames_username else None
+            await store.set_session_project(
+                session_id,
+                project_uuid,
+                paid_from_wallet_address=paid_from,
+            )
+        except (ValueError, Exception) as exc:  # pragma: no cover — best-effort
+            logger.warning("failed to attach project_id %s: %s", req.project_id, exc)
+
+    task = asyncio.create_task(_run_pro_background(session_id, req))
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+
+    events_token = issue_token(session_id, _settings.events_secret)
+    return {
+        "session_id": str(session_id),
+        "status": "processing",
+        "poll_url": f"/sessions/{session_id}/result",
+        "events_url": f"/research/pro/{session_id}/events",
+        "events_token": events_token,
+    }
+
+
+async def _run_pro_background(session_id: UUID, req: ResearchRequest) -> None:
+    """Run the gecko_core workflow under tier='pro' for an existing session."""
+    store = SessionStore.from_env()
+    try:
+        result = await gecko_core.research(
+            idea=req.idea,
+            tier="pro",
+            urls=req.urls,
+            auto_approve=True,
+            skip_payment_gate=True,
+            session_id=session_id,
+        )
+        await store.set_result(session_id, result.model_dump(mode="json"))
+        await store.update_status(session_id, "complete")
+    except Exception as exc:
+        logger.exception("pro research session %s failed", session_id)
+        await store.set_error(session_id, f"{type(exc).__name__}: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# /research/pro/{session_id}/events — SSE stream of AgentEvents.
+#
+# Two-tier auth: the events_token is the session-scoped credential; the
+# parent /research/pro POST already settled payment via x402. This endpoint
+# is read-after-payment, so we don't gate it again.
+#
+# Loop: poll `pro_events` every 250ms with `id > last_id`. Yield each row
+# as `event: turn / data: <json>`. Heartbeat every 15s. Closes when an
+# event_type='final' row arrives or after a 300s hard timeout.
+# ---------------------------------------------------------------------------
+
+
+_SSE_POLL_INTERVAL_S = 0.25
+_SSE_HEARTBEAT_INTERVAL_S = 15.0
+_SSE_HARD_TIMEOUT_S = 300.0
+
+
+def _resolve_events_token(request: Request) -> str:
+    token = request.query_params.get("token")
+    if token:
+        return token
+    auth = request.headers.get("authorization") or request.headers.get("Authorization")
+    if auth and auth.lower().startswith("bearer "):
+        return auth.split(" ", 1)[1].strip()
+    return ""
+
+
+@app.get("/research/pro/{session_id}/events")
+async def research_pro_events(session_id: str, request: Request) -> StreamingResponse:
+    """SSE stream of pro-tier debate events for a session.
+
+    Auth: events_token from `?token=` or `Authorization: Bearer <events_token>`.
+    Closes on `event_type=final`, on client disconnect, or after a 300s hard
+    timeout. Yields heartbeat comments every 15s so proxies keep the
+    connection alive.
+    """
+    try:
+        sid = UUID(session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid session_id") from exc
+
+    token = _resolve_events_token(request)
+    try:
+        verify_token(token, _settings.events_secret, sid)
+    except EventsTokenError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+    store = SessionStore.from_env()
+
+    async def _generator() -> AsyncIterator[bytes]:
+        last_id = 0
+        last_heartbeat = asyncio.get_event_loop().time()
+        deadline = asyncio.get_event_loop().time() + _SSE_HARD_TIMEOUT_S
+        try:
+            while True:
+                if await request.is_disconnected():
+                    return
+                if asyncio.get_event_loop().time() >= deadline:
+                    yield b'event: error\ndata: {"reason":"timeout"}\n\n'
+                    return
+
+                rows = await store.tail_pro_events(sid, after_id=last_id, limit=50)
+                for row in rows:
+                    last_id = row.id
+                    payload = {
+                        "seq": row.seq,
+                        "type": row.event_type,
+                        "agent": row.agent,
+                        "content": row.content,
+                        "tokens_in": row.tokens_in,
+                        "tokens_out": row.tokens_out,
+                        "ts": row.ts,
+                    }
+                    body = (
+                        f"event: turn\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                    ).encode()
+                    yield body
+                    if row.event_type == "final":
+                        return
+
+                now = asyncio.get_event_loop().time()
+                if now - last_heartbeat >= _SSE_HEARTBEAT_INTERVAL_S:
+                    yield b": ping\n\n"
+                    last_heartbeat = now
+                await asyncio.sleep(_SSE_POLL_INTERVAL_S)
+        except asyncio.CancelledError:
+            # Client hung up mid-stream — clean shutdown, no error to log.
+            return
+
+    return StreamingResponse(
+        _generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # disable nginx buffering for SSE
+        },
     )
 
 

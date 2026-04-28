@@ -6,7 +6,7 @@ Goals:
     2. Paid POST /research (stub-mode payload) returns 200 with the mocked
        ResearchResult.
     3. /sessions/{id}/ask is FREE (not gated).
-    4. /.well-known/x402 returns the route catalog with $20 / $75 entries.
+    4. /.well-known/x402 returns the route catalog with $20 / $0.75 entries.
     5. Replaying the same X-PAYMENT header doesn't double-bill (stub
        facilitator's settle is called once per request, not twice for one).
 
@@ -29,7 +29,7 @@ from fastapi.testclient import TestClient
 # Force stub mode BEFORE importing the app — settings are frozen at import time.
 os.environ.setdefault("X402_MODE", "stub")
 os.environ.setdefault("GECKO_WALLET_ADDRESS", "STUB_TEST_WALLET")
-# Force defaults — these tests assert on the exact $20.00/$75.00 prices, so
+# Force defaults — these tests assert on the exact $20.00/$0.75 prices, so
 # scrub any developer .env override that would otherwise leak in.
 os.environ.pop("RESEARCH_BASIC_PRICE", None)
 os.environ.pop("RESEARCH_PRO_PRICE", None)
@@ -88,7 +88,7 @@ def client() -> Iterator[TestClient]:
     # conftest.py's load_dotenv() may have populated RESEARCH_BASIC_PRICE from
     # a developer .env (e.g. our $0.10 demo override). Scrub those, purge the
     # module cache, then re-import — that way the test asserts on the SDK's
-    # default $20.00/$75.00 prices regardless of dev-env contamination.
+    # default $20.00/$0.75 prices regardless of dev-env contamination.
     import sys
 
     os.environ.pop("RESEARCH_BASIC_PRICE", None)
@@ -246,7 +246,7 @@ def test_well_known_x402_catalog(client: TestClient) -> None:
     basic_prices = {a["price"] for a in routes["POST /research"]["accepts"]}
     pro_prices = {a["price"] for a in routes["POST /research/pro"]["accepts"]}
     assert "$20.00" in basic_prices
-    assert "$75.00" in pro_prices
+    assert "$0.75" in pro_prices
 
 
 def test_idempotency_replayed_payment_header(client: TestClient) -> None:
