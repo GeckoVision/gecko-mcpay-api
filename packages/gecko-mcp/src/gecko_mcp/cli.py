@@ -23,6 +23,7 @@ from gecko_mcp.wallet import wallet as wallet_group
 
 
 @click.group()
+@click.version_option(package_name="gecko-mcp", prog_name="gecko-mcp")
 def main() -> None:
     """Gecko MCP server."""
 

@@ -258,6 +258,7 @@ async def extract(url: str, *, timeout: float = DEFAULT_TIMEOUT) -> tuple[str, f
     transient = (httpx.RemoteProtocolError, httpx.ReadTimeout, httpx.ConnectError)
 
     body: bytes | None = None
+    content_type: str = ""
     last_exc: Exception | None = None
     for attempt in range(2):
         try:
@@ -271,6 +272,7 @@ async def extract(url: str, *, timeout: float = DEFAULT_TIMEOUT) -> tuple[str, f
                 resp.raise_for_status()
                 validate_url(str(resp.url))
                 body = resp.content[:MAX_BYTES]
+                content_type = resp.headers.get("content-type", "")
                 break
         except httpx.HTTPStatusError as exc:
             # 4xx — bot wall almost certainly. Skip retry, jump to Tavily.
@@ -292,11 +294,29 @@ async def extract(url: str, *, timeout: float = DEFAULT_TIMEOUT) -> tuple[str, f
             raise last_exc
         raise RuntimeError(f"extract failed for {safe}")
 
-    soup = BeautifulSoup(body, "html.parser")
+    soup = BeautifulSoup(body, _parser_for_content_type(content_type))
     for tag in soup(["script", "style", "noscript", "iframe", "svg"]):
         tag.decompose()
     text = soup.get_text(separator=" ")
     return " ".join(text.split()), 0.0
+
+
+# Content-Types where bs4 should use the XML parser. RSS/Atom feeds otherwise
+# trigger XMLParsedAsHTMLWarning and confuse log review (V11-03).
+_XML_CONTENT_TYPES = (
+    "application/xml",
+    "application/rss+xml",
+    "application/atom+xml",
+    "text/xml",
+)
+
+
+def _parser_for_content_type(content_type: str) -> str:
+    """Pick the bs4 parser based on the response Content-Type."""
+    ct = (content_type or "").split(";", 1)[0].strip().lower()
+    if ct in _XML_CONTENT_TYPES:
+        return "lxml-xml"
+    return "html.parser"
 
 
 __all__ = [

@@ -11,6 +11,7 @@ dependencies = [
     "youtube-transcript-api>=0.6",
     "tiktoken>=0.7",
     "beautifulsoup4>=4.12",
+    "lxml>=4.9",
     "pydantic>=2.7",
     "pydantic-settings>=2.4",
     "tenacity>=8.5",

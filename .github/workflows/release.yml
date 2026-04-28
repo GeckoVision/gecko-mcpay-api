@@ -36,10 +36,10 @@ jobs:
     outputs:
       target: ${{ steps.target.outputs.target }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v5
         with:
           version: "0.5.30"
 
@@ -70,14 +70,14 @@ jobs:
 
       - name: Upload core dists
         if: steps.target.outputs.target == 'all' || steps.target.outputs.target == 'gecko-core'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: gecko-core-dist
           path: dist/core/*
 
       - name: Upload mcp dists
         if: steps.target.outputs.target == 'all' || steps.target.outputs.target == 'gecko-mcp'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: gecko-mcp-dist
           path: dist/mcp/*
@@ -94,7 +94,7 @@ jobs:
       id-token: write   # required for PyPI OIDC trusted publishing
     steps:
       - name: Download core dists
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: gecko-core-dist
           path: dist
@@ -116,7 +116,7 @@ jobs:
       id-token: write
     steps:
       - name: Download mcp dists
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: gecko-mcp-dist
           path: dist
