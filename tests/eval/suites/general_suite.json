@@ -1,0 +1,162 @@
+[
+  {
+    "id": "bad-uber-for-dogwalkers",
+    "text": "An Uber for dog-walkers in suburban California.",
+    "expected_verdict": "kill",
+    "expected_categories": ["saas"],
+    "must_cite_sources": [],
+    "why": "saturated marketplace (Rover, Wag), no demand wedge, two-sided liquidity moat impossible at hobby scale"
+  },
+  {
+    "id": "bad-another-todo-app",
+    "text": "A minimalist todo app with markdown support, end-to-end encrypted, for productivity power users.",
+    "expected_verdict": "kill",
+    "expected_categories": ["saas"],
+    "must_cite_sources": [],
+    "why": "Things, Todoist, TickTick, Obsidian Tasks — saturated b2c with no acquisition wedge"
+  },
+  {
+    "id": "bad-tax-ai-no-lawyer",
+    "text": "TaxAI: a chatbot that answers individual US tax questions and files your 1040 — no human CPA in the loop.",
+    "expected_verdict": "kill",
+    "expected_categories": ["saas", "regulated"],
+    "must_cite_sources": [],
+    "why": "regulatory landmine (IRS Circular 230, state PTIN rules), liability per filing exceeds CAC"
+  },
+  {
+    "id": "bad-gpt-wrapper-marketing",
+    "text": "An AI marketing copywriter that wraps GPT-4 and writes blog posts for SMBs, $29/mo subscription.",
+    "expected_verdict": "kill",
+    "expected_categories": ["saas"],
+    "must_cite_sources": [],
+    "why": "no moat (Jasper, Copy.ai, ChatGPT itself), commodity wrapper"
+  },
+  {
+    "id": "bad-crypto-social",
+    "text": "A decentralized Twitter built on a new L1 chain, tokens reward posting and reposts.",
+    "expected_verdict": "kill",
+    "expected_categories": ["crypto"],
+    "must_cite_sources": [],
+    "why": "Lens, Farcaster already exist; chain choice irrelevant; token-incentive social repeatedly fails"
+  },
+  {
+    "id": "bad-ai-resume-builder",
+    "text": "AI resume builder: paste your LinkedIn, get a polished PDF. $19/mo.",
+    "expected_verdict": "kill",
+    "expected_categories": ["saas"],
+    "must_cite_sources": [],
+    "why": "Teal, Rezi, Kickresume crowded; ChatGPT free; brutal churn"
+  },
+  {
+    "id": "bad-ar-shopping-glasses",
+    "text": "AR glasses app that overlays product reviews when you point at a shelf in a grocery store.",
+    "expected_verdict": "kill",
+    "expected_categories": ["saas"],
+    "must_cite_sources": [],
+    "why": "no install base (Vision Pro <500k), retailer permissions impossible, hardware-bound platform risk"
+  },
+  {
+    "id": "bad-gpt-therapy",
+    "text": "AI therapist chatbot — $40/mo, replaces traditional CBT for mild anxiety.",
+    "expected_verdict": "kill",
+    "expected_categories": ["saas", "regulated"],
+    "must_cite_sources": [],
+    "why": "FDA-class medical device exposure, liability for self-harm cases, insurance won't cover"
+  },
+  {
+    "id": "bad-nft-loyalty",
+    "text": "Coffee shop loyalty cards as NFTs on Solana — collect 10 stamps, free latte.",
+    "expected_verdict": "kill",
+    "expected_categories": ["crypto"],
+    "must_cite_sources": [],
+    "why": "punch cards work, gas+wallet UX is anti-feature, no merchant pain solved"
+  },
+  {
+    "id": "bad-meeting-summarizer",
+    "text": "Zoom plugin that summarizes meetings with AI and emails recap. $15/seat/mo.",
+    "expected_verdict": "kill",
+    "expected_categories": ["saas"],
+    "must_cite_sources": [],
+    "why": "Otter, Fireflies, Zoom AI Companion all bundle this; commodity feature"
+  },
+  {
+    "id": "good-devbrief",
+    "text": "Devbrief — a CLI that takes a GitHub repo URL and produces a recruiter-ready one-page HTML profile from commits, languages, and contribution graph.",
+    "expected_verdict": "ship",
+    "expected_categories": ["devtools"],
+    "must_cite_sources": [],
+    "why": "narrow, dev-audience, dogfoodable in a weekend, GitHub API free, recruiter pain real"
+  },
+  {
+    "id": "good-mcp-postgres-explainer",
+    "text": "A Claude Code MCP server that ingests a Postgres schema and lets a developer ask 'what writes to this column?' answered with grep + pg_stat traces.",
+    "expected_verdict": "ship",
+    "expected_categories": ["devtools"],
+    "must_cite_sources": [],
+    "why": "narrow agentic infra, real DBA workflow, MCP install friction near zero"
+  },
+  {
+    "id": "good-vet-tele-rx",
+    "text": "Vertical SaaS for rural mixed-animal veterinary clinics: e-prescribe + DEA compliance + cattle herd records, replacing paper forms.",
+    "expected_verdict": "ship",
+    "expected_categories": ["saas", "regulated"],
+    "must_cite_sources": [],
+    "why": "regulatory boundary IS the wedge (DEA + state vet board), narrow buyer"
+  },
+  {
+    "id": "good-repo-grounded-research",
+    "text": "An open-source 'design doc reviewer' that ingests an RFC PR + the repo and returns architectural critique grounded in actual file paths and prior PR decisions.",
+    "expected_verdict": "ship",
+    "expected_categories": ["devtools"],
+    "must_cite_sources": [],
+    "why": "repo-grounded RAG over a real artifact, bounded scope"
+  },
+  {
+    "id": "good-clinical-trial-screener",
+    "text": "B2B tool for oncology trial coordinators: parses physician referral letters into trial-eligibility checklists keyed to ClinicalTrials.gov criteria.",
+    "expected_verdict": "ship",
+    "expected_categories": ["saas", "regulated"],
+    "must_cite_sources": [],
+    "why": "narrow buyer, ClinicalTrials.gov is structured public data, automates manual task"
+  },
+  {
+    "id": "good-cli-stripe-replay",
+    "text": "A CLI that replays Stripe webhook payloads from a captured event log against a local server, with idempotency-key collision detection.",
+    "expected_verdict": "ship",
+    "expected_categories": ["devtools"],
+    "must_cite_sources": [],
+    "why": "specific developer pain, Stripe CLI doesn't cover replay-from-prod"
+  },
+  {
+    "id": "good-mcp-airtable-typed",
+    "text": "MCP server that turns any Airtable base into a typed Pydantic schema and exposes safe CRUD tools to Claude Code with row-level diff preview.",
+    "expected_verdict": "ship",
+    "expected_categories": ["devtools", "saas"],
+    "must_cite_sources": [],
+    "why": "ops/RevOps users on Airtable, MCP install zero hosting, typed schema is the moat"
+  },
+  {
+    "id": "good-cap-table-diff",
+    "text": "Carta-aware cap table diff tool: paste two SAFE term sheets, get a side-by-side dilution model with the founder/investor view toggleable.",
+    "expected_verdict": "ship",
+    "expected_categories": ["saas"],
+    "must_cite_sources": [],
+    "why": "founders + early-stage VCs, narrow doc class, calculation logic is the wedge"
+  },
+  {
+    "id": "good-faa-part107-checklist",
+    "text": "Part 107 commercial drone operator pre-flight checklist app with airspace + NOTAM lookup, $5/flight pay-as-you-go.",
+    "expected_verdict": "ship",
+    "expected_categories": ["saas", "regulated"],
+    "must_cite_sources": [],
+    "why": "regulated buyer (FAA-licensed pilots), pay-per-use aligns with sporadic usage"
+  },
+  {
+    "id": "good-grant-budget-rewriter",
+    "text": "A web app that takes a research grant narrative + the funder's budget template (NSF, NIH, EU Horizon) and produces a compliant budget justification draft.",
+    "expected_verdict": "ship",
+    "expected_categories": ["saas", "regulated"],
+    "must_cite_sources": [],
+    "why": "research admin pain real, funder templates change yearly, $200/grant willingness"
+  }
+]

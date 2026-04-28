@@ -482,6 +482,20 @@ Resources:
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/PRIVY_APP_ID
             - Name: PRIVY_APP_SECRET
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/PRIVY_APP_SECRET
+            # S2X-09: twit.sh x402 micropayments on Base mainnet. Server-
+            # managed Gecko-owned EVM wallet. TWITSH_ENABLED=false by default
+            # (kill-switch); flip to true via SSM after the wallet is funded
+            # with USDC and the S2X-08 client lands. Sentinels on
+            # TWITSH_WALLET_* keep the integration silently disabled even if
+            # TWITSH_ENABLED is accidentally flipped before onboarding.
+            - Name: TWITSH_ENABLED
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/TWITSH_ENABLED
+            - Name: TWITSH_WALLET_PRIVATE_KEY
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/TWITSH_WALLET_PRIVATE_KEY
+            - Name: TWITSH_WALLET_ADDRESS
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/TWITSH_WALLET_ADDRESS
+            - Name: TWITSH_BASE_URL
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/TWITSH_BASE_URL
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -509,6 +523,50 @@ Resources:
           ContainerPort: 8000
           TargetGroupArn: !Ref ALBTargetGroup
 
+  # ── Ops alerts (S2X-09) ──────────────────────────────────────
+  # Single SNS topic for low-volume operational alerts (twit.sh wallet refill,
+  # future: facilitator outages, mainnet wallet drains). Email subscription
+  # requires manual confirmation — AWS sends a confirmation link to the
+  # address on stack create/update; the subscription stays "PendingConfirmation"
+  # until clicked. Alarms still fire even before confirmation, they just
+  # silently drop until the endpoint is confirmed.
+
+  OpsAlertsTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasCertificate
+    Properties:
+      TopicName: gecko-ops-alerts
+      DisplayName: Gecko Ops Alerts
+
+  OpsAlertsEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasCertificate
+    Properties:
+      TopicArn: !Ref OpsAlertsTopic
+      Protocol: email
+      # NOTE: confirmation link goes to this inbox after stack deploy.
+      Endpoint: ernanibmurtinho@gmail.com
+
+  TwitshWalletBalanceAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasCertificate
+    Properties:
+      AlarmName: gecko-twitsh-wallet-low
+      AlarmDescription: 'Twit.sh wallet USDC balance below $1 — refill needed'
+      Namespace: Gecko/Twitsh
+      MetricName: WalletBalanceUSDC
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1.0
+      ComparisonOperator: LessThanThreshold
+      # Don't alarm before the first metric is published — pre-funding the
+      # wallet there's no balance to read, and we don't want a noisy alert
+      # the moment the stack comes up.
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref OpsAlertsTopic
+
 Outputs:
 
   ALBDNSName:
@@ -526,3 +584,10 @@ Outputs:
     Value: !GetAtt ApiService.Name
     Export:
       Name: GeckoApiServiceName
+
+  OpsAlertsTopicArn:
+    Condition: HasCertificate
+    Description: SNS topic ARN for ops alerts (twit.sh wallet low, etc.)
+    Value: !Ref OpsAlertsTopic
+    Export:
+      Name: GeckoApiOpsAlertsTopicArn

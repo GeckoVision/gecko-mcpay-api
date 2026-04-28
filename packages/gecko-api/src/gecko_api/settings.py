@@ -22,7 +22,9 @@ from typing import Literal
 from gecko_core.payments.cdp import is_unconfigured
 from gecko_core.payments.networks import NetworkConfig, resolve_network
 from gecko_core.wallets.privy import is_privy_configured as _privy_configured
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
+
+_TWITSH_SENTINELS = ("", "__unset__", "__dev_change_me__")
 
 X402Mode = Literal["stub", "live", "frames"]
 
@@ -54,6 +56,16 @@ class Settings(BaseModel):
     privy_app_id: str | None = None
     privy_app_secret: str | None = None
 
+    # twit.sh — X/Twitter data via x402 micropayments on Base mainnet (S2X-09).
+    # Server-managed Gecko-owned EVM wallet, funded with USDC on Base. Disabled
+    # by default — flip TWITSH_ENABLED=true after the wallet is funded AND the
+    # S2X-08 client lands. Sentinel values keep ECS booting cleanly before
+    # onboarding completes; `is_twitsh_configured()` gates real network calls.
+    twitsh_enabled: bool = False
+    twitsh_wallet_private_key: SecretStr | None = None
+    twitsh_wallet_address: str | None = None
+    twitsh_base_url: str = "https://x402.twit.sh"
+
     # Pricing — basic and pro tiers exposed as separate routes.
     research_basic_price: str = "$20.00"
     research_pro_price: str = "$0.75"
@@ -76,6 +88,26 @@ class Settings(BaseModel):
             app_id=self.privy_app_id,
             app_secret=self.privy_app_secret,
         )
+
+    def is_twitsh_configured(self) -> bool:
+        """True iff twit.sh is enabled AND the wallet is real (non-sentinel).
+
+        The kill-switch (`TWITSH_ENABLED=false`) wins regardless of wallet
+        state — flipping enabled to true with sentinel creds still returns
+        False so misconfigured deploys can't burn calls. Both the private key
+        and the address must be non-empty and not match a known sentinel.
+        """
+        if not self.twitsh_enabled:
+            return False
+        pk = (
+            self.twitsh_wallet_private_key.get_secret_value()
+            if self.twitsh_wallet_private_key is not None
+            else ""
+        )
+        if pk in _TWITSH_SENTINELS:
+            return False
+        addr = self.twitsh_wallet_address or ""
+        return addr not in _TWITSH_SENTINELS
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -108,6 +140,15 @@ class Settings(BaseModel):
         # account still serves users without project_id.
         privy_app_id = os.environ.get("PRIVY_APP_ID")
         privy_app_secret = os.environ.get("PRIVY_APP_SECRET")
+
+        # twit.sh wallet config — read raw, no boot-time hard fail. The
+        # `is_twitsh_configured()` helper gates real usage downstream.
+        twitsh_enabled_raw = os.environ.get("TWITSH_ENABLED", "false").strip().lower()
+        twitsh_enabled = twitsh_enabled_raw in ("1", "true", "yes", "on")
+        twitsh_pk_raw = os.environ.get("TWITSH_WALLET_PRIVATE_KEY")
+        twitsh_pk = SecretStr(twitsh_pk_raw) if twitsh_pk_raw else None
+        twitsh_addr = os.environ.get("TWITSH_WALLET_ADDRESS")
+        twitsh_base_url = os.environ.get("TWITSH_BASE_URL", "https://x402.twit.sh")
 
         if mode != "stub":
             missing: list[str] = []
@@ -153,6 +194,10 @@ class Settings(BaseModel):
             cdp_api_key_secret=cdp_key_secret,
             privy_app_id=privy_app_id,
             privy_app_secret=privy_app_secret,
+            twitsh_enabled=twitsh_enabled,
+            twitsh_wallet_private_key=twitsh_pk,
+            twitsh_wallet_address=twitsh_addr,
+            twitsh_base_url=twitsh_base_url,
             research_basic_price=basic_price,
             research_pro_price=pro_price,
             events_secret=events_secret,

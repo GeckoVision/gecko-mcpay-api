@@ -55,6 +55,7 @@ from gecko_api.events_token import (
     issue_token,
     verify_token,
 )
+from gecko_api.internal_routes import router as internal_router
 from gecko_api.settings import Settings
 from gecko_api.wallets import (
     check_project_budget,
@@ -88,9 +89,7 @@ def _build_facilitator(settings: Settings) -> FacilitatorClient:
         # raises RouteConfigurationError. Routes use CAIP-2 (chain id), so the
         # stub does too.
         stub_network = (
-            settings.network_config.chain_id
-            if settings.network_config
-            else settings.x402_network
+            settings.network_config.chain_id if settings.network_config else settings.x402_network
         )
         return StubFacilitatorClient(network=stub_network)
 
@@ -237,6 +236,11 @@ app.add_middleware(
     routes=_routes_config,
     server=_resource_server,
 )
+
+# Internal ops routes (S2X-09: /internal/twitsh/balance for EventBridge).
+# Mounted after middleware so x402 doesn't gate them; they're free and
+# read-only. Discovery: not advertised in /.well-known/x402.
+app.include_router(internal_router)
 
 
 # ---------------------------------------------------------------------------

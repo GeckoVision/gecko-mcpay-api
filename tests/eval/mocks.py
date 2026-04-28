@@ -615,6 +615,134 @@ MOCK_TRANSCRIPTS: dict[str, MockTranscript] = {
 }
 
 
+def _kill_transcript(reason: str) -> MockTranscript:
+    """Generate a kill-verdict transcript with light persona markers.
+
+    Used for the crypto/saas sub-suite ideas where a hand-curated transcript
+    isn't worth the maintenance cost — the deterministic rubric only needs
+    persona markers + a clear verdict to score consistently.
+    """
+    return {
+        "analyst": {
+            "text": (
+                f"Market read: {reason}. Saturated incumbents, TAM not the "
+                "constraint (source: industry tracker 2024). No demand wedge."
+            ),
+            "tokens_in": 1200,
+            "tokens_out": 200,
+        },
+        "critic": {
+            "text": f"Risk: {reason}. Why would a buyer switch? No wedge visible. Kill.",
+            "tokens_in": 1150,
+            "tokens_out": 160,
+        },
+        "architect": {
+            "text": "Stack is a weekend build, but the technical bar is not the problem here. API + SDK trivial.",
+            "tokens_in": 1150,
+            "tokens_out": 160,
+        },
+        "scoper": {
+            "text": "V1 ships in a month, V2 dies in distribution. Kill before scoping further.",
+            "tokens_in": 1100,
+            "tokens_out": 140,
+        },
+        "judge": {
+            "text": f"Verdict: KILL. {reason}.",
+            "tokens_in": 1200,
+            "tokens_out": 160,
+        },
+    }
+
+
+def _ship_transcript(wedge: str) -> MockTranscript:
+    """Generate a ship-verdict transcript with light persona markers."""
+    return {
+        "analyst": {
+            "text": (
+                f"Market read: {wedge}. Narrow buyer addressable, structured "
+                "data inputs, demand pain validated (source: vendor docs 2024)."
+            ),
+            "tokens_in": 1250,
+            "tokens_out": 220,
+        },
+        "critic": {
+            "text": f"Strongest concern: integration risk on {wedge}. Counter: scoped V1 mitigates. Plausible, doable.",
+            "tokens_in": 1200,
+            "tokens_out": 200,
+        },
+        "architect": {
+            "text": (
+                f"Stack: Python + FastAPI + Pydantic. {wedge}. SDK + API "
+                "wiring is a weekend build; the moat is the domain schema."
+            ),
+            "tokens_in": 1200,
+            "tokens_out": 200,
+        },
+        "scoper": {
+            "text": "V1: narrow MVP within a month. V2: paid tier. V3: integrations.",
+            "tokens_in": 1150,
+            "tokens_out": 180,
+        },
+        "judge": {
+            "text": f"Verdict: SHIP. {wedge}, plausible, narrow buyer addressable.",
+            "tokens_in": 1250,
+            "tokens_out": 200,
+        },
+    }
+
+
+# --- Crypto sub-suite mock transcripts ---
+_CRYPTO_KILLS: dict[str, str] = {
+    "crypto-kill-eth-dex-aggregator": "saturated DEX aggregator market, no routing wedge",
+    "crypto-kill-nft-smb-loyalty": "wallet UX hostile to SMB customers, no merchant pain solved",
+    "crypto-kill-l1-social": "Lens and Farcaster exist, post-to-earn is a known anti-pattern",
+    "crypto-kill-gpt-trading-bot": "no edge, regulatory exposure on investment advice",
+    "crypto-kill-gpt-tokenomics": "GPT-wrapper, one-time-use SaaS, shrinking buyer pool",
+    "crypto-kill-uber-gpu": "Akash and io.net saturated, consumer-GPU latency unviable",
+    "crypto-kill-defi-yield-aggregator": "Yearn and Beefy crowded, mainnet gas eats retail size",
+    "crypto-kill-ai-rugpull-detector": "GoPlus and De.Fi free, signal commoditized, retail churn",
+}
+_CRYPTO_SHIPS: dict[str, str] = {
+    "crypto-ship-mcp-validator-monitor": "narrow operator audience, MCP zero-install, on-chain data free",
+    "crypto-ship-cap-table-echo": "Echo new, narrow doc class, Reg D regulated wedge",
+    "crypto-ship-defi-safe-harbor-checker": "regulated wedge, narrow protocol-legal buyer, curated rule moat",
+    "crypto-ship-x402-receipts": "agent-payments new, accountant pain real, narrow x402 spec target",
+    "crypto-ship-helius-das-typed": "Helius dev audience, typed schema moat, agentic infra",
+    "crypto-ship-validator-slashing-postmortem": "narrow pool-operator buyer, regulated-LP pain real",
+    "crypto-ship-defi-vault-rebalance": "narrow LP audience, atomic multi-leg wedge, x402-friendly",
+}
+
+# --- SaaS sub-suite mock transcripts ---
+_SAAS_KILLS: dict[str, str] = {
+    "saas-kill-meeting-summarizer-ai": "Otter and Fireflies bundled, commodity feature",
+    "saas-kill-ai-resume-builder": "Teal and Rezi crowded, ChatGPT free, brutal churn",
+    "saas-kill-gpt-email-assistant": "Superhuman AI and Gmail Smart Reply bundled at zero",
+    "saas-kill-ai-blog-generator": "Jasper and Copy.ai direct, Google Helpful Content updates kill SEO",
+    "saas-kill-no-code-app-builder": "Bubble and Retool and Lovable saturated, deploy liability",
+    "saas-kill-ai-customer-support": "Intercom Fin and Zendesk AI bundled, no indie wedge",
+    "saas-kill-team-standup-bot": "Geekbot and Standuply crowded, commodity feature",
+    "saas-kill-ai-social-scheduler": "Buffer and Hootsuite all have AI, saturated B2C-SMB",
+}
+_SAAS_SHIPS: dict[str, str] = {
+    "saas-ship-stripe-webhook-replay": "narrow dev pain, Stripe CLI doesn't replay-from-prod",
+    "saas-ship-grant-budget-nih-r01": "regulated NIH PHS-398 wedge, narrow buyer, template moat",
+    "saas-ship-mcp-postgres-rls-tester": "narrow multi-tenant SaaS auditor audience, MCP one-command",
+    "saas-ship-deposition-summarizer": "narrow PI firm buyer, regulated workflow, line-number wedge",
+    "saas-ship-cli-feature-flag-diff": "narrow dev+compliance audience, SOC2 wedge, multi-vendor moat",
+    "saas-ship-vertical-hvac-permit": "narrow HVAC GC buyer, regulated workflow, per-city moat",
+    "saas-ship-mcp-datadog-explainer": "narrow SRE pain, deploy-correlation wedge, MCP zero-friction",
+}
+
+for _id, _reason in _CRYPTO_KILLS.items():
+    MOCK_TRANSCRIPTS[_id] = _kill_transcript(_reason)
+for _id, _wedge in _CRYPTO_SHIPS.items():
+    MOCK_TRANSCRIPTS[_id] = _ship_transcript(_wedge)
+for _id, _reason in _SAAS_KILLS.items():
+    MOCK_TRANSCRIPTS[_id] = _kill_transcript(_reason)
+for _id, _wedge in _SAAS_SHIPS.items():
+    MOCK_TRANSCRIPTS[_id] = _ship_transcript(_wedge)
+
+
 def get_mock_transcript(idea_id: str) -> MockTranscript:
     """Return the canned 5-agent transcript for an idea_id, or a fallback."""
     if idea_id in MOCK_TRANSCRIPTS:

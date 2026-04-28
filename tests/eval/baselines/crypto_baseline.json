@@ -1,0 +1,226 @@
+{
+  "date": "2026-04-28",
+  "git_sha": "d45db97",
+  "mode": "mock",
+  "reruns": 1,
+  "suite": "crypto",
+  "aggregate": {
+    "kill_rate": 0.533,
+    "verdict_accuracy": 1.0,
+    "median_score": 8.235,
+    "median_cost_usd": 0.0014,
+    "n": 15
+  },
+  "ideas": [
+    {
+      "id": "crypto-ship-mcp-validator-monitor",
+      "expected_verdict": "ship",
+      "actual_verdict": "ship",
+      "scores": {
+        "agent_voice": 6.27,
+        "source_grounding": 5.0,
+        "verdict_justification": 9.0,
+        "cost_predictability": 10.0
+      },
+      "wall_seconds": 0.0,
+      "tokens_total": 7050,
+      "cost_usd": 0.0015
+    },
+    {
+      "id": "crypto-ship-cap-table-echo",
+      "expected_verdict": "ship",
+      "actual_verdict": "ship",
+      "scores": {
+        "agent_voice": 6.67,
+        "source_grounding": 5.0,
+        "verdict_justification": 9.0,
+        "cost_predictability": 10.0
+      },
+      "wall_seconds": 0.0,
+      "tokens_total": 7050,
+      "cost_usd": 0.0015
+    },
+    {
+      "id": "crypto-ship-defi-safe-harbor-checker",
+      "expected_verdict": "ship",
+      "actual_verdict": "ship",
+      "scores": {
+        "agent_voice": 6.67,
+        "source_grounding": 5.0,
+        "verdict_justification": 9.0,
+        "cost_predictability": 10.0
+      },
+      "wall_seconds": 0.0,
+      "tokens_total": 7050,
+      "cost_usd": 0.0015
+    },
+    {
+      "id": "crypto-ship-x402-receipts",
+      "expected_verdict": "ship",
+      "actual_verdict": "ship",
+      "scores": {
+        "agent_voice": 6.27,
+        "source_grounding": 5.0,
+        "verdict_justification": 9.0,
+        "cost_predictability": 10.0
+      },
+      "wall_seconds": 0.0,
+      "tokens_total": 7050,
+      "cost_usd": 0.0015
+    },
+    {
+      "id": "crypto-ship-helius-das-typed",
+      "expected_verdict": "ship",
+      "actual_verdict": "ship",
+      "scores": {
+        "agent_voice": 6.27,
+        "source_grounding": 5.0,
+        "verdict_justification": 9.0,
+        "cost_predictability": 10.0
+      },
+      "wall_seconds": 0.0,
+      "tokens_total": 7050,
+      "cost_usd": 0.0015
+    },
+    {
+      "id": "crypto-ship-validator-slashing-postmortem",
+      "expected_verdict": "ship",
+      "actual_verdict": "ship",
+      "scores": {
+        "agent_voice": 6.27,
+        "source_grounding": 5.0,
+        "verdict_justification": 9.0,
+        "cost_predictability": 10.0
+      },
+      "wall_seconds": 0.0,
+      "tokens_total": 7050,
+      "cost_usd": 0.0015
+    },
+    {
+      "id": "crypto-ship-defi-vault-rebalance",
+      "expected_verdict": "ship",
+      "actual_verdict": "ship",
+      "scores": {
+        "agent_voice": 6.67,
+        "source_grounding": 5.0,
+        "verdict_justification": 9.0,
+        "cost_predictability": 10.0
+      },
+      "wall_seconds": 0.0,
+      "tokens_total": 7050,
+      "cost_usd": 0.0015
+    },
+    {
+      "id": "crypto-kill-eth-dex-aggregator",
+      "expected_verdict": "kill",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 7.47,
+        "source_grounding": 5.0,
+        "verdict_justification": 9.0,
+        "cost_predictability": 10.0
+      },
+      "wall_seconds": 0.0,
+      "tokens_total": 6620,
+      "cost_usd": 0.0014
+    },
+    {
+      "id": "crypto-kill-nft-smb-loyalty",
+      "expected_verdict": "kill",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 7.47,
+        "source_grounding": 5.0,
+        "verdict_justification": 9.0,
+        "cost_predictability": 10.0
+      },
+      "wall_seconds": 0.0,
+      "tokens_total": 6620,
+      "cost_usd": 0.0014
+    },
+    {
+      "id": "crypto-kill-l1-social",
+      "expected_verdict": "kill",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 7.47,
+        "source_grounding": 5.0,
+        "verdict_justification": 9.0,
+        "cost_predictability": 10.0
+      },
+      "wall_seconds": 0.0,
+      "tokens_total": 6620,
+      "cost_usd": 0.0014
+    },
+    {
+      "id": "crypto-kill-gpt-trading-bot",
+      "expected_verdict": "kill",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 7.47,
+        "source_grounding": 5.0,
+        "verdict_justification": 9.0,
+        "cost_predictability": 10.0
+      },
+      "wall_seconds": 0.0,
+      "tokens_total": 6620,
+      "cost_usd": 0.0014
+    },
+    {
+      "id": "crypto-kill-gpt-tokenomics",
+      "expected_verdict": "kill",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 7.47,
+        "source_grounding": 5.0,
+        "verdict_justification": 9.0,
+        "cost_predictability": 10.0
+      },
+      "wall_seconds": 0.0,
+      "tokens_total": 6620,
+      "cost_usd": 0.0014
+    },
+    {
+      "id": "crypto-kill-uber-gpu",
+      "expected_verdict": "kill",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 7.47,
+        "source_grounding": 5.0,
+        "verdict_justification": 9.0,
+        "cost_predictability": 10.0
+      },
+      "wall_seconds": 0.0,
+      "tokens_total": 6620,
+      "cost_usd": 0.0014
+    },
+    {
+      "id": "crypto-kill-defi-yield-aggregator",
+      "expected_verdict": "kill",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 7.47,
+        "source_grounding": 5.0,
+        "verdict_justification": 9.0,
+        "cost_predictability": 10.0
+      },
+      "wall_seconds": 0.0,
+      "tokens_total": 6620,
+      "cost_usd": 0.0014
+    },
+    {
+      "id": "crypto-kill-ai-rugpull-detector",
+      "expected_verdict": "kill",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 7.47,
+        "source_grounding": 5.0,
+        "verdict_justification": 9.0,
+        "cost_predictability": 10.0
+      },
+      "wall_seconds": 0.0,
+      "tokens_total": 6620,
+      "cost_usd": 0.0014
+    }
+  ]
+}

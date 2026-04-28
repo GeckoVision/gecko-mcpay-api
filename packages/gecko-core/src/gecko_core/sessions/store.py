@@ -89,6 +89,29 @@ class ProjectWallet(BaseModel):
 
 SettlementNetwork = Literal["solana-devnet", "solana-mainnet"]
 
+Verdict = Literal["ship", "kill", "pivot"]
+
+
+class GeckoPrecedent(BaseModel):
+    """One row from the internal Gecko Flywheel (`gecko_precedent`).
+
+    Written once per Pro session; retrieved on future sessions by cosine
+    similarity on `idea_summary`'s embedding. `idea_summary` is an
+    LLM-generated 1-sentence category abstraction — never verbatim user
+    text (CI guardrail S2X-05 enforces <=30% character overlap).
+    `similarity` is populated only on retrieval queries.
+    """
+
+    id: UUID
+    session_id: UUID | None
+    user_id: UUID | None
+    idea_summary: str
+    verdict: Verdict
+    key_comparables: list[Any]
+    similarity: float | None = None
+
+    model_config = {"frozen": True}
+
 
 class SessionRecord(BaseModel):
     """Internal projection of a `sessions` row.
@@ -996,6 +1019,128 @@ class SessionStore:
             totals[agent] = totals.get(agent, Decimal("0")) + Decimal(str(cost))
         return totals
 
+    # ------------------------------------------------------------------
+    # Gecko Flywheel — internal precedent corpus (migration 015).
+    #
+    # Every Pro session writes one row: an LLM-abstracted category summary
+    # (NEVER verbatim user text), the verdict, comparables, and the
+    # idea_summary's embedding. New sessions retrieve top-N similar via
+    # cosine on the ivfflat index. Privacy guardrail (S2X-05) lives in CI.
+    # ------------------------------------------------------------------
+
+    GECKO_PRECEDENT_TABLE = "gecko_precedent"
+
+    async def append_gecko_precedent(
+        self,
+        *,
+        session_id: UUID,
+        user_id: UUID | None,
+        idea_summary: str,
+        idea_hash: str,
+        category_tags: list[str],
+        verdict: Verdict,
+        key_comparables: list[Any],
+        embedding: list[float],
+    ) -> UUID:
+        """Insert one flywheel row. Returns the new precedent UUID.
+
+        Caller is responsible for the privacy contract on `idea_summary`
+        (LLM-abstracted 1-sentence category, not verbatim). `idea_hash`
+        is sha256 of the normalized idea — used as a dedup signal by the
+        write hook (S2X-04), not enforced as UNIQUE here so re-runs of the
+        same idea with a different verdict still record both data points.
+        """
+        payload: dict[str, Any] = {
+            "session_id": str(session_id),
+            "user_id": str(user_id) if user_id else None,
+            "idea_summary": idea_summary,
+            "idea_hash": idea_hash,
+            "category_tags": category_tags,
+            "verdict": verdict,
+            "key_comparables": key_comparables,
+            "embedding": embedding,
+        }
+
+        def _insert() -> dict[str, Any]:
+            res = self._client.table(self.GECKO_PRECEDENT_TABLE).insert(payload).execute()
+            data = res.data or []
+            if not data:
+                raise RuntimeError("gecko_precedent insert returned no rows")
+            return cast(dict[str, Any], data[0])
+
+        row = await asyncio.to_thread(_insert)
+        return UUID(str(row["id"]))
+
+    async def retrieve_gecko_precedent(
+        self,
+        *,
+        embedding: list[float],
+        similarity_threshold: float = 0.78,
+        limit: int = 5,
+    ) -> list[GeckoPrecedent]:
+        """Top-`limit` precedents above `similarity_threshold`, by cosine sim desc.
+
+        Backed by the `gecko_precedent_match` RPC (migration 015) which
+        pre-filters on threshold so the ivfflat index does the work.
+        """
+
+        def _rpc() -> list[dict[str, Any]]:
+            res = self._client.rpc(
+                "gecko_precedent_match",
+                {
+                    "query_embedding": embedding,
+                    "similarity_threshold": similarity_threshold,
+                    "match_limit": limit,
+                },
+            ).execute()
+            return cast(list[dict[str, Any]], res.data or [])
+
+        rows = await asyncio.to_thread(_rpc)
+        out: list[GeckoPrecedent] = []
+        for r in rows:
+            sid = r.get("session_id")
+            uid = r.get("user_id")
+            comparables = r.get("key_comparables") or []
+            out.append(
+                GeckoPrecedent(
+                    id=UUID(str(r["id"])),
+                    session_id=UUID(str(sid)) if sid else None,
+                    user_id=UUID(str(uid)) if uid else None,
+                    idea_summary=str(r["idea_summary"]),
+                    verdict=cast(Verdict, r["verdict"]),
+                    key_comparables=list(comparables) if isinstance(comparables, list) else [],
+                    similarity=_as_float_or_none(r.get("similarity")),
+                )
+            )
+        return out
+
+    async def delete_gecko_precedent(
+        self,
+        *,
+        user_id: UUID,
+        precedent_id: UUID,
+    ) -> bool:
+        """Delete one of the user's own precedent rows. Returns True if deleted.
+
+        Self-service privacy escape. Filter is owner-scoped at the
+        application layer in addition to the RLS policy so service-role
+        callers (which bypass RLS) still can't accidentally nuke another
+        user's row.
+        """
+
+        def _delete() -> list[dict[str, Any]]:
+            res = (
+                self._client.table(self.GECKO_PRECEDENT_TABLE)
+                .delete()
+                .eq("id", str(precedent_id))
+                .eq("user_id", str(user_id))
+                .execute()
+            )
+            return cast(list[dict[str, Any]], res.data or [])
+
+        rows = await asyncio.to_thread(_delete)
+        return bool(rows)
+
     async def _project_spend(self, project_id: UUID) -> tuple[float, int]:
         """Sum cost_total_usd + count sessions for a project.
 
@@ -1029,6 +1174,7 @@ def _as_float_or_none(v: object) -> float | None:
 
 __all__ = [
     "CostKind",
+    "GeckoPrecedent",
     "PaymentMode",
     "ProEventRow",
     "ProEventType",
@@ -1037,4 +1183,5 @@ __all__ = [
     "SessionRecord",
     "SessionStore",
     "SettlementNetwork",
+    "Verdict",
 ]

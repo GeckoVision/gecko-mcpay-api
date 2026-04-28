@@ -1,0 +1,122 @@
+[
+  {
+    "id": "saas-ship-stripe-webhook-replay",
+    "text": "Replay-CLI for Stripe webhooks during local dev: records prod payloads to SQLite, replays into a localhost server with re-signed signatures.",
+    "expected_verdict": "ship",
+    "expected_categories": ["devtools", "saas"],
+    "must_cite_sources": [],
+    "why": "narrow dev pain, Stripe CLI doesn't cover replay-from-prod, $9/mo to focused payments-eng team"
+  },
+  {
+    "id": "saas-ship-grant-budget-nih-r01",
+    "text": "Grant-budget rewriter for federal R01 NIH applications: parses PI narrative + R01 PHS-398 template, outputs a compliant budget justification DOCX.",
+    "expected_verdict": "ship",
+    "expected_categories": ["saas", "regulated"],
+    "must_cite_sources": [],
+    "why": "regulated wedge (NIH PHS-398 versioning), narrow buyer (research admins), $200/grant willingness, template moat"
+  },
+  {
+    "id": "saas-ship-mcp-postgres-rls-tester",
+    "text": "MCP server that fuzzes Postgres Row-Level-Security policies: Claude asks 'can role X read rows for tenant Y?' and the server proves or breaks the policy.",
+    "expected_verdict": "ship",
+    "expected_categories": ["devtools", "saas"],
+    "must_cite_sources": [],
+    "why": "narrow dev pain, multi-tenant SaaS auditor audience, MCP install is one command"
+  },
+  {
+    "id": "saas-ship-deposition-summarizer",
+    "text": "Deposition summarizer for plaintiff-side personal-injury law firms: ingests certified transcripts and produces an ABA-style key-fact index keyed to line numbers.",
+    "expected_verdict": "ship",
+    "expected_categories": ["saas", "regulated"],
+    "must_cite_sources": [],
+    "why": "narrow buyer (PI firms), regulated workflow, line-number keying is the wedge over generic summarizers"
+  },
+  {
+    "id": "saas-ship-cli-feature-flag-diff",
+    "text": "CLI that diffs feature-flag states across LaunchDarkly + Statsig + Unleash environments and produces a single audit report for SOC2 reviews.",
+    "expected_verdict": "ship",
+    "expected_categories": ["devtools", "saas", "regulated"],
+    "must_cite_sources": [],
+    "why": "narrow dev+compliance audience, SOC2 wedge, multi-vendor diff is the moat over any single FF tool"
+  },
+  {
+    "id": "saas-ship-vertical-hvac-permit",
+    "text": "Vertical SaaS for residential HVAC contractors: auto-fills city building-permit PDFs from job estimates and submits via local-portal scrapers.",
+    "expected_verdict": "ship",
+    "expected_categories": ["saas", "regulated"],
+    "must_cite_sources": [],
+    "why": "narrow buyer (HVAC GCs), regulated workflow, per-city permit drift is the staying-current moat"
+  },
+  {
+    "id": "saas-ship-mcp-datadog-explainer",
+    "text": "MCP server that connects to Datadog APM and answers 'what changed in p99 latency for /checkout this week?' with deploy-correlated explanations.",
+    "expected_verdict": "ship",
+    "expected_categories": ["devtools", "saas"],
+    "must_cite_sources": [],
+    "why": "narrow SRE pain, Datadog audience addressable, MCP install zero-friction, deploy-correlation is the wedge"
+  },
+  {
+    "id": "saas-kill-meeting-summarizer-ai",
+    "text": "Another team-meeting summarizer with AI: Zoom plugin, GPT-4 backend, $12/seat/mo, generic action-item extraction.",
+    "expected_verdict": "kill",
+    "expected_categories": ["saas"],
+    "must_cite_sources": [],
+    "why": "Otter, Fireflies, Zoom AI Companion, MS Teams Premium all bundle this; commodity, no buyer pain unsolved"
+  },
+  {
+    "id": "saas-kill-ai-resume-builder",
+    "text": "AI resume builder: paste your job target, get a polished PDF resume tailored to the JD, $19/mo.",
+    "expected_verdict": "kill",
+    "expected_categories": ["saas"],
+    "must_cite_sources": [],
+    "why": "Teal, Rezi, Kickresume, Zety crowded; ChatGPT free; one-time-use SaaS = brutal churn"
+  },
+  {
+    "id": "saas-kill-gpt-email-assistant",
+    "text": "GPT-powered email assistant Chrome extension that writes replies in your tone of voice, $25/mo for individuals.",
+    "expected_verdict": "kill",
+    "expected_categories": ["saas"],
+    "must_cite_sources": [],
+    "why": "Superhuman AI, Gmail Smart Reply, Apple Intelligence bundling at $0 marginal; commodity wrapper"
+  },
+  {
+    "id": "saas-kill-ai-blog-generator",
+    "text": "AI blog post generator for SMB content marketing teams: enter a topic, get a 1500-word SEO-optimized post, $39/mo.",
+    "expected_verdict": "kill",
+    "expected_categories": ["saas"],
+    "must_cite_sources": [],
+    "why": "Jasper, Copy.ai, ChatGPT direct; Google Helpful Content updates kill auto-generated SEO; no moat"
+  },
+  {
+    "id": "saas-kill-no-code-app-builder",
+    "text": "No-code app builder powered by AI: describe your app in English, get a deployed React + Postgres CRUD app, $99/mo.",
+    "expected_verdict": "kill",
+    "expected_categories": ["saas"],
+    "must_cite_sources": [],
+    "why": "Bubble, Retool, Lovable, v0, Replit Agent saturated; no audience wedge; deploy-and-maintain liability"
+  },
+  {
+    "id": "saas-kill-ai-customer-support",
+    "text": "AI customer support chatbot for e-commerce sites: drop-in widget that answers product questions, $79/mo.",
+    "expected_verdict": "kill",
+    "expected_categories": ["saas"],
+    "must_cite_sources": [],
+    "why": "Intercom Fin, Zendesk AI, Gorgias AI bundled; commodity; no acquisition wedge for indie"
+  },
+  {
+    "id": "saas-kill-team-standup-bot",
+    "text": "Slack standup bot that asks each team member 3 questions every morning and posts an AI summary to a channel, $5/seat/mo.",
+    "expected_verdict": "kill",
+    "expected_categories": ["saas"],
+    "must_cite_sources": [],
+    "why": "Geekbot, Standuply, Range crowded; commodity feature; no buyer pain unsolved"
+  },
+  {
+    "id": "saas-kill-ai-social-scheduler",
+    "text": "AI-powered social media scheduler that writes and queues posts across 6 networks for SMBs, $49/mo.",
+    "expected_verdict": "kill",
+    "expected_categories": ["saas"],
+    "must_cite_sources": [],
+    "why": "Buffer, Hootsuite, Later, Sprout, Publer all have AI; saturated B2C-SMB; no wedge"
+  }
+]

@@ -1,16 +1,18 @@
 """Pro tier eval harness runner.
 
 Defaults:
+  --suite all     — runs general + crypto + saas (50 ideas total)
   --live False    — uses canned transcripts from `tests/eval/mocks.py`
   --reruns 1      — single pass per idea
   --baseline None — no diff; just save a new baseline JSON
 
 Usage:
     uv run python -m tests.eval.runner
-    uv run python -m tests.eval.runner --live
-    uv run python -m tests.eval.runner --live --reruns 3
-    uv run python -m tests.eval.runner --idea bad-uber-for-dogwalkers
-    uv run python -m tests.eval.runner --baseline tests/eval/baselines/2026-04-29.json
+    uv run python -m tests.eval.runner --suite crypto
+    uv run python -m tests.eval.runner --suite saas --live
+    uv run python -m tests.eval.runner --idea good-devbrief
+    uv run python -m tests.eval.runner --suite general \\
+        --baseline tests/eval/baselines/general_baseline.json
 
 Design notes:
   - The harness imports `gecko_core.orchestration.pro.generate` only when
@@ -19,6 +21,8 @@ Design notes:
     session_costs — this is a developer tool, not part of the user pipeline.
   - Exit code is non-zero on >15% regression on any of: verdict_accuracy,
     median_score, median_cost_usd. Used by CI.
+  - Per-suite baselines live at `tests/eval/baselines/{suite}_baseline.json`.
+    Live runs are captured separately under `tests/eval/live_runs/`.
 """
 
 from __future__ import annotations
@@ -34,8 +38,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from tests.eval.mocks import MOCK_TRANSCRIPTS, MockTranscript, get_mock_transcript
 from tests.eval.rubric import (
     RubricScores,
@@ -45,8 +47,11 @@ from tests.eval.rubric import (
 )
 
 EVAL_DIR = Path(__file__).parent
-IDEAS_PATH = EVAL_DIR / "ideas.yaml"
+SUITES_DIR = EVAL_DIR / "suites"
 BASELINES_DIR = EVAL_DIR / "baselines"
+LIVE_RUNS_DIR = EVAL_DIR / "live_runs"
+
+SUITE_NAMES = ("general", "crypto", "saas")
 
 # Used to estimate cost in mock mode and as a sanity floor in live mode.
 # These are the OpenRouter passthrough rates for the default model matrix
@@ -66,10 +71,34 @@ class IdeaResult:
     cost_usd: float
 
 
-def _load_ideas(filter_id: str | None) -> list[dict[str, str]]:
-    with IDEAS_PATH.open("r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    ideas: list[dict[str, str]] = list(data["ideas"])
+def _suite_path(suite: str) -> Path:
+    return SUITES_DIR / f"{suite}_suite.json"
+
+
+def _load_suite(suite: str) -> list[dict[str, Any]]:
+    """Load a single suite's idea list from `tests/eval/suites/{suite}_suite.json`."""
+    path = _suite_path(suite)
+    if not path.exists():
+        raise SystemExit(f"suite file missing: {path}")
+    with path.open("r", encoding="utf-8") as f:
+        ideas = json.load(f)
+    if not isinstance(ideas, list):
+        raise SystemExit(f"suite {suite!r} root is not a list")
+    return ideas
+
+
+def _load_ideas(filter_id: str | None = None, suite: str | None = None) -> list[dict[str, Any]]:
+    """Load ideas across one or all suites; preserves prior signature for tests.
+
+    `suite=None` is treated as "all suites concatenated" so legacy test code
+    that calls `_load_ideas(filter_id=None)` keeps working.
+    """
+    suites = [suite] if suite else list(SUITE_NAMES)
+    ideas: list[dict[str, Any]] = []
+    for s in suites:
+        for idea in _load_suite(s):
+            idea = {**idea, "_suite": s}
+            ideas.append(idea)
     if filter_id:
         ideas = [i for i in ideas if i["id"] == filter_id]
         if not ideas:
@@ -145,7 +174,7 @@ def _normalize_verdict(v: str) -> str:
 
 
 async def _evaluate_one(
-    idea: dict[str, str],
+    idea: dict[str, Any],
     *,
     live: bool,
     reruns: int,
@@ -197,40 +226,15 @@ async def _evaluate_one(
     )
 
 
-async def run_eval(
-    *,
-    live: bool,
-    reruns: int,
-    filter_id: str | None,
-) -> dict[str, Any]:
-    ideas = _load_ideas(filter_id)
-
-    # Compute cohort median tokens FIRST so cost_predictability has a stable
-    # reference. In mock mode we know the transcripts up-front; in live mode
-    # we do a two-pass run (collect transcripts, then score) to get a real
-    # cohort median.
-    if not live:
-        cohort_totals = [
-            _transcript_total_tokens(MOCK_TRANSCRIPTS.get(i["id"], get_mock_transcript(i["id"])))
-            for i in ideas
-        ]
-        cohort_median = statistics.median(cohort_totals) if cohort_totals else 0.0
-    else:
-        # For live, we don't have an a priori cohort — fall through to
-        # per-idea scoring with cohort_median=0 (rubric mock path uses it,
-        # live path ignores it).
-        cohort_median = 0.0
-
-    results: list[IdeaResult] = []
-    for idea in ideas:
-        r = await _evaluate_one(idea, live=live, reruns=reruns, cohort_median_tokens=cohort_median)
-        results.append(r)
-        print(
-            f"  {r.id:<40} expected={r.expected_verdict:<5} actual={r.actual_verdict:<7} "
-            f"median_score={statistics.median(r.scores.values()):.2f} "
-            f"tokens={r.tokens_total} cost=${r.cost_usd:.4f}"
-        )
-
+def _aggregate(results: list[IdeaResult]) -> dict[str, Any]:
+    if not results:
+        return {
+            "kill_rate": 0.0,
+            "verdict_accuracy": 0.0,
+            "median_score": 0.0,
+            "median_cost_usd": 0.0,
+            "n": 0,
+        }
     correct = sum(
         1
         for r in results
@@ -238,40 +242,112 @@ async def run_eval(
     )
     kills = sum(1 for r in results if _normalize_verdict(r.actual_verdict) == "kill")
     median_scores = [statistics.median(r.scores.values()) for r in results]
-
-    aggregate = {
-        "kill_rate": round(kills / len(results), 3) if results else 0.0,
-        "verdict_accuracy": round(correct / len(results), 3) if results else 0.0,
-        "median_score": round(statistics.median(median_scores), 3) if median_scores else 0.0,
-        "median_cost_usd": round(statistics.median(r.cost_usd for r in results), 4)
-        if results
-        else 0.0,
+    return {
+        "kill_rate": round(kills / len(results), 3),
+        "verdict_accuracy": round(correct / len(results), 3),
+        "median_score": round(statistics.median(median_scores), 3),
+        "median_cost_usd": round(statistics.median(r.cost_usd for r in results), 4),
+        "n": len(results),
     }
+
+
+async def _run_one_suite(
+    suite: str,
+    *,
+    live: bool,
+    reruns: int,
+    filter_id: str | None,
+) -> tuple[list[IdeaResult], dict[str, Any]]:
+    ideas = _load_ideas(filter_id=filter_id, suite=suite)
+
+    # Compute cohort median tokens FIRST so cost_predictability has a stable
+    # reference. In mock mode we know the transcripts up-front; in live mode
+    # we do a per-idea fall-through (cohort_median ignored by the live path).
+    if not live:
+        cohort_totals = [
+            _transcript_total_tokens(MOCK_TRANSCRIPTS.get(i["id"], get_mock_transcript(i["id"])))
+            for i in ideas
+        ]
+        cohort_median = statistics.median(cohort_totals) if cohort_totals else 0.0
+    else:
+        cohort_median = 0.0
+
+    results: list[IdeaResult] = []
+    print(f"\n[suite={suite}] {len(ideas)} ideas")
+    for idea in ideas:
+        r = await _evaluate_one(idea, live=live, reruns=reruns, cohort_median_tokens=cohort_median)
+        results.append(r)
+        print(
+            f"  {r.id:<48} expected={r.expected_verdict:<5} actual={r.actual_verdict:<7} "
+            f"median_score={statistics.median(r.scores.values()):.2f} "
+            f"tokens={r.tokens_total} cost=${r.cost_usd:.4f}"
+        )
+    return results, _aggregate(results)
+
+
+async def run_eval(
+    *,
+    live: bool,
+    reruns: int,
+    filter_id: str | None,
+    suite: str = "all",
+) -> dict[str, Any]:
+    """Run one or all suites; payload always includes `suite` field.
+
+    For suite=='all', payload contains a `suites` map with per-suite
+    breakdown plus a top-level `aggregate` rolled up across all 50 ideas.
+    """
+    suites_to_run: list[str] = list(SUITE_NAMES) if suite == "all" else [suite]
+
+    all_results: list[IdeaResult] = []
+    per_suite: dict[str, dict[str, Any]] = {}
+    for s in suites_to_run:
+        results, agg = await _run_one_suite(s, live=live, reruns=reruns, filter_id=filter_id)
+        per_suite[s] = {
+            "aggregate": agg,
+            "ideas": [asdict(r) for r in results],
+        }
+        all_results.extend(results)
+
     payload: dict[str, Any] = {
         "date": time.strftime("%Y-%m-%d"),
         "git_sha": _git_sha(),
         "mode": "live" if live else "mock",
         "reruns": reruns,
-        "ideas": [asdict(r) for r in results],
-        "aggregate": aggregate,
+        "suite": suite,
+        "aggregate": _aggregate(all_results),
     }
+    if suite == "all":
+        payload["suites"] = per_suite
+    else:
+        # Single-suite shape: keep top-level `ideas` for backwards compat with
+        # the old per-day baseline format and downstream tooling.
+        payload["ideas"] = per_suite[suite]["ideas"]
     return payload
 
 
 def _save_baseline(payload: dict[str, Any]) -> Path:
-    BASELINES_DIR.mkdir(parents=True, exist_ok=True)
-    suffix = "" if payload["mode"] == "live" else "-mock"
-    out_path = BASELINES_DIR / f"{payload['date']}{suffix}.json"
-    # If the file already exists this run, append a counter so we don't
-    # silently overwrite a prior run from the same day.
-    if out_path.exists():
-        i = 2
-        while True:
-            candidate = BASELINES_DIR / f"{payload['date']}{suffix}-{i}.json"
-            if not candidate.exists():
-                out_path = candidate
-                break
-            i += 1
+    """Save mock-mode runs to `baselines/{suite}_baseline.json`; live to `live_runs/`.
+
+    Mock-mode is canonical for CI gates, so we overwrite a single per-suite
+    file rather than a dated history (the dated files in baselines/ are kept
+    for archaeology but no longer canonical).
+    """
+    suite = payload.get("suite", "all")
+    if payload["mode"] == "live":
+        LIVE_RUNS_DIR.mkdir(parents=True, exist_ok=True)
+        out_path = LIVE_RUNS_DIR / f"{payload['date']}-{suite}.json"
+        if out_path.exists():
+            i = 2
+            while True:
+                candidate = LIVE_RUNS_DIR / f"{payload['date']}-{suite}-{i}.json"
+                if not candidate.exists():
+                    out_path = candidate
+                    break
+                i += 1
+    else:
+        BASELINES_DIR.mkdir(parents=True, exist_ok=True)
+        out_path = BASELINES_DIR / f"{suite}_baseline.json"
     out_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return out_path
 
@@ -317,6 +393,12 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="python -m tests.eval.runner",
         description="Pro tier eval harness (mock by default).",
     )
+    p.add_argument(
+        "--suite",
+        choices=[*SUITE_NAMES, "all"],
+        default="all",
+        help="which suite to run (default: all = general + crypto + saas)",
+    )
     p.add_argument("--live", action="store_true", help="real API calls (~$3-5/run)")
     p.add_argument("--reruns", type=int, default=1, help="passes per idea")
     p.add_argument("--idea", type=str, default=None, help="filter to a single idea id")
@@ -338,17 +420,28 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
 
     print(
-        f"Pro eval harness | mode={'LIVE' if args.live else 'mock'} | reruns={args.reruns}"
+        f"Pro eval harness | suite={args.suite} | "
+        f"mode={'LIVE' if args.live else 'mock'} | reruns={args.reruns}"
         f"{' | filter=' + args.idea if args.idea else ''}"
     )
 
-    payload = asyncio.run(run_eval(live=args.live, reruns=args.reruns, filter_id=args.idea))
+    payload = asyncio.run(
+        run_eval(
+            live=args.live,
+            reruns=args.reruns,
+            filter_id=args.idea,
+            suite=args.suite,
+        )
+    )
 
-    print(f"\nAggregate: {json.dumps(payload['aggregate'], indent=2)}")
+    print(f"\nAggregate ({args.suite}): {json.dumps(payload['aggregate'], indent=2)}")
+    if "suites" in payload:
+        for s, body in payload["suites"].items():
+            print(f"  {s:<8} -> {json.dumps(body['aggregate'])}")
 
     if not args.no_save:
         out = _save_baseline(payload)
-        print(f"Saved baseline -> {out}")
+        print(f"Saved -> {out}")
 
     if args.baseline:
         return _diff_against_baseline(payload, Path(args.baseline))

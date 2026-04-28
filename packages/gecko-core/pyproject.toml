@@ -19,6 +19,7 @@ dependencies = [
     "ag2[openai]>=0.8",
     "deepgram-sdk>=3.7",
     "yt-dlp>=2025.1",
+    "numpy>=1.26",
 ]
 
 [build-system]

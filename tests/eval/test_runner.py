@@ -16,13 +16,36 @@ from tests.eval import runner
 from tests.eval.mocks import MOCK_TRANSCRIPTS
 
 
-def test_ideas_yaml_has_20_ideas() -> None:
-    ideas = runner._load_ideas(filter_id=None)
+def test_general_suite_has_20_ideas() -> None:
+    ideas = runner._load_ideas(filter_id=None, suite="general")
     assert len(ideas) == 20
     kills = [i for i in ideas if i["expected_verdict"] == "kill"]
     ships = [i for i in ideas if i["expected_verdict"] == "ship"]
     assert len(kills) == 10
     assert len(ships) == 10
+
+
+def test_crypto_suite_has_15_ideas_balanced() -> None:
+    ideas = runner._load_ideas(filter_id=None, suite="crypto")
+    assert len(ideas) == 15
+    kills = [i for i in ideas if i["expected_verdict"] == "kill"]
+    ships = [i for i in ideas if i["expected_verdict"] == "ship"]
+    assert len(kills) == 8
+    assert len(ships) == 7
+
+
+def test_saas_suite_has_15_ideas_balanced() -> None:
+    ideas = runner._load_ideas(filter_id=None, suite="saas")
+    assert len(ideas) == 15
+    kills = [i for i in ideas if i["expected_verdict"] == "kill"]
+    ships = [i for i in ideas if i["expected_verdict"] == "ship"]
+    assert len(kills) == 8
+    assert len(ships) == 7
+
+
+def test_all_suites_total_50_ideas() -> None:
+    ideas = runner._load_ideas(filter_id=None)
+    assert len(ideas) == 50
 
 
 def test_every_idea_has_a_mock_transcript() -> None:
@@ -31,51 +54,85 @@ def test_every_idea_has_a_mock_transcript() -> None:
         assert idea["id"] in MOCK_TRANSCRIPTS, f"missing mock for {idea['id']}"
 
 
+def test_every_idea_has_required_new_fields() -> None:
+    ideas = runner._load_ideas(filter_id=None)
+    for idea in ideas:
+        assert "expected_categories" in idea, f"{idea['id']} missing expected_categories"
+        assert isinstance(idea["expected_categories"], list)
+        assert "must_cite_sources" in idea, f"{idea['id']} missing must_cite_sources"
+        assert isinstance(idea["must_cite_sources"], list)
+
+
+def test_idea_text_under_300_chars() -> None:
+    """Pydantic on /research enforces this; keep the suite ideas under the
+    same limit so live mode doesn't 422 on its own fixtures."""
+    ideas = runner._load_ideas(filter_id=None)
+    for idea in ideas:
+        assert len(idea["text"]) <= 300, (
+            f"{idea['id']} text exceeds 300 chars ({len(idea['text'])})"
+        )
+
+
 def test_mock_run_produces_baseline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Redirect baselines into tmp so we don't pollute the repo.
     monkeypatch.setattr(runner, "BASELINES_DIR", tmp_path)
-    rc = runner.main(["--no-save"])
+    rc = runner.main(["--no-save", "--suite", "general"])
     assert rc == 0
 
 
-def test_mock_run_writes_json_with_expected_shape(
+def test_mock_run_writes_per_suite_baseline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(runner, "BASELINES_DIR", tmp_path)
-    rc = runner.main([])
+    rc = runner.main(["--suite", "general"])
     assert rc == 0
-    files = list(tmp_path.glob("*.json"))
-    assert len(files) == 1
-    payload = json.loads(files[0].read_text())
+    out = tmp_path / "general_baseline.json"
+    assert out.exists()
+    payload = json.loads(out.read_text())
     assert payload["mode"] == "mock"
+    assert payload["suite"] == "general"
     assert len(payload["ideas"]) == 20
     assert "kill_rate" in payload["aggregate"]
     assert "verdict_accuracy" in payload["aggregate"]
-    # Sanity: rubric is calibrated such that the canned transcripts agree
-    # with their `expected_verdict` at >70% accuracy. If this drops, the
-    # mocks or the rubric drifted.
+    # General suite is hand-curated; mock rubric should clear 0.7 here.
     assert payload["aggregate"]["verdict_accuracy"] >= 0.7
+
+
+def test_mock_run_all_suites_emits_aggregate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(runner, "BASELINES_DIR", tmp_path)
+    rc = runner.main(["--suite", "all"])
+    assert rc == 0
+    out = tmp_path / "all_baseline.json"
+    assert out.exists()
+    payload = json.loads(out.read_text())
+    assert payload["suite"] == "all"
+    assert "suites" in payload
+    assert set(payload["suites"].keys()) == {"general", "crypto", "saas"}
+    # 50 ideas across all three suites.
+    total = sum(s["aggregate"]["n"] for s in payload["suites"].values())
+    assert total == 50
+    assert payload["aggregate"]["n"] == 50
 
 
 def test_baseline_diff_passes_against_self(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Running mock mode twice and diffing run2 vs run1 must produce zero
     regressions — the deterministic scorer is reproducible."""
     monkeypatch.setattr(runner, "BASELINES_DIR", tmp_path)
-    runner.main([])
-    files = list(tmp_path.glob("*.json"))
-    assert len(files) == 1
-    baseline_path = files[0]
+    runner.main(["--suite", "general"])
+    baseline_path = tmp_path / "general_baseline.json"
+    assert baseline_path.exists()
 
-    rc = runner.main(["--baseline", str(baseline_path), "--no-save"])
+    rc = runner.main(["--suite", "general", "--baseline", str(baseline_path), "--no-save"])
     assert rc == 0
 
 
 def test_filter_to_single_idea(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(runner, "BASELINES_DIR", tmp_path)
-    rc = runner.main(["--idea", "good-devbrief"])
+    rc = runner.main(["--suite", "general", "--idea", "good-devbrief"])
     assert rc == 0
-    files = list(tmp_path.glob("*.json"))
-    payload = json.loads(files[0].read_text())
+    payload = json.loads((tmp_path / "general_baseline.json").read_text())
     assert len(payload["ideas"]) == 1
     assert payload["ideas"][0]["id"] == "good-devbrief"
 
@@ -83,6 +140,11 @@ def test_filter_to_single_idea(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 def test_unknown_idea_id_errors() -> None:
     with pytest.raises(SystemExit):
         runner._load_ideas(filter_id="nonexistent")
+
+
+def test_unknown_suite_errors() -> None:
+    with pytest.raises(SystemExit):
+        runner._load_suite("does-not-exist")
 
 
 def test_live_without_openai_key_errors(monkeypatch: pytest.MonkeyPatch) -> None:

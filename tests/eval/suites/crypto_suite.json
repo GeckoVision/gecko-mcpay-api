@@ -1,0 +1,122 @@
+[
+  {
+    "id": "crypto-ship-mcp-validator-monitor",
+    "text": "MCP server for monitoring Solana validator commission changes, with Claude Code alerts when stake-weighted commission shifts >2% in 24h.",
+    "expected_verdict": "ship",
+    "expected_categories": ["crypto", "devtools"],
+    "must_cite_sources": ["x_signal", "gecko_precedent"],
+    "why": "narrow operator pain (delegators, stake pools), MCP install zero-friction, on-chain data is free via RPC"
+  },
+  {
+    "id": "crypto-ship-cap-table-echo",
+    "text": "Cap-table diff CLI for SAFE-funded startups raising on Echo: parses term sheets and produces dilution + on-chain settlement preview for the lead.",
+    "expected_verdict": "ship",
+    "expected_categories": ["crypto", "regulated", "devtools"],
+    "must_cite_sources": ["colosseum", "gecko_precedent"],
+    "why": "Echo is new, narrow doc class, regulated wedge (Reg D), founder+lead audience addressable"
+  },
+  {
+    "id": "crypto-ship-defi-safe-harbor-checker",
+    "text": "Compliance checker that maps a DeFi protocol's smart-contract surface against the SEC DeFi Safe Harbor 2.0 carve-outs and emits a human-readable report.",
+    "expected_verdict": "ship",
+    "expected_categories": ["crypto", "defi", "regulated"],
+    "must_cite_sources": ["gecko_precedent"],
+    "why": "regulated wedge, narrow buyer (protocol legal), defensible against generic LLM via curated rule corpus"
+  },
+  {
+    "id": "crypto-ship-x402-receipts",
+    "text": "x402 settlement receipts CLI: subscribes to a merchant wallet, parses incoming x402 payments on Solana, emits Stripe-shaped JSON for accountants.",
+    "expected_verdict": "ship",
+    "expected_categories": ["crypto", "devtools"],
+    "must_cite_sources": ["x_signal", "gecko_precedent"],
+    "why": "agent-payments is new, accountant-tooling pain is real, narrow integration target (x402 spec)"
+  },
+  {
+    "id": "crypto-ship-helius-das-typed",
+    "text": "Typed Python SDK over Helius DAS: codegen Pydantic models from Solana token metadata, expose typed cNFT queries to Claude Code via MCP.",
+    "expected_verdict": "ship",
+    "expected_categories": ["crypto", "devtools"],
+    "must_cite_sources": ["x_signal"],
+    "why": "agentic infra, narrow dev audience already on Helius, typed schema is the moat over raw JSON"
+  },
+  {
+    "id": "crypto-ship-validator-slashing-postmortem",
+    "text": "Slashing-postmortem generator for Solana SOL stake pool operators: ingests on-chain slash events and a validator's logs, produces an LP-facing PDF.",
+    "expected_verdict": "ship",
+    "expected_categories": ["crypto", "regulated"],
+    "must_cite_sources": ["gecko_precedent", "x_signal"],
+    "why": "narrow buyer (pool operators), regulated-LP pain real, structured on-chain inputs"
+  },
+  {
+    "id": "crypto-ship-defi-vault-rebalance",
+    "text": "Rebalance-as-a-CLI for Solana DeFi LPs: detects out-of-band drift across Kamino + Drift positions and proposes a single signed multi-leg tx.",
+    "expected_verdict": "ship",
+    "expected_categories": ["crypto", "defi", "devtools"],
+    "must_cite_sources": ["x_signal"],
+    "why": "narrow LP audience, clear wedge over existing UI flows (atomic multi-leg), x402-friendly metering"
+  },
+  {
+    "id": "crypto-kill-eth-dex-aggregator",
+    "text": "Yet another DEX aggregator on Ethereum, with our own routing algorithm and a 5bp fee.",
+    "expected_verdict": "kill",
+    "expected_categories": ["crypto", "defi"],
+    "must_cite_sources": [],
+    "why": "saturated (1inch, Matcha, CoWSwap, ParaSwap, Odos), no routing wedge, MEV-constrained margins"
+  },
+  {
+    "id": "crypto-kill-nft-smb-loyalty",
+    "text": "AI-powered NFT generator for SMB loyalty programs: small businesses mint cNFTs as punch cards.",
+    "expected_verdict": "kill",
+    "expected_categories": ["crypto"],
+    "must_cite_sources": [],
+    "why": "wallet UX hostile to SMB customers, no merchant pain solved, prior NFT-loyalty graveyard (Starbucks Odyssey killed)"
+  },
+  {
+    "id": "crypto-kill-l1-social",
+    "text": "Decentralized LinkedIn on a brand-new L1 chain, post-to-earn token model with anti-sybil via Worldcoin verify.",
+    "expected_verdict": "kill",
+    "expected_categories": ["crypto"],
+    "must_cite_sources": [],
+    "why": "Lens, Farcaster, Bluesky exist; new-L1 is irrelevant to user; post-to-earn is a known anti-pattern"
+  },
+  {
+    "id": "crypto-kill-gpt-trading-bot",
+    "text": "GPT-4 powered Solana memecoin trading bot, $99/mo subscription, no track record.",
+    "expected_verdict": "kill",
+    "expected_categories": ["crypto", "defi"],
+    "must_cite_sources": [],
+    "why": "no edge, regulatory exposure (investment advice), $99/mo can't survive vs $0 Telegram bots"
+  },
+  {
+    "id": "crypto-kill-gpt-tokenomics",
+    "text": "AI tokenomics designer: feeds in your project description and outputs a whitepaper plus token distribution chart, $49 one-time.",
+    "expected_verdict": "kill",
+    "expected_categories": ["crypto"],
+    "must_cite_sources": [],
+    "why": "GPT-wrapper, one-time-use SaaS, target buyer is shrinking with token-issuance fatigue"
+  },
+  {
+    "id": "crypto-kill-uber-gpu",
+    "text": "Uber for spare GPUs: laptop owners rent idle 4090s to AI training jobs, settled in our new ERC-20 token.",
+    "expected_verdict": "kill",
+    "expected_categories": ["crypto"],
+    "must_cite_sources": [],
+    "why": "Akash, io.net, Render saturated; consumer-GPU-as-supply latency unviable for training; token adds friction not value"
+  },
+  {
+    "id": "crypto-kill-defi-yield-aggregator",
+    "text": "DeFi yield aggregator that auto-rotates between 30 protocols on Ethereum mainnet for retail LPs, 2/20 fee.",
+    "expected_verdict": "kill",
+    "expected_categories": ["crypto", "defi"],
+    "must_cite_sources": [],
+    "why": "Yearn, Beefy, Sommelier already; mainnet gas eats retail size; 2/20 fee structure is uncompetitive"
+  },
+  {
+    "id": "crypto-kill-ai-rugpull-detector",
+    "text": "AI-powered rug-pull detector Chrome extension that scans any token contract and shows a risk score, $9/mo.",
+    "expected_verdict": "kill",
+    "expected_categories": ["crypto"],
+    "must_cite_sources": [],
+    "why": "GoPlus, De.Fi, Honeypot.is free; signal is commoditized; $9/mo retail subscription has brutal churn"
+  }
+]

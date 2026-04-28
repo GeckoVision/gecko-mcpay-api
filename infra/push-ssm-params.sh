@@ -85,6 +85,15 @@ declare -A PARAMS=(
   # task booting cleanly until onboarding completes.
   [PRIVY_APP_ID]="PRIVY_APP_ID"
   [PRIVY_APP_SECRET]="PRIVY_APP_SECRET"
+
+  # Sprint 2 Final (S2X-09) — twit.sh x402 micropayments on Base mainnet.
+  # Server-managed Gecko-owned EVM wallet. Disabled by default (kill-switch
+  # via TWITSH_ENABLED=false). Sentinels keep ECS booting before the wallet
+  # is funded; settings.is_twitsh_configured() gates real network calls.
+  [TWITSH_WALLET_PRIVATE_KEY]="TWITSH_WALLET_PRIVATE_KEY"
+  [TWITSH_WALLET_ADDRESS]="TWITSH_WALLET_ADDRESS"
+  [TWITSH_ENABLED]="TWITSH_ENABLED"
+  [TWITSH_BASE_URL]="TWITSH_BASE_URL"
 )
 
 echo "==> Region:     $REGION"
@@ -111,6 +120,12 @@ declare -A REQUIRED_AT_BOOT=(
   # treats `__unset__` as truly unset and lazy-skips wallet provisioning.
   [PRIVY_APP_ID]="__unset__"
   [PRIVY_APP_SECRET]="__unset__"
+  # twit.sh — kill-switch defaults to false; sentinels on wallet creds keep
+  # the integration silently disabled regardless of TWITSH_ENABLED.
+  [TWITSH_WALLET_PRIVATE_KEY]="__unset__"
+  [TWITSH_WALLET_ADDRESS]="__unset__"
+  [TWITSH_ENABLED]="false"
+  [TWITSH_BASE_URL]="https://x402.twit.sh"
 )
 
 SKIPPED=()
