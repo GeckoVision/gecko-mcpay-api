@@ -58,7 +58,13 @@ SUITES_DIR = EVAL_DIR / "suites"
 BASELINES_DIR = EVAL_DIR / "baselines"
 LIVE_RUNS_DIR = EVAL_DIR / "live_runs"
 
-SUITE_NAMES = ("general", "crypto", "saas")
+SUITE_NAMES = ("general", "crypto", "saas", "holdout")
+
+# Suites that compose `--suite all`. The holdout suite is intentionally
+# excluded from the gate aggregate (per ADR-0001 + eval-bias-fix runbook):
+# it's a hold-out validation set we run separately to verify generalization,
+# not part of the cutover gate's verdict_accuracy contract.
+_GATE_SUITES = ("general", "crypto", "saas")
 
 # Used to estimate cost in mock mode and as a sanity floor in live mode.
 # These are the OpenRouter passthrough rates for the default model matrix
@@ -79,6 +85,12 @@ class IdeaResult:
 
 
 def _suite_path(suite: str) -> Path:
+    # The holdout suite file is named `general_holdout_suite.json` to make
+    # its archetypal lineage (isomorphic to the general suite) obvious in
+    # the directory listing. The runner exposes it under the short name
+    # `holdout` for ergonomics.
+    if suite == "holdout":
+        return SUITES_DIR / "general_holdout_suite.json"
     return SUITES_DIR / f"{suite}_suite.json"
 
 
@@ -100,7 +112,9 @@ def _load_ideas(filter_id: str | None = None, suite: str | None = None) -> list[
     `suite=None` is treated as "all suites concatenated" so legacy test code
     that calls `_load_ideas(filter_id=None)` keeps working.
     """
-    suites = [suite] if suite else list(SUITE_NAMES)
+    # `suite=None` means "all gate suites" (general+crypto+saas). The
+    # holdout suite is opt-in only via an explicit `suite='holdout'`.
+    suites = [suite] if suite else list(_GATE_SUITES)
     ideas: list[dict[str, Any]] = []
     for s in suites:
         for idea in _load_suite(s):
@@ -443,7 +457,8 @@ async def run_eval(
     For suite=='all', payload contains a `suites` map with per-suite
     breakdown plus a top-level `aggregate` rolled up across all 50 ideas.
     """
-    suites_to_run: list[str] = list(SUITE_NAMES) if suite == "all" else [suite]
+    # `--suite all` runs the gate suites only; holdout is opt-in.
+    suites_to_run: list[str] = list(_GATE_SUITES) if suite == "all" else [suite]
 
     all_results: list[IdeaResult] = []
     per_suite: dict[str, dict[str, Any]] = {}
