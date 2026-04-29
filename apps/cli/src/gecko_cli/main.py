@@ -18,6 +18,8 @@ from gecko_cli.commands.classify import classify_cmd
 from gecko_cli.commands.precedents import precedents_cmd
 from gecko_cli.commands.project import project_cmd
 from gecko_cli.commands.research import research_cmd
+from gecko_cli.commands.route import route_cmd
+from gecko_cli.commands.scaffold import scaffold_cmd
 from gecko_cli.commands.sources import sources_cmd
 
 
@@ -43,6 +45,8 @@ cli.add_command(sources_cmd)
 cli.add_command(project_cmd)
 cli.add_command(classify_cmd)
 cli.add_command(precedents_cmd)
+cli.add_command(route_cmd)
+cli.add_command(scaffold_cmd)
 
 
 # Back-compat alias — older docs reference `main`.

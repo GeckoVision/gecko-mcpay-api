@@ -87,6 +87,22 @@ _AVAILABLE_SOURCES_DESCRIPTION = (
     "lists indexed sources for a specific session. Free."
 )
 
+_ROUTE_DESCRIPTION = (
+    "Route an LLM call through Gecko's cost-aware router. Pays via x402 "
+    "wallet. Use task_hint to bias model selection (reasoning, code, "
+    "extraction, summary, default). Returns response + cost breakdown "
+    "including savings_vs_premium so subagents can show 'you saved $X by "
+    "routing through Gecko'."
+)
+
+_SCAFFOLD_DESCRIPTION = (
+    "Generate a 3-file project starter bundle (PRD.md, business-plan.md, "
+    "BUILDING.md) from a completed Pro tier debate. Refuses on verdict=kill. "
+    "Files land under <output_dir>/.gecko/scaffolds/<session_id>/. The "
+    "BUILDING.md file is a ready-to-use Claude Code prompt for V1. Free — "
+    "the user already paid for the Pro debate."
+)
+
 _PROJECT_ECONOMICS_DESCRIPTION = (
     "Per-project economics snapshot (S2-09): privy wallet address, live USDC "
     "balance, budget cap + spend, and the 5 most recent paid sessions. Use "
@@ -220,6 +236,54 @@ async def list_tools() -> list[Tool]:
             inputSchema={"type": "object", "properties": {}},
         ),
         Tool(
+            name="gecko_route",
+            description=_ROUTE_DESCRIPTION,
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string"},
+                    "task_hint": {
+                        "type": "string",
+                        "enum": [
+                            "reasoning",
+                            "code",
+                            "extraction",
+                            "summary",
+                            "default",
+                        ],
+                    },
+                    "max_cost_usd": {"type": "number"},
+                    "prefer_premium": {"type": "boolean"},
+                },
+                "required": ["prompt"],
+            },
+        ),
+        Tool(
+            name="gecko_scaffold",
+            description=_SCAFFOLD_DESCRIPTION,
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": (
+                            "Session UUID returned by `gecko_research` (Pro tier). "
+                            "Verdict must be 'ship' or 'pivot'."
+                        ),
+                    },
+                    "output_dir": {
+                        "type": "string",
+                        "description": (
+                            "Workspace root. Files land under "
+                            "<output_dir>/.gecko/scaffolds/<session_id>/. "
+                            "Defaults to the server's current working directory."
+                        ),
+                    },
+                },
+                "required": ["session_id"],
+            },
+        ),
+        Tool(
             name="gecko_project_economics",
             description=_PROJECT_ECONOMICS_DESCRIPTION,
             inputSchema={
@@ -283,6 +347,23 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         result_list = _run_available_sources()
         return [TextContent(type="text", text=json.dumps(result_list, indent=2))]
 
+    if name == "gecko_route":
+        result = await _run_route(
+            prompt=str(arguments["prompt"]),
+            task_hint=str(arguments.get("task_hint", "default")),
+            max_cost_usd=float(arguments.get("max_cost_usd", 0.05)),
+            prefer_premium=bool(arguments.get("prefer_premium", False)),
+        )
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    if name == "gecko_scaffold":
+        output_dir_raw = arguments.get("output_dir")
+        result = await _run_scaffold(
+            session_id=str(arguments["session_id"]),
+            output_dir=str(output_dir_raw) if output_dir_raw else None,
+        )
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
     if name == "gecko_project_economics":
         result = await client.get_project_economics(project_id=str(arguments["project_id"]))
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
@@ -314,6 +395,72 @@ async def _run_precedents(*, idea: str, top_k: int) -> list[dict[str, Any]]:
     store = SessionStore.from_env()
     rows = await store.retrieve_gecko_precedent(embedding=vecs[0], limit=top_k)
     return [r.model_dump(mode="json") for r in rows]
+
+
+async def _run_route(
+    *,
+    prompt: str,
+    task_hint: str,
+    max_cost_usd: float,
+    prefer_premium: bool,
+) -> dict[str, Any]:
+    """Call `gecko_core.routing.route` and JSON-serialize the result.
+
+    Validates the task_hint against the matrix's enum so we surface a
+    clean ValueError instead of an upstream KeyError on a bad input.
+    """
+    from gecko_core.routing import route
+    from gecko_core.routing.matrix import ROUTING_MATRIX
+
+    if task_hint not in ROUTING_MATRIX:
+        raise ValueError(
+            f"task_hint must be one of {sorted(ROUTING_MATRIX)}; got {task_hint!r}"
+        )
+    result = await route(
+        prompt,
+        task_hint=task_hint,  # type: ignore[arg-type]
+        max_cost_usd=max_cost_usd,
+        prefer_premium=prefer_premium,
+    )
+    return result.model_dump(mode="json")
+
+
+async def _run_scaffold(*, session_id: str, output_dir: str | None) -> dict[str, Any]:
+    """Generate a 3-file scaffold bundle from a Pro tier session.
+
+    Free path — bypasses GeckoAPIClient / x402 (the user already paid for
+    the Pro debate). Lazy import keeps OpenAI / supabase out of the MCP
+    startup path for users who never invoke this tool.
+    """
+    from pathlib import Path
+    from uuid import UUID
+
+    from gecko_core.orchestration.scaffold import (
+        KillVerdictError,
+        ScaffoldError,
+        SessionNotFoundError,
+        SessionNotReadyError,
+        generate_scaffold,
+    )
+
+    out_dir = Path(output_dir) if output_dir else Path.cwd()
+    try:
+        result = await generate_scaffold(UUID(session_id), out_dir)
+    except KillVerdictError as exc:
+        return {"error": "kill_verdict", "message": str(exc)}
+    except SessionNotFoundError as exc:
+        return {"error": "session_not_found", "message": str(exc)}
+    except SessionNotReadyError as exc:
+        return {"error": "session_not_ready", "message": str(exc)}
+    except ScaffoldError as exc:
+        return {"error": "scaffold_failed", "message": str(exc)}
+
+    return {
+        "session_id": str(result.session_id),
+        "paths": [str(p) for p in result.paths],
+        "tokens_used": result.tokens_used,
+        "summary": result.summary,
+    }
 
 
 def _run_available_sources() -> list[dict[str, Any]]:
