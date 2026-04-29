@@ -170,6 +170,34 @@ def test_live_without_anthropic_key_errors(monkeypatch: pytest.MonkeyPatch) -> N
         asyncio.run(runner._run_live("any idea"))
 
 
+def test_live_rag_flag_is_wired() -> None:
+    """S4-TWITSH-03: argparse must accept `--live-rag` and surface it as
+    `args.live_rag`. The flag is a no-op without `--live`, but must parse."""
+    parser = runner._build_parser()
+    args = parser.parse_args(["--live", "--live-rag", "--suite", "holdout_live"])
+    assert args.live_rag is True
+    assert args.live is True
+    assert args.suite == "holdout_live"
+
+    # Default (omitted) is False so existing baselines aren't affected.
+    default_args = parser.parse_args([])
+    assert default_args.live_rag is False
+
+
+def test_holdout_live_suite_has_10_balanced_ideas() -> None:
+    """The new live-rag gate suite: 10 ideas, 5 ship + 5 kill, NO precedents."""
+    ideas = runner._load_suite("holdout_live")
+    assert len(ideas) == 10
+    kills = [i for i in ideas if i["expected_verdict"] == "kill"]
+    ships = [i for i in ideas if i["expected_verdict"] == "ship"]
+    assert len(kills) == 5
+    assert len(ships) == 5
+    # Strip-down check: no canned signals so the harness must use --live-rag.
+    for idea in ideas:
+        assert "mock_precedents" not in idea, f"{idea['id']} must not pre-cache precedents"
+        assert "rag_context" not in idea, f"{idea['id']} must not pre-cache rag_context"
+
+
 def test_live_accepts_claude_api_key_alias() -> None:
     """CLAUDE_API_KEY should satisfy the Anthropic-key check.
 

@@ -222,14 +222,28 @@ async def _run_pro_debate(
     # 8000 chars the pro module truncates to anyway — anything more is
     # wasted budget on round 1.
     chunks = await rag_query(session_id, idea, top_k=12, store=store)
-    rag_context = "\n\n".join(
+    tavily_rag = "\n\n".join(
         f"[{i}] (source: {c.source_url}) {c.text}" for i, c in enumerate(chunks, 1)
     )
 
+    # S4-TWITSH-01: classify, dispatch the V1 source set, and prepend the
+    # rendered signal block ABOVE the Tavily RAG corpus. Failures are
+    # non-fatal — a flaky V1 source must never block the pro debate.
+    v1_rag, v1_spend_by_source = await _dispatch_v1_sources(session_id, idea, store)
+    if v1_rag and tavily_rag:
+        rag_context = f"{v1_rag}\n\n{tavily_rag}"
+    elif v1_rag:
+        rag_context = v1_rag
+    else:
+        rag_context = tavily_rag
+
     # S2X-06: fetch flywheel precedents BEFORE the debate so the agents see
-    # prior verdicts in their opening prompt. Failures are non-fatal — a
-    # cold flywheel must not block the pro debate.
+    # prior verdicts in their opening prompt (separate from the V1 block —
+    # this populates pro.generate's typed `precedents` arg, which the
+    # opening-prompt builder uses for structured rendering). Failures are
+    # non-fatal.
     precedents = await _retrieve_pro_precedents(idea, store)
+    _ = v1_spend_by_source  # already debited inside _dispatch_v1_sources
 
     orch = get_orchestration_settings()
 
@@ -349,6 +363,92 @@ async def _run_pro_debate(
             "pro_session_summary": summary,
         }
     )
+
+
+async def _dispatch_v1_sources(
+    session_id: UUID,
+    idea: str,
+    store: SessionStore,
+) -> tuple[str, dict[str, float]]:
+    """Classify the idea, dispatch V1 sources, debit per-source costs.
+
+    Returns `(rendered_block, spend_by_source)`. The rendered block always
+    has the four headings (twit.sh / HN / Reddit / precedents) so the
+    agents can rely on its structure even when sources returned nothing.
+
+    Wrapped end-to-end in try/except: any failure in classify or dispatch
+    degrades to "no V1 block" rather than failing the pro debate. We pay
+    the price of slightly less context for the resilience guarantee
+    web3-engineer's CLAUDE.md demands ("never store private keys, never let
+    a flaky third-party take down the session").
+    """
+    try:
+        from gecko_core.classify import classify_idea
+        from gecko_core.ingestion.embedder import embed
+        from gecko_core.sources.v1_block import (
+            build_default_sources,
+            dispatch_and_render,
+        )
+
+        categories = await classify_idea(idea)
+
+        # Embed once for the precedent source. Failure is fine — we just
+        # skip the precedent source in that case (the V1 block still
+        # renders three headings + "No data found." for precedents).
+        embedding: list[float] | None = None
+        try:
+            vectors, _ = await embed([idea])
+            if vectors:
+                embedding = vectors[0]
+        except Exception as exc:  # pragma: no cover — defensive
+            logger.warning("v1_sources: embed failed (%s); skipping precedents", exc)
+
+        sources = build_default_sources(embedding=embedding, store=store)
+        block = await dispatch_and_render(idea=idea, categories=categories, sources=sources)
+
+        # Debit per-source spend to the session ledger. twit.sh is the only
+        # paid source today; HN/Reddit/precedents are always 0.
+        for source_name, cost in block.spend_by_source.items():
+            if cost <= 0:
+                continue
+            kind: CostKind = "twitsh" if source_name == "twit_sh" else "v1_sources"
+            try:
+                await store.add_cost(session_id, kind, cost)
+            except Exception as exc:  # pragma: no cover — best effort
+                logger.warning(
+                    "v1_sources: add_cost failed for %s ($%.4f): %s",
+                    source_name,
+                    cost,
+                    exc,
+                )
+
+        # Structured log line for CloudWatch — per-source telemetry that
+        # the cache hit-rate dashboard (S4-TWITSH-02) consumes. Keep it on
+        # one line so log-aggregation tools can parse without recombining.
+        try:
+            from_cache_map: dict[str, bool] = {}
+            for name, result in block.results.items():
+                if not result.fired:
+                    continue
+                from_cache_map[name] = bool(result.payload.get("cached")) or bool(
+                    result.payload.get("from_cache")
+                )
+            logger.info(
+                "v1_sources.telemetry session_id=%s categories=%s "
+                "fired=%s spend_by_source=%s cache_hits=%s",
+                session_id,
+                sorted(categories),
+                sorted(n for n, r in block.results.items() if r.fired),
+                block.spend_by_source,
+                from_cache_map,
+            )
+        except Exception:  # pragma: no cover — telemetry must never crash the run
+            pass
+
+        return block.rag_block, block.spend_by_source
+    except Exception as exc:  # pragma: no cover — full degrade
+        logger.warning("v1_sources: dispatch failed (%s); degrading to no block", exc)
+        return "", {}
 
 
 async def _retrieve_pro_precedents(

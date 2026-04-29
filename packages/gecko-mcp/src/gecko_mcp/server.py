@@ -265,6 +265,11 @@ async def list_tools() -> list[Tool]:
                     },
                     "max_cost_usd": {"type": "number"},
                     "prefer_premium": {"type": "boolean"},
+                    "tier_preset": {
+                        "type": "string",
+                        "enum": ["quality", "balanced", "budget", "free"],
+                        "default": "balanced",
+                    },
                 },
                 "required": ["prompt"],
             },
@@ -371,10 +376,12 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     if name == "gecko_route":
         result = await _run_route(
+            client=client,
             prompt=str(arguments["prompt"]),
             task_hint=str(arguments.get("task_hint", "default")),
             max_cost_usd=float(arguments.get("max_cost_usd", 0.05)),
             prefer_premium=bool(arguments.get("prefer_premium", False)),
+            tier_preset=str(arguments.get("tier_preset", "balanced")),
         )
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
@@ -419,30 +426,64 @@ async def _run_precedents(*, idea: str, top_k: int) -> list[dict[str, Any]]:
     return [r.model_dump(mode="json") for r in rows]
 
 
+def _route_uses_local_fallback(api_url: str | None) -> bool:
+    """True when the MCP should bypass the API and call gecko_core directly.
+
+    Localhost / 127.0.0.1 / unset → local-dev mode (call core directly so a
+    developer without a running gecko-api still gets answers). Anything else
+    forwards through the API so production gets x402-paid routing.
+    """
+    if not api_url:
+        return True
+    lowered = api_url.lower()
+    return "localhost" in lowered or "127.0.0.1" in lowered
+
+
 async def _run_route(
     *,
+    client: GeckoAPIClient,
     prompt: str,
     task_hint: str,
     max_cost_usd: float,
     prefer_premium: bool,
+    tier_preset: str = "balanced",
 ) -> dict[str, Any]:
-    """Call `gecko_core.routing.route` and JSON-serialize the result.
+    """Forward to gecko-api `/route`, or call the core directly in local dev.
 
-    Validates the task_hint against the matrix's enum so we surface a
-    clean ValueError instead of an upstream KeyError on a bad input.
+    S4-ROUTE-02: production MCP forwards to gecko-api so x402 payment goes
+    through frames.ag wallet. Local dev (no GECKO_API_URL or pointed at
+    localhost) falls back to a direct `gecko_core.routing.route` call so a
+    developer can iterate without booting the whole API.
+
+    Validates the task_hint against the matrix's enum so we surface a clean
+    ValueError instead of an upstream KeyError or a network round-trip.
     """
-    from gecko_core.routing import route
+    import os
+
     from gecko_core.routing.matrix import ROUTING_MATRIX
 
     if task_hint not in ROUTING_MATRIX:
         raise ValueError(f"task_hint must be one of {sorted(ROUTING_MATRIX)}; got {task_hint!r}")
-    result = await route(
+
+    api_url = os.environ.get("GECKO_API_URL")
+    if _route_uses_local_fallback(api_url):
+        from gecko_core.routing import route
+
+        result = await route(
+            prompt,
+            task_hint=task_hint,
+            max_cost_usd=max_cost_usd,
+            prefer_premium=prefer_premium,
+        )
+        return result.model_dump(mode="json")
+
+    return await client.route(
         prompt,
-        task_hint=task_hint,  # type: ignore[arg-type]
+        task_hint=task_hint,
         max_cost_usd=max_cost_usd,
         prefer_premium=prefer_premium,
+        tier_preset=tier_preset,
     )
-    return result.model_dump(mode="json")
 
 
 async def _run_scaffold(*, session_id: str, output_dir: str | None) -> dict[str, Any]:

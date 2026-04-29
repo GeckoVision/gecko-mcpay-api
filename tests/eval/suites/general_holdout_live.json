@@ -1,0 +1,106 @@
+[
+  {
+    "id": "holdout-good-comp-band-diff",
+    "text": "A side-by-side compensation-band diff tool for talent ops at YC-stage startups: paste two Pave compensation snapshots, get role-by-role band overlaps, gaps, and equity-grant deltas with a recruiter view toggle.",
+    "expected_verdict": "ship",
+    "expected_categories": [
+      "saas"
+    ],
+    "must_cite_sources": [],
+    "why": "narrow doc-class wedge for talent ops + founders; calculation/diff logic over structured Pave data is the moat"
+  },
+  {
+    "id": "holdout-good-twilio-webhook-replay",
+    "text": "A CLI that captures Twilio messaging webhooks from production and replays them against a local handler, with re-signed X-Twilio-Signature and idempotency-key collision detection.",
+    "expected_verdict": "ship",
+    "expected_categories": [
+      "devtools"
+    ],
+    "must_cite_sources": [],
+    "why": "specific developer pain in messaging-eng dev loop; Twilio CLI does not cover replay-from-prod; narrow tool for a real ICP"
+  },
+  {
+    "id": "holdout-good-ame-intake",
+    "text": "A paper-replacement intake app for FAA Aviation Medical Examiner (AME) offices: replaces airman-medical paper forms with structured digital intake under the new MedXPress reforms, including AOPA-sponsored disclosures.",
+    "expected_verdict": "ship",
+    "expected_categories": [
+      "saas",
+      "regulated"
+    ],
+    "must_cite_sources": [],
+    "why": "regulated boundary IS the wedge (FAA AME credentialing + MedXPress data flow), narrow buyer (AME offices)"
+  },
+  {
+    "id": "holdout-good-mcp-clickhouse-explainer",
+    "text": "An MCP server for ClickHouse query explanation: ingests a ClickHouse cluster's schema and lets a developer ask 'why is this query slow?' answered with EXPLAIN PLAN traces, projection hits, and recent system.query_log entries.",
+    "expected_verdict": "ship",
+    "expected_categories": [
+      "devtools"
+    ],
+    "must_cite_sources": [],
+    "why": "narrow agentic-infra dev tool; real DBA pain; MCP install zero-friction; ClickHouse audience is large and growing"
+  },
+  {
+    "id": "holdout-good-hhs-rfp-budget",
+    "text": "An HHS-RFP-to-budget-spreadsheet generator for federal contractors: parses a Health-and-Human-Services solicitation and a contractor's narrative, produces a compliant CPFF budget workbook ready for SF-1408 review.",
+    "expected_verdict": "ship",
+    "expected_categories": [
+      "saas",
+      "regulated"
+    ],
+    "must_cite_sources": [],
+    "why": "research/contracting admin pain; HHS templates change yearly; $200/proposal willingness; doc-class workflow replacement is the wedge"
+  },
+  {
+    "id": "holdout-bad-childcare-swap",
+    "text": "An Airbnb-for-childcare-swaps marketplace in Tier-2 US cities: parents trade hours of in-home care via reciprocal credits, $9/mo membership.",
+    "expected_verdict": "kill",
+    "expected_categories": [
+      "saas"
+    ],
+    "must_cite_sources": [],
+    "why": "saturated marketplace dynamics in childcare segment, two-sided liquidity moat impossible at hobby pricing, regulatory exposure"
+  },
+  {
+    "id": "holdout-bad-sales-action-extractor",
+    "text": "AI sales-call action-item extractor: Zoom plugin that listens to sales calls and emails reps a list of follow-up tasks, $14/seat/mo, generic extraction prompt.",
+    "expected_verdict": "kill",
+    "expected_categories": [
+      "saas"
+    ],
+    "must_cite_sources": [],
+    "why": "Gong, Chorus, Zoom AI Companion, MS Teams Premium, Granola all bundle this; commodity feature, no buyer pain unsolved"
+  },
+  {
+    "id": "holdout-bad-ai-marriage-counselor",
+    "text": "AI marriage-counselor chatbot: $35/mo, replaces traditional couples therapy, no licensed clinician in the loop.",
+    "expected_verdict": "kill",
+    "expected_categories": [
+      "saas",
+      "regulated"
+    ],
+    "must_cite_sources": [],
+    "why": "FDA-class mental-health-software exposure, state LMFT licensing rules, liability for self-harm cases, insurance won't cover"
+  },
+  {
+    "id": "holdout-bad-fitness-loyalty-chain",
+    "text": "Blockchain loyalty points for boutique fitness studios: cycling and pilates studios mint cNFT punch cards that members can swap across studios in a city.",
+    "expected_verdict": "kill",
+    "expected_categories": [
+      "crypto"
+    ],
+    "must_cite_sources": [],
+    "why": "wallet UX hostile to fitness-studio members, no merchant pain solved, prior on-chain-loyalty graveyard pattern"
+  },
+  {
+    "id": "holdout-bad-ai-estate-planner",
+    "text": "AI estate-planning advisor: chatbot drafts wills, trusts, and beneficiary designations for individuals \u2014 no licensed estate attorney in the loop.",
+    "expected_verdict": "kill",
+    "expected_categories": [
+      "saas",
+      "regulated"
+    ],
+    "must_cite_sources": [],
+    "why": "regulatory landmine (state UPL bars, varying probate code), liability per document exceeds plausible CAC, insurance won't cover"
+  }
+]

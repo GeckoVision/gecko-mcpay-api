@@ -58,7 +58,7 @@ SUITES_DIR = EVAL_DIR / "suites"
 BASELINES_DIR = EVAL_DIR / "baselines"
 LIVE_RUNS_DIR = EVAL_DIR / "live_runs"
 
-SUITE_NAMES = ("general", "crypto", "saas", "holdout")
+SUITE_NAMES = ("general", "crypto", "saas", "holdout", "holdout_live")
 
 # Suites that compose `--suite all`. The holdout suite is intentionally
 # excluded from the gate aggregate (per ADR-0001 + eval-bias-fix runbook):
@@ -82,6 +82,10 @@ class IdeaResult:
     wall_seconds: float
     tokens_total: int
     cost_usd: float
+    # S4-TWITSH-03: V1-source spend per idea when --live-rag is on. Zero
+    # otherwise. Kept distinct from `cost_usd` (which is LLM-token spend) so
+    # the gate report can show "tokens vs sources" attribution.
+    v1_sources_cost_usd: float = 0.0
 
 
 def _suite_path(suite: str) -> Path:
@@ -91,6 +95,11 @@ def _suite_path(suite: str) -> Path:
     # `holdout` for ergonomics.
     if suite == "holdout":
         return SUITES_DIR / "general_holdout_suite.json"
+    # The "holdout_live" suite is the S4 hold-out variant: same shape as
+    # the general holdout, but with mock_precedents/rag_context stripped so
+    # the runner is forced to dispatch real V1 sources via --live-rag.
+    if suite == "holdout_live":
+        return SUITES_DIR / "general_holdout_live.json"
     return SUITES_DIR / f"{suite}_suite.json"
 
 
@@ -296,12 +305,44 @@ def _majority_verdict(verdicts: list[str]) -> str:
     return Counter(verdicts).most_common(1)[0][0]
 
 
+async def _dispatch_live_rag(idea_text: str) -> tuple[str, float]:
+    """Real V1-source dispatch for `--live-rag`. Returns `(rag_block, spend_usd)`.
+
+    Mirrors `_dispatch_v1_sources` from gecko_core.workflows but operates
+    without a SessionStore — the eval harness doesn't write to Supabase.
+    Precedent source is omitted (no embedding, no store) so the harness
+    measures *external* signal quality, not internal-flywheel feedback.
+
+    Returns ("", 0.0) on any failure so the harness degrades to no-V1-block
+    rather than aborting a 10-idea live run.
+    """
+    try:
+        from gecko_core.classify import classify_idea
+        from gecko_core.sources.hn import HackerNewsSource
+        from gecko_core.sources.reddit import RedditSource
+        from gecko_core.sources.twit_sh import TwitshSource
+        from gecko_core.sources.v1_block import dispatch_and_render
+
+        categories = await classify_idea(idea_text)
+        sources = [TwitshSource(), HackerNewsSource(), RedditSource()]
+        block = await dispatch_and_render(
+            idea=idea_text,
+            categories=categories,
+            sources=sources,
+        )
+        return block.rag_block, block.total_spend_usd
+    except Exception as exc:  # pragma: no cover — degrade
+        print(f"  !! live-rag dispatch failed for idea: {exc}", file=sys.stderr)
+        return "", 0.0
+
+
 async def _evaluate_one(
     idea: dict[str, Any],
     *,
     live: bool,
     reruns: int,
     cohort_median_tokens: float,
+    live_rag: bool = False,
 ) -> IdeaResult:
     """Run one idea `reruns` times, average the scores, return an IdeaResult."""
     score_accum: list[RubricScores] = []
@@ -314,6 +355,14 @@ async def _evaluate_one(
     # (the canned transcripts are pre-baked).
     rag_context = str(idea.get("rag_context", "")) if live else ""
     precedents = _build_mock_precedents(idea["id"], idea.get("mock_precedents")) if live else None
+
+    # S4-TWITSH-03: --live-rag mode swaps the canned rag_context for the
+    # output of dispatch_sources(). We discard precedents too — the live
+    # gate measures external V1 signal quality, not curated mock state.
+    v1_spend_usd = 0.0
+    if live and live_rag:
+        rag_context, v1_spend_usd = await _dispatch_live_rag(idea["text"])
+        precedents = None
 
     expected = idea.get("expected_verdict")
 
@@ -361,6 +410,7 @@ async def _evaluate_one(
         wall_seconds=round(statistics.mean(wall_accum), 3),
         tokens_total=int(statistics.mean(tokens_accum)),
         cost_usd=round(statistics.mean(cost_accum), 4),
+        v1_sources_cost_usd=round(v1_spend_usd, 4),
     )
 
 
@@ -417,6 +467,7 @@ async def _run_one_suite(
     live: bool,
     reruns: int,
     filter_id: str | None,
+    live_rag: bool = False,
 ) -> tuple[list[IdeaResult], dict[str, Any]]:
     ideas = _load_ideas(filter_id=filter_id, suite=suite)
 
@@ -435,7 +486,13 @@ async def _run_one_suite(
     results: list[IdeaResult] = []
     print(f"\n[suite={suite}] {len(ideas)} ideas")
     for idea in ideas:
-        r = await _evaluate_one(idea, live=live, reruns=reruns, cohort_median_tokens=cohort_median)
+        r = await _evaluate_one(
+            idea,
+            live=live,
+            reruns=reruns,
+            cohort_median_tokens=cohort_median,
+            live_rag=live_rag,
+        )
         results.append(r)
         print(
             f"  {r.id:<48} expected={r.expected_verdict:<5} actual={r.actual_verdict:<7} "
@@ -451,6 +508,7 @@ async def run_eval(
     reruns: int,
     filter_id: str | None,
     suite: str = "all",
+    live_rag: bool = False,
 ) -> dict[str, Any]:
     """Run one or all suites; payload always includes `suite` field.
 
@@ -463,7 +521,9 @@ async def run_eval(
     all_results: list[IdeaResult] = []
     per_suite: dict[str, dict[str, Any]] = {}
     for s in suites_to_run:
-        results, agg = await _run_one_suite(s, live=live, reruns=reruns, filter_id=filter_id)
+        results, agg = await _run_one_suite(
+            s, live=live, reruns=reruns, filter_id=filter_id, live_rag=live_rag
+        )
         per_suite[s] = {
             "aggregate": agg,
             "ideas": [asdict(r) for r in results],
@@ -561,6 +621,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help="which suite to run (default: all = general + crypto + saas)",
     )
     p.add_argument("--live", action="store_true", help="real API calls (~$3-5/run)")
+    p.add_argument(
+        "--live-rag",
+        action="store_true",
+        dest="live_rag",
+        help=(
+            "S4-TWITSH-03: when set with --live, swap canned rag_context for "
+            "real dispatch_sources output (twit.sh + HN + Reddit). Adds "
+            "~$2-3 in V1-source spend per gate run. No-op without --live."
+        ),
+    )
     p.add_argument("--reruns", type=int, default=1, help="passes per idea")
     p.add_argument("--idea", type=str, default=None, help="filter to a single idea id")
     p.add_argument(
@@ -620,6 +690,7 @@ def main(argv: list[str] | None = None) -> int:
             reruns=args.reruns,
             filter_id=args.idea,
             suite=args.suite,
+            live_rag=args.live_rag,
         )
     )
 

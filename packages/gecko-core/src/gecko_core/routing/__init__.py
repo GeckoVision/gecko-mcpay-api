@@ -110,12 +110,124 @@ def _premium_equivalent(task_hint: TaskHint) -> str:
     return pick_model(task_hint=task_hint, prefer_premium=True)
 
 
-async def _call_model(*, model: str, prompt: str) -> tuple[str, int, int]:
+class _CallOutcome:
+    """Internal carrier for a single LLM call's results.
+
+    Plain class (not dataclass / Pydantic) so monkeypatch-based tests can
+    construct arbitrary subclasses or mocks without buying into a schema.
+    """
+
+    __slots__ = (
+        "model_used",
+        "text",
+        "tokens_in",
+        "tokens_out",
+        "upstream_cost_usd",
+        "usage_cost_usd",
+    )
+
+    def __init__(
+        self,
+        *,
+        text: str,
+        tokens_in: int,
+        tokens_out: int,
+        usage_cost_usd: float | None,
+        upstream_cost_usd: float | None,
+        model_used: str,
+    ) -> None:
+        self.text = text
+        self.tokens_in = tokens_in
+        self.tokens_out = tokens_out
+        self.usage_cost_usd = usage_cost_usd
+        self.upstream_cost_usd = upstream_cost_usd
+        self.model_used = model_used
+
+
+# Status codes / exception types that trigger a single fallback attempt
+# (S4-ROUTE-03). We retry once and only once — cost discipline.
+_FALLBACK_STATUS_CODES: frozenset[int] = frozenset({429, 500, 502, 503})
+
+
+def _is_retryable_error(exc: BaseException) -> bool:
+    """True if `exc` indicates a transient upstream failure worth one retry."""
+    try:
+        import httpx
+    except Exception:  # pragma: no cover — httpx is a hard dep
+        httpx = None  # type: ignore[assignment]
+
+    if httpx is not None and isinstance(exc, httpx.RemoteProtocolError):
+        return True
+
+    # OpenAI SDK raises APIStatusError subclasses with `.status_code`. Avoid
+    # importing the symbol so the fallback path doesn't bind a tight version.
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int) and status in _FALLBACK_STATUS_CODES:
+        return True
+    # Some SDK variants expose status via .response.status_code instead.
+    response = getattr(exc, "response", None)
+    if response is not None:
+        rstatus = getattr(response, "status_code", None)
+        if isinstance(rstatus, int) and rstatus in _FALLBACK_STATUS_CODES:
+            return True
+    return False
+
+
+def _fallback_for(model: str, *, task_hint: TaskHint, prefer_premium: bool) -> str | None:
+    """Return the next-best candidate model for `model` in the same tier.
+
+    v1 implementation walks the existing routing matrix's candidate list and
+    returns the first entry that isn't ``model`` itself. Returns None when no
+    alternative exists. Lives here (not in matrix.py) because the catalog has
+    its own richer fallback metadata that a Sprint-5 refactor will surface.
+    """
+    candidates = candidate_models(task_hint=task_hint, prefer_premium=prefer_premium)
+    for candidate in candidates:
+        if candidate != model:
+            return candidate
+    return None
+
+
+def _extract_usage_cost(usage: object) -> tuple[float | None, float | None]:
+    """Pull `(usage.cost, usage.cost_details.upstream_inference_cost)` if present.
+
+    Returns ``(None, None)`` when the upstream didn't include those fields
+    (direct OpenAI API, mocked transports without cost surfacing). Tolerates
+    Pydantic, dataclass, or plain-attribute usage objects.
+    """
+    if usage is None:
+        return None, None
+
+    def _get(obj: object, attr: str) -> object | None:
+        return getattr(obj, attr, None) if not isinstance(obj, dict) else obj.get(attr)
+
+    raw_cost = _get(usage, "cost")
+    cost = float(raw_cost) if isinstance(raw_cost, (int, float)) else None
+
+    details = _get(usage, "cost_details")
+    upstream: float | None = None
+    if details is not None:
+        raw_upstream = _get(details, "upstream_inference_cost")
+        if isinstance(raw_upstream, (int, float)):
+            upstream = float(raw_upstream)
+    return cost, upstream
+
+
+async def _call_model(
+    *,
+    model: str,
+    prompt: str,
+    fallback_model: str | None = None,
+) -> _CallOutcome:
     """Call the chosen model via the existing OpenAI-compatible client.
 
-    Returns (response_text, tokens_in, tokens_out). We reuse the AG2 router
-    config so this honors LLM_ROUTER (openai | openrouter | clawrouter) the
-    same way the Pro debate does.
+    When ``fallback_model`` is provided we wire OpenRouter's server-side
+    fallback chain via ``extra_body={"models": [primary, fallback]}``. The
+    upstream surfaces the model that actually answered as ``response.model``,
+    which we surface as ``model_used`` (S4-ROUTE-03).
+
+    Reuses the AG2 router config so this honors LLM_ROUTER (openai |
+    openrouter | clawrouter) the same way the Pro debate does.
     """
     # Lazy import — avoid pulling the OpenAI SDK into modules that just want
     # routing decisions (matrix tests, CLI argument parsing).
@@ -129,16 +241,63 @@ async def _call_model(*, model: str, prompt: str) -> tuple[str, int, int]:
         base_url=cfg.base_url,
         default_headers=cfg.extra_headers or None,
     )
-    resp = await client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.3,
-    )
+    extra_body: dict[str, object] | None = None
+    if fallback_model:
+        extra_body = {"models": [model, fallback_model]}
+
+    if extra_body is not None:
+        resp = await client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            extra_body=extra_body,
+        )
+    else:
+        resp = await client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+        )
+
     text = (resp.choices[0].message.content or "") if resp.choices else ""
     usage = getattr(resp, "usage", None)
     tokens_in = int(getattr(usage, "prompt_tokens", 0) or 0)
     tokens_out = int(getattr(usage, "completion_tokens", 0) or 0)
-    return text, tokens_in, tokens_out
+    usage_cost, upstream_cost = _extract_usage_cost(usage)
+    # OpenRouter echoes the model that actually served the request. When the
+    # transport doesn't surface it, fall back to the requested id.
+    model_used = str(getattr(resp, "model", None) or model)
+    return _CallOutcome(
+        text=text,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        usage_cost_usd=usage_cost,
+        upstream_cost_usd=upstream_cost,
+        model_used=model_used,
+    )
+
+
+def _check_cost_drift(*, model: str, estimate: float, truth: float | None) -> None:
+    """Warn at WARNING level when the catalog estimate diverges from billed truth.
+
+    Catches stale catalog prices before they surprise users. Threshold is 10% —
+    below that we tolerate float / partial-token noise. Skipped when ``truth``
+    is None (direct provider didn't report `usage.cost`).
+    """
+    if truth is None:
+        return
+    if estimate <= 0.0:
+        return
+    delta = abs(truth - estimate) / estimate
+    if delta > 0.10:
+        pct = delta * 100.0
+        logger.warning(
+            "cost drift on %s: estimate=%.6f truth=%.6f delta=%.1f%%",
+            model,
+            estimate,
+            truth,
+            pct,
+        )
 
 
 def _emit_demo_log(result: RouteResult, task_hint: TaskHint) -> None:
@@ -200,19 +359,58 @@ async def route(
             f"x402 charge failed for intent {intent.intent_id}: {payment.error or 'unknown'}"
         )
 
-    text, tokens_in, tokens_out = await _call_model(model=chosen, prompt=prompt)
+    # S4-ROUTE-03: wire OpenRouter's server-side fallback chain. We retry once
+    # locally on transient failures (429 / 5xx / RemoteProtocolError) using the
+    # next-best candidate. OpenRouter handles in-call fallback via extra_body
+    # transparently; the local retry guards against full-call failures the
+    # upstream couldn't recover from on its own.
+    fallback = _fallback_for(chosen, task_hint=task_hint, prefer_premium=prefer_premium)
+    try:
+        outcome = await _call_model(model=chosen, prompt=prompt, fallback_model=fallback)
+    except Exception as exc:
+        if not _is_retryable_error(exc) or fallback is None:
+            raise
+        logger.warning(
+            "primary model %s failed (%s); retrying with fallback %s",
+            chosen,
+            type(exc).__name__,
+            fallback,
+        )
+        # ONE fallback per call — pass no fallback_model on the retry so we
+        # don't accidentally chain a third attempt server-side.
+        outcome = await _call_model(model=fallback, prompt=prompt, fallback_model=None)
 
+    tokens_in = outcome.tokens_in
+    tokens_out = outcome.tokens_out
+    text = outcome.text
     # Recompute actual cost from real token usage (estimate was for budget
-    # gating; the cost surfaced to the caller should be the real one).
-    actual_cost = estimate_cost_usd(chosen, tokens_in=tokens_in, tokens_out=tokens_out)
+    # gating; the catalog-based cost surfaced to the caller should reflect
+    # whatever model actually answered).
+    actual_model = outcome.model_used
+    try:
+        actual_cost = estimate_cost_usd(actual_model, tokens_in=tokens_in, tokens_out=tokens_out)
+    except KeyError:
+        # Fallback model not in our catalog (rare — OpenRouter routed
+        # somewhere unexpected). Use the requested model's price as the
+        # next-best estimate; the OpenRouter-billed truth still surfaces
+        # via usage_cost_usd.
+        actual_cost = estimate_cost_usd(chosen, tokens_in=tokens_in, tokens_out=tokens_out)
     premium = _premium_equivalent(task_hint)
     premium_cost = estimate_cost_usd(premium, tokens_in=tokens_in, tokens_out=tokens_out)
     savings = max(0.0, premium_cost - actual_cost)
 
+    # S4-ROUTE-01: emit a WARNING when our catalog estimate drifts from the
+    # OpenRouter-billed truth by more than 10%. Catches stale pricing before
+    # users notice the divergence.
+    _check_cost_drift(model=actual_model, estimate=actual_cost, truth=outcome.usage_cost_usd)
+
     result = RouteResult(
         response=text,
-        model_used=chosen,
+        model_used=actual_model,
+        model_requested=chosen,
         cost_usd=actual_cost,
+        usage_cost_usd=outcome.usage_cost_usd,
+        upstream_cost_usd=outcome.upstream_cost_usd,
         tokens_in=tokens_in,
         tokens_out=tokens_out,
         savings_vs_premium=savings,

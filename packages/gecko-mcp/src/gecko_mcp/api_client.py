@@ -119,7 +119,7 @@ class GeckoAPIClient:
     Free endpoints always go through plain httpx — no payment proxy.
     """
 
-    PAID_PATHS: frozenset[str] = frozenset({"/research", "/research/pro"})
+    PAID_PATHS: frozenset[str] = frozenset({"/research", "/research/pro", "/route"})
 
     def __init__(
         self,
@@ -529,6 +529,30 @@ class GeckoAPIClient:
                 logger.warning("retry SSE failed, falling back to poll: %s", exc)
 
         return await self._poll_result(session_id, poll_interval_s, poll_deadline_s, ack)
+
+    async def route(
+        self,
+        prompt: str,
+        *,
+        task_hint: str = "default",
+        max_cost_usd: float = 0.05,
+        prefer_premium: bool = False,
+        tier_preset: str = "balanced",
+    ) -> dict[str, Any]:
+        """POST /route — paid LLM routing through gecko-api (S4-ROUTE-02).
+
+        Goes through the same x402 / frames.ag plumbing as /research; the
+        upstream charges a flat per-call fee. Returns the RouteResult shape
+        as a JSON-safe dict.
+        """
+        body: dict[str, Any] = {
+            "prompt": prompt,
+            "task_hint": task_hint,
+            "max_cost_usd": max_cost_usd,
+            "prefer_premium": prefer_premium,
+            "tier_preset": tier_preset,
+        }
+        return await self._paid_post("/route", body)
 
     async def ask(self, session_id: str, question: str) -> dict[str, Any]:
         """POST /sessions/{id}/ask — free follow-up against a paid session."""

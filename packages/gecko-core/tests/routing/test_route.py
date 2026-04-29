@@ -36,14 +36,29 @@ class _FakeCompletion:
 
 
 def _patch_call_model(
-    monkeypatch: pytest.MonkeyPatch, *, content: str, t_in: int, t_out: int
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    content: str,
+    t_in: int,
+    t_out: int,
+    usage_cost_usd: float | None = None,
+    upstream_cost_usd: float | None = None,
+    model_used: str | None = None,
 ) -> None:
     """Replace `_call_model` so no AsyncOpenAI client is constructed."""
     from gecko_core import routing as routing_mod
+    from gecko_core.routing import _CallOutcome
 
-    async def _fake(*, model: str, prompt: str) -> tuple[str, int, int]:
-        del model, prompt
-        return content, t_in, t_out
+    async def _fake(*, model: str, prompt: str, fallback_model: str | None = None) -> _CallOutcome:
+        del prompt, fallback_model
+        return _CallOutcome(
+            text=content,
+            tokens_in=t_in,
+            tokens_out=t_out,
+            usage_cost_usd=usage_cost_usd,
+            upstream_cost_usd=upstream_cost_usd,
+            model_used=model_used or model,
+        )
 
     monkeypatch.setattr(routing_mod, "_call_model", _fake)
 
@@ -118,6 +133,149 @@ async def test_route_downshifts_under_tight_budget(monkeypatch: pytest.MonkeyPat
         max_cost_usd=0.02,
     )
     assert result.model_used == "gpt-4o-mini"
+
+
+# ---------------------------------------------------------------------------
+# S4-ROUTE-01 — surface OpenRouter `usage.cost` truth + drift warning
+# ---------------------------------------------------------------------------
+
+
+async def test_route_surfaces_usage_cost_when_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_call_model(
+        monkeypatch,
+        content="x",
+        t_in=100,
+        t_out=100,
+        usage_cost_usd=0.0123,
+        upstream_cost_usd=0.0091,
+    )
+    _patch_charge(monkeypatch)
+
+    result = await route("hello", task_hint="default")
+    assert result.usage_cost_usd == pytest.approx(0.0123)
+    assert result.upstream_cost_usd == pytest.approx(0.0091)
+
+
+async def test_route_usage_cost_none_for_direct_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No `usage.cost` on the upstream response → field is None, no error."""
+    _patch_call_model(monkeypatch, content="x", t_in=100, t_out=100)
+    _patch_charge(monkeypatch)
+
+    result = await route("hello", task_hint="default")
+    assert result.usage_cost_usd is None
+    assert result.upstream_cost_usd is None
+
+
+async def test_route_warns_on_cost_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A 10x drift between estimate and truth fires the WARNING log."""
+    import logging
+
+    # Force a large truth-vs-estimate gap. Estimate is computed from token
+    # counts; with t_in=100, t_out=100 on gpt-4o-mini estimate is ~$0.000075.
+    # Setting truth to $0.05 makes the drift enormous (>>10%).
+    _patch_call_model(
+        monkeypatch,
+        content="x",
+        t_in=100,
+        t_out=100,
+        usage_cost_usd=0.05,
+    )
+    _patch_charge(monkeypatch)
+
+    caplog.set_level(logging.WARNING, logger="gecko_core.routing")
+    await route("hello", task_hint="default")
+    assert any(
+        "cost drift" in rec.message and rec.levelno == logging.WARNING for rec in caplog.records
+    )
+
+
+# ---------------------------------------------------------------------------
+# S4-ROUTE-03 — cross-provider fallback chain
+# ---------------------------------------------------------------------------
+
+
+async def test_route_falls_back_on_429(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Primary 429 → one retry on the fallback model; result reflects success."""
+    from gecko_core import routing as routing_mod
+    from gecko_core.routing import _CallOutcome
+
+    calls: list[str] = []
+
+    class _FakeStatusError(Exception):
+        status_code = 429
+
+    async def _fake(*, model: str, prompt: str, fallback_model: str | None = None) -> _CallOutcome:
+        del prompt, fallback_model
+        calls.append(model)
+        if len(calls) == 1:
+            raise _FakeStatusError("upstream rate-limited")
+        return _CallOutcome(
+            text="ok",
+            tokens_in=10,
+            tokens_out=10,
+            usage_cost_usd=None,
+            upstream_cost_usd=None,
+            model_used=model,
+        )
+
+    monkeypatch.setattr(routing_mod, "_call_model", _fake)
+    _patch_charge(monkeypatch)
+
+    result = await route("hello", task_hint="default", prefer_premium=False)
+    # gpt-4o-mini is preferred; gpt-4o is the alternative tier candidate.
+    assert calls == ["gpt-4o-mini", "gpt-4o"]
+    assert result.model_requested == "gpt-4o-mini"
+    assert result.model_used == "gpt-4o"
+
+
+async def test_route_surfaces_model_used_when_router_swaps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """OpenRouter's server-side fallback returns a different `response.model`."""
+    _patch_call_model(
+        monkeypatch,
+        content="x",
+        t_in=10,
+        t_out=10,
+        model_used="anthropic/claude-haiku-4.5",
+    )
+    _patch_charge(monkeypatch)
+
+    result = await route("hello", task_hint="default")
+    assert result.model_requested == "gpt-4o-mini"
+    assert result.model_used == "anthropic/claude-haiku-4.5"
+
+
+async def test_route_fails_cleanly_when_both_models_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Primary + fallback both 5xx — surface the second error, no infinite retry."""
+    from gecko_core import routing as routing_mod
+
+    calls: list[str] = []
+
+    class _FakeStatusError(Exception):
+        status_code = 503
+
+    async def _fake(*, model: str, prompt: str, fallback_model: str | None = None) -> object:
+        del prompt, fallback_model
+        calls.append(model)
+        raise _FakeStatusError(f"down: {model}")
+
+    monkeypatch.setattr(routing_mod, "_call_model", _fake)
+    _patch_charge(monkeypatch)
+
+    with pytest.raises(_FakeStatusError):
+        await route("hello", task_hint="default")
+    # Exactly two attempts: primary + one fallback. No further retries.
+    assert len(calls) == 2
 
 
 async def test_route_emits_demo_log_when_env_set(

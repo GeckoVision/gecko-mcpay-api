@@ -22,7 +22,7 @@ from gecko_core.models import SessionStatus, SourceInfo, Tier
 
 PaymentMode = Literal["stub", "live", "frames"]
 
-CostKind = Literal["llm", "embed", "tavily", "deepgram"]
+CostKind = Literal["llm", "embed", "tavily", "deepgram", "twitsh", "v1_sources"]
 
 ProEventType = Literal["turn_start", "turn_end", "final", "error"]
 
@@ -62,6 +62,8 @@ class SessionEconomics(BaseModel):
     cost_embed_usd: float
     cost_tavily_usd: float
     cost_deepgram_usd: float
+    cost_twitsh_usd: float = 0.0
+    cost_v1_sources_usd: float = 0.0
     cost_total_usd: float
     margin_usd: float | None
     x402_tx_signature: str | None
@@ -294,7 +296,8 @@ class SessionStore:
                 self._client.table(self.SESSIONS_TABLE)
                 .select(
                     "id,price_usd,cost_llm_usd,cost_embed_usd,cost_tavily_usd,"
-                    "cost_deepgram_usd,cost_total_usd,margin_usd,x402_tx_signature"
+                    "cost_deepgram_usd,cost_twitsh_usd,cost_v1_sources_usd,"
+                    "cost_total_usd,margin_usd,x402_tx_signature"
                 )
                 .eq("id", str(session_id))
                 .is_("deleted_at", None)
@@ -314,6 +317,8 @@ class SessionStore:
             cost_embed_usd=float(row.get("cost_embed_usd") or 0),
             cost_tavily_usd=float(row.get("cost_tavily_usd") or 0),
             cost_deepgram_usd=float(row.get("cost_deepgram_usd") or 0),
+            cost_twitsh_usd=float(row.get("cost_twitsh_usd") or 0),
+            cost_v1_sources_usd=float(row.get("cost_v1_sources_usd") or 0),
             cost_total_usd=float(row.get("cost_total_usd") or 0),
             margin_usd=_as_float_or_none(row.get("margin_usd")),
             x402_tx_signature=row.get("x402_tx_signature"),

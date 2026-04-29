@@ -162,3 +162,91 @@ No. Mock baselines (`tests/eval/baselines/<suite>_baseline.json`) are
 deterministic and decoupled from prompt content; they exist to catch
 rubric-itself bugs. The live-run JSON is the new artifact of record for
 mainnet eligibility.
+
+---
+
+## 7. Live-V1 gate (S4-TWITSH-03)
+
+A second, smaller gate runs the **holdout-live** suite (10 ideas) with the
+twit.sh / HN / Reddit dispatcher *actually firing*. The gate above (§2-§5)
+uses the curated `rag_context` fixtures from the suite JSONs, which is
+right for prompt-stability comparisons but doesn't tell us whether v5.4
+holds up against real V1-source noise. This gate fills that hole.
+
+**One-liner:**
+
+```bash
+./scripts/run_eval_gate_live.sh
+```
+
+### 7.1 Prereqs
+
+In addition to `OPENAI_API_KEY` + `ANTHROPIC_API_KEY`/`CLAUDE_API_KEY`:
+
+```bash
+export TWITSH_ENABLED=true
+export TWITSH_WALLET_PRIVATE_KEY=0x...                 # Base mainnet signer
+export TWITSH_WALLET_ADDRESS=0x7cc33a7BbA8409374f754f1f811BC63D1ea5bCFC
+```
+
+The gate script aborts (exit 2) if any of these are unset — without them,
+the V1 dispatcher silently no-ops and the result is meaningless.
+
+### 7.2 What the gate does
+
+1. Loads `tests/eval/suites/general_holdout_live.json` (10 ideas, 5
+   ship + 5 kill, **no `mock_precedents` and no `rag_context`** — forces
+   real retrieval).
+2. For each idea, calls
+   `gecko_core.sources.v1_block.dispatch_and_render(...)` to build a real
+   V1 Source Signal block (twit.sh + HN + Reddit; precedents skipped —
+   the harness has no SessionStore).
+3. Hands that block to the live AG2 debate as `rag_context`.
+4. Records per-idea `v1_sources_cost_usd` in the run JSON (sum across the
+   gate is printed at the end).
+5. Reads `aggregate.verdict_accuracy`; passes iff **≥ 0.80**.
+
+### 7.3 Spend + runtime
+
+| Item | Estimate |
+|---|---|
+| twit.sh (mainnet, $0.05 cap × 10 ideas) | ~$0.50 |
+| OpenAI agent tokens (10 ideas, gpt-4o-mini + gpt-4o judge) | ~$2.00 |
+| Anthropic rubric (10 × Sonnet 4.6) | ~$1.00 |
+| **Total** | **~$3.50** |
+| Runtime, sequential | ~8-12 minutes |
+
+### 7.4 Why 0.80 (not 0.85)?
+
+Real V1-source signal is noisier than the curated fixtures the cutover
+gate uses. The hand-tuned `rag_context` strings in `general_suite.json`
+were authored *to* the v5.4 judge prompt; the live-V1 gate breaks that
+loop. We accept 5 percentage points of accuracy loss as the cost of
+measuring true performance.
+
+### 7.5 On failure
+
+The script exits 1 with the run-file path. Inspection:
+
+```bash
+jq '.ideas[] | select(.actual_verdict != .expected_verdict) | {id, expected_verdict, actual_verdict, v1_sources_cost_usd, scores}' \
+  tests/eval/live_runs/<date>-holdout_live.json
+```
+
+If failures cluster on idea categories where twit.sh dominates (crypto /
+defi / hackathon-team), the v5.4 prompts likely over-trust noisy X
+signal — `software-engineer` (Track A) owns prompt re-tuning. If failures
+cluster elsewhere, suspect a regression in the dispatcher or render
+shape and re-run with the fixture-mode gate (§2-§5) to confirm prompts
+are still good.
+
+### 7.6 Cadence
+
+Run after any of:
+
+- Track A ships new prompt versions (`v5.5+`).
+- Sources catalog changes (new V1 source, twit.sh API drift).
+- Before mainnet cutover, in addition to the curated-rag gate.
+
+Same-day re-runs append `-2`, `-3`, ... to
+`tests/eval/live_runs/YYYY-MM-DD-holdout_live.json`.

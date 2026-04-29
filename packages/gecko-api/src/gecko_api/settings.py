@@ -69,6 +69,12 @@ class Settings(BaseModel):
     # Pricing — basic and pro tiers exposed as separate routes.
     research_basic_price: str = "$20.00"
     research_pro_price: str = "$0.75"
+    # S4-ROUTE-02: flat per-call charge for /route. The OpenRouter `usage.cost`
+    # truth is only known post-call; x402's payment model is pre-flight, so we
+    # charge a fixed amount that covers the expected average + margin instead
+    # of doing exact markup math. Tradeoff: heavy callers subsidize light ones,
+    # but the implementation stays simple and predictable.
+    route_call_price: str = "$0.02"
 
     # Per-instance secret used to HMAC-sign session-scoped events tokens for
     # the SSE endpoint. Defaults to a derived value at process start so devs
@@ -180,6 +186,7 @@ class Settings(BaseModel):
         # Format: "$N.NN" (the x402 SDK parses the leading $).
         basic_price = os.environ.get("RESEARCH_BASIC_PRICE", "$20.00")
         pro_price = os.environ.get("RESEARCH_PRO_PRICE", "$0.75")
+        route_price = os.environ.get("ROUTE_CALL_PRICE", "$0.02")
         events_secret = os.environ.get("EVENTS_SECRET", "dev-events-secret-not-for-production")
 
         # In stub mode we still need a non-empty pay_to for the route catalog.
@@ -200,6 +207,7 @@ class Settings(BaseModel):
             twitsh_base_url=twitsh_base_url,
             research_basic_price=basic_price,
             research_pro_price=pro_price,
+            route_call_price=route_price,
             events_secret=events_secret,
         )
 

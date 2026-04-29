@@ -60,6 +60,11 @@ def economics(session_id: str) -> None:
     click.echo(f"  embed    {_fmt_usd(body.get('cost_embed_usd'))}")
     click.echo(f"  tavily   {_fmt_usd(body.get('cost_tavily_usd'))}")
     click.echo(f"  deepgram {_fmt_usd(body.get('cost_deepgram_usd'))}")
+    # V1 sources (S4-TWITSH-02): twit.sh is the only paid V1 source today;
+    # we surface both the per-source line (twitsh) and the cross-source
+    # rollup so the dashboard reflects the workflow-level $0.10 cap.
+    click.echo(f"  twitsh   {_fmt_usd(body.get('cost_twitsh_usd'))}")
+    click.echo(f"  v1 srcs  {_fmt_usd(body.get('cost_v1_sources_usd'))}")
     click.echo("  ───────────────────")
     click.echo(f"  total    {_fmt_usd(cost_total)}")
 

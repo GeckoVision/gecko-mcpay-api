@@ -312,14 +312,10 @@ def lookup_model(task: TaskProfile, tier: Tier) -> ModelEntry:
     try:
         model_id = _TASK_TIER_TO_MODEL_ID[(task, tier)]
     except KeyError as exc:
-        raise CatalogError(
-            f"no curated model for task={task.value} tier={tier.value}"
-        ) from exc
+        raise CatalogError(f"no curated model for task={task.value} tier={tier.value}") from exc
     catalog = load_catalog()
     if model_id not in catalog:
-        raise CatalogError(
-            f"matrix references model id {model_id!r} but it's not in the catalog"
-        )
+        raise CatalogError(f"matrix references model id {model_id!r} but it's not in the catalog")
     return catalog[model_id]
 
 

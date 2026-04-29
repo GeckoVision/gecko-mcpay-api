@@ -145,6 +145,20 @@ def _build_routes(settings: Settings) -> dict[str, RouteConfig]:
             ],
             description="Run a Builder Bootstrap research session (pro tier)",
         ),
+        # S4-ROUTE-02: cost-aware LLM routing surface. Flat per-call charge
+        # (no per-token markup) — see Settings.route_call_price for the
+        # tradeoff doc.
+        "POST /route": RouteConfig(
+            accepts=[
+                PaymentOption(
+                    scheme="exact",
+                    pay_to=pay_to,
+                    price=settings.route_call_price,
+                    network=chain_id,
+                ),
+            ],
+            description="Route an LLM call through Gecko's cost-aware router",
+        ),
     }
 
 
@@ -262,6 +276,19 @@ class ResearchRequest(BaseModel):
 
 class AskRequest(BaseModel):
     question: str = Field(..., min_length=3, max_length=500)
+
+
+class RouteRequest(BaseModel):
+    """S4-ROUTE-02 — request shape for POST /route."""
+
+    prompt: str = Field(..., min_length=1, max_length=20_000)
+    task_hint: str = "default"
+    max_cost_usd: float = Field(default=0.05, ge=0.0)
+    prefer_premium: bool = False
+    # Reserved for future use (S4-MATRIX-01 catalog tier selection); v1 ignores
+    # the value and routes through the legacy matrix. Accepted now so the
+    # client / MCP wire shape stabilizes ahead of the catalog wire-up.
+    tier_preset: str = "balanced"
 
 
 # ---------------------------------------------------------------------------
@@ -766,6 +793,48 @@ async def ask(session_id: str, req: AskRequest) -> AskResult:
         return await gecko_core.ask(session_id=session_id, question=req.question)
     except NotImplementedError as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
+
+
+@app.post("/route")
+async def route_call(req: RouteRequest, request: Request) -> dict[str, Any]:
+    """S4-ROUTE-02 — paid LLM router. Flat $0.02 per call (see settings).
+
+    Pricing tradeoff: x402 settles before we know the upstream-billed truth
+    (`usage.cost`). A perfect markup (e.g. base + 10% on truth) would require
+    a settle-after-work flow that x402 v2 doesn't support. We charge a flat
+    fee that covers the expected average plus margin; heavy callers subsidize
+    light ones, and the math stays auditable.
+
+    Auth: payment is enforced by the x402 middleware; this handler runs only
+    after settle. No per-user identity is required — `route` is session-less
+    by design.
+    """
+    from gecko_core.routing import route as core_route
+    from gecko_core.routing.matrix import ROUTING_MATRIX
+
+    if req.task_hint not in ROUTING_MATRIX:
+        raise HTTPException(
+            status_code=400,
+            detail=f"task_hint must be one of {sorted(ROUTING_MATRIX)}",
+        )
+
+    # Touch the request so unused-arg lint is happy in any future refactor
+    # that needs the payment payload (e.g. attaching tx_signature to logs).
+    _ = getattr(request.state, "payment_payload", None)
+
+    try:
+        result = await core_route(
+            req.prompt,
+            task_hint=req.task_hint,
+            max_cost_usd=req.max_cost_usd,
+            prefer_premium=req.prefer_premium,
+        )
+    except Exception as exc:
+        # Surface a clean 500; the x402 settle has already happened so we
+        # don't try to refund — just log and tell the caller.
+        logger.exception("route_call failed")
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+    return result.model_dump(mode="json")
 
 
 @app.get("/sessions/{session_id}/sources", response_model=list[SourceInfo])
