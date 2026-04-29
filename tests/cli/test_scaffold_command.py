@@ -10,7 +10,6 @@ import pytest
 from click.testing import CliRunner
 from gecko_cli.commands import scaffold as scaffold_module
 from gecko_cli.main import cli
-
 from gecko_core.orchestration.scaffold import (
     KillVerdictError,
     SessionNotFoundError,
@@ -54,16 +53,20 @@ def test_scaffold_command_renders_paths_table(
     monkeypatch.setattr(scaffold_core, "generate_scaffold", _fake)
 
     runner = CliRunner()
+    # Pin terminal width — Rich's default 80-col wrap truncates the long
+    # absolute paths in the table and we'd assert on truncated output.
     result = runner.invoke(
         cli,
         ["scaffold", str(sid), "--output-dir", str(tmp_path)],
+        env={"COLUMNS": "240"},
     )
     assert result.exit_code == 0, result.output
     assert "Scaffold ready" in result.output
-    assert "PRD.md" in result.output
-    assert "business-plan.md" in result.output
-    assert "BUILDING.md" in result.output
     assert "4321" in result.output
+    # Verify the three expected files all appear (basename match — Rich may
+    # ellipsize long absolute paths in the middle but always keeps the tail).
+    for name in ("PRD.md", "business-plan.md", "BUILDING.md"):
+        assert name in result.output, f"missing {name} in:\n{result.output}"
 
 
 def test_scaffold_command_invalid_uuid_errors(tmp_path: Path) -> None:

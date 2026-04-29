@@ -413,9 +413,7 @@ async def _run_route(
     from gecko_core.routing.matrix import ROUTING_MATRIX
 
     if task_hint not in ROUTING_MATRIX:
-        raise ValueError(
-            f"task_hint must be one of {sorted(ROUTING_MATRIX)}; got {task_hint!r}"
-        )
+        raise ValueError(f"task_hint must be one of {sorted(ROUTING_MATRIX)}; got {task_hint!r}")
     result = await route(
         prompt,
         task_hint=task_hint,  # type: ignore[arg-type]

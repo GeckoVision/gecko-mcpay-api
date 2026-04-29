@@ -12,7 +12,6 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-
 from gecko_core.orchestration.scaffold import (
     KillVerdictError,
     ScaffoldError,
@@ -381,7 +380,9 @@ async def test_generate_scaffold_rejects_malformed_json(
         result=_make_result(_CANNED_TRANSCRIPT, _CANNED_SUMMARY),
     )
     # Missing prd_md key — ScaffoldDocs validation should fail.
-    fake = _FakeOpenAI(json.dumps({"business_plan_md": "x", "building_md": "y"}), _FakeUsage(10, 10))
+    fake = _FakeOpenAI(
+        json.dumps({"business_plan_md": "x", "building_md": "y"}), _FakeUsage(10, 10)
+    )
 
     with pytest.raises(ScaffoldError):
         await generate_scaffold(
