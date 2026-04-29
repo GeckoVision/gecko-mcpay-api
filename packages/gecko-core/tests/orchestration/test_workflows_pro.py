@@ -72,7 +72,7 @@ def stubbed_groupchat(monkeypatch: pytest.MonkeyPatch) -> None:
         def __init__(self) -> None:
             self.groupchat = _FakeChat()
 
-    def _fake_build(_cfg: dict[str, object]) -> _FakeManager:
+    def _fake_build(_cfg: dict[str, object], **_kw: object) -> _FakeManager:
         return _FakeManager()
 
     from gecko_core.orchestration import pro as pro_mod

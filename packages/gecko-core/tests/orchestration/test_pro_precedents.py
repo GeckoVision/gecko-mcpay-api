@@ -118,7 +118,7 @@ async def test_pro_generate_threads_precedents_into_chat_messages(
         def __init__(self) -> None:
             self.groupchat = _FakeChat()
 
-    monkeypatch.setattr(pro_mod, "build_groupchat", lambda _cfg: _FakeManager())
+    monkeypatch.setattr(pro_mod, "build_groupchat", lambda _cfg, **_kw: _FakeManager())
 
     rows = [
         _precedent(summary="cap-table diff tool", verdict="ship", similarity=0.88),
@@ -200,7 +200,7 @@ async def test_run_pro_debate_retrieves_and_injects_precedents(
         def __init__(self) -> None:
             self.groupchat = _FakeChat()
 
-    monkeypatch.setattr(pro_mod, "build_groupchat", lambda _cfg: _FakeManager())
+    monkeypatch.setattr(pro_mod, "build_groupchat", lambda _cfg, **_kw: _FakeManager())
 
     # Fake store — records appended events/costs and returns 2 precedents
     # from retrieve_gecko_precedent.
