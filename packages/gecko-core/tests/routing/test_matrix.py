@@ -124,3 +124,21 @@ def test_select_model_raises_when_all_candidates_over_budget() -> None:
             estimated_out=1_000_000,
             max_cost_usd=0.01,
         )
+
+
+def test_estimate_cost_catalog_backed_for_claude_opus() -> None:
+    """Catalog-backed pricing spot-check (S4-MATRIX-01).
+
+    1M input tokens @ $5/1M on the catalog id should yield exactly $5.00.
+    """
+    cost = estimate_cost_usd(
+        "anthropic/claude-opus-4.7", tokens_in=1_000_000, tokens_out=0
+    )
+    assert cost == pytest.approx(5.00)
+
+
+def test_legacy_claude_opus_dash_id_still_resolves() -> None:
+    """Legacy pre-Sprint-4 callers using the dash-id keep working."""
+    # Legacy hardcoded entry: $15/$75 per 1M.
+    cost = estimate_cost_usd("claude-opus-4-7", tokens_in=1_000_000, tokens_out=0)
+    assert cost == pytest.approx(15.00)

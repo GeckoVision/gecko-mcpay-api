@@ -45,8 +45,23 @@ async def _interactive_approval(candidates: list[SourceCandidate]) -> bool:
     default=None,
     help="Attach this run to a project (UUID or name; falls back to .gecko/project.json).",
 )
+@click.option(
+    "--tier-preset",
+    "tier_preset",
+    type=click.Choice(["quality", "balanced", "budget", "free"]),
+    default="balanced",
+    help=(
+        "User-facing cost/quality preset (S4-MATRIX-01). Drives per-agent "
+        "model selection via the curated catalog."
+    ),
+)
 def research_cmd(
-    idea: str, tier: str, urls: tuple[str, ...], yes: bool, project: str | None
+    idea: str,
+    tier: str,
+    urls: tuple[str, ...],
+    yes: bool,
+    project: str | None,
+    tier_preset: str,
 ) -> None:
     """Discover, index, generate. The main workflow."""
     seed = list(urls) if urls else None
@@ -67,6 +82,7 @@ def research_cmd(
                 auto_approve=yes,
                 approval_callback=None if yes else _interactive_approval,
                 progress_callback=_progress,
+                tier_preset=tier_preset,
             )
         )
 

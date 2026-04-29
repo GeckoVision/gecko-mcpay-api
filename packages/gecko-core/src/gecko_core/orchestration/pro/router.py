@@ -18,6 +18,14 @@ import os
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from gecko_core.routing.catalog import (
+    AgentRole,
+    Tier,
+    filter_by_provider,
+    load_catalog,
+    lookup_model,
+    task_for_role,
+)
 from gecko_core.routing.costs import MODEL_PRICING
 
 
@@ -28,12 +36,16 @@ def _price_per_1k_for(model: str) -> list[float] | None:
     so OpenRouter-style names resolve to the same price as the bare model
     name. ``MODEL_PRICING`` stores USD per 1M tokens; AG2 expects USD per 1K.
     """
-    bare = model
-    for prefix in ("openai/", "anthropic/", "claude/"):
-        if bare.startswith(prefix):
-            bare = bare[len(prefix) :]
-            break
-    entry = MODEL_PRICING.get(bare)
+    # Try as-is first (catalog ids and legacy bare names both live in
+    # MODEL_PRICING after the S4-MATRIX-01 catalog wiring).
+    entry = MODEL_PRICING.get(model)
+    if entry is None:
+        bare = model
+        for prefix in ("openai/", "anthropic/", "claude/"):
+            if bare.startswith(prefix):
+                bare = bare[len(prefix) :]
+                break
+        entry = MODEL_PRICING.get(bare)
     if entry is None:
         return None
     return [entry["input_per_m"] / 1000.0, entry["output_per_m"] / 1000.0]
@@ -86,13 +98,16 @@ class RouterConfig:
     """Resolved LLM-routing surface used by AG2.
 
     ``base_url`` and ``api_key`` feed the OpenAI-compatible client; ``extra_headers``
-    are required by OpenRouter for usage-attribution analytics.
+    are required by OpenRouter for usage-attribution analytics. ``tier_preset``
+    selects the user-facing cost/quality preset that drives per-agent model
+    selection via the curated catalog.
     """
 
     router: Router
     base_url: str
     api_key: str
     extra_headers: dict[str, str]
+    tier_preset: Tier = Tier.balanced
 
     def llm_config_for_model(self, model: str, *, temperature: float = 0.3) -> dict[str, Any]:
         """Build a single-config-list AG2 ``llm_config`` for one model string."""
@@ -116,8 +131,16 @@ class RouterConfig:
         return {"config_list": [entry], "temperature": temperature}
 
 
-def resolve_router(environ: dict[str, str] | None = None) -> RouterConfig:
+def resolve_router(
+    environ: dict[str, str] | None = None,
+    *,
+    tier_preset: Tier | str = Tier.balanced,
+) -> RouterConfig:
     """Resolve LLM routing from the environment.
+
+    ``tier_preset`` flows through to per-agent catalog lookup (see
+    ``model_matrix_for_tier``). It is orthogonal to ``LLM_ROUTER``: the router
+    controls the BASE URL + auth, the tier controls the MODEL string.
 
     Raises:
         ValueError: ``LLM_ROUTER`` value is unknown, or the required API key
@@ -125,6 +148,7 @@ def resolve_router(environ: dict[str, str] | None = None) -> RouterConfig:
     """
     env = environ if environ is not None else dict(os.environ)
     router = (env.get("LLM_ROUTER") or "openai").strip().lower()
+    tier = Tier(tier_preset) if not isinstance(tier_preset, Tier) else tier_preset
     if router not in _VALID_ROUTERS:
         raise ValueError(
             f"LLM_ROUTER={router!r} is not one of {sorted(_VALID_ROUTERS)}; "
@@ -142,6 +166,7 @@ def resolve_router(environ: dict[str, str] | None = None) -> RouterConfig:
             base_url="https://api.openai.com/v1",
             api_key=api_key,
             extra_headers={},
+            tier_preset=tier,
         )
 
     if router == "openrouter":
@@ -165,6 +190,7 @@ def resolve_router(environ: dict[str, str] | None = None) -> RouterConfig:
             base_url="https://openrouter.ai/api/v1",
             api_key=api_key,
             extra_headers=headers,
+            tier_preset=tier,
         )
 
     # clawrouter — no auth, listens on localhost by default.
@@ -173,6 +199,7 @@ def resolve_router(environ: dict[str, str] | None = None) -> RouterConfig:
         base_url=env.get("CLAWROUTER_URL", "http://localhost:8402/v1"),
         api_key="noop",
         extra_headers={},
+        tier_preset=tier,
     )
 
 
@@ -192,10 +219,74 @@ def model_matrix(router: Router) -> dict[str, str]:
     return dict(_MATRIX[router])
 
 
+# Pro-debate agent names that participate in the catalog-driven matrix. The
+# legacy ``_MATRIX`` includes ``proponent`` as an alias for architect — the
+# catalog matrix doesn't (the AgentRole enum uses one canonical name per
+# slot).
+_PRO_DEBATE_ROLES: tuple[AgentRole, ...] = (
+    AgentRole.analyst,
+    AgentRole.critic,
+    AgentRole.architect,
+    AgentRole.scoper,
+    AgentRole.judge,
+)
+
+
+# Providers reachable directly via OpenAI's API. Other providers must go
+# through OpenRouter (or ClawRouter). When ``LLM_ROUTER=openai`` and the
+# catalog matrix would pick a non-OpenAI model, we substitute the OpenAI
+# fallback for that role rather than 404 at the API.
+_OPENAI_FALLBACK_BY_TIER: dict[Tier, str] = {
+    Tier.quality: "openai/gpt-5.5",
+    Tier.balanced: "openai/gpt-5-mini",
+    Tier.budget: "openai/gpt-4.1-nano",
+    Tier.free: "openai/gpt-4.1-nano",  # no free OpenAI model — degrade to nano
+}
+
+
+def model_matrix_for_tier(router: Router, tier: Tier) -> dict[str, str]:
+    """Catalog-driven per-agent model matrix for the Pro debate.
+
+    Returns a ``{agent_name: model_id}`` map covering the five Pro-debate
+    roles plus the ``proponent`` alias (mirrored to ``architect``'s id so
+    callers using the roadmap vocabulary still get a valid model).
+
+    Provider filtering: when ``router == "openai"`` the catalog pick is
+    substituted with an OpenAI-only fallback for any role whose curated model
+    isn't reachable from api.openai.com. Catalog-driven multi-provider
+    matrices are OpenRouter-gated.
+    """
+    catalog = load_catalog()
+    openai_only = router == "openai"
+    if openai_only:
+        catalog = filter_by_provider(catalog, {"openai"})
+
+    matrix: dict[str, str] = {}
+    for role in _PRO_DEBATE_ROLES:
+        task = task_for_role(role)
+        try:
+            entry = lookup_model(task, tier)
+        except Exception:
+            entry = None
+        # If lookup succeeded but provider filtering kicked it out, fall back.
+        if entry is None or (openai_only and entry.id not in catalog):
+            matrix[role.value] = _OPENAI_FALLBACK_BY_TIER[tier] if openai_only else (
+                # Cross-provider catalog miss is unusual — bail to a sane default.
+                "openai/gpt-4.1-nano"
+            )
+        else:
+            matrix[role.value] = entry.id
+    # Alias proponent -> architect for legacy callers using the roadmap name.
+    matrix["proponent"] = matrix["architect"]
+    return matrix
+
+
 __all__ = [
     "Router",
     "RouterConfig",
+    "Tier",
     "model_for_agent",
     "model_matrix",
+    "model_matrix_for_tier",
     "resolve_router",
 ]

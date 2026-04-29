@@ -1,0 +1,660 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "last_updated": "2026-04-29",
+    "source": "OpenRouter Rankings + BenchLM + Artificial Analysis",
+    "description": "GeckoVision Model Routing Database - Best models per task, organized by cost/speed/quality tiers",
+    "note": "Prices in USD per 1M tokens. Scores from BenchLM provisional overall score (0-100)."
+  },
+
+  "models": {
+    "claude-opus-4.7": {
+      "id": "anthropic/claude-opus-4.7",
+      "name": "Claude Opus 4.7",
+      "provider": "anthropic",
+      "pricing": { "input": 5.00, "output": 25.00 },
+      "context_window": 1000000,
+      "score": 90,
+      "score_per_dollar": 3.4,
+      "tier": "frontier",
+      "strengths": ["long-running agents", "complex multi-step tasks", "codebase refactoring", "architecture planning", "document drafting", "data analysis"],
+      "weaknesses": ["expensive for simple tasks", "overkill for file navigation"],
+      "best_for": ["planning", "orchestration", "complex_coding", "deep_reasoning"],
+      "swe_bench_verified": 82.0,
+      "modalities": ["text"],
+      "weekly_tokens": "1.17T",
+      "openrouter_rank": { "programming": 3, "overall": 4 }
+    },
+
+    "claude-sonnet-4.6": {
+      "id": "anthropic/claude-sonnet-4.6",
+      "name": "Claude Sonnet 4.6",
+      "provider": "anthropic",
+      "pricing": { "input": 3.00, "output": 15.00 },
+      "context_window": 1000000,
+      "score": 83,
+      "score_per_dollar": 5.4,
+      "tier": "premium",
+      "strengths": ["coding", "agents", "professional work", "iterative development", "codebase navigation", "document creation"],
+      "weaknesses": ["expensive vs DeepSeek for bulk work"],
+      "best_for": ["implementation", "coding", "professional_writing", "agent_tasks"],
+      "modalities": ["text", "image"],
+      "weekly_tokens": "1.34T",
+      "openrouter_rank": { "finance": 2, "legal": 7, "tool_calls": 4, "overall": 2 }
+    },
+
+    "claude-haiku-4.5": {
+      "id": "anthropic/claude-haiku-4.5",
+      "name": "Claude Haiku 4.5",
+      "provider": "anthropic",
+      "pricing": { "input": 1.00, "output": 5.00 },
+      "context_window": 200000,
+      "score": 58,
+      "score_per_dollar": 11.2,
+      "tier": "budget",
+      "strengths": ["fast responses", "high-volume processing", "file navigation", "pattern matching", "sub-agent tasks"],
+      "weaknesses": ["weaker reasoning", "not for complex planning"],
+      "best_for": ["file_navigation", "classification", "simple_tasks", "high_volume"],
+      "modalities": ["text", "image"],
+      "openrouter_rank": { "marketing": 8 }
+    },
+
+    "kimi-k2.6": {
+      "id": "moonshotai/kimi-k2.6",
+      "name": "Kimi K2.6",
+      "provider": "moonshotai",
+      "pricing": { "input": 0.7448, "output": 4.655 },
+      "context_window": 256000,
+      "score": 84,
+      "score_per_dollar": 20.5,
+      "tier": "premium_value",
+      "strengths": ["long-horizon coding", "UI/UX generation", "multi-agent orchestration", "Python/Rust/Go", "agent swarm architecture"],
+      "weaknesses": ["smaller context than Claude/Gemini", "newer model less battle-tested"],
+      "best_for": ["complex_coding", "ui_generation", "multi_agent", "end_to_end_projects"],
+      "swe_bench_verified": 80.2,
+      "modalities": ["text", "image"],
+      "weekly_tokens": "2.01T",
+      "openrouter_rank": { "programming": 1, "tool_calls": 2, "overall": 1 },
+      "note": "Saves ~88% coding costs vs Claude Opus. #1 on OpenRouter by usage."
+    },
+
+    "deepseek-v3.2": {
+      "id": "deepseek/deepseek-v3.2",
+      "name": "DeepSeek V3.2",
+      "provider": "deepseek",
+      "pricing": { "input": 0.252, "output": 0.378 },
+      "context_window": 131000,
+      "score": 58,
+      "score_per_dollar": 133.3,
+      "tier": "budget_powerhouse",
+      "strengths": ["incredible cost efficiency", "strong reasoning", "agentic tool-use", "math", "long-context"],
+      "weaknesses": ["smaller context window", "less polished outputs"],
+      "best_for": ["bulk_processing", "reasoning", "math", "budget_coding", "data_analysis"],
+      "modalities": ["text"],
+      "weekly_tokens": "1.21T",
+      "openrouter_rank": { "health": 3, "academia": 5, "overall": 3 }
+    },
+
+    "deepseek-v4-pro": {
+      "id": "deepseek/deepseek-v4-pro",
+      "name": "DeepSeek V4 Pro",
+      "provider": "deepseek",
+      "pricing": { "input": 1.74, "output": 3.48 },
+      "context_window": 1000000,
+      "score": 70,
+      "score_per_dollar": 17.8,
+      "tier": "premium_value",
+      "strengths": ["frontier-class reasoning at budget price", "coding", "math olympiad level"],
+      "weaknesses": ["newer model", "availability can vary"],
+      "best_for": ["complex_reasoning", "advanced_coding", "math", "research"],
+      "swe_bench_verified": 83.7,
+      "modalities": ["text"],
+      "note": "83.7% SWE-bench at 1/17th cost of Claude. Open weights."
+    },
+
+    "deepseek-v4-flash": {
+      "id": "deepseek/deepseek-v4-flash",
+      "name": "DeepSeek V4 Flash",
+      "provider": "deepseek",
+      "pricing": { "input": 0.14, "output": 0.28 },
+      "context_window": 1000000,
+      "score": 59,
+      "score_per_dollar": 182.1,
+      "tier": "ultra_budget",
+      "strengths": ["extremely cheap", "1M context", "good enough for many tasks"],
+      "weaknesses": ["lower quality than pro variants"],
+      "best_for": ["bulk_processing", "summarization", "simple_tasks", "high_volume"],
+      "modalities": ["text"]
+    },
+
+    "deepseek-v4-flash-max": {
+      "id": "deepseek/deepseek-v4-flash-max",
+      "name": "DeepSeek V4 Flash (Max Reasoning)",
+      "provider": "deepseek",
+      "pricing": { "input": 0.14, "output": 0.28 },
+      "context_window": 1000000,
+      "score": 76,
+      "score_per_dollar": 264.3,
+      "tier": "ultra_budget",
+      "strengths": ["best score/$ ratio in the market", "reasoning mode", "1M context"],
+      "weaknesses": ["slower than non-reasoning variant"],
+      "best_for": ["budget_reasoning", "bulk_analysis", "cost_optimized_workflows"],
+      "modalities": ["text"],
+      "note": "BEST VALUE model overall. Score/$ ratio of 264.3."
+    },
+
+    "gemini-3-flash-preview": {
+      "id": "google/gemini-3-flash-preview",
+      "name": "Gemini 3 Flash Preview",
+      "provider": "google",
+      "pricing": { "input": 0.50, "output": 3.00 },
+      "context_window": 1050000,
+      "score": 65,
+      "score_per_dollar": 18.7,
+      "tier": "balanced",
+      "strengths": ["multimodal (text/image/audio/video/PDF)", "1M context", "configurable reasoning", "tool use", "agentic workflows"],
+      "weaknesses": ["preview model may change"],
+      "best_for": ["multimodal_tasks", "audio_processing", "agentic_workflows", "general_purpose"],
+      "modalities": ["text", "image", "audio", "video", "pdf"],
+      "weekly_tokens": "1.03T",
+      "openrouter_rank": { "academia": 2, "health": 2, "audio": 1, "tool_calls": 3, "overall": 5 }
+    },
+
+    "gemini-3.1-pro-preview": {
+      "id": "google/gemini-3.1-pro-preview",
+      "name": "Gemini 3.1 Pro Preview",
+      "provider": "google",
+      "pricing": { "input": 2.00, "output": 12.00 },
+      "context_window": 1050000,
+      "score": 92,
+      "score_per_dollar": 7.4,
+      "tier": "frontier",
+      "strengths": ["#2 intelligence index", "multimodal", "1M context", "strong reasoning"],
+      "weaknesses": ["expensive output tokens", "preview"],
+      "best_for": ["complex_reasoning", "research", "multimodal_analysis", "audio_analysis"],
+      "modalities": ["text", "image", "audio", "video"],
+      "openrouter_rank": { "intelligence_index": 3, "audio": 3 }
+    },
+
+    "gemini-2.5-flash-lite": {
+      "id": "google/gemini-2.5-flash-lite",
+      "name": "Gemini 2.5 Flash Lite",
+      "provider": "google",
+      "pricing": { "input": 0.02, "output": 0.10 },
+      "context_window": 1050000,
+      "score": 38,
+      "score_per_dollar": 13.2,
+      "tier": "ultra_budget",
+      "strengths": ["cheapest vision model", "1M context", "#1 for image processing"],
+      "weaknesses": ["lower quality for complex tasks"],
+      "best_for": ["image_processing", "vision_triage", "bulk_image_analysis", "cheap_classification"],
+      "modalities": ["text", "image"],
+      "openrouter_rank": { "images": 1 },
+      "note": "Dominates image processing at 31.4% market share. Cheapest multimodal model."
+    },
+
+    "gemini-2.5-flash": {
+      "id": "google/gemini-2.5-flash",
+      "name": "Gemini 2.5 Flash",
+      "provider": "google",
+      "pricing": { "input": 0.30, "output": 2.50 },
+      "context_window": 1050000,
+      "score": 38,
+      "score_per_dollar": 13.2,
+      "tier": "budget",
+      "strengths": ["good multimodal", "1M context", "tool use", "audio support"],
+      "weaknesses": ["output pricing higher than DeepSeek"],
+      "best_for": ["multimodal_budget", "audio", "tool_use", "general_purpose"],
+      "modalities": ["text", "image", "audio", "video"],
+      "openrouter_rank": { "tool_calls": 5, "audio": 2, "images": 4 }
+    },
+
+    "gemini-3.1-flash-lite-preview": {
+      "id": "google/gemini-3.1-flash-lite-preview",
+      "name": "Gemini 3.1 Flash Lite Preview",
+      "provider": "google",
+      "pricing": { "input": 0.25, "output": 1.50 },
+      "context_window": 1050000,
+      "score": 48,
+      "score_per_dollar": 26.0,
+      "tier": "budget",
+      "strengths": ["good value multimodal", "1M context", "audio support"],
+      "weaknesses": ["preview model"],
+      "best_for": ["budget_multimodal", "audio_triage", "general_purpose"],
+      "modalities": ["text", "image", "audio"],
+      "openrouter_rank": { "audio": 4, "images": 6 }
+    },
+
+    "gpt-5.5": {
+      "id": "openai/gpt-5.5",
+      "name": "GPT-5.5",
+      "provider": "openai",
+      "pricing": { "input": 5.00, "output": 30.00 },
+      "context_window": 1000000,
+      "score": 91,
+      "score_per_dollar": 3.0,
+      "tier": "frontier",
+      "strengths": ["#1 intelligence index", "strongest overall reasoning", "SWE-bench 82.6%"],
+      "weaknesses": ["very expensive", "overkill for simple tasks"],
+      "best_for": ["hardest_problems", "frontier_reasoning", "research"],
+      "swe_bench_verified": 82.6,
+      "modalities": ["text"],
+      "openrouter_rank": { "intelligence_index": 1 }
+    },
+
+    "gpt-5-mini": {
+      "id": "openai/gpt-5-mini",
+      "name": "GPT-5 Mini",
+      "provider": "openai",
+      "pricing": { "input": 0.75, "output": 4.50 },
+      "context_window": 400000,
+      "score": 72,
+      "score_per_dollar": 8.4,
+      "tier": "balanced",
+      "strengths": ["good reasoning at lower cost", "400K context"],
+      "weaknesses": ["not as strong as full GPT-5"],
+      "best_for": ["general_purpose", "moderate_coding", "writing"],
+      "modalities": ["text", "image"],
+      "openrouter_rank": { "images": 7 }
+    },
+
+    "gpt-4.1-mini": {
+      "id": "openai/gpt-4.1-mini",
+      "name": "GPT-4.1 Mini",
+      "provider": "openai",
+      "pricing": { "input": 0.40, "output": 1.60 },
+      "context_window": 1000000,
+      "score": 45,
+      "score_per_dollar": 32.5,
+      "tier": "budget",
+      "strengths": ["great value", "1M context", "good vision", "reliable"],
+      "weaknesses": ["weaker reasoning than frontier models"],
+      "best_for": ["budget_general", "vision_tasks", "classification", "simple_coding"],
+      "modalities": ["text", "image"],
+      "openrouter_rank": { "images": 3 },
+      "note": "#3 for image processing on OpenRouter. Great budget workhorse."
+    },
+
+    "gpt-4.1-nano": {
+      "id": "openai/gpt-4.1-nano",
+      "name": "GPT-4.1 Nano",
+      "provider": "openai",
+      "pricing": { "input": 0.10, "output": 0.40 },
+      "context_window": 1000000,
+      "score": 27,
+      "score_per_dollar": 82.5,
+      "tier": "ultra_budget",
+      "strengths": ["extremely cheap", "1M context", "fast"],
+      "weaknesses": ["limited reasoning", "basic outputs"],
+      "best_for": ["classification", "routing", "simple_extraction", "triage"],
+      "modalities": ["text"],
+      "note": "Perfect for the router/classifier agent itself."
+    },
+
+    "step-3.5-flash": {
+      "id": "stepfun/step-3.5-flash",
+      "name": "Step 3.5 Flash",
+      "provider": "stepfun",
+      "pricing": { "input": 0.10, "output": 0.30 },
+      "context_window": 262000,
+      "score": 55,
+      "score_per_dollar": 50.0,
+      "tier": "ultra_budget",
+      "strengths": ["ultra-cheap", "MoE architecture (11B active of 196B)", "speed efficient", "good for science"],
+      "weaknesses": ["less known provider", "limited ecosystem"],
+      "best_for": ["budget_coding", "science", "bulk_processing"],
+      "modalities": ["text"],
+      "weekly_tokens": "815B",
+      "openrouter_rank": { "programming": 4, "science": 3, "tool_calls": 7 }
+    },
+
+    "minimax-m2.7": {
+      "id": "minimax/minimax-m2.7",
+      "name": "MiniMax M2.7",
+      "provider": "minimax",
+      "pricing": { "input": 0.30, "output": 1.20 },
+      "context_window": 1000000,
+      "score": 62,
+      "score_per_dollar": 45.0,
+      "tier": "budget",
+      "strengths": ["multi-agent collaboration", "1M context", "agentic capabilities", "good value"],
+      "weaknesses": ["less known in Western markets"],
+      "best_for": ["agentic_tasks", "multi_agent", "budget_general", "finance"],
+      "modalities": ["text"],
+      "weekly_tokens": "767B",
+      "openrouter_rank": { "finance": 8, "tool_calls": 6, "overall": 8 }
+    },
+
+    "qwen3.5-plus": {
+      "id": "qwen/qwen3.5-plus",
+      "name": "Qwen3.5 Plus",
+      "provider": "qwen",
+      "pricing": { "input": 0.40, "output": 2.40 },
+      "context_window": 1000000,
+      "score": 64,
+      "score_per_dollar": 17.8,
+      "tier": "budget",
+      "strengths": ["multimodal", "1M context", "good value"],
+      "weaknesses": ["less battle-tested for coding"],
+      "best_for": ["general_purpose", "multimodal", "budget_reasoning"],
+      "modalities": ["text", "image", "video"]
+    },
+
+    "qwen3.6-flash": {
+      "id": "qwen/qwen3.6-flash",
+      "name": "Qwen3.6 Flash",
+      "provider": "qwen",
+      "pricing": { "input": 0.25, "output": 1.50 },
+      "context_window": 1000000,
+      "score": 55,
+      "score_per_dollar": 20.0,
+      "tier": "budget",
+      "strengths": ["fast", "multimodal", "1M context", "cheap"],
+      "weaknesses": ["not frontier quality"],
+      "best_for": ["budget_multimodal", "general_purpose", "summarization"],
+      "modalities": ["text", "image", "video"]
+    },
+
+    "grok-4.1-fast": {
+      "id": "x-ai/grok-4.1-fast",
+      "name": "Grok 4.1 Fast",
+      "provider": "x-ai",
+      "pricing": { "input": 0.20, "output": 0.50 },
+      "context_window": 2000000,
+      "score": 70,
+      "score_per_dollar": 162.0,
+      "tier": "budget_powerhouse",
+      "strengths": ["2M context window", "extremely cheap", "fast", "good reasoning"],
+      "weaknesses": ["newer model"],
+      "best_for": ["long_context", "budget_reasoning", "general_purpose"],
+      "modalities": ["text"],
+      "weekly_tokens": "750B",
+      "openrouter_rank": { "overall": 9 }
+    },
+
+    "poolside-laguna-m1": {
+      "id": "poolside/laguna-m.1",
+      "name": "Poolside Laguna M.1",
+      "provider": "poolside",
+      "pricing": { "input": 0.00, "output": 0.00 },
+      "context_window": 131000,
+      "score": 50,
+      "score_per_dollar": null,
+      "tier": "free",
+      "strengths": ["free", "coding specialist", "tool calling", "reasoning"],
+      "weaknesses": ["limited context", "coding-focused only"],
+      "best_for": ["free_coding", "budget_coding_agent"],
+      "modalities": ["text"],
+      "note": "Free coding agent model from Poolside."
+    },
+
+    "nemotron-3-super": {
+      "id": "nvidia/nemotron-3-super",
+      "name": "Nemotron 3 Super",
+      "provider": "nvidia",
+      "pricing": { "input": 0.00, "output": 0.00 },
+      "context_window": 32000,
+      "score": 44,
+      "score_per_dollar": null,
+      "tier": "free",
+      "strengths": ["free", "general purpose", "good for simple tasks"],
+      "weaknesses": ["small context window", "limited capabilities"],
+      "best_for": ["free_general", "simple_tasks", "testing"],
+      "modalities": ["text"],
+      "weekly_tokens": "661B",
+      "openrouter_rank": { "programming": 5, "tool_calls": 8, "overall": 10 }
+    },
+
+    "nemotron-3-nano-omni": {
+      "id": "nvidia/nemotron-3-nano-omni",
+      "name": "Nemotron 3 Nano Omni",
+      "provider": "nvidia",
+      "pricing": { "input": 0.00, "output": 0.00 },
+      "context_window": 256000,
+      "score": 35,
+      "score_per_dollar": null,
+      "tier": "free",
+      "strengths": ["free", "multimodal (text/image/video/audio)", "256K context", "perception agent"],
+      "weaknesses": ["lower quality outputs"],
+      "best_for": ["free_multimodal", "perception_agent", "triage"],
+      "modalities": ["text", "image", "video", "audio"]
+    }
+  },
+
+  "task_routing": {
+    "complex_coding": {
+      "description": "Complex software engineering, codebase refactoring, multi-file changes, architecture decisions",
+      "priority": "quality",
+      "recommendations": {
+        "best_quality": "claude-opus-4.7",
+        "best_value": "kimi-k2.6",
+        "budget": "deepseek-v4-pro",
+        "free": "poolside-laguna-m1"
+      },
+      "reasoning": "Claude Opus 4.7 leads SWE-bench at 82%, but Kimi K2.6 at 80.2% saves 88% on costs. DeepSeek V4 Pro hits 83.7% at 1/17th the cost of Claude."
+    },
+
+    "simple_coding": {
+      "description": "Simple code edits, bug fixes, boilerplate generation, file modifications",
+      "priority": "cost",
+      "recommendations": {
+        "best_quality": "claude-sonnet-4.6",
+        "best_value": "deepseek-v3.2",
+        "budget": "step-3.5-flash",
+        "free": "nemotron-3-super"
+      },
+      "reasoning": "Simple coding doesn't need frontier models. DeepSeek V3.2 at $0.25/$0.38 handles most edits. Step 3.5 Flash at $0.10/$0.30 is even cheaper."
+    },
+
+    "planning_orchestration": {
+      "description": "Task decomposition, agent coordination, architecture planning, workflow design",
+      "priority": "quality",
+      "recommendations": {
+        "best_quality": "claude-opus-4.7",
+        "best_value": "kimi-k2.6",
+        "budget": "gemini-3-flash-preview",
+        "free": "nemotron-3-super"
+      },
+      "reasoning": "Planning errors cascade downstream. Opus 4.7 is the gold standard. Kimi K2.6's agent swarm architecture makes it a strong alternative at lower cost."
+    },
+
+    "file_navigation": {
+      "description": "Directory listing, symbol resolution, import tracing, file search",
+      "priority": "cost",
+      "recommendations": {
+        "best_quality": "claude-haiku-4.5",
+        "best_value": "gpt-4.1-nano",
+        "budget": "deepseek-v4-flash",
+        "free": "nemotron-3-super"
+      },
+      "reasoning": "File navigation is pattern matching, not reasoning. Using Opus here wastes 5x the budget. GPT-4.1 Nano at $0.10/$0.40 is perfect."
+    },
+
+    "code_review": {
+      "description": "Code review, security analysis, best practices checking",
+      "priority": "balanced",
+      "recommendations": {
+        "best_quality": "claude-sonnet-4.6",
+        "best_value": "deepseek-v4-pro",
+        "budget": "kimi-k2.6",
+        "free": "poolside-laguna-m1"
+      },
+      "reasoning": "Code review needs enough intelligence to catch bugs but doesn't need frontier. Sonnet 4.6 is the sweet spot. DeepSeek V4 Pro is excellent value."
+    },
+
+    "general_reasoning": {
+      "description": "Complex reasoning, analysis, problem solving, research",
+      "priority": "quality",
+      "recommendations": {
+        "best_quality": "gpt-5.5",
+        "best_value": "deepseek-v4-flash-max",
+        "budget": "grok-4.1-fast",
+        "free": "nemotron-3-super"
+      },
+      "reasoning": "GPT-5.5 has the highest intelligence index (60.2). DeepSeek V4 Flash Max has the best score/$ ratio at 264.3. Grok 4.1 Fast offers 2M context at $0.20/$0.50."
+    },
+
+    "creative_writing": {
+      "description": "Content creation, copywriting, storytelling, marketing copy",
+      "priority": "quality",
+      "recommendations": {
+        "best_quality": "claude-sonnet-4.6",
+        "best_value": "kimi-k2.6",
+        "budget": "qwen3.5-plus",
+        "free": "nemotron-3-super"
+      },
+      "reasoning": "Claude excels at nuanced, polished writing. Kimi K2.6 is surprisingly good for content. Qwen3.5 Plus offers good multimodal writing at $0.40/$2.40."
+    },
+
+    "summarization": {
+      "description": "Text summarization, document condensation, key point extraction",
+      "priority": "cost",
+      "recommendations": {
+        "best_quality": "gemini-3-flash-preview",
+        "best_value": "deepseek-v4-flash",
+        "budget": "gpt-4.1-nano",
+        "free": "nemotron-3-super"
+      },
+      "reasoning": "Summarization is well-solved by smaller models. DeepSeek V4 Flash at $0.14/$0.28 with 1M context is ideal for bulk summarization."
+    },
+
+    "image_analysis": {
+      "description": "Image understanding, visual QA, image classification, OCR",
+      "priority": "balanced",
+      "recommendations": {
+        "best_quality": "claude-sonnet-4.6",
+        "best_value": "gemini-2.5-flash-lite",
+        "budget": "gpt-4.1-mini",
+        "free": "nemotron-3-nano-omni"
+      },
+      "reasoning": "Gemini 2.5 Flash Lite dominates image processing at 31.4% market share and $0.02/$0.10. GPT-4.1 Mini is #3 for images at $0.40/$1.60."
+    },
+
+    "audio_processing": {
+      "description": "Audio transcription, audio understanding, speech analysis",
+      "priority": "balanced",
+      "recommendations": {
+        "best_quality": "gemini-3.1-pro-preview",
+        "best_value": "gemini-3-flash-preview",
+        "budget": "gemini-2.5-flash",
+        "free": "nemotron-3-nano-omni"
+      },
+      "reasoning": "Google Gemini dominates audio with 90%+ market share. Gemini 3 Flash Preview handles 40.9% of all audio on OpenRouter."
+    },
+
+    "tool_calling": {
+      "description": "Function calling, API integration, structured output, agent tool use",
+      "priority": "balanced",
+      "recommendations": {
+        "best_quality": "claude-sonnet-4.6",
+        "best_value": "kimi-k2.6",
+        "budget": "gemini-3-flash-preview",
+        "free": "nemotron-3-super"
+      },
+      "reasoning": "Tool calling needs reliable structured output. Kimi K2.6 and Gemini 3 Flash are the top 2-3 for tool calls on OpenRouter."
+    },
+
+    "data_analysis": {
+      "description": "Data processing, analysis, visualization, spreadsheet work",
+      "priority": "balanced",
+      "recommendations": {
+        "best_quality": "claude-opus-4.7",
+        "best_value": "deepseek-v3.2",
+        "budget": "minimax-m2.7",
+        "free": "nemotron-3-super"
+      },
+      "reasoning": "Data analysis needs good reasoning + code generation. DeepSeek V3.2 at $0.25/$0.38 is exceptional value. MiniMax M2.7 at $0.30/$1.20 is great for finance."
+    },
+
+    "classification_routing": {
+      "description": "Intent classification, task routing, simple decisions, triage",
+      "priority": "cost",
+      "recommendations": {
+        "best_quality": "gpt-4.1-mini",
+        "best_value": "gpt-4.1-nano",
+        "budget": "deepseek-v4-flash",
+        "free": "nemotron-3-super"
+      },
+      "reasoning": "The router itself should be the cheapest model possible. GPT-4.1 Nano at $0.10/$0.40 is perfect for classifying tasks before routing to specialists."
+    },
+
+    "long_context": {
+      "description": "Processing very long documents, large codebases, extensive context",
+      "priority": "balanced",
+      "recommendations": {
+        "best_quality": "gemini-3.1-pro-preview",
+        "best_value": "grok-4.1-fast",
+        "budget": "deepseek-v4-flash",
+        "free": "nemotron-3-nano-omni"
+      },
+      "reasoning": "Grok 4.1 Fast offers 2M context at $0.20/$0.50 - unbeatable for long docs. Gemini models offer 1M+ context. DeepSeek V4 Flash has 1M at $0.14/$0.28."
+    },
+
+    "math_science": {
+      "description": "Mathematical reasoning, scientific analysis, formal proofs",
+      "priority": "quality",
+      "recommendations": {
+        "best_quality": "gpt-5.5",
+        "best_value": "deepseek-v4-pro",
+        "budget": "step-3.5-flash",
+        "free": "nemotron-3-super"
+      },
+      "reasoning": "DeepSeek V4 has gold-medal results on IMO and IOI. Step 3.5 Flash ranks #3 in Science on OpenRouter at $0.10/$0.30."
+    }
+  },
+
+  "user_priority_presets": {
+    "quality_first": {
+      "description": "Best possible output regardless of cost",
+      "default_model": "claude-opus-4.7",
+      "router_model": "gpt-4.1-mini",
+      "typical_cost_per_1k_requests": "$50-150"
+    },
+    "balanced": {
+      "description": "Good quality at reasonable cost",
+      "default_model": "kimi-k2.6",
+      "router_model": "gpt-4.1-nano",
+      "typical_cost_per_1k_requests": "$5-20"
+    },
+    "budget": {
+      "description": "Minimize cost while maintaining usable quality",
+      "default_model": "deepseek-v3.2",
+      "router_model": "gpt-4.1-nano",
+      "typical_cost_per_1k_requests": "$0.50-5"
+    },
+    "free_tier": {
+      "description": "Zero cost using free models only",
+      "default_model": "nemotron-3-super",
+      "router_model": "nemotron-3-super",
+      "typical_cost_per_1k_requests": "$0"
+    }
+  },
+
+  "cost_tiers": {
+    "frontier": {
+      "description": "Best quality, highest cost ($5+ per M output tokens)",
+      "models": ["claude-opus-4.7", "gpt-5.5", "gemini-3.1-pro-preview"],
+      "use_when": "Task requires absolute best quality, errors are very costly"
+    },
+    "premium": {
+      "description": "High quality, moderate cost ($3-15 per M output tokens)",
+      "models": ["claude-sonnet-4.6", "deepseek-v4-pro", "kimi-k2.6"],
+      "use_when": "Task needs strong quality but cost matters"
+    },
+    "balanced": {
+      "description": "Good quality, low cost ($1-3 per M output tokens)",
+      "models": ["gemini-3-flash-preview", "gpt-5-mini", "minimax-m2.7", "qwen3.5-plus"],
+      "use_when": "Standard tasks where quality is good enough"
+    },
+    "budget": {
+      "description": "Acceptable quality, very low cost ($0.10-1 per M output tokens)",
+      "models": ["deepseek-v3.2", "deepseek-v4-flash", "step-3.5-flash", "gpt-4.1-mini", "gpt-4.1-nano", "grok-4.1-fast"],
+      "use_when": "High volume, simple tasks, or tight budget"
+    },
+    "free": {
+      "description": "Free models, zero cost",
+      "models": ["nemotron-3-super", "nemotron-3-nano-omni", "poolside-laguna-m1"],
+      "use_when": "Testing, prototyping, or zero budget"
+    }
+  }
+}

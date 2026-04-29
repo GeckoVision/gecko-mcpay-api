@@ -159,6 +159,17 @@ async def list_tools() -> list[Tool]:
                             "and audit-trail (paid_from_wallet_address)."
                         ),
                     },
+                    "tier_preset": {
+                        "type": "string",
+                        "enum": ["quality", "balanced", "budget", "free"],
+                        "default": "balanced",
+                        "description": (
+                            "User-facing cost/quality preset (S4-MATRIX-01). Maps "
+                            "to per-agent model selection via the curated catalog. "
+                            "Default 'balanced' picks Kimi K2.6 / DeepSeek for the "
+                            "sweet spot. Orthogonal to 'tier' (basic/pro)."
+                        ),
+                    },
                 },
                 "required": ["idea"],
             },
@@ -318,8 +329,19 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         # the API always runs auto-approved; there is no MCP prompt surface.
         project_id_raw = arguments.get("project_id")
         project_id = str(project_id_raw) if project_id_raw else None
+        tier_preset_raw = arguments.get("tier_preset", "balanced")
+        if tier_preset_raw not in ("quality", "balanced", "budget", "free"):
+            raise ValueError(
+                f"tier_preset must be quality|balanced|budget|free, got {tier_preset_raw!r}"
+            )
 
-        result = await client.research(idea, tier=tier_raw, urls=urls, project_id=project_id)
+        result = await client.research(
+            idea,
+            tier=tier_raw,
+            urls=urls,
+            project_id=project_id,
+            tier_preset=str(tier_preset_raw),
+        )
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
     if name == "gecko_ask":

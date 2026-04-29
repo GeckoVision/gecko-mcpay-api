@@ -43,3 +43,4 @@ codex-session.jsonl
 # Generated artifacts (reproducible from .md sources)
 *.pdf
 colosseum-report.html
+docs/external/

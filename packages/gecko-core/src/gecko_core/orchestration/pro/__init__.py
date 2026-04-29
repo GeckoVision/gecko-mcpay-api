@@ -158,6 +158,7 @@ async def generate(
     model_matrix: dict[str, str] | None = None,
     temperature_matrix: dict[str, float] | None = None,
     precedents: list[GeckoPrecedent] | None = None,
+    tier_preset: str | None = None,
 ) -> DebateTranscript:
     """Run the 5-agent debate.
 
@@ -173,6 +174,23 @@ async def generate(
     if llm_config is None:
         raise ValueError("llm_config is required for pro.generate")
     budget = budget or BudgetGuard()
+
+    # When the caller specifies a tier_preset and no explicit model_matrix,
+    # resolve the per-agent matrix from the curated catalog. This is the
+    # S4-MATRIX-01 wiring path; callers passing an explicit model_matrix
+    # take precedence (used by tests + the legacy LLM_ROUTER path).
+    if tier_preset is not None and model_matrix is None:
+        import os as _os
+
+        from gecko_core.orchestration.pro.router import model_matrix_for_tier
+        from gecko_core.routing.catalog import Tier as _Tier
+
+        # We can't import RouterConfig.router off llm_config — derive it from
+        # LLM_ROUTER directly. Default 'openai' matches resolve_router().
+        _router_name = (_os.environ.get("LLM_ROUTER") or "openai").strip().lower()
+        if _router_name not in ("openai", "openrouter", "clawrouter"):
+            _router_name = "openai"
+        model_matrix = model_matrix_for_tier(_router_name, _Tier(tier_preset))  # type: ignore[arg-type]
 
     # Only forward optional kwargs when supplied so legacy callers that
     # monkeypatch `build_groupchat` with a narrower signature still work.

@@ -296,6 +296,7 @@ class GeckoAPIClient:
         poll_interval_s: float = 4.0,
         poll_deadline_s: float = 300.0,
         progress: Any | None = None,
+        tier_preset: str | None = None,
     ) -> dict[str, Any]:
         """POST /research (basic) or /research/pro. Pays + polls for result.
 
@@ -315,6 +316,8 @@ class GeckoAPIClient:
             body["project_id"] = project_id
         if frames_username is not None:
             body["frames_username"] = frames_username
+        if tier_preset is not None:
+            body["tier_preset"] = tier_preset
 
         # Phase B5 v1 — best-effort client-side budget pre-flight. The server
         # has no per-project ceiling in v1; this trusts the user not to game

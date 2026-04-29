@@ -81,6 +81,7 @@ async def research(
     progress_callback: ProgressCallback | None = None,
     skip_payment_gate: bool = False,
     session_id: UUID | None = None,
+    tier_preset: str | None = None,
 ) -> ResearchResult:
     """Run the full discover → approve → pay → index → generate workflow.
 
@@ -174,7 +175,7 @@ async def research(
     # same RAG context the basic pass built so we don't re-query.
     if tier == "pro":
         _emit(progress_callback, "Running pro debate")
-        result = await _run_pro_debate(session_id, idea, result, store)
+        result = await _run_pro_debate(session_id, idea, result, store, tier_preset=tier_preset)
 
     # Step 7 — mark complete and return.
     await store.update_status(session_id, "complete")
@@ -203,6 +204,8 @@ async def _run_pro_debate(
     idea: str,
     base_result: ResearchResult,
     store: SessionStore,
+    *,
+    tier_preset: str | None = None,
 ) -> ResearchResult:
     """Run the 5-agent pro debate and merge its transcript into the result.
 
@@ -324,6 +327,7 @@ async def _run_pro_debate(
             budget=BudgetGuard(),
             model_matrix=agent_matrix,
             precedents=precedents,
+            tier_preset=tier_preset,
         )
     except ImportError as exc:
         logger.warning("AG2 not installed; pro tier degraded to basic: %s", exc)
