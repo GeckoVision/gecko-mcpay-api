@@ -304,14 +304,14 @@ def test_prompts_version_default_is_v5(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "gecko_precedent" in p["analyst"].lower()
 
 
-def test_prompts_version_default_is_v5_1(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Default load resolves to the v5.1 bundle (Judge-only fix for the
-    2026-04-28 verdict_accuracy regression).
+def test_prompts_version_default_is_v5_2(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default load resolves to the v5.2 bundle (Judge-only structural fix
+    for v5.1 under-shipping ideas explicitly named in MANDATORY SHIP rules).
 
-    The three Judge changes must all be present in the loaded judge prompt:
-    (1) narrowed 'no named ICP' kill condition, (2) explicit-by-name SHIP
-    precedence over generic kill rules, (3) named-ICP sanity check before
-    applying the kill.
+    v5.2 restructures the parallel SHIP/KILL rule sections into a strict
+    numbered execution pipeline so SHIP-by-name exits at STEP 2 before the
+    KILL check at STEP 4 is even reachable. Live evidence motivating the
+    change: tests/eval/live_runs/2026-04-28-general-2.json (v5.1, 0.65).
     """
     from gecko_core.orchestration.pro import prompts as prompts_mod
 
@@ -320,16 +320,45 @@ def test_prompts_version_default_is_v5_1(monkeypatch: pytest.MonkeyPatch) -> Non
     prompts_mod.load_prompts.cache_clear()
     p = prompts_mod.load_prompts()
     judge = p["judge"]
-    # (1) The blunt v5 kill line must be gone.
-    assert "No named ICP after the full debate: KILL." not in judge
-    # (1) Replaced by the narrowed condition that requires both the idea
-    # text AND the Analyst to lack a named ICP.
-    assert "the Analyst could not identify one" in judge
-    # (2) SHIP-by-name precedence wins over generic kill rules.
-    assert "explicitly listed by name" in judge
-    # (3) Sanity-check section is present BEFORE the MANDATORY KILL block.
+    # Pipeline structure is present.
+    assert "DECISION PIPELINE" in judge
+    assert "STEP 1" in judge
+    assert "STEP 2" in judge
+    assert "STEP 3" in judge
+    assert "STEP 4" in judge
+    assert "STEP 5" in judge
+    # STEP 2 is the named-example SHIP exit and lists previously false-killed
+    # ideas explicitly by name.
+    assert "cap-table-diff" in judge
+    assert "stripe-replay" in judge
+    assert "grant-budget-rewriter" in judge
+    assert "mcp-postgres-explainer" in judge
+    assert "faa-part107-checklist" in judge
+    # STEP 4 (KILL check) must come AFTER STEP 2 (named SHIP exit) in the
+    # prompt — that ordering is the whole structural fix.
+    assert judge.index("STEP 2") < judge.index("STEP 4")
+    # The NAMED-ICP sanity check still runs before the pipeline.
     assert "NAMED-ICP SANITY CHECK" in judge
-    assert judge.index("NAMED-ICP SANITY CHECK") < judge.index("MANDATORY KILL RULES")
+    # The blunt v5 kill line must still be gone (inherited fix from v5.1).
+    assert "No named ICP after the full debate: KILL." not in judge
+
+
+def test_prompts_version_v5_1_rollback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Setting GECKO_PRO_PROMPTS_VERSION=v5.1 loads the prior bundle unmodified
+    (parallel MANDATORY SHIP / MANDATORY KILL sections, no DECISION PIPELINE).
+    """
+    from gecko_core.orchestration.pro import prompts as prompts_mod
+
+    monkeypatch.delenv("GECKO_PROMPTS_PATH", raising=False)
+    monkeypatch.setenv("GECKO_PRO_PROMPTS_VERSION", "v5.1")
+    prompts_mod.load_prompts.cache_clear()
+    p = prompts_mod.load_prompts()
+    judge = p["judge"]
+    # v5.1 has parallel sections, not a pipeline.
+    assert "MANDATORY SHIP RULES" in judge
+    assert "MANDATORY KILL RULES" in judge
+    assert "DECISION PIPELINE" not in judge
+    prompts_mod.load_prompts.cache_clear()
 
 
 def test_prompts_version_v5_rollback(monkeypatch: pytest.MonkeyPatch) -> None:
