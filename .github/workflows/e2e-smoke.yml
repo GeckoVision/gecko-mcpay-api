@@ -1,0 +1,91 @@
+name: e2e-smoke
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      X402_MODE: stub
+      LLM_ROUTER: openai
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      SUPABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      PGPASSWORD: postgres
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install psql client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Run Supabase migrations
+        run: |
+          for f in $(ls infra/supabase/migrations/*.sql | sort -V); do
+            echo "==> applying $f"
+            psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d postgres -f "$f"
+          done
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Sync dependencies
+        run: uv sync --all-packages
+
+      - name: Start gecko-api (background, stub mode)
+        run: |
+          nohup uv run uvicorn gecko_api.main:app \
+            --host 0.0.0.0 --port 8000 \
+            > /tmp/gecko-api.log 2>&1 &
+          echo $! > /tmp/gecko-api.pid
+
+      - name: Wait for /healthz
+        run: |
+          curl --retry 30 --retry-delay 1 --retry-connrefused \
+            --fail http://localhost:8000/healthz
+
+      - name: Run e2e smoke
+        run: uv run python scripts/e2e_smoke.py
+        env:
+          BASE_URL: http://localhost:8000
+
+      - name: Dump gecko-api log on failure
+        if: failure()
+        run: |
+          echo "===== /tmp/gecko-api.log ====="
+          cat /tmp/gecko-api.log || echo "(no log file)"
+
+      - name: Stop gecko-api
+        if: always()
+        run: |
+          if [ -f /tmp/gecko-api.pid ]; then
+            kill "$(cat /tmp/gecko-api.pid)" || true
+          fi
