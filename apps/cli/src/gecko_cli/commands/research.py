@@ -8,9 +8,10 @@ import click
 import gecko_core
 from gecko_core.models import SourceCandidate
 from rich.console import Console
-from rich.prompt import Confirm
 from rich.table import Table
 
+from gecko_cli._prompt import assume_yes
+from gecko_cli._prompt import confirm as prompt_confirm
 from gecko_cli._render_compat import progress_context, render_research_result
 from gecko_cli.commands.project import resolve_project_id
 
@@ -30,8 +31,8 @@ def _print_candidates(candidates: list[SourceCandidate]) -> None:
 
 async def _interactive_approval(candidates: list[SourceCandidate]) -> bool:
     _print_candidates(candidates)
-    # Confirm.ask is sync; no need for to_thread for terminal interaction.
-    return Confirm.ask("Proceed with these sources?", default=True)
+    # `prompt_confirm` honors top-level --yes / --non-interactive flags.
+    return prompt_confirm("Proceed with these sources?", default=True)
 
 
 @click.command("research")
@@ -69,6 +70,10 @@ def research_cmd(
     if project_id is not None:
         console.print(f"[dim]project: {project_id}[/dim]")
 
+    # Top-level --yes / --non-interactive bubble through `assume_yes`; keep
+    # the per-command --yes flag for back-compat.
+    auto_approve = assume_yes(local=yes)
+
     with progress_context(console, "Researching") as progress:
 
         def _progress(msg: str) -> None:
@@ -79,8 +84,8 @@ def research_cmd(
                 idea=idea,
                 tier=tier,  # type: ignore[arg-type]
                 urls=seed,
-                auto_approve=yes,
-                approval_callback=None if yes else _interactive_approval,
+                auto_approve=auto_approve,
+                approval_callback=None if auto_approve else _interactive_approval,
                 progress_callback=_progress,
                 tier_preset=tier_preset,
             )

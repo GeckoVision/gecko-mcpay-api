@@ -36,7 +36,31 @@ from gecko_cli.commands.sprint_review import sprint_review_cmd
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     help="Path to .env file. Defaults to ~/.gecko/.env if present.",
 )
-def cli(env_file: Path | None) -> None:
+@click.option(
+    "--yes",
+    "-y",
+    "yes",
+    is_flag=True,
+    default=False,
+    help="Auto-confirm interactive prompts (scripted runs).",
+)
+@click.option(
+    "--non-interactive",
+    "non_interactive",
+    is_flag=True,
+    default=False,
+    help=(
+        "Disable all prompts. Implies --yes. Errors fast if the command would "
+        "otherwise need user input."
+    ),
+)
+@click.pass_context
+def cli(
+    ctx: click.Context,
+    env_file: Path | None,
+    yes: bool,
+    non_interactive: bool,
+) -> None:
     """Gecko — Builder Bootstrap Platform."""
     if env_file:
         load_dotenv(env_file)
@@ -44,6 +68,15 @@ def cli(env_file: Path | None) -> None:
         default = Path.home() / ".gecko" / ".env"
         if default.exists():
             load_dotenv(default)
+
+    # Stash bypass flags so subcommands and the shared `_prompt.confirm()`
+    # helper can honor them. --non-interactive implies --yes.
+    ctx.ensure_object(dict)
+    # Keep these independent: --non-interactive implies --yes via the helpers
+    # in `_prompt`, but the raw flags stay separate so strict-mode checks
+    # (e.g. default=False prompts) can still error out.
+    ctx.obj["yes"] = yes
+    ctx.obj["non_interactive"] = non_interactive
 
 
 cli.add_command(research_cmd)

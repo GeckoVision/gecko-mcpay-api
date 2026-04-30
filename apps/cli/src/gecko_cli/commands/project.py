@@ -280,8 +280,12 @@ def project_show(name: str) -> None:
 @click.option("--yes", is_flag=True, help="Skip confirmation prompt.")
 def project_delete(name: str, yes: bool) -> None:
     """Soft-delete a project. Sessions remain but are detached from the project."""
+    from gecko_cli._prompt import assume_yes
+
     username = read_frames_username()
-    if not yes:
+    # Honor top-level --yes / --non-interactive in addition to the
+    # subcommand-local --yes flag.
+    if not assume_yes(local=yes):
         click.confirm(f"Delete project {name!r} for @{username}?", abort=True)
 
     async def _do() -> None:
