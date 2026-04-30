@@ -81,6 +81,21 @@ The unblocker. Bazaar listing requires settlement through the CDP Facilitator at
 
 **Owner:** staff-engineer
 
+### Track F — `SourceProvider` Protocol seam (S12-PROVIDER-01) **MED**
+
+Per `docs/strategy/bazaar-composer-staff-eng-review-2026-04-30.md` §1a + §"Concrete asks". Pre-pay the architectural debt that turns Sprint 13's vertical-suite work (if the gate opens — see decision doc) from a 3-5 day refactor into a 3-day add. Saves us from breaking the eval gate during Sprint 13 if we go.
+
+- **S12-PROVIDER-01 — Define `SourceProvider` Protocol; refactor existing dispatch through it.**
+  - Add `packages/gecko-core/src/gecko_core/ingestion/providers/__init__.py` with the `SourceProvider` Protocol: `name`, `kind: Literal["free", "x402-bazaar", "first-party"]`, `cost_estimate()`, `health()`, async `fetch(query) -> list[SourceChunk]`.
+  - Refactor existing `discover()` + `pipeline.ingest()` to dispatch through it. Existing Tavily/web/youtube paths become the default `FreeProvider` subclasses. **No new provider implementations this sprint.**
+  - Add `Provenance` field on `Citation` so the verdict-renderer can surface evidence source without changing the verdict shape.
+  - Add `IngestionResult.degraded_sources: list[str]` so the critic agent can surface gaps in-debate (per design memo's "turn failure into feature").
+  - Tests confirm existing eval-gate suites still pass under the new dispatch.
+
+**Owner:** software-engineer
+**Cost:** ~1 day
+**Acceptance:** existing live-V1 eval gate still passes at ≥ 0.80 under the new dispatch; Provenance visible on at least one citation in `bb research` output; no new providers wired.
+
 ---
 
 ## Out of scope
@@ -98,6 +113,7 @@ The unblocker. Bazaar listing requires settlement through the CDP Facilitator at
 - [ ] `bb doctor` shows correct facilitator per network; `bb economics` works for both Solana (frames.ag) and Base (CDP) settled sessions
 - [ ] PRD + landing copy reflect wallet neutrality
 - [ ] Pre-existing frames.ag flow on Solana mainnet still works (no regression)
+- [ ] `SourceProvider` Protocol landed; live-V1 eval gate still ≥ 0.80 under new dispatch (Track F)
 
 ## Test plan
 
