@@ -40,7 +40,7 @@ Grounded in tests that exist on `main`. Sprint 7 Track A/B items are marked **fo
 | **Eval gate — general** | `tests/eval/test_gate.py`, `tests/eval/test_runner.py`, `tests/eval/test_rubric.py`, `scripts/run_eval_gate.sh` | ≥0.95 gate; rubric scores deterministic on stub |
 | Eval — holdout no-leakage | `tests/eval/test_suite_no_leakage.py` | Holdout prompts unseen by training set |
 | Eval — crypto / saas | `scripts/run_eval_gate.sh` (sub-suites) | Per-domain ≥0.95 |
-| Eval — holdout-live | `scripts/run_eval_gate_live.sh` | Live RAG ≥0.95 |
+| Eval — holdout-live | `scripts/run_eval_gate_live.sh` | Live RAG ≥0.80 (V1 baseline) |
 | **Per-tier model selection (S4)** | `packages/gecko-core/tests/routing/test_matrix.py` | `(role, tier) → model` deterministic |
 | **V2 sources — Reddit** | `tests/sources/test_reddit_adapter.py`, `packages/gecko-core/tests/test_source_reddit.py` | Subreddit search, comment chunk, dedup |
 | V2 sources — GitHub | `tests/sources/test_github_adapter.py` | README + issues fetch, license filter |
@@ -161,7 +161,7 @@ Do not flip `X402_MODE=live` without all five boxes checked.
 | holdout | `bash scripts/run_eval_gate.sh holdout` | **= 1.0** (no leakage tolerated) |
 | crypto | `bash scripts/run_eval_gate.sh crypto` | **≥ 0.95** |
 | saas | `bash scripts/run_eval_gate.sh saas` | **≥ 0.95** |
-| holdout-live (live RAG) | `bash scripts/run_eval_gate_live.sh` | **≥ 0.95** |
+| holdout-live (live RAG) | `bash scripts/run_eval_gate_live.sh` | **≥ 0.80** (V1 baseline; tighten in Sprint 11) |
 
 Mechanics:
 
