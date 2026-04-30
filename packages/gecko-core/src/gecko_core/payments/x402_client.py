@@ -30,6 +30,7 @@ re-phrase frames.ag's own messages.
 from __future__ import annotations
 
 import asyncio
+import enum
 import json
 import logging
 import os
@@ -37,7 +38,7 @@ import uuid
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Final, Literal, Protocol, runtime_checkable
 
 import httpx
 from pydantic import Field, SecretStr
@@ -109,6 +110,86 @@ class FramesUnavailableError(LiveX402Error):
 
 class ConfirmationTimeoutError(LiveX402Error):
     """Submitted on-chain but never confirmed within the timeout."""
+
+
+# ---------------------------------------------------------------------------
+# Network kind resolver — S10-LIVE-03.
+#
+# Some 402 challenges identify the settlement network with a CAIP-style id
+# of the form ``solana:<USDC_MINT>`` (the SPL token mint, NOT the genesis
+# hash used by `networks.py`). When that wire form disagrees with what the
+# wallet is configured for we want the error message to spell out *which*
+# cluster each side wanted instead of just echoing two opaque base58 blobs.
+# ---------------------------------------------------------------------------
+
+
+class NetworkKind(enum.StrEnum):
+    """Coarse Solana network classification derived from a USDC mint."""
+
+    SOLANA_MAINNET = "solana-mainnet"
+    SOLANA_DEVNET = "solana-devnet"
+    UNKNOWN = "unknown"
+
+
+# Canonical Circle USDC mints. These are not secrets — they are public on-
+# chain addresses. Verify by querying any Solana explorer or running
+# `spl-token display <mint>` on the respective cluster.
+SOLANA_MAINNET_USDC_MINT: Final = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+SOLANA_DEVNET_USDC_MINT: Final = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+
+
+def _resolve_network_kind(network_id: str) -> NetworkKind:
+    """Map a ``solana:<MINT>`` CAIP-style id to a typed :class:`NetworkKind`.
+
+    Returns ``NetworkKind.UNKNOWN`` for malformed input, non-Solana
+    namespaces, or mints we don't recognise — never raises. Callers use the
+    typed result to format clearer mismatch errors.
+    """
+    if not isinstance(network_id, str) or ":" not in network_id:
+        return NetworkKind.UNKNOWN
+    namespace, _, mint = network_id.partition(":")
+    if namespace.strip().lower() != "solana" or not mint:
+        return NetworkKind.UNKNOWN
+    if mint == SOLANA_MAINNET_USDC_MINT:
+        return NetworkKind.SOLANA_MAINNET
+    if mint == SOLANA_DEVNET_USDC_MINT:
+        return NetworkKind.SOLANA_DEVNET
+    return NetworkKind.UNKNOWN
+
+
+def _wallet_caip_id_for(network: NetworkConfig) -> str:
+    """Return the ``solana:<USDC_MINT>`` id for a configured wallet network.
+
+    Used only to build mismatch error messages — the live transfer path
+    itself uses frames.ag's ``mainnet`` / ``devnet`` short names.
+    """
+    if network.cluster == "mainnet-beta":
+        return f"solana:{SOLANA_MAINNET_USDC_MINT}"
+    if network.cluster == "devnet":
+        return f"solana:{SOLANA_DEVNET_USDC_MINT}"
+    return f"solana:{network.cluster}"
+
+
+def _format_network_mismatch(server_network_id: str, wallet_network_id: str) -> str:
+    """Build a human-friendly mismatch description.
+
+    Falls back to bare CAIP ids if either side resolves to ``UNKNOWN`` so
+    operators can still copy-paste them into a block explorer.
+    """
+    server_kind = _resolve_network_kind(server_network_id)
+    wallet_kind = _resolve_network_kind(wallet_network_id)
+
+    def _describe(kind: NetworkKind, network_id: str) -> str:
+        if kind is NetworkKind.SOLANA_MAINNET:
+            return f"mainnet (mint={SOLANA_MAINNET_USDC_MINT})"
+        if kind is NetworkKind.SOLANA_DEVNET:
+            return f"devnet (mint={SOLANA_DEVNET_USDC_MINT})"
+        return f"unknown network ({network_id!r})"
+
+    return (
+        f"you're on {_describe(wallet_kind, wallet_network_id)}, "
+        f"server expected {_describe(server_kind, server_network_id)}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -397,9 +478,30 @@ class LiveX402Client:
             "network" in message.lower()
             and ("mismatch" in message.lower() or "invalid" in message.lower())
         ):
+            # Best-effort decode of any `solana:<MINT>` ids the server echoed
+            # so the operator sees plain "devnet" / "mainnet" labels.
+            server_id = (
+                body.get("expectedNetwork")
+                or body.get("expected_network")
+                or body.get("serverNetwork")
+                or ""
+            )
+            wallet_id = (
+                body.get("walletNetwork")
+                or body.get("wallet_network")
+                or _wallet_caip_id_for(self._network)
+            )
+            if server_id:
+                friendly = _format_network_mismatch(server_id, wallet_id)
+            else:
+                wallet_kind = _resolve_network_kind(wallet_id)
+                friendly = (
+                    f"wallet is on {wallet_kind.value} ({wallet_id!r}); "
+                    f"server-side network unspecified"
+                )
             raise NetworkMismatchError(
-                f"network mismatch — wallet/network disagreement on {self._network.name}: "
-                f"{message or code}. Check X402_NETWORK matches the wallet's chain."
+                f"network mismatch — {friendly}: {message or code}. "
+                "Check X402_NETWORK matches the wallet's chain."
             )
         if code == "POLICY_DENIED":
             raise LiveX402Error(
@@ -537,6 +639,8 @@ def _reset_settings_cache() -> None:
 
 __all__ = [
     "AGENT_WALLET_CONFIG",
+    "SOLANA_DEVNET_USDC_MINT",
+    "SOLANA_MAINNET_USDC_MINT",
     "ConfirmationTimeoutError",
     "FramesAuthError",
     "FramesUnavailableError",
@@ -544,6 +648,7 @@ __all__ = [
     "InsufficientBalanceError",
     "LiveX402Client",
     "LiveX402Error",
+    "NetworkKind",
     "NetworkMismatchError",
     "PaymentSettings",
     "StubX402Client",
