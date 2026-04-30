@@ -1,0 +1,89 @@
+"""Public Pydantic models for the Advisor Panel (S4-ADVISOR-02).
+
+Voices are independent (not GroupChat). Each emits a markdown response
+with a fixed closing-line shape per voice — extracted into
+``AdvisorVoice.closing_line`` so callers can render a one-line summary
+without re-parsing prose.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+
+from pydantic import BaseModel, Field
+
+from gecko_core.routing.catalog import AgentRole
+
+# Stable rendering order — CEO first (sets strategy), staff_manager last
+# (synthesizes the others into a sprint plan). The orchestration shell
+# guarantees this order even though voices run in parallel.
+PANEL_VOICE_ORDER: tuple[AgentRole, ...] = (
+    AgentRole.ceo,
+    AgentRole.cto,
+    AgentRole.business_manager,
+    AgentRole.product_manager,
+    AgentRole.staff_manager,
+)
+
+
+class AdvisorVoice(BaseModel):
+    """One voice's full response + extracted accounting."""
+
+    role: AgentRole
+    model_used: str
+    output_md: str
+    closing_line: str
+    tokens_in: int
+    tokens_out: int
+    cost_usd: float | None = None
+
+
+class AdvisorPanel(BaseModel):
+    """The 5-voice panel. Voices are always present in PANEL_VOICE_ORDER."""
+
+    session_id: str
+    voices: list[AdvisorVoice]
+    total_cost_usd: float
+    generated_at: datetime = Field(default_factory=lambda: datetime.now().astimezone())
+
+
+class PulseDelta(BaseModel):
+    """Per-voice delta between two panel runs (S4-ADVISOR-05)."""
+
+    role: AgentRole
+    previous_closing_line: str | None
+    current_closing_line: str
+    changed: bool
+    reason: str | None = None  # free-text explanation if we can attribute the shift
+
+
+class PulsePanel(BaseModel):
+    """A pulse run: a fresh AdvisorPanel + per-voice deltas vs the prior run."""
+
+    panel: AdvisorPanel
+    deltas: list[PulseDelta]
+    previous_panel_at: datetime | None = None
+
+
+class AdvisorError(Exception):
+    """Raised when the advisor panel can't produce a result."""
+
+
+class AdvisorSessionNotFoundError(AdvisorError):
+    """The session_id doesn't exist or has been soft-deleted.
+
+    NOTE: unlike the scaffold pipeline, the advisor panel WILL run on
+    sessions whose verdict is ``kill`` — pivot advice is still informative
+    after a kill. This error is reserved for genuinely missing sessions.
+    """
+
+
+__all__ = [
+    "PANEL_VOICE_ORDER",
+    "AdvisorError",
+    "AdvisorPanel",
+    "AdvisorSessionNotFoundError",
+    "AdvisorVoice",
+    "PulseDelta",
+    "PulsePanel",
+]

@@ -13,10 +13,13 @@ from pathlib import Path
 import click
 from dotenv import load_dotenv
 
+from gecko_cli.commands.advise import advise_cmd
 from gecko_cli.commands.ask import ask_cmd
 from gecko_cli.commands.classify import classify_cmd
+from gecko_cli.commands.plan import plan_cmd
 from gecko_cli.commands.precedents import precedents_cmd
 from gecko_cli.commands.project import project_cmd
+from gecko_cli.commands.pulse import pulse_cmd
 from gecko_cli.commands.research import research_cmd
 from gecko_cli.commands.route import route_cmd
 from gecko_cli.commands.scaffold import scaffold_cmd
@@ -47,6 +50,9 @@ cli.add_command(classify_cmd)
 cli.add_command(precedents_cmd)
 cli.add_command(route_cmd)
 cli.add_command(scaffold_cmd)
+cli.add_command(advise_cmd)
+cli.add_command(plan_cmd)
+cli.add_command(pulse_cmd)
 
 
 # Back-compat alias — older docs reference `main`.

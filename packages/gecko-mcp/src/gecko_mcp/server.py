@@ -103,6 +103,27 @@ _SCAFFOLD_DESCRIPTION = (
     "the user already paid for the Pro debate."
 )
 
+_ADVISE_DESCRIPTION = (
+    "Run a single advisor voice (CEO, CTO, business_manager, "
+    "product_manager, or staff_manager) over an existing session. Cheaper "
+    "than `gecko_plan` (1 LLM call vs 5). FREE in Sprint 4 — pricing "
+    "decision deferred to Sprint 5 once economics are confirmed."
+)
+
+_PLAN_DESCRIPTION = (
+    "Run the full 5-voice Advisor Panel over an existing session. Voices "
+    "are independent and EXPECTED to disagree — the staff_manager output "
+    "synthesizes the others into a sprint plan. Reads scaffold + flywheel "
+    "+ V1 source signal. Works on kill verdicts too (pivot advice). FREE "
+    "in Sprint 4; the API charge ($0.25 via x402) is wired in Sprint 5."
+)
+
+_PULSE_DESCRIPTION = (
+    "Re-run the advisor panel with fresh context and surface what CHANGED "
+    "since the last advise. v1 detects deltas via closing-line equality; "
+    "embedding-based deltas land in Sprint 5. FREE."
+)
+
 _PROJECT_ECONOMICS_DESCRIPTION = (
     "Per-project economics snapshot (S2-09): privy wallet address, live USDC "
     "balance, budget cap + spend, and the 5 most recent paid sessions. Use "
@@ -300,6 +321,85 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="gecko_advise",
+            description=_ADVISE_DESCRIPTION,
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Session UUID returned by `gecko_research`.",
+                    },
+                    "voice": {
+                        "type": "string",
+                        "enum": [
+                            "ceo",
+                            "cto",
+                            "business_manager",
+                            "product_manager",
+                            "staff_manager",
+                            "bm",
+                            "pm",
+                            "sm",
+                        ],
+                        "description": (
+                            "Which advisor voice to invoke. Aliases bm/pm/sm "
+                            "map to business_manager / product_manager / "
+                            "staff_manager."
+                        ),
+                    },
+                    "tier_preset": {
+                        "type": "string",
+                        "enum": ["quality", "balanced", "budget", "free"],
+                        "default": "balanced",
+                    },
+                },
+                "required": ["session_id", "voice"],
+            },
+        ),
+        Tool(
+            name="gecko_plan",
+            description=_PLAN_DESCRIPTION,
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Session UUID. Any verdict — kills get pivot advice too.",
+                    },
+                    "tier_preset": {
+                        "type": "string",
+                        "enum": ["quality", "balanced", "budget", "free"],
+                        "default": "balanced",
+                    },
+                },
+                "required": ["session_id"],
+            },
+        ),
+        Tool(
+            name="gecko_pulse",
+            description=_PULSE_DESCRIPTION,
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": (
+                            "Session UUID to re-pulse. v1 takes a session_id "
+                            "(not a project_id); project-walk lands when "
+                            "migration 018_pulse_runs.sql ships."
+                        ),
+                    },
+                    "tier_preset": {
+                        "type": "string",
+                        "enum": ["quality", "balanced", "budget", "free"],
+                        "default": "balanced",
+                    },
+                },
+                "required": ["session_id"],
+            },
+        ),
+        Tool(
             name="gecko_project_economics",
             description=_PROJECT_ECONOMICS_DESCRIPTION,
             inputSchema={
@@ -390,6 +490,28 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         result = await _run_scaffold(
             session_id=str(arguments["session_id"]),
             output_dir=str(output_dir_raw) if output_dir_raw else None,
+        )
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    if name == "gecko_advise":
+        result = await _run_advise(
+            session_id=str(arguments["session_id"]),
+            voice=str(arguments["voice"]),
+            tier_preset=str(arguments.get("tier_preset", "balanced")),
+        )
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    if name == "gecko_plan":
+        result = await _run_plan(
+            session_id=str(arguments["session_id"]),
+            tier_preset=str(arguments.get("tier_preset", "balanced")),
+        )
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    if name == "gecko_pulse":
+        result = await _run_pulse(
+            session_id=str(arguments["session_id"]),
+            tier_preset=str(arguments.get("tier_preset", "balanced")),
         )
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
@@ -522,6 +644,83 @@ async def _run_scaffold(*, session_id: str, output_dir: str | None) -> dict[str,
         "tokens_used": result.tokens_used,
         "summary": result.summary,
     }
+
+
+async def _run_advise(
+    *, session_id: str, voice: str, tier_preset: str
+) -> dict[str, Any]:
+    """Single-voice advisor call (FREE in Sprint 4).
+
+    Errors are surfaced as ``{error, message}`` payloads (matching the
+    scaffold tool's pattern) so MCP clients don't need to parse stack
+    traces from a tool exception.
+    """
+    from uuid import UUID
+
+    from gecko_core.orchestration.advisor import (
+        AdvisorSessionNotFoundError,
+        generate_voice,
+    )
+    from gecko_core.routing.catalog import Tier
+
+    try:
+        tier = Tier(tier_preset)
+    except ValueError:
+        return {"error": "bad_tier", "message": f"unknown tier_preset {tier_preset!r}"}
+    try:
+        result = await generate_voice(UUID(session_id), voice, tier_preset=tier)
+    except AdvisorSessionNotFoundError as exc:
+        return {"error": "session_not_found", "message": str(exc)}
+    except ValueError as exc:
+        return {"error": "bad_voice", "message": str(exc)}
+    return result.model_dump(mode="json")
+
+
+async def _run_plan(*, session_id: str, tier_preset: str) -> dict[str, Any]:
+    """Full 5-voice panel (FREE in Sprint 4; paid in Sprint 5)."""
+    from uuid import UUID
+
+    from gecko_core.orchestration.advisor import (
+        AdvisorSessionNotFoundError,
+        generate_panel,
+    )
+    from gecko_core.routing.catalog import Tier
+
+    try:
+        tier = Tier(tier_preset)
+    except ValueError:
+        return {"error": "bad_tier", "message": f"unknown tier_preset {tier_preset!r}"}
+    try:
+        result = await generate_panel(UUID(session_id), tier_preset=tier)
+    except AdvisorSessionNotFoundError as exc:
+        return {"error": "session_not_found", "message": str(exc)}
+    return result.model_dump(mode="json")
+
+
+async def _run_pulse(*, session_id: str, tier_preset: str) -> dict[str, Any]:
+    """Re-run the panel and surface deltas vs prior pulse.
+
+    Until migration 018_pulse_runs.sql ships, the prior panel isn't
+    persisted — every pulse returns ``deltas=[changed=False, reason='no
+    prior pulse on file']``. Documented as a v1 limitation.
+    """
+    from uuid import UUID
+
+    from gecko_core.orchestration.advisor import (
+        AdvisorSessionNotFoundError,
+        run_pulse,
+    )
+    from gecko_core.routing.catalog import Tier
+
+    try:
+        tier = Tier(tier_preset)
+    except ValueError:
+        return {"error": "bad_tier", "message": f"unknown tier_preset {tier_preset!r}"}
+    try:
+        result = await run_pulse(UUID(session_id), previous_panel=None, tier_preset=tier)
+    except AdvisorSessionNotFoundError as exc:
+        return {"error": "session_not_found", "message": str(exc)}
+    return result.model_dump(mode="json")
 
 
 def _run_available_sources() -> list[dict[str, Any]]:
