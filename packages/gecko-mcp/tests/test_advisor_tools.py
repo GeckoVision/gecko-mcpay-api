@@ -135,7 +135,10 @@ async def test_gecko_plan_paid_path_marker(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 async def test_gecko_pulse_surfaces_delta(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def _fake(*, session_id: str, tier_preset: str) -> dict[str, Any]:
+    async def _fake(
+        *, session_id: str | None, project_id: str | None, tier_preset: str
+    ) -> dict[str, Any]:
+        del project_id
         return {
             "panel": {
                 "session_id": session_id,
@@ -164,8 +167,92 @@ async def test_gecko_pulse_surfaces_delta(monkeypatch: pytest.MonkeyPatch) -> No
     assert payload["deltas"][0]["changed"] is True
 
 
+async def test_gecko_pulse_with_project_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    """S5-API-02: gecko_pulse forwards project_id to run_pulse via _run_pulse."""
+    seen: dict[str, Any] = {}
+
+    async def _fake(
+        *, session_id: str | None, project_id: str | None, tier_preset: str
+    ) -> dict[str, Any]:
+        seen["session_id"] = session_id
+        seen["project_id"] = project_id
+        return {
+            "panel": {
+                "session_id": session_id or "",
+                "voices": [],
+                "total_cost_usd": 0.0,
+                "generated_at": "2026-04-29T00:00:00+00:00",
+            },
+            "deltas": [],
+            "previous_panel_at": None,
+        }
+
+    monkeypatch.setattr(server_module, "_run_pulse", _fake)
+    out = await call_tool(
+        "gecko_pulse",
+        {"project_id": "00000000-0000-0000-0000-000000000077"},
+    )
+    payload = json.loads(out[0].text)
+    assert payload["deltas"] == []
+    assert seen["project_id"] == "00000000-0000-0000-0000-000000000077"
+    assert seen["session_id"] is None
+
+
+async def test_gecko_pulse_missing_id_returns_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """S5-API-02: gecko_pulse with neither id returns a missing_id error payload."""
+    out = await call_tool("gecko_pulse", {})
+    payload = json.loads(out[0].text)
+    assert payload["error"] == "missing_id"
+
+
+async def test_gecko_plan_forwards_to_api_when_url_remote(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """S5-API-01: gecko_plan in production routes via api_client.plan, not core."""
+    monkeypatch.setenv("GECKO_API_URL", "https://api.geckovision.tech")
+
+    canned: dict[str, Any] = {
+        "session_id": "00000000-0000-0000-0000-000000000099",
+        "voices": [],
+        "total_cost_usd": 0.0,
+        "generated_at": "2026-04-29T00:00:00+00:00",
+    }
+
+    seen: dict[str, Any] = {}
+
+    class _FakeClient:
+        async def plan(
+            self,
+            session_id: str,
+            *,
+            tier_preset: str = "balanced",
+            project_id: str | None = None,
+            frames_username: str | None = None,
+        ) -> dict[str, Any]:
+            seen["session_id"] = session_id
+            seen["tier_preset"] = tier_preset
+            return canned
+
+    monkeypatch.setattr(server_module, "_get_client", lambda: _FakeClient())
+
+    out = await call_tool(
+        "gecko_plan",
+        {
+            "session_id": "00000000-0000-0000-0000-000000000099",
+            "tier_preset": "balanced",
+        },
+    )
+    payload = json.loads(out[0].text)
+    assert payload == canned
+    assert seen["session_id"] == "00000000-0000-0000-0000-000000000099"
+    assert seen["tier_preset"] == "balanced"
+
+
 async def test_gecko_pulse_no_prior(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def _fake(*, session_id: str, tier_preset: str) -> dict[str, Any]:
+    async def _fake(
+        *, session_id: str | None, project_id: str | None, tier_preset: str
+    ) -> dict[str, Any]:
+        del project_id
         return {
             "panel": {
                 "session_id": session_id,

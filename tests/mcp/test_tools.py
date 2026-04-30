@@ -83,6 +83,15 @@ async def test_list_tools_exposes_three_tools() -> None:
         "gecko_available_sources",
         "gecko_scaffold",
         "gecko_route",
+        # Sprint 4 — Advisor Panel
+        "gecko_advise",
+        "gecko_plan",
+        "gecko_pulse",
+        # Sprint 5 — Memory layer
+        "gecko_memory_save",
+        "gecko_memory_recall",
+        "gecko_memory_search",
+        "gecko_resume",
     }
     by_name = {t.name: t for t in tools}
     assert by_name["gecko_research"].inputSchema["required"] == ["idea"]

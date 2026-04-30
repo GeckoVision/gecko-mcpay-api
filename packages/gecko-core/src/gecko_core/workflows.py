@@ -82,6 +82,7 @@ async def research(
     skip_payment_gate: bool = False,
     session_id: UUID | None = None,
     tier_preset: str | None = None,
+    journal: bool = True,
 ) -> ResearchResult:
     """Run the full discover → approve → pay → index → generate workflow.
 
@@ -196,7 +197,63 @@ async def research(
             store=store,
         )
 
+    # Step 7c — auto-journal verdict_received (S5-MEM-04). Best-effort;
+    # never fail the user response if the memory write fails.
+    try:
+        from gecko_core.memory.auto_journal import journal_verdict
+
+        record = await store.get(session_id)
+        project_id = record.project_id if record is not None else None
+        verdict = _detect_research_verdict(result)
+        await journal_verdict(
+            session_id=session_id,
+            project_id=project_id,
+            idea=idea,
+            verdict=verdict,
+            scores=_extract_scores(result),
+            sources_count=len(result.sources or []),
+            tx_signature=record.x402_tx_signature if record is not None else None,
+            journal=journal,
+        )
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("auto-journal verdict failed: %s", exc)
+
     return result
+
+
+def _detect_research_verdict(result: ResearchResult) -> str:
+    """Best-effort verdict label for the journal entry.
+
+    Pro tier produces a judge transcript with a 'Verdict: SHIP/KILL/PIVOT'
+    line. Basic tier doesn't render a verdict; we journal it as 'unknown'
+    so the row still shows up in `gecko_resume` (decision history is the
+    point of the layer).
+    """
+    summary = getattr(result, "pro_session_summary", None)
+    transcript = getattr(result, "transcript", None)
+    if isinstance(summary, str) and summary:
+        for label in ("ship", "kill", "pivot"):
+            if f"verdict: {label}" in summary.lower():
+                return label
+    if isinstance(transcript, dict):
+        turns = transcript.get("turns") or []
+        for t in reversed(turns if isinstance(turns, list) else []):
+            if isinstance(t, dict) and t.get("agent") == "judge":
+                content = str(t.get("content") or "").lower()
+                for label in ("ship", "kill", "pivot"):
+                    if f"verdict: {label}" in content:
+                        return label
+                break
+    return "unknown"
+
+
+def _extract_scores(result: ResearchResult) -> dict[str, Any]:
+    """Pull the (tam, wedge, v1_feasibility) scores from the validation report.
+
+    Best-effort: the validation_report shape is markdown; we don't parse
+    it here. Return an empty dict so the journal entry is still well-formed.
+    """
+    return {}
 
 
 async def _run_pro_debate(

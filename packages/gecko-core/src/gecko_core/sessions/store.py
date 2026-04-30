@@ -1146,6 +1146,70 @@ class SessionStore:
         rows = await asyncio.to_thread(_delete)
         return bool(rows)
 
+    # ------------------------------------------------------------------
+    # Pulse runs (S5-API-02) — Advisor Panel pulse history.
+    #
+    # One row per `run_pulse` invocation. The advisor walks this table
+    # backwards by created_at to find the immediately-prior panel for
+    # delta detection. Project-scoped queries take precedence; falling
+    # back to session-scoped is back-compat for v1 single-shot pulses.
+    # ------------------------------------------------------------------
+
+    PULSE_RUNS_TABLE = "pulse_runs"
+
+    async def insert_pulse_run(
+        self,
+        *,
+        session_id: UUID,
+        project_id: UUID | None,
+        panel_json: dict[str, Any],
+        deltas_json: list[dict[str, Any]],
+    ) -> UUID:
+        """Append a pulse run. Returns the new row's UUID."""
+        payload: dict[str, Any] = {
+            "session_id": str(session_id),
+            "project_id": str(project_id) if project_id else None,
+            "panel_json": panel_json,
+            "deltas_json": deltas_json,
+        }
+
+        def _insert() -> dict[str, Any]:
+            res = self._client.table(self.PULSE_RUNS_TABLE).insert(payload).execute()
+            data = res.data or []
+            if not data:
+                raise RuntimeError("pulse_runs insert returned no rows")
+            return cast(dict[str, Any], data[0])
+
+        row = await asyncio.to_thread(_insert)
+        return UUID(str(row["id"]))
+
+    async def get_latest_pulse_run(
+        self,
+        *,
+        session_id: UUID | None = None,
+        project_id: UUID | None = None,
+    ) -> dict[str, Any] | None:
+        """Return the most recent pulse_runs row for a project or session.
+
+        Project takes precedence when both are given (matches `run_pulse`'s
+        documented contract). Returns None when there's no prior row in
+        scope — the caller treats that as "no prior pulse on file".
+        """
+        if project_id is None and session_id is None:
+            raise ValueError("get_latest_pulse_run: project_id or session_id required")
+
+        def _select() -> list[dict[str, Any]]:
+            q = self._client.table(self.PULSE_RUNS_TABLE).select("*")
+            if project_id is not None:
+                q = q.eq("project_id", str(project_id))
+            else:
+                q = q.eq("session_id", str(session_id))
+            res = q.order("created_at", desc=True).limit(1).execute()
+            return cast(list[dict[str, Any]], res.data or [])
+
+        rows = await asyncio.to_thread(_select)
+        return rows[0] if rows else None
+
     async def _project_spend(self, project_id: UUID) -> tuple[float, int]:
         """Sum cost_total_usd + count sessions for a project.
 

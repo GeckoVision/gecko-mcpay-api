@@ -20,7 +20,7 @@ import asyncio
 import json
 import logging
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Any
@@ -145,19 +145,67 @@ def _build_routes(settings: Settings) -> dict[str, RouteConfig]:
             ],
             description="Run a Builder Bootstrap research session (pro tier)",
         ),
-        # S4-ROUTE-02: cost-aware LLM routing surface. Flat per-call charge
-        # (no per-token markup) — see Settings.route_call_price for the
-        # tradeoff doc.
+        # S4-ROUTE-02 / S5-API-03: cost-aware LLM routing surface.
+        # Sprint 4 shipped a single flat $0.02 charge; Sprint 5 splits it
+        # into three paths so the price scales loosely with the routed
+        # model's expected cost. x402 charges pre-flight (it can't read
+        # `task_hint` from the body), so each tier gets its own URL and
+        # the client picks the path that matches its hint.
         "POST /route": RouteConfig(
             accepts=[
                 PaymentOption(
                     scheme="exact",
                     pay_to=pay_to,
-                    price=settings.route_call_price,
+                    price=settings.route_price_default,
                     network=chain_id,
                 ),
             ],
-            description="Route an LLM call through Gecko's cost-aware router",
+            description=(
+                "Route an LLM call through Gecko's cost-aware router "
+                "(default tier — extraction/summary/default task_hint)"
+            ),
+        ),
+        "POST /route/premium": RouteConfig(
+            accepts=[
+                PaymentOption(
+                    scheme="exact",
+                    pay_to=pay_to,
+                    price=settings.route_price_premium,
+                    network=chain_id,
+                ),
+            ],
+            description=(
+                "Route an LLM call through Gecko's cost-aware router "
+                "(premium tier — reasoning/code task_hint)"
+            ),
+        ),
+        "POST /route/upgrade": RouteConfig(
+            accepts=[
+                PaymentOption(
+                    scheme="exact",
+                    pay_to=pay_to,
+                    price=settings.route_price_upgrade,
+                    network=chain_id,
+                ),
+            ],
+            description=(
+                "Route an LLM call through Gecko's cost-aware router "
+                "(upgrade tier — prefer_premium=True)"
+            ),
+        ),
+        # S5-API-01: Advisor Panel paid surface ($0.25 flat). Mirrors the
+        # /research and /route patterns — body carries session_id +
+        # tier_preset; the response is the AdvisorPanel JSON.
+        "POST /plan": RouteConfig(
+            accepts=[
+                PaymentOption(
+                    scheme="exact",
+                    pay_to=pay_to,
+                    price=settings.plan_call_price,
+                    network=chain_id,
+                ),
+            ],
+            description="Run the 5-voice Advisor Panel against an existing session",
         ),
     }
 
@@ -289,6 +337,16 @@ class RouteRequest(BaseModel):
     # the value and routes through the legacy matrix. Accepted now so the
     # client / MCP wire shape stabilizes ahead of the catalog wire-up.
     tier_preset: str = "balanced"
+
+
+class PlanRequest(BaseModel):
+    """S5-API-01 — request shape for POST /plan (paid Advisor Panel)."""
+
+    session_id: str = Field(..., min_length=1)
+    tier_preset: str = "balanced"
+    project_id: str | None = None
+    # Optional attribution for paid_from audit, mirrors /research's pattern.
+    frames_username: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -795,46 +853,177 @@ async def ask(session_id: str, req: AskRequest) -> AskResult:
         raise HTTPException(status_code=501, detail=str(e)) from e
 
 
+# S5-API-03: tiered /route pricing. Each path is gated by x402 at a
+# different price; the handler logic is identical except for the
+# `tier_charged` field surfaced on the response. Premium / upgrade tier
+# enforcement is best-effort: we trust the client to have paid the right
+# tier, since x402 already validated the payment matches the route.
+_PLAN_TIER_PRESETS = ("quality", "balanced", "budget", "free")
+
+
+_RouteHandler = Callable[[RouteRequest, Request], Awaitable[dict[str, Any]]]
+
+
+def _route_handler_factory(tier: str, advertised_route: str) -> _RouteHandler:
+    """Build the /route handler for a given tier.
+
+    Each tier is a separate FastAPI endpoint so x402 can charge a distinct
+    price per route. The handler logic is identical across tiers except
+    for the `tier_charged` + `prepay_usd` fields on the result.
+    """
+
+    async def _handler(req: RouteRequest, request: Request) -> dict[str, Any]:
+        from gecko_core.routing import route as core_route
+        from gecko_core.routing.matrix import ROUTING_MATRIX
+
+        if req.task_hint not in ROUTING_MATRIX:
+            raise HTTPException(
+                status_code=400,
+                detail=f"task_hint must be one of {sorted(ROUTING_MATRIX)}",
+            )
+
+        # Touch the request so unused-arg lint is happy in any future refactor
+        # that needs the payment payload (e.g. attaching tx_signature to logs).
+        _ = getattr(request.state, "payment_payload", None)
+
+        try:
+            result = await core_route(
+                req.prompt,
+                task_hint=req.task_hint,
+                max_cost_usd=req.max_cost_usd,
+                prefer_premium=req.prefer_premium,
+            )
+        except Exception as exc:
+            # Surface a clean 500; the x402 settle has already happened so we
+            # don't try to refund — just log and tell the caller.
+            logger.exception("route_call failed (tier=%s)", tier)
+            raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+        payload = result.model_dump(mode="json")
+        # S5-API-03: surface which tier the caller actually paid so MCP /
+        # CLI demos can render "you paid $0.05 (premium tier)" without
+        # second-guessing the catalog.
+        payload["tier_charged"] = tier
+        payload["prepay_usd"] = _route_price_usd(advertised_route)
+        return payload
+
+    return _handler
+
+
 @app.post("/route")
 async def route_call(req: RouteRequest, request: Request) -> dict[str, Any]:
-    """S4-ROUTE-02 — paid LLM router. Flat $0.02 per call (see settings).
+    """S4-ROUTE-02 / S5-API-03 — paid LLM router (default tier).
 
     Pricing tradeoff: x402 settles before we know the upstream-billed truth
-    (`usage.cost`). A perfect markup (e.g. base + 10% on truth) would require
-    a settle-after-work flow that x402 v2 doesn't support. We charge a flat
-    fee that covers the expected average plus margin; heavy callers subsidize
-    light ones, and the math stays auditable.
+    (`usage.cost`). A true post-call markup (`usage_cost_usd * 1.10`) would
+    require x402 to support a settle-after-work refund hook; v2 doesn't.
+    Sprint 5 ships tiered flat charges instead — three paths, three prices,
+    client picks the path matching its task_hint:
+
+        POST /route           → $0.01 (extraction / summary / default)
+        POST /route/premium   → $0.05 (reasoning / code)
+        POST /route/upgrade   → $0.20 (prefer_premium=True)
+
+    Heavy callers subsidize light ones less than the Sprint 4 single-flat
+    model, but the implementation stays predictable and auditable.
 
     Auth: payment is enforced by the x402 middleware; this handler runs only
     after settle. No per-user identity is required — `route` is session-less
     by design.
     """
-    from gecko_core.routing import route as core_route
-    from gecko_core.routing.matrix import ROUTING_MATRIX
+    handler = _route_handler_factory("default", "POST /route")
+    return await handler(req, request)
 
-    if req.task_hint not in ROUTING_MATRIX:
+
+@app.post("/route/premium")
+async def route_call_premium(req: RouteRequest, request: Request) -> dict[str, Any]:
+    """S5-API-03 — premium-tier paid LLM router. $0.05 flat.
+
+    Use this path for `task_hint=reasoning` or `task_hint=code`. The handler
+    is identical to `POST /route`; the price difference reflects the higher
+    expected upstream cost on these tasks.
+    """
+    handler = _route_handler_factory("premium", "POST /route/premium")
+    return await handler(req, request)
+
+
+@app.post("/route/upgrade")
+async def route_call_upgrade(req: RouteRequest, request: Request) -> dict[str, Any]:
+    """S5-API-03 — upgrade-tier paid LLM router. $0.20 flat.
+
+    Use this path when `prefer_premium=True` to ensure x402 collects enough
+    to cover routing through the premium catalog column.
+    """
+    handler = _route_handler_factory("upgrade", "POST /route/upgrade")
+    return await handler(req, request)
+
+
+@app.post("/plan")
+async def plan_call(req: PlanRequest, request: Request) -> dict[str, Any]:
+    """S5-API-01 — paid Advisor Panel surface ($0.25 flat).
+
+    Mirrors the /research and /route patterns: x402-gated only, no
+    redundant `verify_frames_token` (matches Sprint 4's deviation note).
+    On 200 returns the AdvisorPanel JSON. The body's optional
+    `frames_username` is recorded for audit; `project_id` lets the
+    economics view roll the spend into the project budget.
+    """
+    from uuid import UUID as _UUID
+
+    from gecko_core.orchestration.advisor import (
+        AdvisorSessionNotFoundError,
+        generate_panel,
+    )
+    from gecko_core.routing.catalog import Tier as _Tier
+
+    if req.tier_preset not in _PLAN_TIER_PRESETS:
         raise HTTPException(
             status_code=400,
-            detail=f"task_hint must be one of {sorted(ROUTING_MATRIX)}",
+            detail=f"tier_preset must be one of {list(_PLAN_TIER_PRESETS)}",
         )
+    try:
+        sid = _UUID(req.session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid session_id") from exc
 
-    # Touch the request so unused-arg lint is happy in any future refactor
-    # that needs the payment payload (e.g. attaching tx_signature to logs).
+    # Touch the payment payload to record we ran post-settle.
     _ = getattr(request.state, "payment_payload", None)
 
+    # Persist the advertised price on the session so the economics view
+    # picks up the panel charge alongside research costs. Best-effort —
+    # never fail the user-visible request because of bookkeeping.
+    store = SessionStore.from_env()
     try:
-        result = await core_route(
-            req.prompt,
-            task_hint=req.task_hint,
-            max_cost_usd=req.max_cost_usd,
-            prefer_premium=req.prefer_premium,
-        )
+        await store.set_price(sid, _route_price_usd("POST /plan"))
+    except Exception:  # pragma: no cover — best-effort bookkeeping
+        logger.warning("plan: could not persist price marker for %s", sid)
+
+    try:
+        panel = await generate_panel(sid, tier_preset=_Tier(req.tier_preset))
+    except AdvisorSessionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
-        # Surface a clean 500; the x402 settle has already happened so we
-        # don't try to refund — just log and tell the caller.
-        logger.exception("route_call failed")
+        # x402 already settled — surface a clean 500 rather than retrying.
+        logger.exception("plan: panel generation failed for %s", sid)
         raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
-    return result.model_dump(mode="json")
+
+    # Project rollup: add $0.25 to projects.spent_usd if the session is
+    # bound to one. Same best-effort pattern as /research.
+    if req.project_id:
+        try:
+            project_uuid = UUID(req.project_id)
+        except ValueError:
+            project_uuid = None
+        if project_uuid is not None:
+            try:
+                await increment_project_spent_safe(
+                    store=store,
+                    project_id=project_uuid,
+                    delta_usd=Decimal(str(_route_price_usd("POST /plan"))),
+                )
+            except Exception:  # pragma: no cover — best-effort
+                logger.warning("plan: project spend increment failed")
+
+    return panel.model_dump(mode="json")
 
 
 @app.get("/sessions/{session_id}/sources", response_model=list[SourceInfo])

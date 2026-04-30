@@ -25,6 +25,7 @@ import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from openai import AsyncOpenAI
@@ -97,6 +98,7 @@ async def generate_voice(
     v1_source_signal: str = "",
     openai_client: AsyncOpenAI | None = None,
     context: AdvisorContext | None = None,
+    journal: bool = True,
 ) -> AdvisorVoice:
     """Run a single advisor voice. ~5x cheaper than a full panel.
 
@@ -138,13 +140,34 @@ async def generate_voice(
     prompts = load_prompts()
     user_prompt = render_context_block(context)
 
-    return await run_voice(
+    voice_result = await run_voice(
         role=role,
         system_prompt=prompts[role.value],
         user_prompt=user_prompt,
         tier_preset=tier_preset,
         client=openai_client,
     )
+
+    # Auto-journal advisor_voiced (S5-MEM-04). Best-effort.
+    try:
+        from gecko_core.memory.auto_journal import journal_voice
+
+        sid = session_id if isinstance(session_id, UUID) else UUID(str(session_id))
+        record = await store.get(sid)
+        project_id = record.project_id if record is not None else None
+        await journal_voice(
+            session_id=sid,
+            project_id=project_id,
+            role=voice_result.role.value,
+            closing_line=voice_result.closing_line,
+            model_used=voice_result.model_used,
+            cost_usd=float(voice_result.cost_usd or 0.0),
+            journal=journal,
+        )
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("auto-journal advisor_voiced failed: %s", exc)
+
+    return voice_result
 
 
 async def generate_panel(
@@ -155,6 +178,7 @@ async def generate_panel(
     output_dir: Path | None = None,
     v1_source_signal: str = "",
     openai_client: AsyncOpenAI | None = None,
+    journal: bool = True,
 ) -> AdvisorPanel:
     """Run all 5 advisor voices in parallel and return the AdvisorPanel.
 
@@ -199,12 +223,38 @@ async def generate_panel(
     voices = await asyncio.gather(*(_one(r) for r in PANEL_VOICE_ORDER))
     total_cost = sum(v.cost_usd for v in voices if v.cost_usd is not None)
 
-    return AdvisorPanel(
+    panel = AdvisorPanel(
         session_id=str(sid),
         voices=list(voices),
         total_cost_usd=float(total_cost),
         generated_at=datetime.now().astimezone(),
     )
+
+    # Auto-journal plan_advised (S5-MEM-04). Best-effort.
+    try:
+        from gecko_core.memory.auto_journal import journal_plan
+
+        record = await store.get(sid)
+        project_id = record.project_id if record is not None else None
+        await journal_plan(
+            session_id=sid,
+            project_id=project_id,
+            voices=[
+                {
+                    "role": v.role.value,
+                    "closing_line": v.closing_line,
+                    "model_used": v.model_used,
+                }
+                for v in voices
+            ],
+            tier_preset=tier_preset.value if hasattr(tier_preset, "value") else str(tier_preset),
+            total_cost_usd=float(total_cost),
+            journal=journal,
+        )
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("auto-journal plan_advised failed: %s", exc)
+
+    return panel
 
 
 def compute_pulse_deltas(
@@ -249,30 +299,127 @@ def compute_pulse_deltas(
 
 
 async def run_pulse(
-    session_id: UUID | str,
+    session_id: UUID | str | None = None,
     *,
-    previous_panel: AdvisorPanel | None,
+    project_id: UUID | str | None = None,
+    previous_panel: AdvisorPanel | None = None,
     tier_preset: Tier = Tier.balanced,
     store: SessionStore | None = None,
     output_dir: Path | None = None,
     v1_source_signal: str = "",
     openai_client: AsyncOpenAI | None = None,
+    journal: bool = True,
 ) -> PulsePanel:
-    """Re-run the panel and surface deltas vs the prior pulse (S4-ADVISOR-05).
+    """Re-run the panel and surface deltas vs the prior pulse (S4-ADVISOR-05 / S5-API-02).
 
-    Caller is responsible for fetching ``previous_panel`` from
-    persistence (the ``pulse_runs`` table once migration 018 lands; until
-    then callers can pass None on the first pulse).
+    Resolution order for the prior panel:
+        1. Caller-supplied ``previous_panel`` (back-compat — wins).
+        2. ``project_id`` walk: most recent ``pulse_runs`` row for the project.
+        3. ``session_id`` walk: most recent ``pulse_runs`` row for that session.
+
+    ``project_id`` takes precedence over ``session_id`` when both are
+    given — most teams pulse across a project's history (multiple
+    sessions) rather than against one session. ``session_id`` is still
+    needed to load the panel's context (idea + transcript live on
+    ``sessions``); when only ``project_id`` is provided we use the
+    session_id from the most recent prior pulse.
+
+    On every successful run we INSERT into ``pulse_runs`` so the next
+    pulse has prior data to compare against. Persistence failures are
+    swallowed (best-effort) so a transient DB blip doesn't crash the
+    user-visible pulse.
     """
+    if session_id is None and project_id is None:
+        raise ValueError("run_pulse: session_id or project_id is required")
+
+    if store is None:
+        store = SessionStore.from_env()
+
+    pid_uuid: UUID | None = (
+        project_id
+        if isinstance(project_id, UUID)
+        else (UUID(str(project_id)) if project_id is not None else None)
+    )
+    sid_uuid: UUID | None = (
+        session_id
+        if isinstance(session_id, UUID)
+        else (UUID(str(session_id)) if session_id is not None else None)
+    )
+
+    # Resolve the prior pulse via DB walk if the caller didn't pre-fetch one.
+    if previous_panel is None:
+        prior_row: dict[str, Any] | None = None
+        try:
+            prior_row = await store.get_latest_pulse_run(
+                project_id=pid_uuid,
+                session_id=sid_uuid if pid_uuid is None else None,
+            )
+        except Exception:  # pragma: no cover — best-effort
+            logger.exception("run_pulse: prior pulse lookup failed; treating as no prior")
+            prior_row = None
+        if prior_row is not None:
+            try:
+                previous_panel = AdvisorPanel.model_validate(prior_row["panel_json"])
+            except Exception:  # pragma: no cover — corrupt row, skip
+                logger.exception("run_pulse: could not decode prior panel_json")
+                previous_panel = None
+            # Project-only callers: backfill session from the prior row so
+            # we know which session's transcript to feed the panel.
+            if sid_uuid is None and prior_row.get("session_id"):
+                sid_uuid = UUID(str(prior_row["session_id"]))
+
+    if sid_uuid is None:
+        raise ValueError(
+            "run_pulse: no session_id resolvable from project_id walk; "
+            "first-time project pulses must pass session_id explicitly"
+        )
+
     panel = await generate_panel(
-        session_id,
+        sid_uuid,
         tier_preset=tier_preset,
         store=store,
         output_dir=output_dir,
         v1_source_signal=v1_source_signal,
         openai_client=openai_client,
+        journal=journal,
     )
     deltas = compute_pulse_deltas(panel=panel, previous_panel=previous_panel)
+
+    # Persist this pulse so the NEXT one has prior data. Best-effort.
+    try:
+        await store.insert_pulse_run(
+            session_id=sid_uuid,
+            project_id=pid_uuid,
+            panel_json=panel.model_dump(mode="json"),
+            deltas_json=[d.model_dump(mode="json") for d in deltas],
+        )
+    except Exception:  # pragma: no cover — best-effort
+        logger.exception("run_pulse: insert_pulse_run failed; pulse history not extended")
+
+    # Auto-journal pulse_run (S5-MEM-04). Best-effort.
+    try:
+        from gecko_core.memory.auto_journal import journal_pulse
+
+        record = await store.get(sid_uuid)
+        record_project_id = record.project_id if record is not None else None
+        await journal_pulse(
+            session_id=sid_uuid,
+            project_id=record_project_id,
+            prior_panel_id=str(previous_panel.session_id) if previous_panel else None,
+            current_closing_lines=[v.closing_line for v in panel.voices],
+            deltas=[
+                {
+                    "voice": d.role.value,
+                    "before": d.previous_closing_line,
+                    "after": d.current_closing_line,
+                }
+                for d in deltas
+            ],
+            journal=journal,
+        )
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("auto-journal pulse_run failed: %s", exc)
+
     return PulsePanel(
         panel=panel,
         deltas=deltas,

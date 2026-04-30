@@ -155,7 +155,9 @@ async def load_context(
     # The panel can still run — it just gets a leaner context.
     result = await store.get_result(sid)
     transcript = (
-        cast("dict[str, Any] | None", result.get("transcript")) if isinstance(result, dict) else None
+        cast("dict[str, Any] | None", result.get("transcript"))
+        if isinstance(result, dict)
+        else None
     )
     summary_obj = result.get("pro_session_summary") if isinstance(result, dict) else None
     summary = str(summary_obj) if isinstance(summary_obj, str) else None
@@ -177,9 +179,7 @@ async def load_context(
 
         vecs, _tokens = await embed([record.idea])
         if vecs:
-            flywheel_precedents = await store.retrieve_gecko_precedent(
-                embedding=vecs[0], limit=5
-            )
+            flywheel_precedents = await store.retrieve_gecko_precedent(embedding=vecs[0], limit=5)
     except Exception as exc:  # pragma: no cover — defensive
         logger.warning("advisor: precedent retrieval failed for %s: %s", sid, exc)
 
@@ -219,7 +219,9 @@ def render_context_block(ctx: AdvisorContext) -> str:
         excerpt_block = "\n\n".join(
             f"## {name}\n{body}" for name, body in ctx.scaffold_excerpts.items()
         )
-        parts.append(f"# Scaffold artifacts (first {_SCAFFOLD_EXCERPT_CHARS} chars each)\n{excerpt_block}")
+        parts.append(
+            f"# Scaffold artifacts (first {_SCAFFOLD_EXCERPT_CHARS} chars each)\n{excerpt_block}"
+        )
     else:
         parts.append("# Scaffold artifacts\n(no scaffold bundle on disk)")
 
@@ -228,9 +230,7 @@ def render_context_block(ctx: AdvisorContext) -> str:
         for p in ctx.flywheel_precedents:
             verdict = p.verdict.upper()
             if p.similarity is not None:
-                precedent_lines.append(
-                    f"- [{verdict}] {p.idea_summary} (sim={p.similarity:.2f})"
-                )
+                precedent_lines.append(f"- [{verdict}] {p.idea_summary} (sim={p.similarity:.2f})")
             else:
                 precedent_lines.append(f"- [{verdict}] {p.idea_summary}")
         parts.append("# Gecko Flywheel precedents\n" + "\n".join(precedent_lines))

@@ -406,6 +406,149 @@ def test_pulse_deltas_detect_change() -> None:
     assert by_role[AgentRole.cto].changed is False
 
 
+# ---------------------------------------------------------------------------
+# S5-API-02 — run_pulse walks pulse_runs history for project-scoped deltas
+# ---------------------------------------------------------------------------
+
+
+class _PulseRunsStubStore(_StubStore):
+    """Extends _StubStore with pulse_runs read/write tracking."""
+
+    def __init__(
+        self,
+        *,
+        record: _StubSessionRecord | None,
+        result: dict[str, Any] | None,
+        prior_pulse_row: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(record=record, result=result)
+        self._prior_pulse_row = prior_pulse_row
+        self.inserted: list[dict[str, Any]] = []
+        self.lookup_calls: list[dict[str, Any]] = []
+
+    async def get_latest_pulse_run(
+        self,
+        *,
+        session_id: UUID | None = None,
+        project_id: UUID | None = None,
+    ) -> dict[str, Any] | None:
+        self.lookup_calls.append({"session_id": session_id, "project_id": project_id})
+        return self._prior_pulse_row
+
+    async def insert_pulse_run(
+        self,
+        *,
+        session_id: UUID,
+        project_id: UUID | None,
+        panel_json: dict[str, Any],
+        deltas_json: list[dict[str, Any]],
+    ) -> UUID:
+        new_id = uuid4()
+        self.inserted.append(
+            {
+                "id": new_id,
+                "session_id": session_id,
+                "project_id": project_id,
+                "panel_json": panel_json,
+                "deltas_json": deltas_json,
+            }
+        )
+        return new_id
+
+
+async def test_run_pulse_with_project_walks_history(session_uuid: UUID) -> None:
+    """run_pulse(project_id=...) reads the most recent prior panel + computes deltas.
+
+    Builds a stub store with a prior pulse row whose CEO closing line
+    differs from the new panel's. Asserts:
+        1. The store's get_latest_pulse_run was called with project_id.
+        2. The resulting deltas mark CEO as changed.
+        3. A new pulse_runs row was persisted.
+    """
+    project_uuid = uuid4()
+
+    # Prior panel had a different CEO closing line — should produce changed=True.
+    prior_panel = _make_panel(
+        {
+            **_CLOSING_LINES,
+            AgentRole.ceo: "Strategic priority: pivot to dev-tools instead.",
+        },
+        str(session_uuid),
+    )
+    prior_row = {
+        "id": str(uuid4()),
+        "session_id": str(session_uuid),
+        "project_id": str(project_uuid),
+        "panel_json": prior_panel.model_dump(mode="json"),
+        "deltas_json": [],
+        "created_at": "2026-04-28T00:00:00+00:00",
+    }
+    store = _PulseRunsStubStore(
+        record=_StubSessionRecord("Cap-table SAFE diff tool", project_id=project_uuid),
+        result=_result_payload(),
+        prior_pulse_row=prior_row,
+    )
+
+    fake = _FakeOpenAI()
+    from gecko_core.orchestration.advisor import run_pulse
+
+    pulse = await run_pulse(
+        session_id=session_uuid,
+        project_id=project_uuid,
+        store=store,  # type: ignore[arg-type]
+        openai_client=fake,  # type: ignore[arg-type]
+        journal=False,
+    )
+
+    # Lookup called with project_id (project takes precedence).
+    assert store.lookup_calls
+    assert store.lookup_calls[0]["project_id"] == project_uuid
+    assert store.lookup_calls[0]["session_id"] is None
+
+    # Delta detected on CEO (prior closing line differed).
+    by_role = {d.role: d for d in pulse.deltas}
+    assert by_role[AgentRole.ceo].changed is True
+    # CTO matches prior — no change.
+    assert by_role[AgentRole.cto].changed is False
+
+    # New pulse_runs row persisted with project_id.
+    assert len(store.inserted) == 1
+    inserted = store.inserted[0]
+    assert inserted["session_id"] == session_uuid
+    assert inserted["project_id"] == project_uuid
+
+
+async def test_run_pulse_session_only_no_prior(session_uuid: UUID) -> None:
+    """run_pulse(session_id=...) with no prior row reports 'no prior pulse'."""
+    store = _PulseRunsStubStore(
+        record=_StubSessionRecord("idea X"),
+        result=_result_payload(),
+        prior_pulse_row=None,
+    )
+    fake = _FakeOpenAI()
+    from gecko_core.orchestration.advisor import run_pulse
+
+    pulse = await run_pulse(
+        session_id=session_uuid,
+        store=store,  # type: ignore[arg-type]
+        openai_client=fake,  # type: ignore[arg-type]
+        journal=False,
+    )
+    assert all(d.reason == "no prior pulse on file" for d in pulse.deltas)
+    # Lookup hit session_id (no project provided).
+    assert store.lookup_calls[0]["session_id"] == session_uuid
+    # New row persisted even when there's no prior — bootstraps history.
+    assert len(store.inserted) == 1
+
+
+async def test_run_pulse_requires_session_or_project() -> None:
+    """run_pulse() with neither id raises ValueError."""
+    from gecko_core.orchestration.advisor import run_pulse
+
+    with pytest.raises(ValueError, match="session_id or project_id"):
+        await run_pulse(journal=False)
+
+
 async def test_panel_v1_source_signal_passes_through(
     session_uuid: UUID, store_with_result: _StubStore
 ) -> None:

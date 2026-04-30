@@ -124,6 +124,30 @@ _PULSE_DESCRIPTION = (
     "embedding-based deltas land in Sprint 5. FREE."
 )
 
+_MEMORY_SAVE_DESCRIPTION = (
+    "Append a typed entry to Gecko's native decision-memory layer. Free. "
+    "Scope is `project|session|user`. Entry types are the 5 paid loop steps "
+    "plus `feature_shipped` and `user_note`."
+)
+
+_MEMORY_RECALL_DESCRIPTION = (
+    "Recall recent memory entries for a scope, newest first. Indexed lookup; "
+    "no embedding work. Filter by entry_type or key to narrow."
+)
+
+_MEMORY_SEARCH_DESCRIPTION = (
+    "Cosine-similarity search over a scope's memory entries. Returns the "
+    "top_k matches with similarity score. Server-side scope filter prevents "
+    "cross-scope leakage."
+)
+
+_RESUME_DESCRIPTION = (
+    "Recap a project's recent loop activity (S5-MEM-05). Walks memory "
+    "entries scoped to the project for the last `days` (default 30), groups "
+    "by entry_type, and returns a structured payload with last advisor "
+    "panel + last pulse deltas. Sub-second; no LLM call."
+)
+
 _PROJECT_ECONOMICS_DESCRIPTION = (
     "Per-project economics snapshot (S2-09): privy wallet address, live USDC "
     "balance, budget cap + spend, and the 5 most recent paid sessions. Use "
@@ -385,9 +409,16 @@ async def list_tools() -> list[Tool]:
                     "session_id": {
                         "type": "string",
                         "description": (
-                            "Session UUID to re-pulse. v1 takes a session_id "
-                            "(not a project_id); project-walk lands when "
-                            "migration 018_pulse_runs.sql ships."
+                            "Session UUID to re-pulse. Either session_id or "
+                            "project_id is required; when both are given, "
+                            "project_id wins."
+                        ),
+                    },
+                    "project_id": {
+                        "type": "string",
+                        "description": (
+                            "Project UUID. Walks pulse history across the "
+                            "project's sessions for delta detection (S5-API-02)."
                         ),
                     },
                     "tier_preset": {
@@ -396,7 +427,82 @@ async def list_tools() -> list[Tool]:
                         "default": "balanced",
                     },
                 },
-                "required": ["session_id"],
+            },
+        ),
+        Tool(
+            name="gecko_memory_save",
+            description=_MEMORY_SAVE_DESCRIPTION,
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "scope_type": {
+                        "type": "string",
+                        "enum": ["project", "session", "user"],
+                    },
+                    "scope_id": {"type": "string"},
+                    "entry_type": {
+                        "type": "string",
+                        "enum": [
+                            "verdict_received",
+                            "scaffold_generated",
+                            "plan_advised",
+                            "advisor_voiced",
+                            "pulse_run",
+                            "feature_shipped",
+                            "user_note",
+                        ],
+                    },
+                    "value": {"type": "object"},
+                    "key": {"type": "string"},
+                },
+                "required": ["scope_type", "scope_id", "entry_type", "value"],
+            },
+        ),
+        Tool(
+            name="gecko_memory_recall",
+            description=_MEMORY_RECALL_DESCRIPTION,
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "scope_type": {
+                        "type": "string",
+                        "enum": ["project", "session", "user"],
+                    },
+                    "scope_id": {"type": "string"},
+                    "entry_type": {"type": "string"},
+                    "key": {"type": "string"},
+                    "limit": {"type": "integer", "default": 20},
+                },
+                "required": ["scope_type", "scope_id"],
+            },
+        ),
+        Tool(
+            name="gecko_memory_search",
+            description=_MEMORY_SEARCH_DESCRIPTION,
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "scope_type": {
+                        "type": "string",
+                        "enum": ["project", "session", "user"],
+                    },
+                    "scope_id": {"type": "string"},
+                    "query": {"type": "string"},
+                    "top_k": {"type": "integer", "default": 5},
+                },
+                "required": ["scope_type", "scope_id", "query"],
+            },
+        ),
+        Tool(
+            name="gecko_resume",
+            description=_RESUME_DESCRIPTION,
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string"},
+                    "days": {"type": "integer", "default": 30},
+                },
+                "required": ["project_id"],
             },
         ),
         Tool(
@@ -509,9 +615,48 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
     if name == "gecko_pulse":
+        sid_raw = arguments.get("session_id")
+        pid_raw = arguments.get("project_id")
         result = await _run_pulse(
-            session_id=str(arguments["session_id"]),
+            session_id=str(sid_raw) if sid_raw else None,
+            project_id=str(pid_raw) if pid_raw else None,
             tier_preset=str(arguments.get("tier_preset", "balanced")),
+        )
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    if name == "gecko_memory_save":
+        result = await _run_memory_save(
+            scope_type=str(arguments["scope_type"]),
+            scope_id=str(arguments["scope_id"]),
+            entry_type=str(arguments["entry_type"]),
+            value=dict(arguments.get("value") or {}),
+            key=arguments.get("key"),
+        )
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    if name == "gecko_memory_recall":
+        rows = await _run_memory_recall(
+            scope_type=str(arguments["scope_type"]),
+            scope_id=str(arguments["scope_id"]),
+            entry_type=arguments.get("entry_type"),
+            key=arguments.get("key"),
+            limit=int(arguments.get("limit", 20) or 20),
+        )
+        return [TextContent(type="text", text=json.dumps(rows, indent=2))]
+
+    if name == "gecko_memory_search":
+        rows = await _run_memory_search(
+            scope_type=str(arguments["scope_type"]),
+            scope_id=str(arguments["scope_id"]),
+            query=str(arguments["query"]),
+            top_k=int(arguments.get("top_k", 5) or 5),
+        )
+        return [TextContent(type="text", text=json.dumps(rows, indent=2))]
+
+    if name == "gecko_resume":
+        result = await _run_resume(
+            project_id=str(arguments["project_id"]),
+            days=int(arguments.get("days", 30) or 30),
         )
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
@@ -646,9 +791,7 @@ async def _run_scaffold(*, session_id: str, output_dir: str | None) -> dict[str,
     }
 
 
-async def _run_advise(
-    *, session_id: str, voice: str, tier_preset: str
-) -> dict[str, Any]:
+async def _run_advise(*, session_id: str, voice: str, tier_preset: str) -> dict[str, Any]:
     """Single-voice advisor call (FREE in Sprint 4).
 
     Errors are surfaced as ``{error, message}`` payloads (matching the
@@ -677,7 +820,13 @@ async def _run_advise(
 
 
 async def _run_plan(*, session_id: str, tier_preset: str) -> dict[str, Any]:
-    """Full 5-voice panel (FREE in Sprint 4; paid in Sprint 5)."""
+    """Full 5-voice panel.
+
+    S5-API-01: forwards to gecko-api `/plan` (paid, $0.25 via x402) so
+    settle goes through the user's frames.ag wallet. Local dev (no
+    GECKO_API_URL or pointed at localhost) calls gecko_core directly.
+    """
+    import os
     from uuid import UUID
 
     from gecko_core.orchestration.advisor import (
@@ -690,19 +839,33 @@ async def _run_plan(*, session_id: str, tier_preset: str) -> dict[str, Any]:
         tier = Tier(tier_preset)
     except ValueError:
         return {"error": "bad_tier", "message": f"unknown tier_preset {tier_preset!r}"}
+
+    api_url = os.environ.get("GECKO_API_URL")
+    if _route_uses_local_fallback(api_url):
+        try:
+            result = await generate_panel(UUID(session_id), tier_preset=tier)
+        except AdvisorSessionNotFoundError as exc:
+            return {"error": "session_not_found", "message": str(exc)}
+        return result.model_dump(mode="json")
+
+    client = _get_client()
     try:
-        result = await generate_panel(UUID(session_id), tier_preset=tier)
-    except AdvisorSessionNotFoundError as exc:
-        return {"error": "session_not_found", "message": str(exc)}
-    return result.model_dump(mode="json")
+        return await client.plan(session_id=session_id, tier_preset=tier_preset)
+    except Exception as exc:
+        return {"error": "api_call_failed", "message": f"{type(exc).__name__}: {exc}"}
 
 
-async def _run_pulse(*, session_id: str, tier_preset: str) -> dict[str, Any]:
+async def _run_pulse(
+    *,
+    session_id: str | None = None,
+    project_id: str | None = None,
+    tier_preset: str = "balanced",
+) -> dict[str, Any]:
     """Re-run the panel and surface deltas vs prior pulse.
 
-    Until migration 018_pulse_runs.sql ships, the prior panel isn't
-    persisted — every pulse returns ``deltas=[changed=False, reason='no
-    prior pulse on file']``. Documented as a v1 limitation.
+    Either ``session_id`` or ``project_id`` is required (S5-API-02).
+    project_id wins when both are given. Migration 019 persists each
+    pulse so subsequent runs compute real deltas across history.
     """
     from uuid import UUID
 
@@ -712,15 +875,125 @@ async def _run_pulse(*, session_id: str, tier_preset: str) -> dict[str, Any]:
     )
     from gecko_core.routing.catalog import Tier
 
+    if not session_id and not project_id:
+        return {
+            "error": "missing_id",
+            "message": "either session_id or project_id is required",
+        }
     try:
         tier = Tier(tier_preset)
     except ValueError:
         return {"error": "bad_tier", "message": f"unknown tier_preset {tier_preset!r}"}
     try:
-        result = await run_pulse(UUID(session_id), previous_panel=None, tier_preset=tier)
+        result = await run_pulse(
+            session_id=UUID(session_id) if session_id else None,
+            project_id=UUID(project_id) if project_id else None,
+            tier_preset=tier,
+        )
     except AdvisorSessionNotFoundError as exc:
         return {"error": "session_not_found", "message": str(exc)}
+    except ValueError as exc:
+        return {"error": "bad_argument", "message": str(exc)}
     return result.model_dump(mode="json")
+
+
+async def _run_memory_save(
+    *,
+    scope_type: str,
+    scope_id: str,
+    entry_type: str,
+    value: dict[str, Any],
+    key: Any,
+) -> dict[str, Any]:
+    """Save a memory entry. Free."""
+    from gecko_core.memory import MemoryEntryType, MemoryScope, save
+
+    try:
+        et = MemoryEntryType(entry_type)
+    except ValueError as exc:
+        return {"error": "bad_entry_type", "message": str(exc)}
+    if scope_type not in ("project", "session", "user"):
+        return {"error": "bad_scope_type", "message": f"unknown scope {scope_type!r}"}
+    new_id = await save(
+        MemoryScope(type=scope_type, id=scope_id),  # type: ignore[arg-type]
+        et,
+        value,
+        key=str(key) if isinstance(key, str) else None,
+    )
+    return {"id": str(new_id)}
+
+
+async def _run_memory_recall(
+    *,
+    scope_type: str,
+    scope_id: str,
+    entry_type: Any,
+    key: Any,
+    limit: int,
+) -> list[dict[str, Any]]:
+    from gecko_core.memory import MemoryEntryType, MemoryScope, recall
+
+    et: MemoryEntryType | None = None
+    if entry_type:
+        try:
+            et = MemoryEntryType(str(entry_type))
+        except ValueError:
+            return []
+    if scope_type not in ("project", "session", "user"):
+        return []
+    rows = await recall(
+        MemoryScope(type=scope_type, id=scope_id),  # type: ignore[arg-type]
+        entry_type=et,
+        key=str(key) if isinstance(key, str) else None,
+        limit=limit,
+    )
+    return [
+        {
+            "id": str(r.id),
+            "entry_type": r.entry_type.value,
+            "key": r.key,
+            "value": r.value,
+            "tx_signature": r.tx_signature,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in rows
+    ]
+
+
+async def _run_memory_search(
+    *,
+    scope_type: str,
+    scope_id: str,
+    query: str,
+    top_k: int,
+) -> list[dict[str, Any]]:
+    from gecko_core.memory import MemoryScope, search
+
+    if scope_type not in ("project", "session", "user"):
+        return []
+    matches = await search(
+        MemoryScope(type=scope_type, id=scope_id),  # type: ignore[arg-type]
+        query,
+        top_k=top_k,
+    )
+    return [
+        {
+            "id": str(entry.id),
+            "entry_type": entry.entry_type.value,
+            "key": entry.key,
+            "value": entry.value,
+            "similarity": sim,
+            "created_at": entry.created_at.isoformat(),
+        }
+        for entry, sim in matches
+    ]
+
+
+async def _run_resume(*, project_id: str, days: int) -> dict[str, Any]:
+    from gecko_core.memory.resume import build_resume
+
+    resume = await build_resume(project_id, days=days)
+    return resume.model_dump(mode="json")
 
 
 def _run_available_sources() -> list[dict[str, Any]]:

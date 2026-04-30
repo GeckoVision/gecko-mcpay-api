@@ -130,12 +130,85 @@ def test_paid_route_returns_route_result_shape(client: TestClient) -> None:
 
 
 def test_well_known_advertises_route_endpoint(client: TestClient) -> None:
+    """S5-API-03: three /route paths advertised at three different prices.
+
+    Default tier $0.01, premium tier $0.05, upgrade tier $0.20 — heavy
+    callers (prefer_premium) pay the most, light callers (default) pay
+    the least. Sprint 4 shipped a single $0.02 flat; this is the
+    Sprint 5 split.
+    """
     r = client.get("/.well-known/x402")
     assert r.status_code == 200
     routes = {entry["route"]: entry for entry in r.json()["routes"]}
     assert "POST /route" in routes
-    prices = {a["price"] for a in routes["POST /route"]["accepts"]}
-    assert "$0.02" in prices
+    assert "POST /route/premium" in routes
+    assert "POST /route/upgrade" in routes
+    default_prices = {a["price"] for a in routes["POST /route"]["accepts"]}
+    premium_prices = {a["price"] for a in routes["POST /route/premium"]["accepts"]}
+    upgrade_prices = {a["price"] for a in routes["POST /route/upgrade"]["accepts"]}
+    assert "$0.01" in default_prices
+    assert "$0.05" in premium_prices
+    assert "$0.20" in upgrade_prices
+
+
+def test_paid_route_premium_returns_route_result_with_tier(client: TestClient) -> None:
+    """S5-API-03: /route/premium charges $0.05 + surfaces tier_charged."""
+    r0 = client.post("/route/premium", json={"prompt": "refactor this"})
+    assert r0.status_code == 402
+    accepts_entry = _decode_payment_required_header(r0.headers["payment-required"])["accepts"][0]
+    # x402 atomic units: $0.05 USDC = 50_000.
+    assert accepts_entry["amount"] == "50000"
+    payment_header = _build_payment_payload_header(accepts_entry)
+
+    r = client.post(
+        "/route/premium",
+        json={"prompt": "refactor this", "task_hint": "code"},
+        headers={"PAYMENT-SIGNATURE": payment_header},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["tier_charged"] == "premium"
+    assert body["prepay_usd"] == pytest.approx(0.05)
+
+
+def test_paid_route_upgrade_returns_route_result_with_tier(client: TestClient) -> None:
+    """S5-API-03: /route/upgrade charges $0.20 + surfaces tier_charged."""
+    r0 = client.post("/route/upgrade", json={"prompt": "deep think"})
+    assert r0.status_code == 402
+    accepts_entry = _decode_payment_required_header(r0.headers["payment-required"])["accepts"][0]
+    # x402 atomic units: $0.20 USDC = 200_000.
+    assert accepts_entry["amount"] == "200000"
+    payment_header = _build_payment_payload_header(accepts_entry)
+
+    r = client.post(
+        "/route/upgrade",
+        json={
+            "prompt": "deep think",
+            "task_hint": "reasoning",
+            "prefer_premium": True,
+        },
+        headers={"PAYMENT-SIGNATURE": payment_header},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["tier_charged"] == "upgrade"
+    assert body["prepay_usd"] == pytest.approx(0.20)
+
+
+def test_paid_route_default_includes_tier_charged(client: TestClient) -> None:
+    """S5-API-03: legacy /route path tags the response with `default` tier."""
+    r0 = client.post("/route", json={"prompt": "hello there"})
+    accepts_entry = _decode_payment_required_header(r0.headers["payment-required"])["accepts"][0]
+    payment_header = _build_payment_payload_header(accepts_entry)
+    r = client.post(
+        "/route",
+        json={"prompt": "hello there", "task_hint": "default"},
+        headers={"PAYMENT-SIGNATURE": payment_header},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["tier_charged"] == "default"
+    assert body["prepay_usd"] == pytest.approx(0.01)
 
 
 def test_paid_route_rejects_unknown_task_hint(client: TestClient) -> None:

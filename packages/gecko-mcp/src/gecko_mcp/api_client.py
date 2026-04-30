@@ -119,7 +119,16 @@ class GeckoAPIClient:
     Free endpoints always go through plain httpx — no payment proxy.
     """
 
-    PAID_PATHS: frozenset[str] = frozenset({"/research", "/research/pro", "/route"})
+    PAID_PATHS: frozenset[str] = frozenset(
+        {
+            "/research",
+            "/research/pro",
+            "/route",
+            "/route/premium",
+            "/route/upgrade",
+            "/plan",
+        }
+    )
 
     def __init__(
         self,
@@ -530,6 +539,19 @@ class GeckoAPIClient:
 
         return await self._poll_result(session_id, poll_interval_s, poll_deadline_s, ack)
 
+    # S5-API-03: tiered /route price paths. Single mapping that the route()
+    # method uses to pick the right URL based on `task_hint` + `prefer_premium`.
+    # Default → $0.01, premium task hints → $0.05, prefer_premium → $0.20.
+    _PREMIUM_TASK_HINTS: frozenset[str] = frozenset({"reasoning", "code"})
+
+    @classmethod
+    def _route_path_for_tier(cls, *, task_hint: str, prefer_premium: bool) -> str:
+        if prefer_premium:
+            return "/route/upgrade"
+        if task_hint in cls._PREMIUM_TASK_HINTS:
+            return "/route/premium"
+        return "/route"
+
     async def route(
         self,
         prompt: str,
@@ -539,11 +561,18 @@ class GeckoAPIClient:
         prefer_premium: bool = False,
         tier_preset: str = "balanced",
     ) -> dict[str, Any]:
-        """POST /route — paid LLM routing through gecko-api (S4-ROUTE-02).
+        """POST /route — paid LLM routing through gecko-api (S4-ROUTE-02 / S5-API-03).
 
-        Goes through the same x402 / frames.ag plumbing as /research; the
-        upstream charges a flat per-call fee. Returns the RouteResult shape
-        as a JSON-safe dict.
+        Goes through the same x402 / frames.ag plumbing as /research. The
+        client picks one of three paid paths based on `task_hint` +
+        `prefer_premium`:
+
+            default              → POST /route          ($0.01)
+            reasoning / code     → POST /route/premium  ($0.05)
+            prefer_premium=True  → POST /route/upgrade  ($0.20)
+
+        Returns the RouteResult shape as a JSON-safe dict, with `tier_charged`
+        + `prepay_usd` injected by the API.
         """
         body: dict[str, Any] = {
             "prompt": prompt,
@@ -552,7 +581,31 @@ class GeckoAPIClient:
             "prefer_premium": prefer_premium,
             "tier_preset": tier_preset,
         }
-        return await self._paid_post("/route", body)
+        path = self._route_path_for_tier(task_hint=task_hint, prefer_premium=prefer_premium)
+        return await self._paid_post(path, body)
+
+    async def plan(
+        self,
+        session_id: str,
+        *,
+        tier_preset: str = "balanced",
+        project_id: str | None = None,
+        frames_username: str | None = None,
+    ) -> dict[str, Any]:
+        """POST /plan — paid Advisor Panel through gecko-api (S5-API-01).
+
+        Pays via the same x402 / frames.ag plumbing as /research at a flat
+        $0.25. Returns the AdvisorPanel JSON shape.
+        """
+        body: dict[str, Any] = {
+            "session_id": session_id,
+            "tier_preset": tier_preset,
+        }
+        if project_id is not None:
+            body["project_id"] = project_id
+        if frames_username is not None:
+            body["frames_username"] = frames_username
+        return await self._paid_post("/plan", body)
 
     async def ask(self, session_id: str, question: str) -> dict[str, Any]:
         """POST /sessions/{id}/ask — free follow-up against a paid session."""

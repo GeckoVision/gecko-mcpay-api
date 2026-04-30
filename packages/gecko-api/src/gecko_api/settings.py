@@ -75,6 +75,20 @@ class Settings(BaseModel):
     # of doing exact markup math. Tradeoff: heavy callers subsidize light ones,
     # but the implementation stays simple and predictable.
     route_call_price: str = "$0.02"
+    # S5-API-01: Advisor Panel call price. Mirrors `route_call_price` —
+    # flat per-call charge advertised on `POST /plan`. Default $0.25 lands
+    # below the $0.75 Pro debate price; the panel is cheaper because it
+    # reuses the existing session's transcript instead of running a fresh
+    # 5-agent debate.
+    plan_call_price: str = "$0.25"
+    # S5-API-03: tiered /route pricing. Sprint 4 shipped a single flat
+    # $0.02 charge; Sprint 5 splits it into three paths so heavy callers
+    # subsidize light ones less. The middleware can't refund post-call,
+    # so we register one route per tier and the client picks the path
+    # matching its `task_hint` + `prefer_premium`.
+    route_price_default: str = "$0.01"
+    route_price_premium: str = "$0.05"
+    route_price_upgrade: str = "$0.20"
 
     # Per-instance secret used to HMAC-sign session-scoped events tokens for
     # the SSE endpoint. Defaults to a derived value at process start so devs
@@ -187,6 +201,14 @@ class Settings(BaseModel):
         basic_price = os.environ.get("RESEARCH_BASIC_PRICE", "$20.00")
         pro_price = os.environ.get("RESEARCH_PRO_PRICE", "$0.75")
         route_price = os.environ.get("ROUTE_CALL_PRICE", "$0.02")
+        # S5-API-01: $0.25 per advisor panel run. Mirrors ROUTE_CALL_PRICE env shape.
+        plan_price = os.environ.get("PLAN_CALL_PRICE", "$0.25")
+        # S5-API-03: tiered /route pricing. ROUTE_CALL_PRICE stays as the
+        # legacy single-tier knob (back-compat); the three new vars below
+        # let operators tune each tier independently.
+        route_price_default = os.environ.get("ROUTE_PRICE_TIER_DEFAULT", "$0.01")
+        route_price_premium = os.environ.get("ROUTE_PRICE_TIER_PREMIUM", "$0.05")
+        route_price_upgrade = os.environ.get("ROUTE_PRICE_TIER_UPGRADE", "$0.20")
         events_secret = os.environ.get("EVENTS_SECRET", "dev-events-secret-not-for-production")
 
         # In stub mode we still need a non-empty pay_to for the route catalog.
@@ -208,6 +230,10 @@ class Settings(BaseModel):
             research_basic_price=basic_price,
             research_pro_price=pro_price,
             route_call_price=route_price,
+            plan_call_price=plan_price,
+            route_price_default=route_price_default,
+            route_price_premium=route_price_premium,
+            route_price_upgrade=route_price_upgrade,
             events_secret=events_secret,
         )
 

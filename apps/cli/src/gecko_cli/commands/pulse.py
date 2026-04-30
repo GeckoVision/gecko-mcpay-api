@@ -13,7 +13,13 @@ console = Console()
 
 
 @click.command("pulse")
-@click.argument("session_id")
+@click.argument("session_id", required=False)
+@click.option(
+    "--project-id",
+    "project_id",
+    default=None,
+    help="Project UUID — walks pulse history across all of the project's sessions.",
+)
 @click.option(
     "--tier-preset",
     "tier_preset",
@@ -21,11 +27,12 @@ console = Console()
     default="balanced",
     show_default=True,
 )
-def pulse_cmd(session_id: str, tier_preset: str) -> None:
-    """Re-run the panel for SESSION_ID and report what changed.
+def pulse_cmd(session_id: str | None, project_id: str | None, tier_preset: str) -> None:
+    """Re-run the panel and report what changed.
 
-    Until migration 018_pulse_runs.sql ships, no prior pulse is on file
-    and every run reports ``no prior pulse`` for each voice.
+    Pass either SESSION_ID or --project-id (S5-API-02). Project-id wins
+    when both are given. With migration 019_pulse_runs.sql, the advisor
+    walks pulse history and computes real deltas across runs.
     """
     from gecko_core.orchestration.advisor import (
         AdvisorSessionNotFoundError,
@@ -33,10 +40,22 @@ def pulse_cmd(session_id: str, tier_preset: str) -> None:
     )
     from gecko_core.routing.catalog import Tier
 
-    try:
-        sid = UUID(session_id)
-    except ValueError as exc:
-        raise click.BadParameter(f"session_id is not a valid UUID: {exc}") from exc
+    if not session_id and not project_id:
+        raise click.BadParameter("either SESSION_ID or --project-id is required")
+
+    sid: UUID | None = None
+    if session_id:
+        try:
+            sid = UUID(session_id)
+        except ValueError as exc:
+            raise click.BadParameter(f"session_id is not a valid UUID: {exc}") from exc
+
+    pid: UUID | None = None
+    if project_id:
+        try:
+            pid = UUID(project_id)
+        except ValueError as exc:
+            raise click.BadParameter(f"project-id is not a valid UUID: {exc}") from exc
 
     try:
         tier = Tier(tier_preset)
@@ -44,9 +63,7 @@ def pulse_cmd(session_id: str, tier_preset: str) -> None:
         raise click.BadParameter(f"unknown tier_preset: {exc}") from exc
 
     try:
-        result = asyncio.run(
-            run_pulse(sid, previous_panel=None, tier_preset=tier)
-        )
+        result = asyncio.run(run_pulse(session_id=sid, project_id=pid, tier_preset=tier))
     except AdvisorSessionNotFoundError as exc:
         console.print(f"[red]Not found:[/red] {exc}")
         raise SystemExit(1) from exc
@@ -64,6 +81,4 @@ def pulse_cmd(session_id: str, tier_preset: str) -> None:
             d.previous_closing_line or "—",
         )
     console.print(table)
-    console.print(
-        f"[dim]total cost: ${result.panel.total_cost_usd:.4f}[/dim]"
-    )
+    console.print(f"[dim]total cost: ${result.panel.total_cost_usd:.4f}[/dim]")

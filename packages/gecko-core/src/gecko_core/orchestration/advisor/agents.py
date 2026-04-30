@@ -137,12 +137,8 @@ async def run_voice(
     resp = raw.parse()
     content = resp.choices[0].message.content or ""
 
-    prompt_tokens = (
-        int(getattr(resp.usage, "prompt_tokens", 0) or 0) if resp.usage else 0
-    )
-    completion_tokens = (
-        int(getattr(resp.usage, "completion_tokens", 0) or 0) if resp.usage else 0
-    )
+    prompt_tokens = int(getattr(resp.usage, "prompt_tokens", 0) or 0) if resp.usage else 0
+    completion_tokens = int(getattr(resp.usage, "completion_tokens", 0) or 0) if resp.usage else 0
 
     cost_usd: float | None = None
     header = raw.headers.get("x-clawrouter-cost-usd") if hasattr(raw, "headers") else None

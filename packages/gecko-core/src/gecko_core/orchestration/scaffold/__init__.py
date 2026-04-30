@@ -214,6 +214,7 @@ async def generate_scaffold(
     *,
     store: SessionStore | None = None,
     openai_client: AsyncOpenAI | None = None,
+    journal: bool = True,
 ) -> ScaffoldResult:
     """Synthesize and persist the 3-file scaffold bundle for a Pro session.
 
@@ -310,6 +311,21 @@ async def generate_scaffold(
         await store.add_cost(sid, "llm", cost_usd)
     except Exception as exc:  # pragma: no cover — defensive
         logger.warning("scaffold add_cost failed for %s: %s", sid, exc)
+
+    # Auto-journal scaffold_generated (S5-MEM-04). Best-effort.
+    try:
+        from gecko_core.memory.auto_journal import journal_scaffold
+
+        await journal_scaffold(
+            session_id=sid,
+            project_id=record.project_id,
+            output_paths=[str(p) for p in paths],
+            total_tokens=tokens_used,
+            cost_usd=cost_usd,
+            journal=journal,
+        )
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("auto-journal scaffold failed: %s", exc)
 
     return ScaffoldResult(
         paths=paths,
