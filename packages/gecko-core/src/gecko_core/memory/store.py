@@ -179,6 +179,50 @@ class MemoryStore:
             return None
         return _row_to_entry(rows[0])
 
+    async def recent_project_ids(
+        self,
+        *,
+        since: datetime | None = None,
+        limit: int = 5,
+    ) -> list[str]:
+        """Return up to ``limit`` distinct project scope_ids with recent entries.
+
+        S8-REVIEW-01: drives ``bb sprint-review`` auto-discovery so callers
+        without ``--project-id`` see the most-recently-journaled projects
+        instead of an empty review. Sorted by most-recent ``created_at``.
+        Filters to ``scope_type='project'``; user/session scopes are ignored
+        because they aren't valid review targets.
+        """
+
+        def _select() -> list[dict[str, Any]]:
+            q = (
+                self._client.table(self.MEMORY_TABLE)
+                .select("scope_id,created_at")
+                .eq("scope_type", "project")
+            )
+            if since is not None:
+                q = q.gte("created_at", since.isoformat())
+            # Pull more than `limit` rows so we can dedupe by scope_id while
+            # still surfacing the freshest unique ids. 200 is a safe ceiling
+            # for a 14-day window even on heavily-journaled projects.
+            q = q.order("created_at", desc=True).limit(200)
+            res = q.execute()
+            return cast(list[dict[str, Any]], res.data or [])
+
+        try:
+            rows = await asyncio.to_thread(_select)
+        except Exception as exc:  # pragma: no cover — defensive
+            logger.warning("recent_project_ids lookup failed: %s", exc)
+            return []
+        seen: list[str] = []
+        for row in rows:
+            sid = str(row.get("scope_id") or "")
+            if sid and sid not in seen:
+                seen.append(sid)
+            if len(seen) >= limit:
+                break
+        return seen
+
     async def project_journal_enabled(self, project_id: UUID) -> bool:
         """Return projects.journal_enabled. Defaults to True if column missing/row absent."""
 

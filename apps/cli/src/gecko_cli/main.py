@@ -19,6 +19,7 @@ from gecko_core._logging import install as install_redaction
 from gecko_cli.commands.advise import advise_cmd
 from gecko_cli.commands.ask import ask_cmd
 from gecko_cli.commands.classify import classify_cmd
+from gecko_cli.commands.doctor import doctor_cmd
 from gecko_cli.commands.memory import memory_cmd
 from gecko_cli.commands.plan import plan_cmd
 from gecko_cli.commands.precedents import precedents_cmd
@@ -105,6 +106,7 @@ cli.add_command(memory_cmd)
 cli.add_command(resume_cmd)
 cli.add_command(pricing_cmd)
 cli.add_command(sprint_review_cmd)
+cli.add_command(doctor_cmd)
 
 
 # Back-compat alias — older docs reference `main`.

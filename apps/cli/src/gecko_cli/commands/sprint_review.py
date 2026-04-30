@@ -69,6 +69,31 @@ def _render_review_markdown(review_dict: dict[str, object]) -> str:
     return "\n".join(lines)
 
 
+def _discover_recent_projects(since_days: int) -> list[str]:
+    """Return up to 5 most-recently-journaled project_ids in the window.
+
+    Returns an empty list on any failure (no env, supabase down, etc.) so
+    the caller can fall back to git-only mode without crashing.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    try:
+        from gecko_core.memory.store import MemoryStore
+    except Exception:  # pragma: no cover — defensive
+        return []
+    try:
+        store = MemoryStore.from_env()
+    except Exception:
+        # Most common cause: no SUPABASE_URL / service role configured. We
+        # quietly degrade to git-only mode instead of failing the whole CLI.
+        return []
+    since = datetime.now(UTC) - timedelta(days=since_days)
+    try:
+        return asyncio.run(store.recent_project_ids(since=since, limit=5))
+    except Exception:  # pragma: no cover — defensive
+        return []
+
+
 @click.command("sprint-review")
 @click.option("--since", "since", default="14d", show_default=True)
 @click.option("--project-id", "project_id", default=None)
@@ -101,6 +126,33 @@ def sprint_review_cmd(
     from gecko_core.review import build_review
 
     days = _parse_since(since)
+
+    # S8-REVIEW-01: when no --project-id is supplied, look up the most-
+    # recently-journaled projects in the review window and pick the freshest
+    # one to review automatically. If memory is empty, print a clear
+    # actionable message instead of returning a useless `memory_entry_count=0`
+    # review against the bare git log.
+    discovered: list[str] = []
+    if project_id is None:
+        discovered = _discover_recent_projects(days)
+        if not discovered:
+            console.print(
+                f"[yellow]No journaled projects in the last {days} days. "
+                "Run [bold]bb research[/bold] first or pass [bold]--project-id[/bold].[/yellow]"
+            )
+            # Fall through anyway so a git-only review still renders — the
+            # caller may be running in a fresh repo and that's still useful.
+        else:
+            project_id = discovered[0]
+            console.print(
+                f"[dim]auto-discovered project_id={project_id} "
+                f"({len(discovered)} candidate(s) in window)[/dim]"
+            )
+            if len(discovered) > 1:
+                others = ", ".join(discovered[1:])
+                console.print(
+                    f"[dim]other recent projects (pass --project-id to switch): {others}[/dim]"
+                )
 
     review = asyncio.run(
         build_review(

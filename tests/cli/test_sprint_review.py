@@ -78,6 +78,81 @@ def test_sprint_review_rejects_bad_since() -> None:
     assert "since" in result.output.lower() or "Invalid" in result.output
 
 
+def test_sprint_review_auto_discovers_project(monkeypatch: pytest.MonkeyPatch) -> None:
+    """S8-REVIEW-01: no --project-id picks the most recent journaled project."""
+    captured: dict[str, Any] = {}
+
+    async def _fake(**kwargs: Any) -> SprintReview:
+        captured.update(kwargs)
+        return _canned_review()
+
+    import gecko_cli.commands.sprint_review as cmd
+    import gecko_core.review as review_pkg
+
+    monkeypatch.setattr(review_pkg, "build_review", _fake)
+    monkeypatch.setattr(
+        cmd,
+        "_discover_recent_projects",
+        lambda _days: ["proj-aaa", "proj-bbb", "proj-ccc"],
+    )
+    runner = CliRunner()
+    result = runner.invoke(cli, ["sprint-review", "--since", "14d"], env={"COLUMNS": "240"})
+    assert result.exit_code == 0, result.output
+    assert captured["project_id"] == "proj-aaa"
+    assert "auto-discovered project_id=proj-aaa" in result.output
+    assert "proj-bbb" in result.output  # listed as alternative
+
+
+def test_sprint_review_no_journaled_projects_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    """S8-REVIEW-01: empty memory store -> clear message, still renders panel."""
+
+    async def _fake(**_: Any) -> SprintReview:
+        return _canned_review()
+
+    import gecko_cli.commands.sprint_review as cmd
+    import gecko_core.review as review_pkg
+
+    monkeypatch.setattr(review_pkg, "build_review", _fake)
+    monkeypatch.setattr(cmd, "_discover_recent_projects", lambda _days: [])
+    runner = CliRunner()
+    result = runner.invoke(cli, ["sprint-review", "--since", "7d"], env={"COLUMNS": "240"})
+    assert result.exit_code == 0, result.output
+    assert "No journaled projects in the last 7 days" in result.output
+    assert "bb research" in result.output
+
+
+def test_sprint_review_explicit_project_id_skips_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When --project-id is passed, do not call the discovery helper."""
+    captured: dict[str, Any] = {}
+    discovery_calls: list[int] = []
+
+    async def _fake(**kwargs: Any) -> SprintReview:
+        captured.update(kwargs)
+        return _canned_review()
+
+    import gecko_cli.commands.sprint_review as cmd
+    import gecko_core.review as review_pkg
+
+    monkeypatch.setattr(review_pkg, "build_review", _fake)
+
+    def _bomb(_days: int) -> list[str]:
+        discovery_calls.append(_days)
+        return []
+
+    monkeypatch.setattr(cmd, "_discover_recent_projects", _bomb)
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["sprint-review", "--project-id", "explicit-pid"],
+        env={"COLUMNS": "240"},
+    )
+    assert result.exit_code == 0, result.output
+    assert captured["project_id"] == "explicit-pid"
+    assert discovery_calls == []
+
+
 def test_sprint_review_accepts_bare_integer(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 
