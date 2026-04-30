@@ -545,6 +545,165 @@ async def test_run_pulse_requires_session_or_project() -> None:
         await run_pulse(journal=False)
 
 
+# ---------------------------------------------------------------------------
+# S9-ADVISOR-01 — detect / retry / surface on missing closing line
+# ---------------------------------------------------------------------------
+
+
+class _SequencedRawCompletions:
+    """Returns canned content per call, in order. Used to simulate a malformed
+    first response followed by a valid (or still-malformed) retry.
+    """
+
+    def __init__(self, contents_by_role: dict[AgentRole, list[str]]) -> None:
+        self._queue: dict[AgentRole, list[str]] = {
+            role: list(c) for role, c in contents_by_role.items()
+        }
+        self.calls: list[dict[str, Any]] = []
+
+    async def create(self, **kwargs: Any) -> _FakeRaw:
+        self.calls.append(kwargs)
+        sys_msg = next(m for m in kwargs["messages"] if m["role"] == "system")
+        sys_content = sys_msg["content"].lower()
+        needles = {
+            AgentRole.ceo: "you are the ceo",
+            AgentRole.cto: "you are the cto",
+            AgentRole.business_manager: "you are the business manager",
+            AgentRole.product_manager: "you are the product manager",
+            AgentRole.staff_manager: "you are the staff manager",
+        }
+        for role, needle in needles.items():
+            if needle in sys_content:
+                queue = self._queue.get(role, [])
+                if not queue:
+                    return _FakeRaw(_voice_output(role))
+                return _FakeRaw(queue.pop(0))
+        return _FakeRaw("(unrecognized voice)")
+
+
+def _malformed_output(role: AgentRole) -> str:
+    """A response that has body but no compliant closing line."""
+    return (
+        f"## {role.value} thoughts\n"
+        "Some prose without a properly formatted closing line.\n"
+        "Just rambling about strategy here.\n"
+    )
+
+
+async def test_run_voice_matches_on_first_try(
+    session_uuid: UUID, store_with_result: _StubStore
+) -> None:
+    """Happy path: compliant closing line on attempt 1 → no retry, no error_kind."""
+    fake = _FakeOpenAI()
+    panel = await generate_panel(
+        session_uuid,
+        tier_preset=Tier.balanced,
+        store=store_with_result,  # type: ignore[arg-type]
+        openai_client=fake,  # type: ignore[arg-type]
+    )
+    # Each voice fired exactly once (no retry).
+    assert len(fake.chat.completions.with_raw_response.calls) == 5
+    for v in panel.voices:
+        assert v.error_kind is None
+    assert panel.voices_no_closing_line == 0
+
+
+async def test_run_voice_matches_on_retry(
+    session_uuid: UUID, store_with_result: _StubStore
+) -> None:
+    """First call malformed, retry succeeds → voice marked OK, retry was issued."""
+    fake = _FakeOpenAI()
+    # Only the CEO voice gets a malformed first response.
+    sequenced = _SequencedRawCompletions(
+        contents_by_role={
+            AgentRole.ceo: [_malformed_output(AgentRole.ceo), _voice_output(AgentRole.ceo)],
+        }
+    )
+    fake.chat.completions.with_raw_response = sequenced  # type: ignore[assignment]
+
+    panel = await generate_panel(
+        session_uuid,
+        tier_preset=Tier.balanced,
+        store=store_with_result,  # type: ignore[arg-type]
+        openai_client=fake,  # type: ignore[arg-type]
+    )
+
+    # 4 voices fired once + 1 voice (CEO) fired twice = 6 total calls.
+    assert len(sequenced.calls) == 6
+
+    # The retry call for CEO must include the strict suffix.
+    ceo_calls = [
+        c
+        for c in sequenced.calls
+        if "you are the ceo"
+        in next(m for m in c["messages"] if m["role"] == "system")["content"].lower()
+    ]
+    assert len(ceo_calls) == 2
+    retry_sys = next(m for m in ceo_calls[1]["messages"] if m["role"] == "system")["content"]
+    assert "MUST end your response with a line" in retry_sys
+    assert ceo_calls[1]["temperature"] == 0.2
+
+    ceo_voice = next(v for v in panel.voices if v.role == AgentRole.ceo)
+    assert ceo_voice.error_kind is None
+    assert ceo_voice.closing_line.startswith("Strategic priority:")
+    assert panel.voices_no_closing_line == 0
+
+
+async def test_run_voice_no_match_after_retry(
+    session_uuid: UUID, store_with_result: _StubStore
+) -> None:
+    """Both calls malformed → error_kind set, panel aggregate counts the failure."""
+    fake = _FakeOpenAI()
+    sequenced = _SequencedRawCompletions(
+        contents_by_role={
+            AgentRole.business_manager: [
+                _malformed_output(AgentRole.business_manager),
+                _malformed_output(AgentRole.business_manager),
+            ],
+        }
+    )
+    fake.chat.completions.with_raw_response = sequenced  # type: ignore[assignment]
+
+    panel = await generate_panel(
+        session_uuid,
+        tier_preset=Tier.balanced,
+        store=store_with_result,  # type: ignore[arg-type]
+        openai_client=fake,  # type: ignore[arg-type]
+    )
+
+    bm_voice = next(v for v in panel.voices if v.role == AgentRole.business_manager)
+    assert bm_voice.error_kind == "no_closing_line"
+    assert bm_voice.closing_line == "(voice failed: no_closing_line after 2 attempts)"
+    # Other voices unaffected.
+    for v in panel.voices:
+        if v.role != AgentRole.business_manager:
+            assert v.error_kind is None
+
+    assert panel.voices_no_closing_line == 1
+
+
+async def test_panel_aggregate_counts_multiple_failures(
+    session_uuid: UUID, store_with_result: _StubStore
+) -> None:
+    """voices_no_closing_line aggregates across multiple failing voices."""
+    fake = _FakeOpenAI()
+    sequenced = _SequencedRawCompletions(
+        contents_by_role={
+            AgentRole.ceo: [_malformed_output(AgentRole.ceo)] * 2,
+            AgentRole.product_manager: [_malformed_output(AgentRole.product_manager)] * 2,
+        }
+    )
+    fake.chat.completions.with_raw_response = sequenced  # type: ignore[assignment]
+
+    panel = await generate_panel(
+        session_uuid,
+        tier_preset=Tier.balanced,
+        store=store_with_result,  # type: ignore[arg-type]
+        openai_client=fake,  # type: ignore[arg-type]
+    )
+    assert panel.voices_no_closing_line == 2
+
+
 async def test_panel_v1_source_signal_passes_through(
     session_uuid: UUID, store_with_result: _StubStore
 ) -> None:

@@ -51,6 +51,46 @@ class VoiceCallResult:
     voice: AdvisorVoice
 
 
+_ROLE_PREFIX: dict[AgentRole, str] = {
+    AgentRole.ceo: "Strategic priority:",
+    AgentRole.cto: "Critical path:",
+    AgentRole.business_manager: "Lever this sprint:",
+    AgentRole.product_manager: "Top backlog item:",
+    AgentRole.staff_manager: "Sprint plan:",
+}
+
+
+# S9-ADVISOR-01: strict suffix appended to system prompt on retry. Lists
+# every accepted prefix so the model can't claim ambiguity.
+_RETRY_SYSTEM_SUFFIX = (
+    "\n\nYour previous response did not end with a structured closing line.\n"
+    "You MUST end your response with a line starting with EXACTLY one of:\n"
+    '- "## Strategic priority:"\n'
+    '- "## Critical path:"\n'
+    '- "Lever this sprint:"\n'
+    '- "## Top backlog item:"\n'
+    '- "## Sprint plan:"\n'
+    "Output ONLY the final response. The closing line must be the LAST line."
+)
+
+
+def match_closing_line(role: AgentRole, output_md: str) -> str | None:
+    """Strict regex match for the role's closing line.
+
+    Returns the prefix-included rendered form, or ``None`` if no compliant
+    line is found. This is the primitive used by the detect/retry layer in
+    ``run_voice`` (S9-ADVISOR-01) — distinct from ``extract_closing_line``
+    which still applies a graceful fallback for legacy callers.
+    """
+    pat = _CLOSING_PATTERNS[role]
+    last: re.Match[str] | None = None
+    for m in pat.finditer(output_md):
+        last = m
+    if last is None:
+        return None
+    return f"{_ROLE_PREFIX[role]} {last.group(1).strip()}"
+
+
 def extract_closing_line(role: AgentRole, output_md: str) -> str:
     """Extract the role-specific closing line. Returns the prompt's prefix +
     captured group, or a graceful fallback if the model didn't comply.
@@ -59,25 +99,12 @@ def extract_closing_line(role: AgentRole, output_md: str) -> str:
     rather than just the captured tail because callers typically render
     the line as-is alongside the role label.
     """
-    pat = _CLOSING_PATTERNS[role]
-    # Search the LAST match (model may have written the prefix once mid-doc
-    # as a section header before the real closer). Iterate to keep last.
-    last: re.Match[str] | None = None
-    for m in pat.finditer(output_md):
-        last = m
-    if last is None:
-        # Fallback: last non-empty line. Better than empty string for the UI.
-        nonempty = [ln.strip() for ln in output_md.splitlines() if ln.strip()]
-        return nonempty[-1] if nonempty else "(voice produced no closing line)"
-    # Reconstruct prefix + captured tail for display continuity.
-    prefix = {
-        AgentRole.ceo: "Strategic priority:",
-        AgentRole.cto: "Critical path:",
-        AgentRole.business_manager: "Lever this sprint:",
-        AgentRole.product_manager: "Top backlog item:",
-        AgentRole.staff_manager: "Sprint plan:",
-    }[role]
-    return f"{prefix} {last.group(1).strip()}"
+    matched = match_closing_line(role, output_md)
+    if matched is not None:
+        return matched
+    # Fallback: last non-empty line. Better than empty string for the UI.
+    nonempty = [ln.strip() for ln in output_md.splitlines() if ln.strip()]
+    return nonempty[-1] if nonempty else "(voice produced no closing line)"
 
 
 def _gpt4o_estimate(prompt_tokens: int, completion_tokens: int) -> float:
@@ -95,6 +122,61 @@ def _gpt4o_estimate(prompt_tokens: int, completion_tokens: int) -> float:
     return (prompt_tokens * input_rate + completion_tokens * output_rate) / 1_000_000
 
 
+@dataclass(frozen=True)
+class _CallOutcome:
+    """Internal: one LLM attempt's parsed result + accounting."""
+
+    content: str
+    prompt_tokens: int
+    completion_tokens: int
+    cost_usd: float | None
+
+
+async def _call_once(
+    *,
+    client: AsyncOpenAI,
+    model_id: str,
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float,
+) -> _CallOutcome:
+    """Single chat-completion call returning parsed accounting.
+
+    Network/upstream exceptions propagate to the caller — ``run_voice``
+    catches them at the outer boundary so one bad voice doesn't sink the
+    panel.
+    """
+    raw = await client.chat.completions.with_raw_response.create(
+        model=model_id,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=temperature,
+    )
+    resp = raw.parse()
+    content = resp.choices[0].message.content or ""
+    prompt_tokens = int(getattr(resp.usage, "prompt_tokens", 0) or 0) if resp.usage else 0
+    completion_tokens = int(getattr(resp.usage, "completion_tokens", 0) or 0) if resp.usage else 0
+
+    cost_usd: float | None = None
+    header = raw.headers.get("x-clawrouter-cost-usd") if hasattr(raw, "headers") else None
+    if header:
+        try:
+            cost_usd = float(header)
+        except ValueError:
+            cost_usd = None
+    if cost_usd is None:
+        cost_usd = _gpt4o_estimate(prompt_tokens, completion_tokens)
+
+    return _CallOutcome(
+        content=content,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        cost_usd=cost_usd,
+    )
+
+
 async def run_voice(
     *,
     role: AgentRole,
@@ -105,21 +187,32 @@ async def run_voice(
 ) -> AdvisorVoice:
     """Call one advisor voice. Returns a fully-populated AdvisorVoice.
 
-    Errors are caught and surfaced as an AdvisorVoice with empty output
-    and a note in ``closing_line`` — one voice failing should not blow up
-    the whole panel (the staff_manager output is still useful even if the
-    CEO 5xx'd). Caller can detect failure via empty ``output_md``.
+    S9-ADVISOR-01 — three-layer reliability:
+
+    1. **Detect**: after the regex match against ``_CLOSING_PATTERNS``, an
+       explicit miss (no match) on non-empty content is treated as a
+       structural failure rather than silently emitting the last-line
+       fallback.
+    2. **Retry once**: re-issue the same prompt with a strict suffix
+       (``_RETRY_SYSTEM_SUFFIX``) at lower temperature (0.2) to encourage
+       compliance.
+    3. **Surface**: if retry also misses, set ``error_kind='no_closing_line'``
+       and use a structured closing line so dogfood / monitoring can detect
+       quality drift via ``AdvisorPanel.voices_no_closing_line``.
+
+    Network/upstream errors are caught and surfaced as an AdvisorVoice
+    with empty output — one voice failing should not blow up the whole
+    panel.
     """
     task = task_for_role(role)
     model_entry = lookup_model(task, tier_preset)
 
     try:
-        raw = await client.chat.completions.with_raw_response.create(
-            model=model_entry.id,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+        first = await _call_once(
+            client=client,
+            model_id=model_entry.id,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
             temperature=0.4,
         )
     except Exception as exc:  # pragma: no cover — defensive, network/upstream only
@@ -134,31 +227,84 @@ async def run_voice(
             cost_usd=None,
         )
 
-    resp = raw.parse()
-    content = resp.choices[0].message.content or ""
+    matched = match_closing_line(role, first.content)
+    if matched is not None:
+        return AdvisorVoice(
+            role=role,
+            model_used=model_entry.id,
+            output_md=first.content,
+            closing_line=matched,
+            tokens_in=first.prompt_tokens,
+            tokens_out=first.completion_tokens,
+            cost_usd=first.cost_usd,
+        )
 
-    prompt_tokens = int(getattr(resp.usage, "prompt_tokens", 0) or 0) if resp.usage else 0
-    completion_tokens = int(getattr(resp.usage, "completion_tokens", 0) or 0) if resp.usage else 0
+    # Detect: first call returned no compliant closing line. Retry once
+    # with a stricter system suffix at lower temperature.
+    logger.info(
+        "advisor voice %s: no closing line on first attempt, retrying with strict suffix",
+        role.value,
+    )
+    retry_system_prompt = system_prompt + _RETRY_SYSTEM_SUFFIX
+    try:
+        second = await _call_once(
+            client=client,
+            model_id=model_entry.id,
+            system_prompt=retry_system_prompt,
+            user_prompt=user_prompt,
+            temperature=0.2,
+        )
+    except Exception as exc:  # pragma: no cover — defensive, network/upstream only
+        logger.warning("advisor voice %s retry failed: %s", role.value, exc)
+        # Treat the retry network failure as a structural no_closing_line
+        # rather than a separate kind — caller monitoring is the same.
+        return AdvisorVoice(
+            role=role,
+            model_used=model_entry.id,
+            output_md=first.content,
+            closing_line="(voice failed: no_closing_line after 2 attempts)",
+            tokens_in=first.prompt_tokens,
+            tokens_out=first.completion_tokens,
+            cost_usd=first.cost_usd,
+            error_kind="no_closing_line",
+        )
 
-    cost_usd: float | None = None
-    header = raw.headers.get("x-clawrouter-cost-usd") if hasattr(raw, "headers") else None
-    if header:
-        try:
-            cost_usd = float(header)
-        except ValueError:
-            cost_usd = None
-    if cost_usd is None:
-        cost_usd = _gpt4o_estimate(prompt_tokens, completion_tokens)
+    combined_in = first.prompt_tokens + second.prompt_tokens
+    combined_out = first.completion_tokens + second.completion_tokens
+    combined_cost: float | None
+    if first.cost_usd is None and second.cost_usd is None:
+        combined_cost = None
+    else:
+        combined_cost = (first.cost_usd or 0.0) + (second.cost_usd or 0.0)
 
+    matched_retry = match_closing_line(role, second.content)
+    if matched_retry is not None:
+        return AdvisorVoice(
+            role=role,
+            model_used=model_entry.id,
+            output_md=second.content,
+            closing_line=matched_retry,
+            tokens_in=combined_in,
+            tokens_out=combined_out,
+            cost_usd=combined_cost,
+        )
+
+    # Surface: both attempts produced no compliant closing line.
+    logger.warning(
+        "advisor voice %s: no_closing_line after 2 attempts (model=%s)",
+        role.value,
+        model_entry.id,
+    )
     return AdvisorVoice(
         role=role,
         model_used=model_entry.id,
-        output_md=content,
-        closing_line=extract_closing_line(role, content),
-        tokens_in=prompt_tokens,
-        tokens_out=completion_tokens,
-        cost_usd=cost_usd,
+        output_md=second.content,
+        closing_line="(voice failed: no_closing_line after 2 attempts)",
+        tokens_in=combined_in,
+        tokens_out=combined_out,
+        cost_usd=combined_cost,
+        error_kind="no_closing_line",
     )
 
 
-__all__ = ["extract_closing_line", "run_voice"]
+__all__ = ["extract_closing_line", "match_closing_line", "run_voice"]

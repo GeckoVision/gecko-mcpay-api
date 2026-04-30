@@ -36,6 +36,10 @@ class AdvisorVoice(BaseModel):
     tokens_in: int
     tokens_out: int
     cost_usd: float | None = None
+    # S9-ADVISOR-01: structured failure mode for quality monitoring. ``None``
+    # means the voice produced a compliant closing line (possibly on retry).
+    # ``"no_closing_line"`` means both attempts failed regex extraction.
+    error_kind: str | None = None
 
 
 class AdvisorPanel(BaseModel):
@@ -45,6 +49,9 @@ class AdvisorPanel(BaseModel):
     voices: list[AdvisorVoice]
     total_cost_usd: float
     generated_at: datetime = Field(default_factory=lambda: datetime.now().astimezone())
+    # S9-ADVISOR-01: count of voices that failed closing-line extraction
+    # after retry. Surface for dogfood / monitoring drift detection.
+    voices_no_closing_line: int = 0
 
 
 class PulseDelta(BaseModel):
