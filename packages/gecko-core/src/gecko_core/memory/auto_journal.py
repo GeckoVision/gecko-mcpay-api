@@ -206,10 +206,50 @@ async def journal_pulse(
         return None
 
 
+async def journal_sprint_review(
+    *,
+    project_id: UUID | None,
+    since_days: int,
+    shipped: list[str],
+    weakest_link: str,
+    proposed_next: list[str],
+    mode: str,
+    journal: bool = True,
+    store: MemoryStore | None = None,
+) -> UUID | None:
+    """Append a `sprint_reviewed` entry (S7-DOGFOOD-02). Best-effort.
+
+    Scoped to the project (review is inherently cross-session). When
+    ``project_id`` is None we skip the write entirely — there's no scope
+    that makes sense for a repo-wide review without a project envelope.
+    """
+    if project_id is None:
+        return None
+    if not await _is_enabled(journal=journal, project_id=project_id, store=store):
+        return None
+    value: dict[str, Any] = {
+        "since_days": int(since_days),
+        "shipped": list(shipped),
+        "weakest_link": str(weakest_link),
+        "proposed_next": list(proposed_next),
+        "mode": str(mode),
+    }
+    try:
+        return await save(
+            MemoryScope(type="project", id=str(project_id)),
+            MemoryEntryType.sprint_reviewed,
+            value,
+        )
+    except Exception as exc:  # pragma: no cover
+        logger.warning("journal_sprint_review failed: %s", exc)
+        return None
+
+
 __all__ = [
     "journal_plan",
     "journal_pulse",
     "journal_scaffold",
+    "journal_sprint_review",
     "journal_verdict",
     "journal_voice",
 ]

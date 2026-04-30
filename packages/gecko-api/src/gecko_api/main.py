@@ -122,7 +122,7 @@ def _build_routes(settings: Settings) -> dict[str, RouteConfig]:
     chain_id = (
         settings.network_config.chain_id if settings.network_config else settings.x402_network
     )
-    return {
+    routes: dict[str, RouteConfig] = {
         "POST /research": RouteConfig(
             accepts=[
                 PaymentOption(
@@ -208,6 +208,22 @@ def _build_routes(settings: Settings) -> dict[str, RouteConfig]:
             description="Run the 5-voice Advisor Panel against an existing session",
         ),
     }
+    # S7-DOGFOOD-02: /review is FREE in stub mode and $0.10 in live. We
+    # only register the x402 RouteConfig outside stub so the middleware
+    # doesn't 402 a stub-mode dogfood loop.
+    if settings.x402_mode != "stub":
+        routes["POST /review"] = RouteConfig(
+            accepts=[
+                PaymentOption(
+                    scheme="exact",
+                    pay_to=pay_to,
+                    price=settings.review_call_price,
+                    network=chain_id,
+                ),
+            ],
+            description="Synthesize a SprintReview from git log + memory + sprint docs",
+        )
+    return routes
 
 
 def _build_resource_server(facilitator: FacilitatorClient) -> x402ResourceServer:
@@ -342,6 +358,14 @@ class RouteRequest(BaseModel):
     # ignores the value at the routing layer and falls through to the
     # legacy matrix; the validation here keeps the wire shape stable so
     # the MCP/CLI/web clients converge on a single vocabulary.
+    tier_preset: str = Field(default="balanced", pattern="^(quality|balanced|budget|free)$")
+
+
+class ReviewRequest(BaseModel):
+    """S7-DOGFOOD-02 — request shape for POST /review (sprint review meta)."""
+
+    project_id: str | None = None
+    since_days: int = Field(default=14, ge=1, le=365)
     tier_preset: str = Field(default="balanced", pattern="^(quality|balanced|budget|free)$")
 
 
@@ -1035,6 +1059,107 @@ async def plan_call(req: PlanRequest, request: Request) -> dict[str, Any]:
                 logger.warning("plan: project spend increment failed")
 
     return panel.model_dump(mode="json")
+
+
+@app.post("/review")
+async def review_call(req: ReviewRequest, request: Request) -> dict[str, Any]:
+    """S7-DOGFOOD-02 — sprint review meta-tool.
+
+    Free in stub mode (no LLM call). In live mode the route is registered
+    on the x402 middleware at $0.10 and a single LLM call synthesizes the
+    structured bullets. Auto-journals as `sprint_reviewed` (best-effort).
+    """
+    from uuid import UUID as _UUID
+
+    from gecko_core.review import build_review
+
+    if req.tier_preset not in _PLAN_TIER_PRESETS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"tier_preset must be one of {list(_PLAN_TIER_PRESETS)}",
+        )
+
+    project_uuid: UUID | None = None
+    if req.project_id:
+        try:
+            project_uuid = _UUID(req.project_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="invalid project_id") from exc
+
+    # Touch the payment payload (set by middleware in live mode).
+    _ = getattr(request.state, "payment_payload", None)
+
+    # Live mode wires a one-shot LLM caller; stub mode uses the deterministic
+    # path so dogfood loops in CI run free.
+    llm_caller = None
+    if _settings.x402_mode != "stub":
+        llm_caller = _build_review_llm_caller(req.tier_preset)
+
+    review = await build_review(
+        project_id=str(project_uuid) if project_uuid else None,
+        since_days=req.since_days,
+        llm_caller=llm_caller,
+        tier_preset=req.tier_preset,
+    )
+
+    # Auto-journal sprint_reviewed. Best-effort.
+    if project_uuid is not None:
+        try:
+            from gecko_core.memory.auto_journal import journal_sprint_review
+
+            await journal_sprint_review(
+                project_id=project_uuid,
+                since_days=review.since_days,
+                shipped=review.shipped,
+                weakest_link=review.weakest_link,
+                proposed_next=review.proposed_next,
+                mode=review.mode,
+            )
+        except Exception:  # pragma: no cover — best-effort
+            logger.warning("review: sprint_reviewed journal failed", exc_info=True)
+
+    return review.model_dump(mode="json")
+
+
+def _build_review_llm_caller(tier_preset: str) -> Any:
+    """Async LLM caller using the same router stack as gecko_advise.
+
+    One chat completion per call. Returns the raw text content; the review
+    builder parses JSON itself.
+    """
+    from gecko_core.orchestration.settings import get_orchestration_settings
+    from gecko_core.routing.catalog import (
+        AgentRole,
+        lookup_model,
+        task_for_role,
+    )
+    from gecko_core.routing.catalog import (
+        Tier as _Tier,
+    )
+    from openai import AsyncOpenAI
+
+    try:
+        tier = _Tier(tier_preset)
+    except ValueError:
+        tier = _Tier.balanced
+    task = task_for_role(AgentRole.staff_manager)
+    model_entry = lookup_model(task, tier)
+    orch = get_orchestration_settings()
+    client = AsyncOpenAI(api_key=orch.llm_api_key, base_url=orch.llm_endpoint)
+
+    async def _call(system_prompt: str, user_prompt: str) -> str:
+        resp = await client.chat.completions.create(
+            model=model_entry.id,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.3,
+            response_format={"type": "json_object"},
+        )
+        return resp.choices[0].message.content or ""
+
+    return _call
 
 
 @app.get("/sessions/{session_id}/sources", response_model=list[SourceInfo])

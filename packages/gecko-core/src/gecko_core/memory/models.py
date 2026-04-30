@@ -25,6 +25,7 @@ class MemoryEntryType(StrEnum):
     pulse_run = "pulse_run"
     feature_shipped = "feature_shipped"
     user_note = "user_note"
+    sprint_reviewed = "sprint_reviewed"
 
 
 class MemoryScope(BaseModel):

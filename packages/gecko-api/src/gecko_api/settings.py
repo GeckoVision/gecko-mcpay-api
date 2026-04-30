@@ -81,6 +81,10 @@ class Settings(BaseModel):
     # reuses the existing session's transcript instead of running a fresh
     # 5-agent debate.
     plan_call_price: str = "$0.25"
+    # S7-DOGFOOD-02: sprint review meta-tool. Cheap (one LLM call vs. 5 for
+    # /plan), so charge accordingly. Free in stub mode (route is registered
+    # in live mode only — see _build_routes).
+    review_call_price: str = "$0.10"
     # S5-API-03: tiered /route pricing. Sprint 4 shipped a single flat
     # $0.02 charge; Sprint 5 splits it into three paths so heavy callers
     # subsidize light ones less. The middleware can't refund post-call,
@@ -203,6 +207,7 @@ class Settings(BaseModel):
         route_price = os.environ.get("ROUTE_CALL_PRICE", "$0.02")
         # S5-API-01: $0.25 per advisor panel run. Mirrors ROUTE_CALL_PRICE env shape.
         plan_price = os.environ.get("PLAN_CALL_PRICE", "$0.25")
+        review_price = os.environ.get("REVIEW_CALL_PRICE", "$0.10")
         # S5-API-03: tiered /route pricing. ROUTE_CALL_PRICE stays as the
         # legacy single-tier knob (back-compat); the three new vars below
         # let operators tune each tier independently.
@@ -231,6 +236,7 @@ class Settings(BaseModel):
             research_pro_price=pro_price,
             route_call_price=route_price,
             plan_call_price=plan_price,
+            review_call_price=review_price,
             route_price_default=route_price_default,
             route_price_premium=route_price_premium,
             route_price_upgrade=route_price_upgrade,

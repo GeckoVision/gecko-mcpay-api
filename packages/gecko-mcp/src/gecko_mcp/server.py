@@ -155,6 +155,13 @@ _RESUME_DESCRIPTION = (
     "panel + last pulse deltas. Sub-second; no LLM call."
 )
 
+_REVIEW_DESCRIPTION = (
+    "Sprint review meta-tool (S7-DOGFOOD). Reads `git log --since=<days>`, "
+    "memory entries scoped to the project, and any docs/build-plan-sprint-*.md "
+    "files, then synthesizes shipped[], weakest_link, proposed_next[]. FREE "
+    "in stub mode (no LLM call); $0.10 in live mode."
+)
+
 _PROJECT_ECONOMICS_DESCRIPTION = (
     "Per-project economics snapshot (S2-09): privy wallet address, live USDC "
     "balance, budget cap + spend, and the 5 most recent paid sessions. Use "
@@ -541,6 +548,34 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="gecko_review",
+            description=_REVIEW_DESCRIPTION,
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_id": {
+                        "type": "string",
+                        "description": (
+                            "Optional project UUID. When omitted, only git "
+                            "log + sprint docs are read; memory recall is "
+                            "skipped."
+                        ),
+                    },
+                    "since_days": {
+                        "type": "integer",
+                        "default": 14,
+                        "minimum": 1,
+                        "maximum": 365,
+                    },
+                    "tier_preset": {
+                        "type": "string",
+                        "enum": ["quality", "balanced", "budget", "free"],
+                        "default": "balanced",
+                    },
+                },
+            },
+        ),
+        Tool(
             name="gecko_project_economics",
             description=_PROJECT_ECONOMICS_DESCRIPTION,
             inputSchema={
@@ -703,6 +738,15 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         result = await _run_resume(
             project_id=str(arguments["project_id"]),
             days=int(arguments.get("days", 30) or 30),
+        )
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    if name == "gecko_review":
+        pid_raw = arguments.get("project_id")
+        result = await _run_review(
+            project_id=str(pid_raw) if pid_raw else None,
+            since_days=int(arguments.get("since_days", 14) or 14),
+            tier_preset=str(arguments.get("tier_preset", "balanced")),
         )
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
@@ -1104,6 +1148,91 @@ async def _run_memory_query(
         }
         for r in rows
     ]
+
+
+async def _run_review(
+    *,
+    project_id: str | None,
+    since_days: int,
+    tier_preset: str,
+) -> dict[str, Any]:
+    """S7-DOGFOOD-02 — sprint review meta-tool dispatcher.
+
+    Free path: stub mode skips the LLM and returns deterministic bullets.
+    Live mode (env GECKO_REVIEW_LIVE=1 OR explicit caller plumbing) wires
+    a one-shot LLM caller through the same router stack as gecko_advise.
+    Auto-journals as `sprint_reviewed` (best-effort).
+    """
+    import os as _os
+    from uuid import UUID as _UUID
+
+    from gecko_core.review import build_review
+
+    # X402_MODE=live signals the operator wants live synthesis. The MCP
+    # surface itself is free; the API surface is the one that x402-gates.
+    live_mode = _os.environ.get("X402_MODE", "stub") == "live"
+    llm_caller = _build_review_llm_caller(tier_preset) if live_mode else None
+
+    review = await build_review(
+        project_id=project_id,
+        since_days=since_days,
+        llm_caller=llm_caller,
+        tier_preset=tier_preset,
+    )
+
+    # Auto-journal sprint_reviewed (best-effort).
+    if project_id:
+        try:
+            from gecko_core.memory.auto_journal import journal_sprint_review
+
+            await journal_sprint_review(
+                project_id=_UUID(project_id),
+                since_days=review.since_days,
+                shipped=review.shipped,
+                weakest_link=review.weakest_link,
+                proposed_next=review.proposed_next,
+                mode=review.mode,
+            )
+        except Exception:  # pragma: no cover — defensive
+            pass
+
+    return review.model_dump(mode="json")
+
+
+def _build_review_llm_caller(tier_preset: str) -> Any:
+    """Build an async LLM caller using the same router stack as gecko_advise.
+
+    One chat completion per call. Returns the raw text content; the review
+    builder parses JSON itself.
+    """
+    from gecko_core.orchestration.settings import get_orchestration_settings
+    from gecko_core.routing.catalog import AgentRole, Tier, lookup_model, task_for_role
+    from openai import AsyncOpenAI
+
+    try:
+        tier = Tier(tier_preset)
+    except ValueError:
+        tier = Tier.balanced
+    # Reuse the staff_manager voice profile — review synthesis is the same
+    # shape as a sprint plan: read context, emit structured bullets.
+    task = task_for_role(AgentRole.staff_manager)
+    model_entry = lookup_model(task, tier)
+    orch = get_orchestration_settings()
+    client = AsyncOpenAI(api_key=orch.llm_api_key, base_url=orch.llm_endpoint)
+
+    async def _call(system_prompt: str, user_prompt: str) -> str:
+        resp = await client.chat.completions.create(
+            model=model_entry.id,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.3,
+            response_format={"type": "json_object"},
+        )
+        return resp.choices[0].message.content or ""
+
+    return _call
 
 
 async def _run_resume(*, project_id: str, days: int) -> dict[str, Any]:
