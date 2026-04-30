@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 
 import click
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 from gecko_core._logging import install as install_redaction
 
 from gecko_cli.commands.advise import advise_cmd
@@ -38,7 +38,10 @@ from gecko_cli.commands.sprint_review import sprint_review_cmd
 @click.option(
     "--env-file",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Path to .env file. Defaults to ~/.gecko/.env if present.",
+    help=(
+        "Path to .env file. If unset, walks up from cwd to find a `.env` "
+        "(via python-dotenv `find_dotenv`); falls back to ~/.gecko/.env."
+    ),
 )
 @click.option(
     "--yes",
@@ -66,12 +69,24 @@ def cli(
     non_interactive: bool,
 ) -> None:
     """Gecko — Builder Bootstrap Platform."""
+    # S10-CLI-01 (F17): universal `.env` loading. Every `bb` subcommand —
+    # not just `bb doctor` — needs project env vars resolved BEFORE its
+    # callback runs. `override=False` so values already exported in the
+    # shell win over file values (precedence contract used by every test
+    # in this codebase).
     if env_file:
-        load_dotenv(env_file)
+        load_dotenv(env_file, override=False)
     else:
-        default = Path.home() / ".gecko" / ".env"
-        if default.exists():
-            load_dotenv(default)
+        # `find_dotenv()` walks up from cwd to find the nearest `.env`.
+        # Empty string when nothing is found — `load_dotenv("")` is a
+        # silent no-op, which is the behavior we want.
+        discovered = find_dotenv(usecwd=True)
+        if discovered:
+            load_dotenv(discovered, override=False)
+        else:
+            default = Path.home() / ".gecko" / ".env"
+            if default.exists():
+                load_dotenv(default, override=False)
 
     # S8-LOG-01 — install the redaction filter BEFORE any HTTP client logs
     # fire. httpcore/hpack dump auth headers + Bearer tokens at DEBUG; the

@@ -362,13 +362,15 @@ def test_doctor_cmd_exits_0_on_all_green(
 def test_doctor_cmd_loads_dotenv_from_cwd(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory
 ) -> None:
-    """S9-DOCTOR-01 / F13 — `bb doctor` must pick up a project-local `.env`
-    even when invoked outside the click group (e.g. directly imported by
-    tests, or run with no --env-file). Before the fix, SUPABASE_URL=...
-    in `.env` showed up as missing.
+    """S10-CLI-01 / F17 — invoking `bb doctor` via the parent `cli` group
+    must pick up a project-local `.env` (walk-up via `find_dotenv`). The
+    per-command load_dotenv shim was removed; the parent group now handles
+    universal `.env` loading for every subcommand.
     """
     import os as _os
     from pathlib import Path as _Path
+
+    from gecko_cli.main import cli
 
     cwd = _Path(str(tmp_path))  # type: ignore[arg-type]
     env_file = cwd / ".env"
@@ -411,9 +413,8 @@ def test_doctor_cmd_loads_dotenv_from_cwd(
         monkeypatch.delenv(var, raising=False)
 
     monkeypatch.chdir(cwd)
-    result = CliRunner().invoke(doctor_cmd, [])
-    # Proof: load_dotenv() ran before _run_all sampled os.environ. We assert
-    # on os.environ directly (Rich may truncate long URLs in the table cell).
+    # Invoke via the parent group so the universal `.env` loader runs.
+    result = CliRunner().invoke(cli, ["doctor"])
     assert result.exit_code == 0, result.output
     assert _os.environ.get("SUPABASE_URL") == "https://from-dotenv.supabase.co"
     assert _os.environ.get("OPENAI_API_KEY") == "sk-fromdotenv-9999"
@@ -425,8 +426,9 @@ def test_doctor_cmd_exits_1_on_failure(
     """Missing SUPABASE_URL → exit 1 and the failed row count is printed."""
     monkeypatch.delenv("SUPABASE_URL", raising=False)
     monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
-    # Doctor now runs load_dotenv() on its own cwd. chdir to a clean dir
-    # so the repo-root `.env` doesn't repopulate SUPABASE_URL.
+    # chdir to a clean dir so any walk-up `.env` discovery wouldn't
+    # repopulate SUPABASE_URL (defense in depth — `doctor_cmd` invoked
+    # directly does not run the parent-group loader anyway).
     monkeypatch.chdir(str(tmp_path))  # type: ignore[arg-type]
 
     result = CliRunner().invoke(doctor_cmd, [])
