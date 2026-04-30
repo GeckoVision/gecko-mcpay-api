@@ -1,0 +1,115 @@
+# Sprint 12 — CDP Bazaar listing + Base settlement parallel
+
+**Status:** draft (proposed)
+**Predecessor:** Sprint 11 (in-flight: verdict unification, F18 fix, ICP convergence, landing v2)
+**Driver:** `docs/research/cdp-bazaar-2026-04-30.md` — landscape probe found the "founder validation" semantic slot in CDP Bazaar is uncontested at quality scale. Gecko would land as the highest-quality entry day one. Listing requires CDP Facilitator settlement, which also unlocks Base/EVM payer reach for free.
+
+**Done = Gecko's `gecko_research` (basic + pro) and `gecko_plan` are listed in CDP Bazaar with full input/output schemas, settled at least once on Base mainnet through the CDP Facilitator, and discoverable via `/discovery/search?query=founder+validation` ranked at or above the OrbisAPI proxies.**
+
+---
+
+## Why this sprint, why now
+
+Three things converged:
+
+1. **Sprint 11 ships verdict unification.** Once `KILL/REFINE/BUILD` is the canonical output shape, the API surface is stable enough to declare in a JSON Schema for Bazaar.
+2. **The thesis sub-fold ("validation layer above frames.ag") is launching with Sprint 11's landing v2.** Bazaar listing extends that claim from "above frames.ag" to "above any x402 facilitator" — which is a stronger position.
+3. **The slot is empty now.** OrbisAPI is scaffolding generic proxies but has no real users. First-mover advantage in semantic ranking compounds; waiting another sprint risks losing the empty-slot moment.
+
+---
+
+## Tracks
+
+### Track A — CDP Facilitator settlement plumbing (S12-CDP-01..03) **CRITICAL**
+
+The unblocker. Bazaar listing requires settlement through the CDP Facilitator at `api.cdp.coinbase.com/platform/v2/x402`. Today gecko-api settles through frames.ag's Solana flow only.
+
+- **S12-CDP-01 — Add CDP Facilitator client to `packages/gecko-core/payments/`.**
+  Parallel to existing `LiveX402Client`. New module `cdp_x402_client.py`. Wraps the x402 v2 SDK Python equivalent (or hand-rolled if SDK is JS-only — likely needs investigation). Configurable via `X402_MODE=cdp` (alongside existing `stub | live | frames`). Settlement target: Base mainnet USDC. Requires CDP API keys in `.env` (`CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`).
+
+- **S12-CDP-02 — Network-aware payment client factory.**
+  In `packages/gecko-core/payments/__init__.py`, factory chooses CDP vs frames.ag based on `X402_NETWORK` resolution: Solana → frames.ag, Base/EVM → CDP. Add `NetworkKind.BASE_MAINNET` to the existing enum (Sprint 8 S10-LIVE-03 added Solana variants). Update `bb doctor` to show which facilitator is active for each network.
+
+- **S12-CDP-03 — Per-call confirmation + reconcile for CDP path.**
+  CDP returns settlement confirmations differently than frames.ag. Map both into the existing `PaymentReceipt` shape so `bb economics <session_id> --verify` works uniformly. Add tests with both fixture flows.
+
+**Owner:** web3-engineer
+**Acceptance:** `X402_MODE=cdp X402_NETWORK=eip155:8453 bb research --idea "test" --tier basic` settles a real $0.10 USDC payment on Base mainnet through CDP and returns a verifiable receipt.
+
+### Track B — Bazaar extension declarations (S12-BAZAAR-01..03) **CRITICAL**
+
+- **S12-BAZAAR-01 — Decorate `gecko-api` routes with Bazaar metadata.**
+  Identify the routes that should be listed: `POST /research`, `POST /plan`, possibly `POST /ask`. For each, add the `bazaarResourceServerExtension` registration + `declareDiscoveryExtension()` call with full `inputSchema` + `output.example`. Best-practice descriptions per the Bazaar docs (semantic-search-friendly, e.g. "Adversarial multi-agent product validation: emits KILL/REFINE/BUILD verdict + cited evidence + 5-voice advisor panel" not just "/research").
+
+- **S12-BAZAAR-02 — Resolve route consolidation risk.**
+  Bazaar collapses bare-UUID path segments into one entry. `POST /research` is fine (no UUID), but any session-keyed route (`GET /research/{session_id}`) would consolidate. Audit current routes; for any route with bare ID segments, add a prefix (`/research/session-{uuid}`) before listing. Document in `docs/runbooks/cdp-bazaar.md`.
+
+- **S12-BAZAAR-03 — Validation harness.**
+  Add a CI check: parse each decorated route, confirm `extension.input` validates against `extension.schema.properties.input`. Fail build if any extension is malformed. Catches the "rejected" Bazaar-extension-validation case before deploy.
+
+**Owner:** software-engineer
+**Acceptance:** API serves up Bazaar metadata in payment responses; harness validates locally before any settle attempt.
+
+### Track C — First-settle smoke + listing verification (S12-LIST-01) **CRITICAL**
+
+- **S12-LIST-01 — End-to-end smoke: list Gecko in CDP Bazaar.**
+  Steps (manual runbook, document in `docs/runbooks/cdp-bazaar-listing.md`):
+  1. Deploy gecko-api to staging with CDP Facilitator wired (Track A) + Bazaar extensions declared (Track B).
+  2. From a test client wallet (Base Sepolia USDC), pay one `gecko_research` call. Confirm `EXTENSION-RESPONSES` header on settle response shows Bazaar status `processing`.
+  3. Wait for indexing (docs say async; budget 5-30 min).
+  4. Query `https://api.cdp.coinbase.com/platform/v2/x402/discovery/search?query=founder+validation` and grep for our `payTo` address.
+  5. Repeat for `gecko_plan` and any other listed routes.
+  6. Once mainnet payment lands, verify all routes appear in the mainnet catalog too.
+
+  Acceptance: ≥3 Gecko routes appear in `discovery/search` results, ranked above OrbisAPI proxies for queries: "founder validation", "product research MCP", "adversarial PRD".
+
+**Owner:** web3-engineer (settle), software-engineer (verify)
+
+### Track D — Wallet-neutrality positioning + Coinbase Agentic Wallet docs (S12-DOCS-01) **MED**
+
+- **S12-DOCS-01 — Document wallet neutrality.**
+  Add `docs/runbooks/wallet-options.md`: explain that any x402-capable wallet works — frames.ag (default for Claude Code skill installs), Coinbase Agentic Wallet (`awal`, for users who prefer Coinbase), custom (advanced). Cross-link from main README and from `gecko-claude` skill repo.
+
+  Update landing copy v2 anti-positioning: change "Not crypto-first software" to remain accurate, and drop any frames.ag-exclusive language. Keep the frames.ag relationship visible (the Sprint 11 sub-fold "validation layer above frames.ag" is correct because that's our distribution path); but the **product** works above any wallet.
+
+**Owner:** product-designer + business-manager (PRD update)
+
+### Track E — Bazaar-as-source feasibility note (S12-RESEARCH-01) **LOW**
+
+- **S12-RESEARCH-01 — Decide whether to consume Bazaar APIs as V2/V3 sources.**
+  Probe top-quality entries in adjacent slots (Reddit, GitHub, news). Compare to Gecko's free sources today. Output: `docs/research/bazaar-as-source.md` with verdict — likely "wait, free works" but worth a structured look. **No code in this ticket.**
+
+**Owner:** staff-engineer
+
+---
+
+## Out of scope
+
+- Migrating Solana settlement off frames.ag (keep both; user picks per-call via `X402_NETWORK`)
+- Submitting to Bazaar's MCP server as a co-listed MCP — that would require building Bazaar-flavored versions of our MCP tools; defer until ranking signals show whether it's worth the duplication
+- Auto-detection of route consolidation collisions (ad hoc audit in S12-BAZAAR-02 is enough for V1)
+- Implementing the V3 "Gecko provisions downstream agent budgets" surface (the thesis macro vision; multi-sprint arc)
+
+## Acceptance (sprint-level)
+
+- [ ] Real Base mainnet USDC payment settles through CDP Facilitator and returns a verifiable receipt
+- [ ] At least 3 Gecko routes (`research`, `plan`, one more) appear in `/discovery/search?query=founder+validation`
+- [ ] Gecko ranks at or above OrbisAPI proxies for the "founder validation" semantic slot (likely true day one given quality signal data)
+- [ ] `bb doctor` shows correct facilitator per network; `bb economics` works for both Solana (frames.ag) and Base (CDP) settled sessions
+- [ ] PRD + landing copy reflect wallet neutrality
+- [ ] Pre-existing frames.ag flow on Solana mainnet still works (no regression)
+
+## Test plan
+
+1. Stub mode regression: full pytest suite passes
+2. CDP devnet smoke: pay a $0.001 Base Sepolia call, confirm extension status `processing`, see entry appear in sandbox catalog
+3. CDP mainnet smoke: pay $0.10 Base mainnet call, confirm receipt + listing
+4. Frames.ag mainnet smoke: pay $0.10 Solana mainnet call (Track 10-B carry-over, requires user-funded wallet) — confirm frames.ag path is unbroken
+5. Bazaar discovery: run the 3 named search queries, verify Gecko in top results
+
+## Reference
+
+- `docs/research/cdp-bazaar-2026-04-30.md` — landscape probe driving this sprint
+- `docs/positioning/2026-04-30-thesis-synthesis.md` — sub-fold positioning that Bazaar listing extends
+- CDP Bazaar docs (user-supplied): semantic-search endpoint structure, quality-ranking signals, MCP server surface
+- `packages/gecko-core/payments/x402_client.py` — current LiveX402Client (frames.ag); Track A parallels its structure
