@@ -93,6 +93,13 @@ SettlementNetwork = Literal["solana-devnet", "solana-mainnet"]
 
 Verdict = Literal["ship", "kill", "pivot"]
 
+# S9-PRECEDENT-01 — outcome labels for the Gecko Flywheel. Distinct from
+# `Verdict` (which records what the panel SAID about the idea at evaluation
+# time): `PrecedentOutcome` records what HAPPENED to the idea afterwards.
+# Sprint 9 ships schema only — every row backfills to 'unknown'; the auto-
+# labeling job that populates 'shipped' / 'killed' lands in Sprint 10.
+PrecedentOutcome = Literal["shipped", "killed", "unknown"]
+
 
 class GeckoPrecedent(BaseModel):
     """One row from the internal Gecko Flywheel (`gecko_precedent`).
@@ -109,6 +116,10 @@ class GeckoPrecedent(BaseModel):
     user_id: UUID | None
     idea_summary: str
     verdict: Verdict
+    # S9-PRECEDENT-01 — denormalized outcome label. Defaults to 'unknown'
+    # so legacy precedents and offline test fixtures stay valid without a
+    # backfill migration of their own.
+    outcome: PrecedentOutcome = "unknown"
     key_comparables: list[Any]
     similarity: float | None = None
 
@@ -1204,6 +1215,12 @@ class SessionStore:
                     user_id=UUID(str(uid)) if uid else None,
                     idea_summary=str(r["idea_summary"]),
                     verdict=cast(Verdict, r["verdict"]),
+                    # `outcome` was added in migration
+                    # 20260430054542_precedent_outcomes. RPCs deployed against
+                    # databases that haven't run that migration yet won't
+                    # return the column — default to 'unknown' so the
+                    # transition window is graceful.
+                    outcome=cast(PrecedentOutcome, r.get("outcome") or "unknown"),
                     key_comparables=list(comparables) if isinstance(comparables, list) else [],
                     similarity=_as_float_or_none(r.get("similarity")),
                 )
@@ -1336,6 +1353,7 @@ __all__ = [
     "CostKind",
     "GeckoPrecedent",
     "PaymentMode",
+    "PrecedentOutcome",
     "ProEventRow",
     "ProEventType",
     "ProjectWallet",
