@@ -79,6 +79,16 @@ class Citation(BaseModel):
     # (LLM-emitted JSON, hand-built test citations) get a sensible
     # provenance without changes. Paid providers (S13+) override.
     provenance: Provenance = Field(default_factory=Provenance)
+    # S13-CITE-01 — optional creator attribution surface (pre-payment for
+    # S14 Paragraph creator connector). When all three are None the
+    # rendering is byte-identical to pre-S13. When populated, the
+    # citation renderer surfaces the handle inline and adds a "Creator
+    # payouts" footer block to the receipt anatomy. Tokens / wallet
+    # private keys never live on this model — `creator_wallet` is the
+    # public payout address only.
+    creator_handle: str | None = None
+    creator_payout_usd: float | None = None
+    creator_wallet: str | None = None
 
 
 class BusinessPlan(BaseModel):

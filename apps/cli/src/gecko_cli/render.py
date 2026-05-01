@@ -88,8 +88,25 @@ def _dedup_citations(citations: list[Citation]) -> list[Citation]:
     return out
 
 
+def _truncate_wallet(wallet: str) -> str:
+    """4+4 truncation with middle ellipsis (e.g. ``9xKp…aF2Q``).
+
+    Short wallets (<= 9 chars) are returned unchanged so we never
+    accidentally inflate them with an ellipsis that adds characters.
+    """
+    if len(wallet) <= 9:
+        return wallet
+    return f"{wallet[:4]}…{wallet[-4:]}"
+
+
 def _citations_renderable(citations: list[Citation], accent: str) -> Text | None:
-    """Numbered citations block, clickable via OSC-8 hyperlinks where supported."""
+    """Numbered citations block, clickable via OSC-8 hyperlinks where supported.
+
+    S13-CITE-01: when a citation carries `creator_handle` / `creator_payout_usd`
+    / `creator_wallet`, surface them on a dim sub-line under the URL line.
+    Pre-Paragraph runs (all three fields None) render byte-identically to
+    pre-S13 — no sub-line is emitted.
+    """
     deduped = _dedup_citations(citations)
     if not deduped:
         return None
@@ -102,9 +119,51 @@ def _citations_renderable(citations: list[Citation], accent: str) -> Text | None
         body.append(url, style=f"link {url}")
         body.append(f"  chunk {c.chunk_index}", style=_META_STYLE)
         body.append(f"  (sim {c.similarity:.2f})", style=_META_STYLE)
+        # S13-CITE-01 — creator attribution sub-line. Only emitted when at
+        # least one creator field is populated. Format mirrors the product-
+        # designer memo §2: `@handle · NNNN USDC paid · sol:XXXX…XXXX`.
+        if c.creator_handle or c.creator_payout_usd is not None or c.creator_wallet:
+            body.append("\n    ", style=_META_STYLE)
+            sep = ""
+            if c.creator_handle:
+                body.append(f"@{c.creator_handle}", style=f"bold {accent}")
+                sep = " · "
+            if c.creator_payout_usd is not None:
+                body.append(sep, style=_META_STYLE)
+                body.append(f"${c.creator_payout_usd:.4f} paid", style=_META_STYLE)
+                sep = " · "
+            if c.creator_wallet:
+                body.append(sep, style=_META_STYLE)
+                body.append(_truncate_wallet(c.creator_wallet), style=_META_STYLE)
         if i < len(deduped):
             body.append("\n")
     return body
+
+
+def _creator_payouts_footer(citations: list[Citation], accent: str) -> Text | None:
+    """S13-CITE-01 — aggregate "Creator payouts" footer block.
+
+    Returns ``None`` when no citation carries a non-null
+    ``creator_payout_usd`` so pre-Paragraph runs render unchanged. When
+    any payout is present, returns a single-line summary suitable for
+    rendering at the bottom of a document panel:
+
+        Creator payouts ......... $0.0150 (3 creators)
+    """
+    paying = [c for c in citations if c.creator_payout_usd is not None]
+    if not paying:
+        return None
+    total = sum(c.creator_payout_usd or 0.0 for c in paying)
+    # Distinct creator handles when present; fall back to citation count.
+    handles = {c.creator_handle for c in paying if c.creator_handle}
+    n = len(handles) if handles else len(paying)
+    label = "creator" if n == 1 else "creators"
+    t = Text()
+    t.append("Creator payouts", style=f"bold {accent}")
+    t.append(" ", style=_META_STYLE)
+    t.append(f"${total:.4f}", style="default")
+    t.append(f" ({n} {label})", style=_META_STYLE)
+    return t
 
 
 # --- Document body builders ------------------------------------------------
@@ -155,6 +214,10 @@ def _business_plan_body(bp: BusinessPlan, accent: str) -> Group:
     if cites is not None:
         parts.append(_spacer())
         parts.append(cites)
+    payouts = _creator_payouts_footer(bp.citations, accent)
+    if payouts is not None:
+        parts.append(_spacer())
+        parts.append(payouts)
     return Group(*parts)
 
 
@@ -213,6 +276,10 @@ def _validation_body(v: ValidationReport, accent: str, *, verdict: Verdict | Non
     if cites is not None:
         parts.append(_spacer())
         parts.append(cites)
+    payouts = _creator_payouts_footer(v.citations, accent)
+    if payouts is not None:
+        parts.append(_spacer())
+        parts.append(payouts)
     return Group(*parts)
 
 
@@ -256,6 +323,10 @@ def _prd_body(
     if cites is not None:
         parts.append(_spacer())
         parts.append(cites)
+    payouts = _creator_payouts_footer(p.citations, accent)
+    if payouts is not None:
+        parts.append(_spacer())
+        parts.append(payouts)
     return Group(*parts)
 
 
