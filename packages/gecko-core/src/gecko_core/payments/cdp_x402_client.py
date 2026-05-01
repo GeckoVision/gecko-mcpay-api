@@ -136,6 +136,39 @@ def _usdc_smallest_units(amount_usd: Decimal) -> int:
     return int((amount_usd * Decimal(10**_USDC_DECIMALS)).quantize(Decimal(1)))
 
 
+def to_evm_checksum_address(address: str) -> str:
+    """EIP-55 checksum-encode an EVM address.
+
+    S14-CDP-HARDEN-03 — some strict EIP-712 facilitators reject
+    non-checksummed ``to`` addresses inside the signed message
+    (`docs/diagnostics/2026-05-01-cdp-settle-failure-rca.md` latent #3).
+    Normalize at PaymentRequirements-build time so every CDP settle
+    sees a checksummed address regardless of how the operator wrote
+    their env var.
+
+    Non-EVM addresses (Solana base58, the stub sentinel, anything not
+    starting with ``0x``) are returned unchanged — the gate below
+    only calls this on EVM networks. Caller may also pass an empty
+    string; return as-is so the downstream "missing treasury" error
+    surfaces with its full operator-facing message rather than this
+    one.
+    """
+    if not address or not address.startswith("0x"):
+        return address
+    from eth_utils import to_checksum_address  # type: ignore[attr-defined]
+
+    try:
+        return str(to_checksum_address(address))
+    except ValueError:
+        # Test placeholders ("0xTreasuryBase") and operator-side typos
+        # land here. Returning verbatim preserves the existing
+        # error-surface semantics: HARDEN-02's startup assertion + the
+        # CDP facilitator's own validation will surface a clearer
+        # message than "not a hex string". HARDEN-03's promise is
+        # "valid EVM address → EIP-55", not "validate every input".
+        return address
+
+
 def _build_payment_requirements(
     *,
     amount_usd: Decimal,
@@ -160,6 +193,15 @@ def _build_payment_requirements(
     # 402 challenge in docs/strategy/sprint-12-chore-probes-2026-04-30.md.
     # USDC on Base/Sepolia uses name="USD Coin", version="2", verifyingContract
     # = the same USDC contract the funds move from.
+    # S14-CDP-HARDEN-03 — checksum-encode the EVM payTo (EIP-55). Some
+    # strict facilitators reject non-checksummed addresses inside the
+    # signed EIP-712 message; normalize once here so every settle sees
+    # a checksummed value regardless of operator env capitalization.
+    # Non-EVM (Solana base58) flows through unchanged.
+    if network in (BASE_MAINNET_NETWORK_ID, BASE_SEPOLIA_NETWORK_ID):
+        pay_to = to_evm_checksum_address(pay_to)
+        asset = to_evm_checksum_address(asset)
+
     extra: dict[str, Any] = {}
     if network in (BASE_MAINNET_NETWORK_ID, BASE_SEPOLIA_NETWORK_ID):
         # ``assetTransferMethod`` is REQUIRED by the x402 exact-EVM spec
@@ -481,4 +523,5 @@ __all__ = [
     "CDPX402Client",
     "CDPX402Error",
     "resolve_cdp_http_timeout_seconds",
+    "to_evm_checksum_address",
 ]

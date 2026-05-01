@@ -161,13 +161,17 @@ def test_evm_route_uses_base_wallet_not_solana_when_both_set(
     masking the real cause."""
     response = evm_client.get("/.well-known/x402")
     assert response.status_code == 200
+    # S14-CDP-HARDEN-03 — payTo is now EIP-55 checksum-encoded on
+    # eip155:* routes. Compare case-insensitively (byte-content match) so
+    # the regression check still catches "Solana base58 leaked into Base
+    # route" without breaking on the deliberate case normalization.
     expected_base = os.environ["GECKO_WALLET_ADDRESS_BASE"]
     saw_eip155 = False
     for route in response.json()["routes"]:
         for opt in route["accepts"]:
             if opt["network"].startswith("eip155:"):
                 saw_eip155 = True
-                assert opt["payTo"] == expected_base, (
+                assert opt["payTo"].lower() == expected_base.lower(), (
                     f"eip155 route advertised payTo={opt['payTo']!r}, "
                     f"expected the GECKO_WALLET_ADDRESS_BASE value "
                     f"{expected_base!r}. cae61ed regression: code is using "

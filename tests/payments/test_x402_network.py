@@ -267,7 +267,7 @@ def test_settings_mainnet_with_real_creds_resolves(clean_env: None) -> None:
         {
             "X402_MODE": "live",
             "X402_NETWORK": "solana-mainnet",
-            "GECKO_WALLET_ADDRESS": "FakeMainnetWalletPubkey1111111111111111111",
+            "GECKO_WALLET_ADDRESS": "FakeMainnetWaetPubkey1111111111111111111111",
             "CDP_API_KEY_ID": "organizations/abc/apiKeys/xyz",
             "CDP_API_KEY_SECRET": _ED25519_PRIV_PEM,
         }
@@ -288,7 +288,7 @@ def test_settings_mainnet_sentinel_creds_raises(clean_env: None) -> None:
         {
             "X402_MODE": "live",
             "X402_NETWORK": "solana-mainnet",
-            "GECKO_WALLET_ADDRESS": "FakeMainnetWalletPubkey1111111111111111111",
+            "GECKO_WALLET_ADDRESS": "FakeMainnetWaetPubkey1111111111111111111111",
             "CDP_API_KEY_ID": "__unset__",
             "CDP_API_KEY_SECRET": "__unset__",
         }
@@ -338,7 +338,7 @@ def test_build_facilitator_devnet_uses_existing_http_client(clean_env: None) -> 
         {
             "X402_MODE": "live",
             "X402_NETWORK": "solana-devnet",
-            "GECKO_WALLET_ADDRESS": "FakeDevnetWalletPubkey1111111111111111111",
+            "GECKO_WALLET_ADDRESS": "FakeDevnetWaetPubkey1111111111111111111111",
         }
     )
     from gecko_api.main import _build_facilitator
@@ -359,7 +359,7 @@ def test_build_facilitator_mainnet_uses_cdp_auth(clean_env: None) -> None:
         {
             "X402_MODE": "live",
             "X402_NETWORK": "solana-mainnet",
-            "GECKO_WALLET_ADDRESS": "FakeMainnetWalletPubkey1111111111111111111",
+            "GECKO_WALLET_ADDRESS": "FakeMainnetWaetPubkey1111111111111111111111",
             "CDP_API_KEY_ID": "organizations/abc/apiKeys/xyz",
             "CDP_API_KEY_SECRET": _ED25519_PRIV_PEM,
         }
