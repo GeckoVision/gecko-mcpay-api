@@ -72,7 +72,7 @@ SPEND_CAP_USD: float = 0.05
 # S14-TWITSH-02: the Sprint 13 probe captured the 402 challenge directly
 # and confirmed the per-call price is **$0.01 USDC**, not the prior
 # `0.005` constant. Cap math (`SPEND_CAP_USD / ASSUMED_PER_CALL_USD`) was
-# 2× off — the planner thought it could afford ~10 reads at $0.05 when
+# 2x off — the planner thought it could afford ~10 reads at $0.05 when
 # the actual ceiling is ~5. Constant corrected here so the spend-cap
 # loop in `TwitshSource.fetch` halts at the right call count.
 ASSUMED_PER_CALL_USD: float = 0.01
@@ -310,10 +310,37 @@ class TwitshSource:
             return False
         return bool(_FIRES_FOR & categories)
 
-    async def fetch(self, *, idea: str, categories: set[str]) -> SourceResult:
+    async def fetch(
+        self,
+        *,
+        idea: str,
+        categories: set[str],
+        author_allowlist: frozenset[str] | None = None,
+    ) -> SourceResult:
+        """Single x402-paid search call. Optional post-filter by author handle.
+
+        S14-TWITSH-01: ``author_allowlist`` (e.g. Colosseum judges) is
+        hashed into the cache key so filtered and unfiltered runs do not
+        collide. Tweets whose normalized ``@handle`` is not in the
+        allowlist are dropped after the live fetch — the spend has
+        already been paid, so we keep the network response for cache
+        reuse but only emit allowed rows to the caller.
+        """
         # Cache check first — never spend when a hit is plausible.
         categories_csv = ",".join(sorted(categories))
-        ckey = cache_key("twit_sh:", idea, "|", categories_csv)
+        # Allowlist hash: include in cache key so filtered/unfiltered
+        # runs don't poison each other. Empty / None → "none" sentinel
+        # keeps legacy keys stable (pre-S14 callers continue to hit
+        # their cache).
+        if author_allowlist:
+            import hashlib
+
+            allowlist_hash = hashlib.sha256(
+                ",".join(sorted(author_allowlist)).encode("utf-8")
+            ).hexdigest()[:12]
+        else:
+            allowlist_hash = "none"
+        ckey = cache_key("twit_sh:", idea, "|", categories_csv, "|", allowlist_hash)
 
         if is_mongo_configured() and not self._bypass_cache:
             try:
@@ -397,12 +424,23 @@ class TwitshSource:
             raw_tweets = body.get("tweets") or body.get("data") or body.get("results") or []
             if not isinstance(raw_tweets, list):
                 raw_tweets = []
+            # Normalize the allowlist once: lowercase, strip leading "@"
+            # so comparison is robust to capitalization / "@" presence on
+            # either side. Empty allowlist → no post-filter.
+            normalized_allow: frozenset[str] | None = None
+            if author_allowlist:
+                normalized_allow = frozenset(h.lstrip("@").lower() for h in author_allowlist if h)
             for raw in raw_tweets[:MAX_RESULTS]:
                 if not isinstance(raw, dict):
                     continue
                 norm = _normalize_tweet(raw)
-                if norm is not None:
-                    tweets.append(norm)
+                if norm is None:
+                    continue
+                if normalized_allow is not None:
+                    handle = str(norm.get("author_handle") or "").lstrip("@").lower()
+                    if handle not in normalized_allow:
+                        continue
+                tweets.append(norm)
                 if len(tweets) >= MAX_RESULTS:
                     break
 

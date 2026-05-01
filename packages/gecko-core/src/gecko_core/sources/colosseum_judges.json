@@ -1,0 +1,19 @@
+{
+  "_comment": "Colosseum hackathon judges — twit.sh author allowlist for S14-TWITSH-01. Judges' X handles are public information; this is attribution-only data, no on-chain payout. TODO(business-manager): refresh this list quarterly per the cycle announcements at colosseum.org. The five handles below are PLACEHOLDERS based on widely-cited Solana ecosystem voices commonly invited as Colosseum judges; verify each against the active cycle's announced panel before flipping TWITSH_RESEARCH_ENABLED on for production. See docs/strategy/twitsh-colosseum-integration-plan-2026-05-01.md § 5 for the staleness mitigation.",
+  "updated_at": "2026-04-30",
+  "_todo_business_manager": "Refresh per Colosseum cycle. Provider warns when entries here are >180 days stale (see twitsh_provider.py).",
+  "cycles": {
+    "renaissance_2026": [
+      "@aeyakovenko",
+      "@rajgokal",
+      "@anatolyyakovenko",
+      "@toly",
+      "@SolanaFndn"
+    ],
+    "radar_2026": [
+      "@aeyakovenko",
+      "@rajgokal",
+      "@SolanaFndn"
+    ]
+  }
+}
