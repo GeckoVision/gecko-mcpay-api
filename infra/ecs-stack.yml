@@ -315,6 +315,31 @@ Resources:
             ContentType: text/plain
             MessageBody: ''
 
+  # WebLogic / Spring Boot probes — bots scan for old Java-stack RCEs
+  # (CVE-2017-3506 BEA WebLogic console, CVE-2022-22965 Spring4Shell via
+  # /actuator). FastAPI never serves these paths; terminate at edge.
+  BlocklistRuleJavaStackHTTPS:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: HasCertificate
+    Properties:
+      ListenerArn: !Ref ALBListenerHTTPS
+      Priority: 13
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /console*
+              - /weblogic*
+              - /actuator*
+              - /jenkins*
+              - /solr*
+      Actions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: '403'
+            ContentType: text/plain
+            MessageBody: ''
+
   BlocklistRuleWordPressHTTP:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
     Properties:
@@ -371,6 +396,27 @@ Resources:
               - /administrator*
               - /server-status*
               - /vendor/phpunit*
+      Actions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: '403'
+            ContentType: text/plain
+            MessageBody: ''
+
+  BlocklistRuleJavaStackHTTP:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref ALBListenerHTTP
+      Priority: 13
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /console*
+              - /weblogic*
+              - /actuator*
+              - /jenkins*
+              - /solr*
       Actions:
         - Type: fixed-response
           FixedResponseConfig:
