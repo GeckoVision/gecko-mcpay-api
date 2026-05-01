@@ -32,6 +32,7 @@ from gecko_cli.commands.route import route_cmd
 from gecko_cli.commands.scaffold import scaffold_cmd
 from gecko_cli.commands.sources import sources_cmd
 from gecko_cli.commands.sprint_review import sprint_review_cmd
+from gecko_cli.commands.wallet import wallet_cmd
 
 
 @click.group()
@@ -122,6 +123,7 @@ cli.add_command(resume_cmd)
 cli.add_command(pricing_cmd)
 cli.add_command(sprint_review_cmd)
 cli.add_command(doctor_cmd)
+cli.add_command(wallet_cmd)
 
 
 # Back-compat alias — older docs reference `main`.
