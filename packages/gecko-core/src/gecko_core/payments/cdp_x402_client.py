@@ -119,10 +119,23 @@ def _build_payment_requirements(
     # = the same USDC contract the funds move from.
     extra: dict[str, Any] = {}
     if network in (BASE_MAINNET_NETWORK_ID, BASE_SEPOLIA_NETWORK_ID):
+        # ``assetTransferMethod`` is REQUIRED by the x402 exact-EVM spec
+        # (specs/schemes/exact/scheme_exact_evm.md). Without it the CDP
+        # facilitator falls back to its Permit2 path, which routes funds
+        # through ``permit2.transferFrom`` and reverts with
+        # "ERC20: transfer amount exceeds balance" because the buyer has
+        # never approved Permit2 for our buy amount. With "eip3009" set
+        # explicitly the facilitator dispatches to ``transferWithAuthorization``,
+        # which uses the signed buyer authorization directly and needs no
+        # prior allowance. Verified by reproducing the signed authorization
+        # locally and simulating it via ``eth_call`` (succeeds), while the
+        # CDP /settle returns the balance error. See
+        # docs/diagnostics/2026-05-01-cdp-settle-failure-rca.md.
         extra = {
             "name": "USD Coin",
             "version": "2",
             "verifyingContract": asset,
+            "assetTransferMethod": "eip3009",
         }
 
     return PaymentRequirements(
