@@ -490,6 +490,106 @@ class _UnauthenticatedRateLimitMiddleware:
         await self.app(scope, receive, send)
 
 
+# ---------------------------------------------------------------------------
+# S12-HARDEN-02 — body-size cap (10KB) at the ASGI layer.
+#
+# The Pydantic field constraint on `idea` (max_length=2000) is a logical
+# cap; this is the byte-level cap that prevents an attacker from sending
+# a 100MB payload and forcing the server to allocate / parse it before
+# handler validation runs. Reject at the streaming layer with a clean
+# 400; downstream handlers never see the oversized payload.
+# ---------------------------------------------------------------------------
+
+
+# 10KB body cap — generous for the longest legitimate payload (idea up to
+# 2000 chars + JSON envelope), tight enough that 100KB abuse attempts are
+# rejected before any handler runs.
+_MAX_REQUEST_BODY_BYTES = 10 * 1024
+
+
+class _BodySizeLimitMiddleware:
+    """Reject POST/PUT/PATCH bodies larger than ``max_bytes`` at the ASGI layer.
+
+    Two checks: content-length preflight (cheapest), then a streaming byte
+    count for chunked / unknown-length requests. On overflow we 400 and
+    stop draining; on success we replay the buffered bytes as a single
+    chunk to the downstream app.
+    """
+
+    def __init__(self, app: Any, *, max_bytes: int) -> None:
+        self.app = app
+        self.max_bytes = int(max_bytes)
+
+    async def __call__(
+        self,
+        scope: dict[str, Any],
+        receive: Callable[[], Awaitable[dict[str, Any]]],
+        send: Callable[[dict[str, Any]], Awaitable[None]],
+    ) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        method = scope.get("method", "").upper()
+        if method not in {"POST", "PUT", "PATCH"}:
+            await self.app(scope, receive, send)
+            return
+
+        headers = {k.lower(): v for k, v in scope.get("headers", [])}
+        cl_raw = headers.get(b"content-length")
+        if cl_raw is not None:
+            try:
+                cl = int(cl_raw.decode("latin-1"))
+            except (ValueError, UnicodeDecodeError):
+                cl = -1
+            if cl > self.max_bytes:
+                await _send_json_error(
+                    send,
+                    status=400,
+                    detail=(f"request body exceeds {self.max_bytes} byte cap ({cl} bytes)"),
+                )
+                return
+
+        max_bytes = self.max_bytes
+        buffered: list[bytes] = []
+        total = 0
+        more_body = True
+        while more_body:
+            message = await receive()
+            if message["type"] != "http.request":
+                buffered.append(b"")
+                break
+            chunk = message.get("body", b"") or b""
+            total += len(chunk)
+            if total > max_bytes:
+                await _send_json_error(
+                    send,
+                    status=400,
+                    detail=(f"request body exceeds {max_bytes} byte cap ({total}+ bytes)"),
+                )
+                return
+            buffered.append(chunk)
+            more_body = message.get("more_body", False)
+
+        full_body = b"".join(buffered)
+        delivered = False
+
+        async def _flat_receive() -> dict[str, Any]:
+            nonlocal delivered
+            if not delivered:
+                delivered = True
+                return {
+                    "type": "http.request",
+                    "body": full_body,
+                    "more_body": False,
+                }
+            return {"type": "http.disconnect"}
+
+        await self.app(scope, _flat_receive, send)
+
+
+# Order: rate limit (outermost, cheapest reject) → body size → x402.
+# Add body-size FIRST so rate-limit (added second below) wraps it.
+app.add_middleware(_BodySizeLimitMiddleware, max_bytes=_MAX_REQUEST_BODY_BYTES)
 app.add_middleware(
     _UnauthenticatedRateLimitMiddleware,
     rate_per_minute=_UNPAID_RATE_LIMIT_PER_MINUTE,
@@ -509,7 +609,10 @@ app.include_router(internal_router)
 
 
 class ResearchRequest(BaseModel):
-    idea: str = Field(..., min_length=10, max_length=500)
+    # S12-HARDEN-02 — input size cap on the idea field. 2000 chars is the
+    # public contract; combined with the 10KB body-size middleware below
+    # this caps OOM/abuse vectors before any handler runs.
+    idea: str = Field(..., min_length=10, max_length=2000)
     tier: Tier = "basic"
     urls: list[str] | None = None
     auto_approve: bool = True
