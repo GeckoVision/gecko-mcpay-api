@@ -10,13 +10,22 @@ speaker selection. Reasons:
   - Deterministic ordering makes the SSE stream legible to the user.
   - Budget enforcement is straightforward: one `record_turn` per agent.
   - Avoids an extra "speaker selector" LLM call per round (cost + latency).
+
+S12-LATENCY-01 — analyst and critic are independent of each other (both
+read the same RAG context, neither sees the other's reply). We dispatch
+them concurrently via ``asyncio.gather`` and then run architect → scoper
+→ judge serially. Transcript order remains canonical (analyst → critic →
+architect → scoper → judge) regardless of completion order, so replay /
+debugging stays deterministic.
 """
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Awaitable, Callable
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
 
 from gecko_core.orchestration.pro.agents import build_groupchat
 from gecko_core.orchestration.pro.budget import BudgetExceeded, BudgetGuard
@@ -45,7 +54,35 @@ __all__ = [
 # architect picks the stack, the scoper carves V1/V2/V3, the judge calls it.
 _AGENT_ORDER: tuple[str, ...] = ("analyst", "critic", "architect", "scoper", "judge")
 
+# S12-LATENCY-01: analyst + critic are mutually independent (both read the
+# same RAG context, neither needs the other's reply). Architect waits on
+# both; scoper waits on architect; judge waits on scoper.
+_PARALLEL_STAGE: tuple[str, ...] = ("analyst", "critic")
+_SERIAL_STAGE: tuple[str, ...] = ("architect", "scoper", "judge")
+
+# Per-voice wall-clock cap. A single hung voice cannot block the rest of
+# the debate; on timeout we emit a placeholder turn (voice failed:
+# timeout after Ns) so the transcript stays well-formed.
+_VOICE_TIMEOUT_SECONDS: float = 15.0
+
 _RAG_CONTEXT_CHAR_CAP = 8000
+
+
+@dataclass(slots=True)
+class _VoiceOutcome:
+    """Result of a single voice turn, dispatched in `_run_voice`.
+
+    Buffered until the caller is ready to emit events in canonical order —
+    which matters for the parallel analyst/critic stage where completion
+    order is non-deterministic but transcript order must stay stable.
+    """
+
+    agent: str
+    kind: Literal["ok", "timeout", "error", "skipped"]
+    content: str
+    tokens_in: int
+    tokens_out: int
+    error_text: str | None
 
 
 def _opening_prompt(
@@ -203,7 +240,6 @@ async def generate(
     chat = manager.groupchat
     agents_by_name = {a.name: a for a in chat.agents}
 
-    seq = 0
     collected: list[AgentEvent] = []
     halt_reason: str | None = None
 
@@ -219,80 +255,180 @@ async def generate(
 
     budget.start()
 
-    for agent_name in _AGENT_ORDER:
+    # `seq` is mutable across nested helpers; keep it as a 1-element list to
+    # avoid `nonlocal` declarations in async helpers (mypy-friendly).
+    seq_box = [0]
+
+    def _next_seq() -> int:
+        seq_box[0] += 1
+        return seq_box[0]
+
+    async def _run_voice(agent_name: str, messages: list[dict[str, Any]]) -> _VoiceOutcome:
+        """Execute a single voice turn, returning its outcome.
+
+        Does NOT emit events directly — the caller is responsible for
+        emitting in canonical order so the transcript stays deterministic
+        regardless of completion order in the parallel stage.
+        """
         agent = agents_by_name.get(agent_name)
         if agent is None:  # pragma: no cover — build_groupchat invariant
-            continue
-
-        seq += 1
-        await _emit(
-            AgentEvent(
-                type="turn_start",
+            return _VoiceOutcome(
                 agent=agent_name,
+                kind="skipped",
                 content="",
-                ts=time.time(),
                 tokens_in=0,
                 tokens_out=0,
-                seq=seq,
+                error_text=None,
             )
-        )
 
+        usage_before = _client_usage_snapshot(agent)
         try:
-            # Snapshot client usage BEFORE the call so we can diff after.
-            usage_before = _client_usage_snapshot(agent)
-            # Each agent sees the running transcript and replies once.
-            reply = await agent.a_generate_reply(messages=list(chat.messages))
-        except Exception as exc:
-            seq += 1
-            await _emit(
-                AgentEvent(
-                    type="error",
-                    agent=agent_name,
-                    content=f"{type(exc).__name__}: {exc}",
-                    ts=time.time(),
-                    tokens_in=0,
-                    tokens_out=0,
-                    seq=seq,
-                )
+            reply = await asyncio.wait_for(
+                agent.a_generate_reply(messages=messages),
+                timeout=_VOICE_TIMEOUT_SECONDS,
             )
-            halt_reason = None
-            break
+        except TimeoutError:
+            # S12-LATENCY-01: timeout surfaces as a placeholder turn (per
+            # S9-ADVISOR-01 "voice failed" pattern) — debate continues so
+            # the rest of the chain is unblocked.
+            return _VoiceOutcome(
+                agent=agent_name,
+                kind="timeout",
+                content=f"(voice failed: timeout after {int(_VOICE_TIMEOUT_SECONDS)}s)",
+                tokens_in=0,
+                tokens_out=0,
+                error_text=f"TimeoutError: voice exceeded {int(_VOICE_TIMEOUT_SECONDS)}s",
+            )
+        except Exception as exc:
+            return _VoiceOutcome(
+                agent=agent_name,
+                kind="error",
+                content="",
+                tokens_in=0,
+                tokens_out=0,
+                error_text=f"{type(exc).__name__}: {exc}",
+            )
 
         text = _reply_text(reply)
         # Token attribution priority:
         #   1. Reply-shape (covers test fakes that hand back {"usage": ...})
         #   2. Wrapped-client usage delta (the production AG2 path)
-        # We never sum (1) and (2) — only one source is authoritative per
-        # turn, and AG2 production never returns dict-shape usage on the
-        # reply, so the client delta wins in real runs.
         tokens_in, tokens_out = _extract_token_counts(reply)
         if tokens_in == 0 and tokens_out == 0:
             tokens_in, tokens_out = _client_usage_delta(agent, usage_before)
 
-        seq += 1
+        return _VoiceOutcome(
+            agent=agent_name,
+            kind="ok",
+            content=text,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            error_text=None,
+        )
+
+    async def _commit_outcome(outcome: _VoiceOutcome) -> str | None:
+        """Emit the canonical events for a completed voice and apply budget.
+
+        Returns ``"halt"`` if the caller should stop the debate (hard error
+        or budget exceeded), or ``None`` to continue.
+        """
+        nonlocal halt_reason
+
+        # turn_start is emitted just before the turn lands so consumers see
+        # the canonical (start, end) pair even when the underlying call
+        # completed earlier in real time.
         await _emit(
             AgentEvent(
-                type="turn_end",
-                agent=agent_name,
-                content=text,
+                type="turn_start",
+                agent=outcome.agent,
+                content="",
                 ts=time.time(),
-                tokens_in=tokens_in,
-                tokens_out=tokens_out,
-                seq=seq,
+                tokens_in=0,
+                tokens_out=0,
+                seq=_next_seq(),
             )
         )
 
-        # Append the agent's reply to the running transcript.
-        chat.messages.append({"role": "assistant", "name": agent_name, "content": text})
+        if outcome.kind == "error":
+            await _emit(
+                AgentEvent(
+                    type="error",
+                    agent=outcome.agent,
+                    content=outcome.error_text or "",
+                    ts=time.time(),
+                    tokens_in=0,
+                    tokens_out=0,
+                    seq=_next_seq(),
+                )
+            )
+            return "halt"
 
-        # Budget enforcement happens AFTER the turn so we always commit the
-        # event we just emitted. BudgetExceeded breaks the loop with the
+        if outcome.kind == "timeout":
+            # Surface the timeout via an `error` event for observability,
+            # then a `turn_end` with the placeholder content so the
+            # transcript reducer still sees a turn in canonical order.
+            await _emit(
+                AgentEvent(
+                    type="error",
+                    agent=outcome.agent,
+                    content=outcome.error_text or "",
+                    ts=time.time(),
+                    tokens_in=0,
+                    tokens_out=0,
+                    seq=_next_seq(),
+                )
+            )
+
+        await _emit(
+            AgentEvent(
+                type="turn_end",
+                agent=outcome.agent,
+                content=outcome.content,
+                ts=time.time(),
+                tokens_in=outcome.tokens_in,
+                tokens_out=outcome.tokens_out,
+                seq=_next_seq(),
+            )
+        )
+
+        # Append to the running chat transcript so subsequent agents see
+        # this voice's contribution. Even on timeout we append the
+        # placeholder so downstream voices know the channel was lost.
+        chat.messages.append(
+            {"role": "assistant", "name": outcome.agent, "content": outcome.content}
+        )
+
+        # Budget enforcement happens AFTER the events so we always commit
+        # what we just emitted. BudgetExceeded halts the chain with the
         # halt reason recorded on the transcript.
         try:
-            budget.record_turn(tokens_in, tokens_out)
+            budget.record_turn(outcome.tokens_in, outcome.tokens_out)
         except BudgetExceeded as exc:
             halt_reason = exc.reason
+            return "halt"
+        return None
+
+    # ---- Stage 1: analyst + critic in parallel ----
+    # Both voices read the same chat.messages snapshot (the opening only).
+    # We dispatch concurrently and then commit outcomes in canonical order
+    # regardless of completion order — preserving replay determinism.
+    parallel_messages = list(chat.messages)
+    parallel_outcomes = await asyncio.gather(
+        *(_run_voice(name, parallel_messages) for name in _PARALLEL_STAGE),
+    )
+
+    halted = False
+    for outcome in parallel_outcomes:  # canonical order (analyst, critic)
+        if await _commit_outcome(outcome) == "halt":
+            halted = True
             break
+
+    # ---- Stage 2: architect → scoper → judge serially ----
+    if not halted:
+        for agent_name in _SERIAL_STAGE:
+            outcome = await _run_voice(agent_name, list(chat.messages))
+            if await _commit_outcome(outcome) == "halt":
+                break
 
     # Final event closes the SSE stream. Carries the judge's verdict (last
     # `turn_end` content) so consumers can stop reading without a poll.
@@ -302,7 +438,6 @@ async def generate(
             final_summary = ev.content
             break
 
-    seq += 1
     await _emit(
         AgentEvent(
             type="final",
@@ -311,7 +446,7 @@ async def generate(
             ts=time.time(),
             tokens_in=0,
             tokens_out=0,
-            seq=seq,
+            seq=_next_seq(),
         )
     )
 
