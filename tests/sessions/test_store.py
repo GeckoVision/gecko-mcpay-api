@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
 import pytest
-from gecko_core.sessions import SessionRecord, SessionStore
+from gecko_core.sessions import ChunkMatch, SessionRecord, SessionStore
 
 
 def _make_response(data: list[dict[str, Any]]) -> MagicMock:
@@ -67,6 +67,13 @@ class FakeClient:
 
     def table(self, name: str) -> FakeQuery:
         q = self.queries.get(name) or FakeQuery(_make_response([]))
+        self.last_query = q
+        return q
+
+    def rpc(self, name: str, params: dict[str, Any]) -> FakeQuery:
+        # Reuse the queue map keyed by `rpc:<name>` for symmetry with table().
+        q = self.queries.get(f"rpc:{name}") or FakeQuery(_make_response([]))
+        q.calls.append(("rpc", (name, params), {}))
         self.last_query = q
         return q
 
@@ -225,3 +232,51 @@ async def test_list_sources_returns_source_info() -> None:
     assert len(sources) == 1
     assert sources[0].type == "web"
     assert sources[0].chunk_count == 3
+
+
+@pytest.mark.asyncio
+async def test_match_chunks_windowed_calls_rpc_with_correct_params() -> None:
+    """S13-PHASE-02 — match_chunks_windowed dispatches to the windowed RPC."""
+    project_id = uuid4()
+    chunk_id = uuid4()
+    source_id = uuid4()
+    captured = datetime.now(UTC)
+
+    fake = FakeClient()
+    rpc_q = FakeQuery(
+        _make_response(
+            [
+                {
+                    "id": str(chunk_id),
+                    "source_id": str(source_id),
+                    "source_url": "https://example.com/x",
+                    "chunk_index": 0,
+                    "text": "hello",
+                    "captured_at": captured.isoformat(),
+                    "similarity": 0.91,
+                }
+            ]
+        )
+    )
+    fake.queries["rpc:match_chunks_windowed"] = rpc_q
+
+    store = SessionStore(client=fake)  # type: ignore[arg-type]
+    rows = await store.match_chunks_windowed(
+        query_embedding=[0.0] * 1536,
+        window_days=14,
+        project_id=project_id,
+        match_count=5,
+    )
+
+    assert len(rows) == 1
+    assert isinstance(rows[0], ChunkMatch)
+    assert rows[0].similarity == 0.91
+
+    # RPC was called with the right name + the project_id stringified.
+    rpc_call = rpc_q.calls[0]
+    assert rpc_call[0] == "rpc"
+    assert rpc_call[1][0] == "match_chunks_windowed"
+    params = rpc_call[1][1]
+    assert params["window_days"] == 14
+    assert params["p_project_id"] == str(project_id)
+    assert params["match_count"] == 5

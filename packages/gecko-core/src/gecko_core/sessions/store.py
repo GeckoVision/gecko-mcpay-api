@@ -149,6 +149,25 @@ class GeckoPrecedent(BaseModel):
     model_config = {"frozen": True}
 
 
+class ChunkMatch(BaseModel):
+    """One row from the `match_chunks_windowed` RPC (S13-PHASE-02).
+
+    Distinct from `match_chunks` results because windowed search surfaces
+    `captured_at` so callers can reason about chunk freshness (S14 pulse
+    rendering wants this to flag "stale evidence" in deltas).
+    """
+
+    id: UUID
+    source_id: UUID
+    source_url: str
+    chunk_index: int
+    text: str
+    captured_at: datetime
+    similarity: float
+
+    model_config = {"frozen": True}
+
+
 class SessionRecord(BaseModel):
     """Internal projection of a `sessions` row.
 
@@ -575,6 +594,35 @@ class SessionStore:
             inserted = await asyncio.to_thread(_insert_batch, batch)
             total_inserted += len(inserted)
         return total_inserted
+
+    async def match_chunks_windowed(
+        self,
+        *,
+        query_embedding: list[float],
+        window_days: int | None,
+        project_id: UUID | None,
+        match_count: int = 8,
+    ) -> list[ChunkMatch]:
+        """Windowed similarity search via the `match_chunks_windowed` RPC.
+
+        S13-PHASE-02. Pre-filters on `(project_id, captured_at)` BEFORE the
+        vector ANN — exactly the order chunks_project_captured_at_idx is
+        built for. `window_days=None` (or <=0) disables the temporal cap;
+        `project_id=None` matches across projects (rare; caller decides).
+        """
+        params: dict[str, Any] = {
+            "query_embedding": query_embedding,
+            "window_days": window_days,
+            "p_project_id": str(project_id) if project_id else None,
+            "match_count": match_count,
+        }
+
+        def _rpc() -> list[dict[str, Any]]:
+            res = self._client.rpc("match_chunks_windowed", params).execute()
+            return cast(list[dict[str, Any]], res.data or [])
+
+        rows = await asyncio.to_thread(_rpc)
+        return [ChunkMatch.model_validate(r) for r in rows]
 
     # ------------------------------------------------------------------
     # Projects (per-project vaults)
@@ -1403,6 +1451,7 @@ def _as_float_or_none(v: object) -> float | None:
 
 
 __all__ = [
+    "ChunkMatch",
     "CostKind",
     "GeckoPrecedent",
     "PaymentMode",
