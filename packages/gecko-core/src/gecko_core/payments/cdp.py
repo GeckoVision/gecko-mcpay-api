@@ -149,13 +149,43 @@ def _sign_jwt(
     # rather than real newlines. cryptography/pyjwt then fails to parse with
     # `InvalidData(InvalidByte(0, 92))` (byte 92 = backslash). Restore them
     # before signing. No-op if the secret already has real newlines.
-    secret = creds.key_secret.strip().replace("\\n", "\n")
+    secret_str = creds.key_secret.strip().replace("\\n", "\n")
 
-    # Algorithm sniff: PEM EC keys → ES256; everything else → Ed25519. We
-    # default to Ed25519 because CDP's recommended onboarding mints Ed25519.
-    if "BEGIN EC PRIVATE KEY" in secret or ("BEGIN PRIVATE KEY" in secret and "EC " in secret):
+    # Algorithm sniff:
+    #   - PEM EC private key → ES256 (legacy "Coinbase Cloud" API key shape)
+    #   - PEM PKCS#8 private key → ES256 if EC marker, else Ed25519
+    #   - Anything else (single-line base64) → Ed25519. CDP v2 portal mints
+    #     these by default; the secret is 64 bytes base64-encoded (32-byte
+    #     private || 32-byte public) and pyjwt cannot parse the raw string,
+    #     so we construct an Ed25519PrivateKey explicitly from the bytes.
+    if "BEGIN EC PRIVATE KEY" in secret_str or (
+        "BEGIN PRIVATE KEY" in secret_str and "EC " in secret_str
+    ):
         algorithm = "ES256"
+        secret: Any = secret_str
+    elif "BEGIN" in secret_str:
+        # PEM-shaped Ed25519 (PKCS#8). pyjwt parses it directly.
+        algorithm = "EdDSA"
+        secret = secret_str
     else:
+        # Single-line base64 Ed25519 — CDP v2 default shape. Decode to raw
+        # bytes, take the 32-byte seed, build an Ed25519PrivateKey object.
+        import base64
+
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        try:
+            raw = base64.b64decode(secret_str, validate=True)
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(
+                "CDP_API_KEY_SECRET is not a recognized format: not PEM, "
+                "not single-line base64. Re-download from portal.cdp.coinbase.com."
+            ) from exc
+        # CDP v2 ships 64 bytes (private || public). Some tooling exports
+        # only the 32-byte private seed. Accept both; cryptography's
+        # `from_private_bytes` requires exactly 32.
+        seed = raw[:32] if len(raw) >= 32 else raw
+        secret = Ed25519PrivateKey.from_private_bytes(seed)
         algorithm = "EdDSA"
 
     return pyjwt.encode(payload, secret, algorithm=algorithm, headers=headers)
