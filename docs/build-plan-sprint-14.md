@@ -215,6 +215,25 @@ goes through the seam" pass + the dogfood-surfaced backend-down findings.
   **Owner:** software-engineer + web3-engineer (frames.ag mapping)
   **Acceptance:** mocked Supabase 522 produces a 503 from gecko-api, not a 500.
 
+### Test policy adoption (S12.5 carry-forward)
+
+The S12.5 hardening sweep (`530eb99`–`9757141`) shipped four guardrails: single-source-of-truth `PaymentMode` (`gecko_core.payments.modes`), schema-drift tests for `PaymentMode` and `/.well-known/x402` `payTo`, and a gated `live_cdp` `/verify` integration test. Sprint 14 makes adoption universal — every X402Client conformer + every new wire integration must ride these.
+
+- **S14-TEST-POLICY-01 — Contract test per X402Client conformer.**
+  Every concrete client (`StubX402Client`, `LiveX402Client`, `FramesX402Client`, `CDPX402Client`) gets a recorded-fixture contract test mirroring `test_cdp_live_verify.py`. Run on the gated `live_cdp` marker for facilitators that have free verify endpoints; record-replay otherwise. Future Cloudflare/awal clients inherit the policy automatically.
+  **Owner:** ai-ml-engineer (eval policy) + web3-engineer (per-client fixtures)
+  **Acceptance:** all 4 existing clients have a contract test; CI runs in stub-fixture mode; `GECKO_CDP_LIVE_VERIFY=1` toggles to live.
+
+- **S14-TEST-POLICY-02 — Schema-drift policy generalized.**
+  Extend `test_payment_mode_consistency.py` shape to every shared `Literal` type that has a SQL-side mirror (`Tier`, `SessionStatus`, `Verdict`, `PaymentMode`, `SessionPhase`, `ProEventType`). Test parses each migration's CHECK clause and asserts equality with the canonical Python enum.
+  **Owner:** software-engineer + data-engineer
+  **Acceptance:** new test `test_literal_consistency.py` covers all 6 enums; CI catches a deliberate divergence.
+
+- **S14-TEST-POLICY-03 — Pre-deploy contract gate.**
+  CI workflow `.github/workflows/contract-gate.yml` runs all `live_cdp`-marker tests on every PR that touches `packages/gecko-core/src/gecko_core/payments/` or `packages/gecko-api/src/gecko_api/`. Blocks merge if any fail.
+  **Owner:** software-engineer
+  **Acceptance:** the workflow exists, runs the tests in the right scope, and would have blocked Sprint 12 commit `cae61ed` (Solana payTo on Base route).
+
 ### Dogfood-loop hygiene (from F-S14-4 + F-S14-5)
 
 - **S14-DOGFOOD-01 — `bb sprint-review --write-to <path>`.**
@@ -238,6 +257,37 @@ goes through the seam" pass + the dogfood-surfaced backend-down findings.
   **Owner:** staff-engineer (one-shot; no engineering)
   **Acceptance:** matrix doc has 5 populated rows; delta vs. predictions captured
   in a 1-paragraph note.
+
+---
+
+## Track E — twit.sh × Colosseum-judges integration (`S14-TWITSH-*`) **MED**
+
+Per `docs/strategy/twitsh-colosseum-integration-plan-2026-05-01.md` + the Sprint 13 probe (`5c73936`) which confirmed twit.sh returns relevant X content at $0.01/call. Slipstreams `ParagraphProvider` (Track B) — same `SourceProvider` Protocol, +1-2 days incremental.
+
+- **S14-TWITSH-01 — `TwitshProvider` + Colosseum-judge allowlist.**
+  Promote the Sprint 13 skeleton at `packages/gecko-core/src/gecko_core/ingestion/providers/twitsh_provider.py` to a full `SourceProvider` conformer. New JSON `colosseum_judges.json` with verified handles for the current Colosseum cycle. `provider_router.py` routes to `TwitshProvider(author_allowlist=COLOSSEUM_JUDGES)` when category ∈ {crypto, defi, hackathon-team} AND idea matches Solana keywords; unfiltered otherwise.
+  **Owner:** software-engineer (provider + classifier extension) + business-manager (allowlist JSON + refresh runbook)
+  **Acceptance:** stub-mode `bb research --idea "Solana DEX with adversarial sandwich-protection" --tier basic` (with `TWITSH_RESEARCH_ENABLED=1 X402_MODE=stub`) produces a citation with `creator_handle` set; one live-mode smoke (~$0.05) surfaces ≥1 judge-authored citation; eval gate passes ≥0.80 with provider on AND off.
+
+- **S14-TWITSH-02 — Default catalog fix + per-call price correction.**
+  Probe agent confirmed catalog is wrong: actual surface is `/tweets/search?words=...`, not `/search/tweets?q=...`. Per-call price is $0.01, not the `ASSUMED_PER_CALL_USD = 0.005` constant — cap math is 2× off.
+  **Owner:** software-engineer
+  **Acceptance:** default catalog matches the live `/.well-known/x402`; spend cap arithmetic reflects $0.01/call.
+
+- **S14-TWITSH-03 — `note_tweet.text` long-form normalizer.**
+  Probe found that `note_tweet.text` carries long-form content when `text` is truncated; current normalizer ignores it. Update normalizer to prefer `note_tweet.text` when present.
+  **Owner:** software-engineer
+  **Acceptance:** synthetic fixture with `note_tweet.text` populated emits the long-form content in the citation, not the truncated stub.
+
+- **S14-TWITSH-04 — Parallel fan-out with Tavily.**
+  Probe measured ~7.5s settlement latency on first paid twit.sh call. Sequential w/ Tavily blows the latency budget; parallel via `asyncio.gather` keeps it bounded. Reuses the dispatcher pattern from S12 Track F.
+  **Owner:** software-engineer
+  **Acceptance:** mocked twit.sh + Tavily fixtures with controlled delays — total wall-clock < sum of individual latencies.
+
+- **S14-TWITSH-05 — Daily aggregate circuit-breaker.**
+  Cap twit.sh aggregate spend at $10/day across all sessions (parallels the S12 Track I-04 cost circuit breaker pattern). Returns `degraded_sources: [twitsh]` and continues without it past the cap.
+  **Owner:** software-engineer + web3-engineer (aggregation reads `cost_twitsh_usd`)
+  **Acceptance:** synthetic load past the cap surfaces the breaker in `degraded_sources`; pipeline continues; reset on UTC date roll.
 
 ---
 
