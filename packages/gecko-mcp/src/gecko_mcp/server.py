@@ -72,9 +72,12 @@ _SOURCES_DESCRIPTION = (
 _CLASSIFY_DESCRIPTION = (
     "Classify a startup idea into Gecko's category taxonomy (crypto, defi, "
     "devtools, saas, regulated, hackathon-team) using embedding nearest-"
-    "neighbor cosine similarity. Returns the selected categories (top-2 "
-    "above threshold) plus the full score map so callers can see why. "
-    "Free — no x402 payment required."
+    "neighbor cosine similarity. Returns selected categories (top-2 above "
+    "threshold), full score map, AND a suggested-source list with "
+    "per-source priority weights — the same JSON the paid `POST /classify` "
+    "route returns ($0.10 via x402 in live mode). Free at the MCP layer; "
+    "the HTTP surface charges so other agents can pay for Gecko's source-"
+    "routing intelligence as a standalone SKU (S13-COMMO-03)."
 )
 
 _PRECEDENTS_DESCRIPTION = (
@@ -764,16 +767,24 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
 
 async def _run_classify(*, idea: str) -> dict[str, Any]:
-    """Call `gecko_core.classify.classify_idea_with_scores`.
+    """Call `gecko_core.classify.classify_idea_with_scores` + suggest_sources.
 
     Free path — bypasses GeckoAPIClient / x402. We import lazily so the
     embedder + numpy aren't pulled into the MCP startup path for users
-    who never invoke the classifier.
+    who never invoke the classifier. S13-COMMO-03: payload is the same
+    shape the paid `POST /classify` route returns so MCP and HTTP stay
+    interoperable.
     """
-    from gecko_core.classify import classify_idea_with_scores
+    from gecko_core.classify import classify_idea_with_scores, suggest_sources
 
     selected, scores = await classify_idea_with_scores(idea)
-    return {"categories": selected, "scores": scores}
+    suggested, weights = suggest_sources(scores)
+    return {
+        "categories": selected,
+        "scores": scores,
+        "suggested_sources": suggested,
+        "priority_weights": weights,
+    }
 
 
 async def _run_precedents(*, idea: str, top_k: int) -> list[dict[str, Any]]:

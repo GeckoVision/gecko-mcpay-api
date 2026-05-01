@@ -131,4 +131,58 @@ async def classify_idea_with_scores(
     return selected, max_per_cat
 
 
-__all__ = ["CATEGORIES", "classify_idea", "classify_idea_with_scores"]
+# ---------------------------------------------------------------------------
+# S13-COMMO-03 — classify-as-a-service helpers.
+#
+# `suggest_sources` derives a recommended source list + per-source priority
+# weight from the classifier's category scores. Static mapping mirrors each
+# source's `applies_to` rule (kept here to avoid instantiating sources, which
+# may pull in network/HTTP deps just to declare their gating). Priority is
+# the max cosine across the categories that gate the source — higher score
+# means the classifier was more confident the source applies.
+# ---------------------------------------------------------------------------
+
+
+# Mirrors `applies_to` per source. "*" means "always fires" (ungated).
+_SOURCE_GATING: dict[str, tuple[str, ...]] = {
+    "tavily": ("*",),
+    "hn": ("*",),
+    "reddit": ("*",),
+    "gecko_precedent": ("*",),
+    "colosseum": ("crypto", "defi", "hackathon-team"),
+    "twit_sh": ("crypto", "defi"),
+}
+
+
+def suggest_sources(scores: dict[str, float]) -> tuple[list[str], dict[str, float]]:
+    """Derive a recommended source list + per-source priority weight.
+
+    Always-on sources land at priority 1.0. Category-gated sources get the
+    max cosine across their gating categories — falls below the classifier's
+    own threshold when the idea is off-domain, in which case they're omitted.
+
+    Returns (suggested_sources, priority_weights). `priority_weights` keys
+    match `suggested_sources` exactly.
+    """
+    suggested: list[str] = []
+    weights: dict[str, float] = {}
+    for name, gating in _SOURCE_GATING.items():
+        if gating == ("*",):
+            suggested.append(name)
+            weights[name] = 1.0
+            continue
+        # Pick the strongest matching category score; skip if none clear the
+        # classifier's threshold (0.40, see classify_idea above).
+        best = max((scores.get(c, 0.0) for c in gating), default=0.0)
+        if best >= 0.40:
+            suggested.append(name)
+            weights[name] = round(best, 3)
+    return suggested, weights
+
+
+__all__ = [
+    "CATEGORIES",
+    "classify_idea",
+    "classify_idea_with_scores",
+    "suggest_sources",
+]

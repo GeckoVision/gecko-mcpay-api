@@ -311,6 +311,20 @@ def _build_routes(settings: Settings) -> dict[str, RouteConfig]:
         ],
         description="Ask a grounded follow-up against an existing session's knowledge base",
     )
+    # S13-COMMO-03 — classify-as-a-service (POST /classify, $0.10).
+    # Returns categories + suggested sources + priority weights for an idea
+    # without running the full research pipeline.
+    routes["POST /classify"] = RouteConfig(
+        accepts=[
+            PaymentOption(
+                scheme="exact",
+                pay_to=pay_to,
+                price=settings.classify_call_price,
+                network=chain_id,
+            ),
+        ],
+        description="Classify an idea into categories with suggested sources and priority weights",
+    )
     return routes
 
 
@@ -832,6 +846,17 @@ class PaidAskRequest(BaseModel):
 
     session_id: str = Field(..., min_length=1)
     question: str = Field(..., min_length=3, max_length=500)
+
+
+class ClassifyRequest(BaseModel):
+    """S13-COMMO-03 — request shape for paid POST /classify.
+
+    Returns categories + suggested sources + priority weights without
+    running the full research pipeline. Useful for agents that want to
+    pre-flight Gecko's source selection before paying for /research.
+    """
+
+    idea: str = Field(..., min_length=10, max_length=500)
 
 
 # ---------------------------------------------------------------------------
@@ -1528,6 +1553,41 @@ async def paid_ask_call(req: PaidAskRequest, request: Request) -> dict[str, Any]
     return {
         **result.model_dump(mode="json"),
         "prepay_usd": _route_price_usd("POST /ask"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# S13-COMMO-03 — Track E paid classify-as-a-service.
+# ---------------------------------------------------------------------------
+
+
+@app.post("/classify")
+async def classify_call(req: ClassifyRequest, request: Request) -> dict[str, Any]:
+    """S13-COMMO-03 — classify-as-a-service ($0.10).
+
+    Returns the classifier's category list + suggested-source list +
+    per-source priority weights. Stays orthogonal to /research: this surface
+    sells the *decision* about which sources to hit, not the running of
+    those sources. Useful for agents that want to compose Gecko's
+    classification with their own retrieval pipeline.
+    """
+    from gecko_core.classify import classify_idea_with_scores, suggest_sources
+
+    _ = getattr(request.state, "payment_payload", None)
+
+    try:
+        categories, scores = await classify_idea_with_scores(req.idea)
+    except Exception as exc:
+        logger.exception("classify: failed for idea=%r", req.idea[:80])
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+
+    suggested, weights = suggest_sources(scores)
+    return {
+        "categories": categories,
+        "scores": {k: round(v, 3) for k, v in scores.items()},
+        "suggested_sources": suggested,
+        "priority_weights": weights,
+        "prepay_usd": _route_price_usd("POST /classify"),
     }
 
 

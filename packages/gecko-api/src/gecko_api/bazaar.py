@@ -270,6 +270,39 @@ _ASK_OUTPUT_SCHEMA: dict[str, Any] = {
     },
 }
 
+# S13-COMMO-03 — POST /classify schemas.
+_CLASSIFY_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["idea"],
+    "additionalProperties": False,
+    "properties": {
+        "idea": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 500,
+            "description": "Plain-language startup idea to classify.",
+        },
+    },
+}
+
+_CLASSIFY_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["categories", "suggested_sources", "priority_weights"],
+    "properties": {
+        "categories": {"type": "array", "items": {"type": "string"}},
+        "scores": {
+            "type": "object",
+            "additionalProperties": {"type": "number"},
+        },
+        "suggested_sources": {"type": "array", "items": {"type": "string"}},
+        "priority_weights": {
+            "type": "object",
+            "additionalProperties": {"type": "number"},
+        },
+        "prepay_usd": {"type": "number"},
+    },
+}
+
 # ---------------------------------------------------------------------------
 # Extension registry — one entry per paid route eligible for Bazaar listing
 # ---------------------------------------------------------------------------
@@ -461,6 +494,52 @@ BAZAAR_EXTENSIONS: dict[str, BazaarExtension] = {
                 "input": _ASK_INPUT_SCHEMA,
                 "output": _ASK_OUTPUT_SCHEMA,
             },
+        },
+    ),
+    "POST /classify": BazaarExtension(
+        description=(
+            "Classify an idea into Gecko's category taxonomy and return "
+            "suggested sources with priority weights — the pre-flight "
+            "decision behind /research source selection. Use when you "
+            "want Gecko's source-routing intelligence without running the "
+            "full adversarial debate."
+        ),
+        tags=[
+            "classification",
+            "category-routing",
+            "source-selection",
+            "embedding-nn",
+        ],
+        input={
+            "idea": "An on-chain reputation system for autonomous AI agents",
+        },
+        schema={
+            "type": "object",
+            "properties": {
+                "input": _CLASSIFY_INPUT_SCHEMA,
+                "output": _CLASSIFY_OUTPUT_SCHEMA,
+            },
+        },
+        output_example={
+            "categories": ["crypto", "defi"],
+            "scores": {"crypto": 0.71, "defi": 0.65, "saas": 0.20},
+            "suggested_sources": [
+                "tavily",
+                "hn",
+                "reddit",
+                "gecko_precedent",
+                "colosseum",
+                "twit_sh",
+            ],
+            "priority_weights": {
+                "tavily": 1.0,
+                "hn": 1.0,
+                "reddit": 1.0,
+                "gecko_precedent": 1.0,
+                "colosseum": 0.71,
+                "twit_sh": 0.71,
+            },
+            "prepay_usd": 0.10,
         },
     ),
     "POST /route/upgrade": BazaarExtension(
