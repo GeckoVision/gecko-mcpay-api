@@ -199,6 +199,17 @@ async def research(
             store=store,
         )
 
+    # Step 7b2 — production judge transcript capture (S12-HARDEN-03). Every
+    # public verdict that lands in CDP Bazaar needs an audit trail. Disk
+    # write is best-effort; never fail the user response on it. Disabled
+    # in tests via GECKO_TRANSCRIPT_CAPTURE=false.
+    try:
+        from gecko_core.orchestration.transcripts import capture as _capture_transcript
+
+        _capture_transcript(session_id=session_id, idea=idea, result=result)
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("transcript capture failed: %s", exc)
+
     # Step 7c — auto-journal verdict_received (S5-MEM-04). Best-effort;
     # never fail the user response if the memory write fails.
     try:

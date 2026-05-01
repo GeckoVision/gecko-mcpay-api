@@ -20,6 +20,11 @@ def _load_test_env() -> None:
     if env_path.exists():
         load_dotenv(env_path)
     os.environ.setdefault("X402_MODE", "stub")
+    # S12-HARDEN-03 — disable production transcript capture under pytest by
+    # default so the suite doesn't litter $TMP. Tests that exercise the
+    # capture path (e.g. tests/orchestration/test_transcripts.py) flip this
+    # back on with monkeypatch.setenv + GECKO_TRANSCRIPT_DIR.
+    os.environ.setdefault("GECKO_TRANSCRIPT_CAPTURE", "false")
 
 
 @pytest.fixture

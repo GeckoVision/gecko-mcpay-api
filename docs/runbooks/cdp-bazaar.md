@@ -131,3 +131,80 @@ runbook for first-settle is `docs/runbooks/cdp-bazaar-listing.md`
 6. [ ] After first CDP settle, query
        `https://api.cdp.coinbase.com/platform/v2/x402/discovery/search?query=<keyword>`
        and confirm the route shows up.
+
+## 7. Inspect public verdicts (S12-HARDEN-03 audit trail)
+
+Every successful `/research` and `/plan` call writes one judge transcript
+record to disk so any verdict that lands in Bazaar is auditable for
+compliance and post-hoc review of misranked verdicts. Capture lives in
+`packages/gecko-core/src/gecko_core/orchestration/transcripts.py`
+(`capture()` is invoked from `workflows.py::research()` after the verdict
+is finalized, before the auto-journal step). Schema mirrors the eval-side
+capture in `tests/eval/runner.py::_archive_live_transcript`.
+
+**Path resolution** (in order):
+
+1. `GECKO_TRANSCRIPT_DIR` env override.
+2. `/var/lib/gecko/judge_transcripts/` when the parent is writable
+   (production VMs / persistent volume).
+3. `/tmp/gecko/transcripts/` fallback (ECS Fargate ephemeral filesystem,
+   local dev). The startup log line records which path was chosen.
+
+**Toggle:** `GECKO_TRANSCRIPT_CAPTURE=false` disables. Default true in
+production; the test conftest flips it false so pytest doesn't litter.
+
+**Storage decision (S12):** filesystem, per data-engineer's S13 memo
+(`docs/strategy/sprint-13+-data-engineer-memo-2026-04-30.md` § Theme 1
+"Transcripts archive"). Promote to a thin `judge_transcripts (id,
+session_id, transcript_path, created_at)` index table only if S13 rubric
+v2 needs cross-run SQL queries. No transcript text in Postgres.
+
+**ECS Fargate note:** Fargate's ephemeral filesystem evaporates on task
+restart. For production listing, mount a persistent volume at
+`/var/lib/gecko/judge_transcripts` (EFS or sidecar S3-sync) before
+flipping the listing live. The fallback to `/tmp/gecko/transcripts/`
+keeps the API alive but the audit trail is lost on restart.
+
+### Audit query — single verdict by session_id
+
+```bash
+jq '.actual_verdict_v2, .judge_prose, .gap_classification, .gap_summary' \
+  /var/lib/gecko/judge_transcripts/<session_id>.json
+```
+
+### Audit query — all KILL verdicts in the last 24h
+
+```bash
+find /var/lib/gecko/judge_transcripts -mtime -1 -name '*.json' \
+  -exec jq -r 'select(.actual_verdict_v2 == "KILL")
+    | [.session_id, .idea_text, .gap_classification] | @tsv' {} \;
+```
+
+### Audit query — verdicts where the judge said one thing but the structured surface said another
+
+```bash
+find /var/lib/gecko/judge_transcripts -name '*.json' -exec jq -r '
+  select(.parsed_verdict != "UNKNOWN" and .parsed_verdict != .actual_verdict_v2)
+  | [.session_id, .parsed_verdict, .actual_verdict_v2, .gap_classification] | @tsv
+' {} \;
+```
+
+### If we promote to Supabase later (S13 trigger)
+
+The promotion path is additive: keep the file as the source of truth,
+add a thin `judge_transcripts (id uuid pk, session_id uuid fk,
+transcript_path text, parsed_verdict text, actual_verdict_v2 text,
+gap_classification text, created_at timestamptz default now())` table,
+RLS service-role-only. The file path stays the canonical store; the
+table is the queryable index. SQL example for "all KILL verdicts where
+the judge disagreed":
+
+```sql
+SELECT session_id, parsed_verdict, actual_verdict_v2, gap_classification
+FROM judge_transcripts
+WHERE parsed_verdict <> actual_verdict_v2
+  AND actual_verdict_v2 = 'KILL'
+ORDER BY created_at DESC
+LIMIT 50;
+```
+
