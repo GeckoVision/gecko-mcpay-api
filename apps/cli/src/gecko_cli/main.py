@@ -20,6 +20,7 @@ from gecko_cli.commands.advise import advise_cmd
 from gecko_cli.commands.ask import ask_cmd
 from gecko_cli.commands.classify import classify_cmd
 from gecko_cli.commands.doctor import doctor_cmd
+from gecko_cli.commands.earnings import earnings_cmd
 from gecko_cli.commands.memory import memory_cmd
 from gecko_cli.commands.plan import plan_cmd
 from gecko_cli.commands.precedents import precedents_cmd
@@ -123,6 +124,7 @@ cli.add_command(resume_cmd)
 cli.add_command(pricing_cmd)
 cli.add_command(sprint_review_cmd)
 cli.add_command(doctor_cmd)
+cli.add_command(earnings_cmd)
 cli.add_command(wallet_cmd)
 
 
