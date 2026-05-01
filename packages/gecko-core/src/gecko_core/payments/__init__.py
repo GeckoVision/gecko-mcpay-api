@@ -21,6 +21,9 @@ from gecko_core.payments.cdp_x402_client import (
     CDPX402Client,
     CDPX402Error,
 )
+from gecko_core.payments.factory import (
+    CLOUDFLARE_NETWORK_ID,
+)
 from gecko_core.payments.gate import run_payment_gate
 from gecko_core.payments.models import (
     PaymentIntent,
@@ -34,6 +37,10 @@ from gecko_core.payments.networks import (
     resolve_network,
 )
 from gecko_core.payments.pricing import price_for
+from gecko_core.payments.protocol import (
+    ConfirmationStatus,
+    PaymentReceipt,
+)
 from gecko_core.payments.verifier import (
     VerifyResult,
     VerifyTarget,
@@ -62,6 +69,7 @@ __all__ = [
     "BASE_MAINNET_USDC_CONTRACT",
     "BASE_SEPOLIA_NETWORK_ID",
     "CDP_FACILITATOR_BASE_URL",
+    "CLOUDFLARE_NETWORK_ID",
     "NETWORKS",
     "PAYMENT_MODES",
     "CDPAuthProvider",
@@ -71,6 +79,7 @@ __all__ = [
     "CDPSettleError",
     "CDPX402Client",
     "CDPX402Error",
+    "ConfirmationStatus",
     "FramesX402Client",
     "LiveX402Client",
     "NetworkConfig",
@@ -78,6 +87,7 @@ __all__ = [
     "NetworkName",
     "PaymentIntent",
     "PaymentMode",
+    "PaymentReceipt",
     "PaymentRequiredError",
     "PaymentResult",
     "StubX402Client",

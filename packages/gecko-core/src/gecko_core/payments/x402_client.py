@@ -38,7 +38,7 @@ import uuid
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Final, Protocol, runtime_checkable
+from typing import Any, Final
 
 import httpx
 from pydantic import Field, SecretStr
@@ -55,6 +55,10 @@ from gecko_core.payments.models import PaymentIntent, PaymentResult
 # every parallel definition stays in sync.
 from gecko_core.payments.modes import PAYMENT_MODES, PaymentMode, X402Mode
 from gecko_core.payments.networks import NetworkConfig, resolve_network
+from gecko_core.payments.protocol import (
+    ConfirmationStatus,
+    X402Client,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -275,15 +279,17 @@ def _settings() -> PaymentSettings:
     return PaymentSettings()
 
 
-@runtime_checkable
-class X402Client(Protocol):
-    """The contract every mode honors. Same return shape, same error shape."""
-
-    async def charge(self, intent: PaymentIntent) -> PaymentResult: ...
-
-
 class StubX402Client:
-    """No-op client for dev/tests. Always succeeds. Never hits the network."""
+    """No-op client for dev/tests. Always succeeds. Never hits the network.
+
+    ``supported_networks=()`` is the documented "any" sentinel — stub mode
+    short-circuits the factory before any network match is attempted, so
+    accepting every network is the only behaviour that won't surprise tests
+    that pass arbitrary network ids.
+    """
+
+    supported_networks: tuple[str, ...] = ()
+    facilitator_id: str = "stub"
 
     async def charge(self, intent: PaymentIntent) -> PaymentResult:
         await asyncio.sleep(0.1)
@@ -294,6 +300,12 @@ class StubX402Client:
             tx_signature=None,
             error=None,
         )
+
+    async def verify(self, tx_signature: str) -> ConfirmationStatus:
+        # Stub never emits a real tx; everything it produced is "confirmed"
+        # by definition. The verifier module's `is_stub_signature` guards
+        # against stub signatures leaking into a live verify path.
+        return "confirmed"
 
 
 # ---------------------------------------------------------------------------
@@ -364,6 +376,11 @@ class LiveX402Client:
     (returns 400 + clear code). We mirror that to a typed error here so the
     CLI / gate can show a fix.
     """
+
+    # S13-PAY-01 — Protocol class attrs. Solana-only (mainnet + devnet);
+    # base-* networks route to ``CDPX402Client`` instead.
+    supported_networks: tuple[str, ...] = ("solana-mainnet", "solana-devnet")
+    facilitator_id: str = "frames-solana"
 
     def __init__(
         self,
@@ -641,6 +658,31 @@ class LiveX402Client:
             return None
         return first  # type: ignore[no-any-return]
 
+    async def verify(self, tx_signature: str) -> ConfirmationStatus:
+        """Single getSignatureStatuses lookup → ``ConfirmationStatus``.
+
+        Cheap and idempotent — does NOT poll. Use ``_wait_for_confirmation``
+        if you need to block until confirmed. Maps Solana RPC return values
+        to the unified Protocol vocabulary.
+        """
+        rpc_url = _helius_rpc_url(self._network.cluster, self._helius_key)
+        try:
+            status = await self._fetch_signature_status(rpc_url, tx_signature)
+        except Exception:
+            return "unknown"
+        if status is None:
+            return "pending"
+        if status.get("err"):
+            return "failed"
+        confirmation = status.get("confirmationStatus")
+        if confirmation == "finalized":
+            return "finalized"
+        if confirmation == "confirmed":
+            return "confirmed"
+        if confirmation == "processed":
+            return "pending"
+        return "unknown"
+
 
 class FramesX402Client(LiveX402Client):
     """frames.ag wallet API — V2 alias for the live bridge.
@@ -649,6 +691,12 @@ class FramesX402Client(LiveX402Client):
     distinct class so V2 can layer on policy controls (`max_per_session`,
     `daily_limit`) and route via `/x402/fetch` for x402-protected URLs.
     """
+
+    # S13-PAY-01 — Protocol class attrs. Same supported networks as the
+    # parent (Solana only); distinct facilitator_id so the receipt + doctor
+    # output can tell them apart even though they share the live bridge.
+    supported_networks: tuple[str, ...] = ("solana-mainnet", "solana-devnet")
+    facilitator_id: str = "frames"
 
     def __init__(self, api_key: SecretStr) -> None:
         # `api_key` is honored if explicitly passed — otherwise we fall back
@@ -695,78 +743,27 @@ def get_client(mode: str | None = None) -> X402Client:
     raise ValueError(f"unknown X402_MODE: {selected!r}")
 
 
+# resolve_client_for_network + facilitator_id_for_network moved to
+# ``gecko_core.payments.factory`` in S13-PAY-01. Wrapper functions below
+# preserve the legacy import path; the factory module owns the logic.
+
+
 def resolve_client_for_network(
     network_id: str | None,
     *,
     mode: str | None = None,
 ) -> X402Client:
-    """Network-aware factory. Routes by ``X402_NETWORK`` resolution.
+    """Backward-compat shim — the real factory lives in ``payments.factory``."""
+    from gecko_core.payments.factory import resolve_client_for_network as _impl
 
-    Resolution table (Sprint 12 S12-CDP-02; Sprint 13 S13-PAY-01 will
-    formalize this on the ``X402Client`` Protocol with ``supported_networks``
-    and ``facilitator_id`` class attrs):
-
-      * ``solana-*`` (or CAIP-2 ``solana:<MINT>``) → frames.ag.
-      * ``base-mainnet`` / ``eip155:8453`` → CDP.
-      * ``base-sepolia`` / ``eip155:84532`` → CDP.
-      * Anything else → ``ValueError`` with the offending value echoed.
-
-    ``mode='stub'`` short-circuits to ``StubX402Client`` regardless of
-    network — keeps dev/CI on the no-network path.
-    """
-    s = _settings()
-    selected_mode = mode if mode is not None else s.mode
-
-    if selected_mode == "stub":
-        return StubX402Client()
-
-    kind = _resolve_network_kind(network_id or "")
-    if kind in (NetworkKind.SOLANA_MAINNET, NetworkKind.SOLANA_DEVNET):
-        if selected_mode == "frames":
-            return FramesX402Client(api_key=s.frames_api_key or SecretStr(""))
-        return LiveX402Client(
-            facilitator_url=s.facilitator_url or "",
-            wallet_secret=s.wallet_secret or SecretStr(""),
-        )
-    if kind in (NetworkKind.BASE_MAINNET, NetworkKind.BASE_SEPOLIA):
-        from gecko_core.payments.cdp_x402_client import (
-            BASE_MAINNET_NETWORK_ID,
-            BASE_SEPOLIA_NETWORK_ID,
-            CDPX402Client,
-        )
-
-        evm_network = (
-            BASE_MAINNET_NETWORK_ID if kind is NetworkKind.BASE_MAINNET else BASE_SEPOLIA_NETWORK_ID
-        )
-        return CDPX402Client(
-            api_key_id=s.cdp_api_key_id,
-            api_key_secret=s.cdp_api_key_secret,
-            treasury_address=s.base_treasury_address,
-            network=evm_network,
-        )
-
-    raise ValueError(
-        f"unknown X402_NETWORK={network_id!r}; expected solana-* or base-* "
-        "(or a CAIP-2 chain id of the same)."
-    )
+    return _impl(network_id, mode=mode)
 
 
 def facilitator_id_for_network(network_id: str | None) -> str:
-    """Report which facilitator settles a given network.
+    """Backward-compat shim — see ``payments.factory.facilitator_id_for_network``."""
+    from gecko_core.payments.factory import facilitator_id_for_network as _impl
 
-    Used by ``bb doctor`` to render the per-network facilitator row.
-    Returns ``'stub'`` when ``X402_MODE=stub``; otherwise ``'frames-solana'``,
-    ``'cdp-base'``, or ``'unknown'``.
-    """
-    s = _settings()
-    if s.mode == "stub":
-        return "stub"
-    kind = _resolve_network_kind(network_id or "")
-    if kind in (NetworkKind.SOLANA_MAINNET, NetworkKind.SOLANA_DEVNET):
-        return "frames-solana"
-    if kind in (NetworkKind.BASE_MAINNET, NetworkKind.BASE_SEPOLIA):
-        return "cdp-base"
-    return "unknown"
+    return _impl(network_id)
 
 
 def new_intent_id() -> str:

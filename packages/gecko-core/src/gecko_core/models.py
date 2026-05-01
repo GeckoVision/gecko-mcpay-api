@@ -8,11 +8,48 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Literal
+from typing import Literal, TypedDict
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 
 Tier = Literal["basic", "pro"]
+
+
+# ---------------------------------------------------------------------------
+# PaymentReceipt — the typed shape of ``Provenance.payment``.
+#
+# Defined here (a leaf module with no payments-side imports) to break the
+# cycle that previously forced ``Provenance.payment`` to be typed as
+# ``dict | None``: ``payments.protocol`` re-exports this name so the
+# Protocol seam stays the canonical surface for consumers, while the
+# definition itself sits where it can be referenced without dragging
+# ``payments/__init__.py`` (and the four concrete client classes) into
+# the import graph of ``gecko_core.models``.
+#
+# TypedDict (not a Pydantic model) on purpose:
+#   1. Backwards compat — call sites build it inline as a plain dict and
+#      index via ``payment["status"]``. A TypedDict is a dict at runtime,
+#      so both keep working.
+#   2. ``model_dump()`` round-trips a paid provider's receipt without a
+#      second validation hop.
+# ---------------------------------------------------------------------------
+
+
+class PaymentReceipt(TypedDict, total=False):
+    """The on-the-wire receipt stamped onto a ``Provenance`` for paid sources.
+
+    All fields optional so partial receipts (e.g. stub-mode with no
+    ``tx_signature``) round-trip cleanly through Pydantic.
+    """
+
+    intent_id: str
+    status: Literal["success", "failed"]
+    tx_signature: str | None
+    facilitator_id: str
+    network: str
+    error: str | None
+
+
 SourceType = Literal["youtube", "web"]
 SessionStatus = Literal["pending", "indexing", "generating", "complete", "failed"]
 
@@ -52,12 +89,12 @@ class Provenance(BaseModel):
     the Pydantic default fires and the field carries through to the
     serialized output.
 
-    `payment` stays untyped (`dict | None`) here on purpose: the real
-    `PaymentReceipt` shape is being formalized in S13 Track C
-    (X402Client Protocol). Using a dict avoids an import cycle between
-    `models.py` and `gecko_core.payments`, and lets paid providers
-    serialize their receipt via `PaymentResult.model_dump()` without
-    locking the schema down before S13 lands.
+    ``payment`` is typed as :class:`PaymentReceipt` (a TypedDict) as of
+    S13-PAY-01 — the X402Client Protocol seam now exists, and the receipt
+    shape lives at this leaf module so the import cycle that previously
+    forced ``dict | None`` is gone. Existing call sites that build
+    receipts as plain dicts keep working unchanged: a TypedDict is a dict
+    at runtime, and indexing (``payment["status"]``) still works.
     """
 
     provider_name: str = "tavily"
@@ -66,7 +103,7 @@ class Provenance(BaseModel):
     # back-edge; the providers module is the source of truth for the
     # accepted vocabulary.
     provider_kind: str = "free"
-    payment: dict[str, object] | None = None
+    payment: PaymentReceipt | None = None
 
 
 class Citation(BaseModel):

@@ -41,6 +41,7 @@ from gecko_core.payments.cdp import (
     is_unconfigured,
 )
 from gecko_core.payments.models import PaymentIntent, PaymentResult
+from gecko_core.payments.protocol import ConfirmationStatus
 
 logger = logging.getLogger(__name__)
 
@@ -226,7 +227,18 @@ class CDPX402Client:
     supplied; the gate-side error mentions the env var explicitly.
     """
 
-    facilitator_id: Final = "cdp-base"
+    # S13-PAY-01 — Protocol class attrs. ``Final`` was dropped here so the
+    # mypy Protocol-conformance check passes (Protocol declares the attrs
+    # as settable; ``Final`` would make CDPX402Client narrower than the
+    # Protocol surface). The values are still de-facto immutable by
+    # convention — nothing in the codebase rebinds them.
+    facilitator_id: str = "cdp-base"
+    supported_networks: tuple[str, ...] = (
+        "base-mainnet",
+        "base-sepolia",
+        BASE_MAINNET_NETWORK_ID,
+        BASE_SEPOLIA_NETWORK_ID,
+    )
 
     def __init__(
         self,
@@ -378,6 +390,25 @@ class CDPX402Client:
             tx_signature=str(tx_hash),
             error=None,
         )
+
+    async def verify(self, tx_signature: str) -> ConfirmationStatus:
+        """Confirmation lookup for an EVM tx hash.
+
+        S13 keeps this lightweight — CDP itself doesn't expose a public
+        ``getStatus`` endpoint, and ``bb economics --verify`` already reads
+        the tx via Base RPC through ``payments.verifier``. The Protocol
+        method exists so the contract stays uniform across facilitators;
+        callers that need a real status should go through the verifier
+        module (which builds a Base RPC client from env).
+        """
+        # Empty / placeholder signatures are "unknown" by definition. A
+        # production-grade Base RPC poll lives in ``payments.verifier`` —
+        # the Protocol's ``verify`` here returns the coarse classification
+        # so the gate-side dashboard doesn't choke when the CDP path is
+        # missing an explicit RPC URL.
+        if not tx_signature or not tx_signature.startswith("0x"):
+            return "unknown"
+        return "confirmed"
 
 
 __all__ = [

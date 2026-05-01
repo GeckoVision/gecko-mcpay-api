@@ -198,3 +198,52 @@ def test_get_client_cdp_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     _reset_settings_cache()
     client = get_client()
     assert isinstance(client, CDPX402Client)
+
+
+# ---------------------------------------------------------------------------
+# S13-PAY-01 — reserved Cloudflare slot.
+# ---------------------------------------------------------------------------
+
+
+def test_cloudflare_slot_raises_not_implemented(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``http-cloudflare`` is reserved for Sprint 15 and must fail fast.
+
+    Generic ``KeyError`` / ``ValueError`` would mask the deliberate "not
+    yet implemented" intent. The error message must name Sprint 15.
+    """
+    from gecko_core.payments.factory import CLOUDFLARE_NETWORK_ID
+
+    monkeypatch.setenv("X402_MODE", "live")
+    _reset_settings_cache()
+
+    with pytest.raises(NotImplementedError, match="Sprint 15"):
+        resolve_client_for_network(CLOUDFLARE_NETWORK_ID)
+
+
+def test_cloudflare_slot_short_circuited_in_stub_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stub mode wins over the reserved slot — dev/CI never crash."""
+    from gecko_core.payments.factory import CLOUDFLARE_NETWORK_ID
+
+    monkeypatch.setenv("X402_MODE", "stub")
+    _reset_settings_cache()
+    assert isinstance(resolve_client_for_network(CLOUDFLARE_NETWORK_ID), StubX402Client)
+
+
+def test_cloudflare_facilitator_id_in_live_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``facilitator_id_for_network`` reports the Cloudflare slot explicitly."""
+    from gecko_core.payments.factory import CLOUDFLARE_NETWORK_ID
+
+    monkeypatch.setenv("X402_MODE", "live")
+    _reset_settings_cache()
+    assert facilitator_id_for_network(CLOUDFLARE_NETWORK_ID) == "http-cloudflare"
+
+
+def test_factory_module_exports_resolve_client_for_network() -> None:
+    """The factory module is the canonical home for the resolver."""
+    from gecko_core.payments import factory
+
+    assert hasattr(factory, "resolve_client_for_network")
+    assert hasattr(factory, "facilitator_id_for_network")
+    assert hasattr(factory, "CLOUDFLARE_NETWORK_ID")
