@@ -21,6 +21,14 @@ from gecko_core.payments.cdp_x402_client import (
     CDPX402Client,
     CDPX402Error,
 )
+from gecko_core.payments.creator_payout import (
+    DEFAULT_PER_CITE_USD as CREATOR_PAYOUT_DEFAULT_PER_CITE_USD,
+)
+from gecko_core.payments.creator_payout import (
+    aggregate_creator_payouts,
+    resolve_per_cite_amount_usd,
+    settle_creator_payouts,
+)
 from gecko_core.payments.factory import (
     CLOUDFLARE_NETWORK_ID,
     resolve_client,
@@ -71,6 +79,7 @@ __all__ = [
     "BASE_SEPOLIA_NETWORK_ID",
     "CDP_FACILITATOR_BASE_URL",
     "CLOUDFLARE_NETWORK_ID",
+    "CREATOR_PAYOUT_DEFAULT_PER_CITE_USD",
     "NETWORKS",
     "PAYMENT_MODES",
     "CDPAuthProvider",
@@ -96,6 +105,7 @@ __all__ = [
     "VerifyTarget",
     "X402Client",
     "X402Mode",
+    "aggregate_creator_payouts",
     "build_cdp_facilitator_client",
     "facilitator_id_for_network",
     "get_client",
@@ -105,8 +115,10 @@ __all__ = [
     "resolve_client",
     "resolve_client_for_network",
     "resolve_network",
+    "resolve_per_cite_amount_usd",
     "resolve_rpc_url",
     "run_payment_gate",
+    "settle_creator_payouts",
     "summarize",
     "verify_target",
     "verify_targets",
