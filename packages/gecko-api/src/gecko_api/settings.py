@@ -192,8 +192,9 @@ class Settings(BaseModel):
             # Mainnet path: CDP creds must be present AND non-sentinel.
             # Refuse to boot otherwise — a sentinel reaching the JWT signer
             # produces a confusing 401 on every paid request instead of a
-            # clean startup error.
-            if net.name == "solana-mainnet":
+            # clean startup error. Sprint 12 Track A added Base mainnet to
+            # the CDP-facilitator path; same credential requirement applies.
+            if net.name in ("solana-mainnet", "base-mainnet"):
                 cdp_missing: list[str] = []
                 if is_unconfigured(cdp_key_id):
                     cdp_missing.append("CDP_API_KEY_ID")
@@ -201,7 +202,7 @@ class Settings(BaseModel):
                     cdp_missing.append("CDP_API_KEY_SECRET")
                 if cdp_missing:
                     raise RuntimeError(
-                        "X402_NETWORK=solana-mainnet requires "
+                        f"X402_NETWORK={net.name} requires "
                         f"{' and '.join(cdp_missing)} to be set "
                         "(SSM sentinel or empty value detected)."
                     )

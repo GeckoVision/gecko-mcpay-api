@@ -24,7 +24,7 @@ from typing import Final, Literal
 
 logger = logging.getLogger(__name__)
 
-NetworkName = Literal["solana-devnet", "solana-mainnet"]
+NetworkName = Literal["solana-devnet", "solana-mainnet", "base-mainnet", "base-sepolia"]
 
 
 @dataclass(frozen=True)
@@ -42,9 +42,14 @@ class NetworkConfig:
 # facilitator validates against — DO NOT shorten or rewrite them.
 _DEVNET_CHAIN_ID: Final = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"
 _MAINNET_CHAIN_ID: Final = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"
+# CAIP-2 chain ids for Base. Sprint 12 Track A added CDP Facilitator routing
+# for Base mainnet; this entry makes X402_NETWORK=base-mainnet (or the CAIP-2
+# form eip155:8453) resolve cleanly at startup.
+_BASE_MAINNET_CHAIN_ID: Final = "eip155:8453"
+_BASE_SEPOLIA_CHAIN_ID: Final = "eip155:84532"
 
 # Devnet uses the public Coinbase-operated x402 facilitator (free, no auth).
-# Mainnet uses CDP — Coinbase Developer Platform, behind API key + JWT.
+# Mainnet (Solana + Base) uses CDP — Coinbase Developer Platform, behind API key + JWT.
 _DEVNET_FACILITATOR_URL: Final = "https://www.x402.org/facilitator"
 _MAINNET_FACILITATOR_URL: Final = "https://api.cdp.coinbase.com/platform/v2/x402"
 
@@ -62,6 +67,18 @@ NETWORKS: Final[dict[NetworkName, NetworkConfig]] = {
         facilitator_url=_MAINNET_FACILITATOR_URL,
         cluster="mainnet-beta",
     ),
+    "base-mainnet": NetworkConfig(
+        name="base-mainnet",
+        chain_id=_BASE_MAINNET_CHAIN_ID,
+        facilitator_url=_MAINNET_FACILITATOR_URL,
+        cluster="base-mainnet",
+    ),
+    "base-sepolia": NetworkConfig(
+        name="base-sepolia",
+        chain_id=_BASE_SEPOLIA_CHAIN_ID,
+        facilitator_url=_MAINNET_FACILITATOR_URL,
+        cluster="base-sepolia",
+    ),
 }
 
 # Legacy CAIP-2 → friendly-name map. Old SSM values used the chain id as the
@@ -69,6 +86,8 @@ NETWORKS: Final[dict[NetworkName, NetworkConfig]] = {
 _LEGACY_CAIP2_TO_NAME: Final[dict[str, NetworkName]] = {
     _DEVNET_CHAIN_ID: "solana-devnet",
     _MAINNET_CHAIN_ID: "solana-mainnet",
+    _BASE_MAINNET_CHAIN_ID: "base-mainnet",
+    _BASE_SEPOLIA_CHAIN_ID: "base-sepolia",
 }
 
 
