@@ -49,7 +49,7 @@ from gecko_core.payments.networks import NetworkConfig, resolve_network
 
 logger = logging.getLogger(__name__)
 
-X402Mode = Literal["stub", "live", "frames"]
+X402Mode = Literal["stub", "live", "frames", "cdp"]
 
 # Frames.ag base URL — overridable for staging / tests.
 DEFAULT_FRAMES_BASE = "https://frames.ag/api"
@@ -124,10 +124,16 @@ class ConfirmationTimeoutError(LiveX402Error):
 
 
 class NetworkKind(enum.StrEnum):
-    """Coarse Solana network classification derived from a USDC mint."""
+    """Coarse network classification derived from a USDC mint / chain id.
+
+    Sprint 12 S12-CDP-02 added ``BASE_MAINNET`` / ``BASE_SEPOLIA`` for the
+    CDP facilitator path; the existing Solana variants stay untouched.
+    """
 
     SOLANA_MAINNET = "solana-mainnet"
     SOLANA_DEVNET = "solana-devnet"
+    BASE_MAINNET = "base-mainnet"
+    BASE_SEPOLIA = "base-sepolia"
     UNKNOWN = "unknown"
 
 
@@ -139,21 +145,49 @@ SOLANA_DEVNET_USDC_MINT: Final = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
 
 
 def _resolve_network_kind(network_id: str) -> NetworkKind:
-    """Map a ``solana:<MINT>`` CAIP-style id to a typed :class:`NetworkKind`.
+    """Map a CAIP-style id to a typed :class:`NetworkKind`.
 
-    Returns ``NetworkKind.UNKNOWN`` for malformed input, non-Solana
-    namespaces, or mints we don't recognise — never raises. Callers use the
-    typed result to format clearer mismatch errors.
+    Recognised forms:
+      * ``solana:<USDC_MINT>`` — mainnet/devnet Solana via mint.
+      * ``solana-mainnet`` / ``solana-devnet`` — friendly names.
+      * ``eip155:8453`` — Base mainnet (Sprint 12 CDP path).
+      * ``eip155:84532`` — Base Sepolia.
+      * ``base-mainnet`` / ``base-sepolia`` — friendly names.
+
+    Returns ``NetworkKind.UNKNOWN`` for malformed input or unknown namespaces
+    — never raises. Callers use the typed result to format clearer
+    mismatch errors.
     """
-    if not isinstance(network_id, str) or ":" not in network_id:
+    if not isinstance(network_id, str):
         return NetworkKind.UNKNOWN
-    namespace, _, mint = network_id.partition(":")
-    if namespace.strip().lower() != "solana" or not mint:
-        return NetworkKind.UNKNOWN
-    if mint == SOLANA_MAINNET_USDC_MINT:
+    friendly = network_id.strip().lower()
+    if friendly == "solana-mainnet":
         return NetworkKind.SOLANA_MAINNET
-    if mint == SOLANA_DEVNET_USDC_MINT:
+    if friendly == "solana-devnet":
         return NetworkKind.SOLANA_DEVNET
+    if friendly == "base-mainnet":
+        return NetworkKind.BASE_MAINNET
+    if friendly == "base-sepolia":
+        return NetworkKind.BASE_SEPOLIA
+    if ":" not in network_id:
+        return NetworkKind.UNKNOWN
+    namespace, _, suffix = network_id.partition(":")
+    namespace = namespace.strip().lower()
+    if namespace == "solana" and suffix:
+        # Two CAIP-style forms in the wild: the USDC mint (used by some
+        # 402 challenges) and the cluster genesis-hash prefix (used by
+        # ``networks.py``). Recognise both.
+        if suffix == SOLANA_MAINNET_USDC_MINT or suffix.startswith("5eykt4Us"):
+            return NetworkKind.SOLANA_MAINNET
+        if suffix == SOLANA_DEVNET_USDC_MINT or suffix.startswith("EtWTRABZ"):
+            return NetworkKind.SOLANA_DEVNET
+        return NetworkKind.UNKNOWN
+    if namespace == "eip155" and suffix:
+        if suffix == "8453":
+            return NetworkKind.BASE_MAINNET
+        if suffix == "84532":
+            return NetworkKind.BASE_SEPOLIA
+        return NetworkKind.UNKNOWN
     return NetworkKind.UNKNOWN
 
 
@@ -208,6 +242,11 @@ class PaymentSettings(BaseSettings):
     network: str | None = Field(default=None, alias="X402_NETWORK")
     treasury_address: str | None = Field(default=None, alias="GECKO_WALLET_ADDRESS")
     helius_api_key: SecretStr | None = Field(default=None, alias="HELIUS_API_KEY")
+    # CDP / Base — Sprint 12 S12-CDP-02. Independent from the Solana
+    # treasury so an operator can run both legs simultaneously.
+    cdp_api_key_id: str | None = Field(default=None, alias="CDP_API_KEY_ID")
+    cdp_api_key_secret: SecretStr | None = Field(default=None, alias="CDP_API_KEY_SECRET")
+    base_treasury_address: str | None = Field(default=None, alias="GECKO_WALLET_ADDRESS_BASE")
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -607,7 +646,10 @@ class FramesX402Client(LiveX402Client):
 def get_client(mode: str | None = None) -> X402Client:
     """Build the client for the requested mode (or env default).
 
-    `mode=None` reads X402_MODE from env, defaulting to 'stub'.
+    `mode=None` reads X402_MODE from env, defaulting to 'stub'. Sprint 12
+    (S12-CDP-02) added ``mode='cdp'`` for the CDP facilitator on Base.
+
+    For network-keyed dispatch, prefer :func:`resolve_client_for_network`.
     """
     s = _settings()
     selected = mode if mode is not None else s.mode
@@ -624,7 +666,92 @@ def get_client(mode: str | None = None) -> X402Client:
         )
     if selected == "frames":
         return FramesX402Client(api_key=s.frames_api_key or SecretStr(""))
+    if selected == "cdp":
+        # Lazy import — keep cdp_x402_client out of the import path for
+        # callers that never touch CDP, so x402-lib import failures on
+        # exotic platforms don't break Solana-only flows.
+        from gecko_core.payments.cdp_x402_client import CDPX402Client
+
+        return CDPX402Client(
+            api_key_id=s.cdp_api_key_id,
+            api_key_secret=s.cdp_api_key_secret,
+            treasury_address=s.base_treasury_address,
+        )
     raise ValueError(f"unknown X402_MODE: {selected!r}")
+
+
+def resolve_client_for_network(
+    network_id: str | None,
+    *,
+    mode: str | None = None,
+) -> X402Client:
+    """Network-aware factory. Routes by ``X402_NETWORK`` resolution.
+
+    Resolution table (Sprint 12 S12-CDP-02; Sprint 13 S13-PAY-01 will
+    formalize this on the ``X402Client`` Protocol with ``supported_networks``
+    and ``facilitator_id`` class attrs):
+
+      * ``solana-*`` (or CAIP-2 ``solana:<MINT>``) → frames.ag.
+      * ``base-mainnet`` / ``eip155:8453`` → CDP.
+      * ``base-sepolia`` / ``eip155:84532`` → CDP.
+      * Anything else → ``ValueError`` with the offending value echoed.
+
+    ``mode='stub'`` short-circuits to ``StubX402Client`` regardless of
+    network — keeps dev/CI on the no-network path.
+    """
+    s = _settings()
+    selected_mode = mode if mode is not None else s.mode
+
+    if selected_mode == "stub":
+        return StubX402Client()
+
+    kind = _resolve_network_kind(network_id or "")
+    if kind in (NetworkKind.SOLANA_MAINNET, NetworkKind.SOLANA_DEVNET):
+        if selected_mode == "frames":
+            return FramesX402Client(api_key=s.frames_api_key or SecretStr(""))
+        return LiveX402Client(
+            facilitator_url=s.facilitator_url or "",
+            wallet_secret=s.wallet_secret or SecretStr(""),
+        )
+    if kind in (NetworkKind.BASE_MAINNET, NetworkKind.BASE_SEPOLIA):
+        from gecko_core.payments.cdp_x402_client import (
+            BASE_MAINNET_NETWORK_ID,
+            BASE_SEPOLIA_NETWORK_ID,
+            CDPX402Client,
+        )
+
+        evm_network = (
+            BASE_MAINNET_NETWORK_ID if kind is NetworkKind.BASE_MAINNET else BASE_SEPOLIA_NETWORK_ID
+        )
+        return CDPX402Client(
+            api_key_id=s.cdp_api_key_id,
+            api_key_secret=s.cdp_api_key_secret,
+            treasury_address=s.base_treasury_address,
+            network=evm_network,
+        )
+
+    raise ValueError(
+        f"unknown X402_NETWORK={network_id!r}; expected solana-* or base-* "
+        "(or a CAIP-2 chain id of the same)."
+    )
+
+
+def facilitator_id_for_network(network_id: str | None) -> str:
+    """Report which facilitator settles a given network.
+
+    Used by ``bb doctor`` to render the per-network facilitator row.
+    Returns ``'stub'`` when ``X402_MODE=stub``; otherwise ``'frames-solana'``,
+    ``'cdp-base'``, or ``'unknown'``.
+    """
+    s = _settings()
+    if s.mode == "stub":
+        return "stub"
+    kind = _resolve_network_kind(network_id or "")
+    if kind in (NetworkKind.SOLANA_MAINNET, NetworkKind.SOLANA_DEVNET):
+        return "frames-solana"
+    if kind in (NetworkKind.BASE_MAINNET, NetworkKind.BASE_SEPOLIA):
+        return "cdp-base"
+    return "unknown"
 
 
 def new_intent_id() -> str:
@@ -656,8 +783,10 @@ __all__ = [
     "WalletNotConfiguredError",
     "X402Client",
     "X402Mode",
+    "facilitator_id_for_network",
     "get_client",
     "new_intent_id",
+    "resolve_client_for_network",
 ]
 # Re-export the env path for callers that look it up dynamically.
 _ = os  # keep ``os`` import used (env reads happen via pydantic-settings)

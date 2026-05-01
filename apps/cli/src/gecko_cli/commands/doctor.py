@@ -274,30 +274,70 @@ async def check_llm_ping(
 
 
 def check_x402(env: dict[str, str]) -> CheckRow:
-    """Surface X402_MODE + treasury + facilitator URL."""
+    """Surface X402_MODE + treasury + facilitator URL.
+
+    Sprint 12 S12-CDP-02 added ``mode=cdp`` (CDP Facilitator on Base) and
+    extends the row text with the per-network facilitator name resolved
+    via :func:`gecko_core.payments.facilitator_id_for_network`.
+    """
     mode = (env.get("X402_MODE") or "stub").lower()
     treasury = env.get("GECKO_WALLET_ADDRESS")
     facilitator = env.get("X402_FACILITATOR_URL")
+    network = env.get("X402_NETWORK") or "<unset>"
+
+    try:
+        from gecko_core.payments import facilitator_id_for_network
+
+        fac_id = facilitator_id_for_network(env.get("X402_NETWORK"))
+    except Exception:
+        fac_id = "unknown"
 
     if mode == "stub":
         return CheckRow(
             "x402 mode",
             "ok",
-            f"mode=stub (treasury={treasury or '<unset>'}, facilitator={facilitator or '<default>'})",
+            f"mode=stub network={network} facilitator={fac_id} "
+            f"(treasury={treasury or '<unset>'}, url={facilitator or '<default>'})",
+        )
+
+    if mode == "cdp":
+        missing: list[str] = []
+        if not env.get("CDP_API_KEY_ID"):
+            missing.append("CDP_API_KEY_ID")
+        if not env.get("CDP_API_KEY_SECRET"):
+            missing.append("CDP_API_KEY_SECRET")
+        if not env.get("GECKO_WALLET_ADDRESS_BASE"):
+            missing.append("GECKO_WALLET_ADDRESS_BASE")
+        if missing:
+            return CheckRow(
+                "x402 mode",
+                "err",
+                f"mode=cdp network={network} facilitator={fac_id} but missing {', '.join(missing)}",
+            )
+        return CheckRow(
+            "x402 mode",
+            "ok",
+            f"mode=cdp network={network} facilitator={fac_id} "
+            f"(base_treasury={env['GECKO_WALLET_ADDRESS_BASE']})",
         )
 
     # live / frames require both treasury and facilitator.
-    missing: list[str] = []
+    missing = []
     if not treasury:
         missing.append("GECKO_WALLET_ADDRESS")
     if not facilitator:
         missing.append("X402_FACILITATOR_URL")
     if missing:
-        return CheckRow("x402 mode", "err", f"mode={mode} but missing {', '.join(missing)}")
+        return CheckRow(
+            "x402 mode",
+            "err",
+            f"mode={mode} network={network} facilitator={fac_id} but missing {', '.join(missing)}",
+        )
     return CheckRow(
         "x402 mode",
         "ok",
-        f"mode={mode}, treasury={treasury}, facilitator={facilitator}",
+        f"mode={mode} network={network} facilitator={fac_id} "
+        f"(treasury={treasury}, url={facilitator})",
     )
 
 

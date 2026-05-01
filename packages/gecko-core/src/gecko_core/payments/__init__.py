@@ -11,6 +11,16 @@ from gecko_core.payments.cdp import (
     build_cdp_facilitator_client,
     is_unconfigured,
 )
+from gecko_core.payments.cdp_x402_client import (
+    BASE_MAINNET_NETWORK_ID,
+    BASE_MAINNET_USDC_CONTRACT,
+    BASE_SEPOLIA_NETWORK_ID,
+    CDP_FACILITATOR_BASE_URL,
+    CDPNotConfiguredError,
+    CDPSettleError,
+    CDPX402Client,
+    CDPX402Error,
+)
 from gecko_core.payments.gate import run_payment_gate
 from gecko_core.payments.models import (
     PaymentIntent,
@@ -36,20 +46,32 @@ from gecko_core.payments.verifier import (
 from gecko_core.payments.x402_client import (
     FramesX402Client,
     LiveX402Client,
+    NetworkKind,
     StubX402Client,
     X402Client,
     X402Mode,
+    facilitator_id_for_network,
     get_client,
+    resolve_client_for_network,
 )
 
 __all__ = [
+    "BASE_MAINNET_NETWORK_ID",
+    "BASE_MAINNET_USDC_CONTRACT",
+    "BASE_SEPOLIA_NETWORK_ID",
+    "CDP_FACILITATOR_BASE_URL",
     "NETWORKS",
     "CDPAuthProvider",
     "CDPCredentials",
     "CDPFacilitatorClient",
+    "CDPNotConfiguredError",
+    "CDPSettleError",
+    "CDPX402Client",
+    "CDPX402Error",
     "FramesX402Client",
     "LiveX402Client",
     "NetworkConfig",
+    "NetworkKind",
     "NetworkName",
     "PaymentIntent",
     "PaymentRequiredError",
@@ -60,10 +82,12 @@ __all__ = [
     "X402Client",
     "X402Mode",
     "build_cdp_facilitator_client",
+    "facilitator_id_for_network",
     "get_client",
     "is_stub_signature",
     "is_unconfigured",
     "price_for",
+    "resolve_client_for_network",
     "resolve_network",
     "resolve_rpc_url",
     "run_payment_gate",
