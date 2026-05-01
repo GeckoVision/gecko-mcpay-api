@@ -95,6 +95,14 @@ Per `docs/strategy/profile-thesis-ai-ml-engineer-2026-05-01.md` + dogfood adds.
   - **Acceptance test:** re-run `bb research` on the profile-thesis from `2026-05-01-commoditized-knowledge-thesis.md` after S15-AIML-02 ships → critic must name "public leaderboard" as a gaming risk
   **Owner:** ai-ml-engineer
 
+- **S15-AIML-04 — OpenRouter PRD list-shape retry.** **(NEW from 2026-05-01 pitch-prep dogfood)**
+  Pitch-prep agent's first dogfood attempt failed under `LLM_ROUTER=openrouter` — PRD validation rejected list-vs-string shape on `prd.v1_scope` / `v2_scope` / `v3_scope`. The successful run used `LLM_ROUTER=openai`. This is a recurring class of issue (nano/router-class JSON-shape failures, related to S15-AIML-03's closing-line bug).
+  - Detect schema-validation failure on PRD list fields; retry once with a stricter system-prompt suffix demanding JSON list shape
+  - If retry fails, surface error explicitly with `error_kind="prd_shape_invalid"` (parallel to S9-ADVISOR-01's no_closing_line pattern)
+  - Add fixture test that asserts the retry path fires under simulated string-instead-of-list response
+  **Owner:** ai-ml-engineer
+  **Acceptance:** dogfood under `LLM_ROUTER=openrouter` produces a valid `ResearchResult` on every run; the eval gate passes both routers.
+
 - **S15-AIML-03 — Retire gpt-4.1-nano from staff_manager voice.** **(NEW from dogfood)**
   Closing-line failure on staff_manager occurred in Sprints 9, 11, 12, AND the 2026-05-01 dogfood. Sprint 9 fix never fully covered nano-class models. Either swap to `gpt-4o-mini` or extend the strict-suffix retry pattern model-specifically.
   - Recommended: swap to `gpt-4o-mini` (small cost increase, big quality lift)
