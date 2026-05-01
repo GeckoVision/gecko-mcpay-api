@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from decimal import Decimal, InvalidOperation
+from uuid import UUID
 
 import click
 import gecko_core
@@ -56,6 +58,34 @@ async def _interactive_approval(candidates: list[SourceCandidate]) -> bool:
         "model selection via the curated catalog."
     ),
 )
+@click.option(
+    "--publish",
+    "publish",
+    is_flag=True,
+    default=False,
+    help=(
+        "S14-PUB-01: after the verdict lands, publish the rendered "
+        "ResearchResult as a publish.new artifact at $0.50 (override "
+        "with --publish-price). Opt-in; default off."
+    ),
+)
+@click.option(
+    "--publish-price",
+    "publish_price",
+    type=str,
+    default=None,
+    help="Override the publish.new artifact price in USD (Decimal).",
+)
+@click.option(
+    "--publish-as",
+    "publish_as",
+    type=str,
+    default=None,
+    help=(
+        "Override the author wallet (Base 0x address) for the published "
+        "artifact. Defaults to GECKO_WALLET_ADDRESS_BASE (Phase 1)."
+    ),
+)
 def research_cmd(
     idea: str,
     tier: str,
@@ -63,12 +93,24 @@ def research_cmd(
     yes: bool,
     project: str | None,
     tier_preset: str,
+    publish: bool,
+    publish_price: str | None,
+    publish_as: str | None,
 ) -> None:
     """Discover, index, generate. The main workflow."""
     seed = list(urls) if urls else None
     project_id = resolve_project_id(project)
     if project_id is not None:
         console.print(f"[dim]project: {project_id}[/dim]")
+
+    parsed_publish_price: Decimal | None = None
+    if publish_price is not None:
+        try:
+            parsed_publish_price = Decimal(publish_price)
+        except (InvalidOperation, ValueError) as exc:
+            raise click.BadParameter(f"--publish-price must be a Decimal: {exc}") from exc
+        if parsed_publish_price <= 0:
+            raise click.BadParameter("--publish-price must be > 0")
 
     # Top-level --yes / --non-interactive bubble through `assume_yes`; keep
     # the per-command --yes flag for back-compat.
@@ -93,3 +135,36 @@ def research_cmd(
 
     render_research_result(console, result)
     console.print(f"[dim]session_id: {result.session_id}[/dim]")
+
+    if publish:
+        # S14-PUB-01 — opt-in publish.new artifact upload. Runs AFTER the
+        # main render so the founder sees the verdict first, then the
+        # publish receipt block. Failures are surfaced verbatim and do
+        # NOT roll back the research session — they paid for the verdict
+        # already, the publish is incidental.
+        from gecko_core.payments import publish_new as pn_mod
+
+        try:
+            artifact = asyncio.run(
+                pn_mod.publish_artifact(
+                    session_id=UUID(result.session_id),
+                    idea=idea,
+                    result=result,
+                    price_usd=parsed_publish_price,
+                    author_address=publish_as,
+                )
+            )
+        except pn_mod.PublishNewError as exc:
+            console.print(f"[red]publish.new error:[/red] {exc}")
+            return
+
+        console.print()
+        console.print("[bold bright_blue]Published[/bold bright_blue]")
+        console.print(f"  url:    [link={artifact.url}]{artifact.url}[/link]")
+        console.print(f"  slug:   {artifact.slug}")
+        console.print(f"  price:  ${artifact.price_usd}")
+        console.print(f"  author: {artifact.author_address}")
+        if artifact.is_stub:
+            console.print("  [dim](stub mode — no on-chain settlement)[/dim]")
+        elif artifact.tx_signature:
+            console.print(f"  tx:     {artifact.tx_signature}")
