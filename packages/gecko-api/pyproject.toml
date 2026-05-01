@@ -17,6 +17,10 @@ dependencies = [
 [dependency-groups]
 dev = [
     "respx>=0.21",
+    # S12-BAZAAR-03 — validation harness for Bazaar discovery extensions.
+    # Already pulled in transitively via x402; pinned here to make the
+    # dependency explicit since tests/api/test_bazaar_extensions.py imports it.
+    "jsonschema>=4.0",
 ]
 
 [project.scripts]
