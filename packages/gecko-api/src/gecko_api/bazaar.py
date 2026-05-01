@@ -270,6 +270,52 @@ _ASK_OUTPUT_SCHEMA: dict[str, Any] = {
     },
 }
 
+# S14-PULSE-04 — POST /pulse schemas.
+_PULSE_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": (
+                "UUID of the parent (research) session being re-pulsed. "
+                "v14 surface — creates a NEW session row with "
+                "phase='during_build' and parent_session_id=<input>."
+            ),
+        },
+        "project_id": {
+            "type": ["string", "null"],
+            "description": (
+                "Project UUID (legacy closing-line delta surface). When "
+                "session_id is also given, session_id wins."
+            ),
+        },
+        "tier_preset": {
+            "type": "string",
+            "enum": _TIER_PRESET_ENUM,
+            "default": "balanced",
+        },
+    },
+}
+
+_PULSE_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "description": (
+        "PulseResult — single-token verdict + gap_classification + "
+        "advisor closing lines + fresh windowed citations."
+    ),
+    "properties": {
+        "parent_session_id": {"type": "string", "format": "uuid"},
+        "pulse_session_id": {"type": "string", "format": "uuid"},
+        "verdict": {"type": "string", "enum": ["KILL", "REFINE", "BUILD"]},
+        "gap_classification": {"type": "string"},
+        "panel": {"type": "object"},
+        "citations": {"type": "array"},
+        "summary_bullets": {"type": "array", "items": {"type": "string"}},
+    },
+}
+
 # S13-COMMO-03 — POST /classify schemas.
 _CLASSIFY_INPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -540,6 +586,48 @@ BAZAAR_EXTENSIONS: dict[str, BazaarExtension] = {
                 "twit_sh": 0.71,
             },
             "prepay_usd": 0.10,
+        },
+    ),
+    "POST /pulse": BazaarExtension(
+        description=(
+            "Recurring product validation: re-runs adversarial debate "
+            "against evolving evidence to surface verdict shifts as "
+            "build progresses. Founders re-pulse weekly — each call "
+            "creates a during-build session linked to the original "
+            "research and emits a fresh KILL/REFINE/BUILD verdict + "
+            "structured gap_classification + advisor closing lines + "
+            "citations from the last 14 days. 12-pack prepay available "
+            "at a 10% bulk discount ($5.40 / 12 calls)."
+        ),
+        tags=[
+            "pulse",
+            "recurring-validation",
+            "during-build",
+            "lifecycle-monetization",
+            "verdict-shift",
+            "founder-validation",
+        ],
+        input={
+            "session_id": "00000000-0000-0000-0000-000000000000",
+            "tier_preset": "balanced",
+        },
+        schema={
+            "type": "object",
+            "properties": {
+                "input": _PULSE_INPUT_SCHEMA,
+                "output": _PULSE_OUTPUT_SCHEMA,
+            },
+        },
+        output_example={
+            "parent_session_id": "00000000-0000-0000-0000-000000000000",
+            "pulse_session_id": "00000000-0000-0000-0000-000000000001",
+            "verdict": "REFINE",
+            "gap_classification": "Partial:segment",
+            "summary_bullets": [
+                "ceo: refine pricing for the SMB wedge",
+                "cto: keep core stack, swap auth provider",
+                "product_manager: narrow ICP to design teams",
+            ],
         },
     ),
     "POST /route/upgrade": BazaarExtension(

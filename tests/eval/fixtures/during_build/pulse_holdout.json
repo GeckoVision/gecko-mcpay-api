@@ -1,0 +1,92 @@
+[
+  {
+    "id": "pulse-stripe-webhook-replay-2-weeks-in",
+    "phase": "during_build",
+    "weeks_of_context": 2,
+    "parent_idea": "Replay-CLI for Stripe webhooks during local dev: records prod payloads to SQLite, replays into a localhost server with re-signed signatures.",
+    "new_evidence_summary": "2 weeks post-research: Stripe shipped `stripe listen --replay` (covers ~30% of the wedge). Hookdeck added local-replay (paid). twit_sh @t3dotgg now recommends Hookdeck for new teams.",
+    "expected_verdict": "REFINE",
+    "expected_gap_classification": "Partial:UX",
+    "why": "core local-dev primitive still differentiated, but the wedge tightened — pivot to focused payments-eng workflow rather than generic webhook replay",
+    "expected_summary_signals": [
+      "stripe listen --replay covers part",
+      "Hookdeck closed the hosted lane",
+      "narrow ICP to payments-eng teams"
+    ]
+  },
+  {
+    "id": "pulse-grant-budget-nih-r01-3-weeks-in",
+    "phase": "during_build",
+    "weeks_of_context": 3,
+    "parent_idea": "Grant-budget rewriter for federal R01 NIH applications: parses PI narrative + R01 PHS-398 template, outputs a compliant budget justification DOCX.",
+    "new_evidence_summary": "3 weeks post-research: NIH FY27 modular budget cap raised to $300k, no template change. Two new SaaS competitors emerged in HHS grants (BudgetIQ, GrantClerk) — both target K-awards, not R01s.",
+    "expected_verdict": "BUILD",
+    "expected_gap_classification": "Partial:pricing",
+    "why": "competition fragments by award type; R01 wedge is still wide open; pricing comp shifted (BudgetIQ at $99/mo) — adjust upward",
+    "expected_summary_signals": [
+      "competitors target K-awards not R01",
+      "FY27 cap raise is tailwind",
+      "raise pricing to $79-99/mo band"
+    ]
+  },
+  {
+    "id": "pulse-onchain-reputation-agents-1-week-in",
+    "phase": "during_build",
+    "weeks_of_context": 1,
+    "parent_idea": "On-chain reputation system for autonomous AI agents — score agents by transaction history, flag bad actors.",
+    "new_evidence_summary": "1 week post-research: EigenLayer announced AVS-based agent verification at Devcon. Multiple Solana protocols (Drift, Jupiter) confirmed they're building in-house reputation; not buying.",
+    "expected_verdict": "KILL",
+    "expected_gap_classification": "Full",
+    "why": "EigenLayer absorbs the EVM lane, in-house captures the Solana lane. No buyer-side wedge remains.",
+    "expected_summary_signals": [
+      "EigenLayer covers EVM",
+      "Solana protocols build in-house",
+      "no remaining buyer wedge"
+    ]
+  },
+  {
+    "id": "pulse-defi-vault-yield-aggregator-4-weeks-in",
+    "phase": "during_build",
+    "weeks_of_context": 4,
+    "parent_idea": "Solana DeFi vault aggregator that auto-rotates LP positions across Drift / Kamino / Jupiter Perps based on funding-rate APR.",
+    "new_evidence_summary": "4 weeks post-research: a16z-backed Vault.fi launched with same wedge but charges 2% mgmt fee. Drift APR dropped 40% post-points-S2. New Solana memecoin LP yields surged.",
+    "expected_verdict": "REFINE",
+    "expected_gap_classification": "Partial:pricing",
+    "why": "Vault.fi validates demand but anchors the price band high; refine to 0.5% perf-only fee and add memecoin-LP path",
+    "expected_summary_signals": [
+      "vault.fi validates the thesis",
+      "undercut on fee structure",
+      "memecoin LP is the new lane"
+    ]
+  },
+  {
+    "id": "pulse-legal-contract-marketplace-6-weeks-in",
+    "phase": "during_build",
+    "weeks_of_context": 6,
+    "parent_idea": "An AI agent marketplace for legal contract review — solo lawyers post NDAs/MSAs, agents bid to review with citations.",
+    "new_evidence_summary": "6 weeks post-research: Harvey AI raised Series D and shipped a marketplace SKU for solo lawyers ($49/mo). Cooley added an in-house tool free for portfolio companies. NDA volume on Upwork dropped 22%.",
+    "expected_verdict": "KILL",
+    "expected_gap_classification": "Full",
+    "why": "Harvey owns the brand + price; Cooley closes the captive demand; no defensible wedge remains for new entrants",
+    "expected_summary_signals": [
+      "Harvey ate the marketplace SKU",
+      "Cooley closed the captive lane",
+      "Upwork NDA volume falling"
+    ]
+  },
+  {
+    "id": "pulse-claude-code-skills-marketplace-2-weeks-in",
+    "phase": "during_build",
+    "weeks_of_context": 2,
+    "parent_idea": "Marketplace for Claude Code skills with x402 monetization — skill authors set per-call price, callers pay-as-they-go.",
+    "new_evidence_summary": "2 weeks post-research: Anthropic shipped first-party skill discovery in Claude.ai. A new x402 facilitator (Cloudflare) launched with sub-cent settlement. solana-claude (Superteam Brasil community) ships free skills.",
+    "expected_verdict": "REFINE",
+    "expected_gap_classification": "Partial:UX",
+    "why": "first-party discovery covers index lookup but not paid execution; Cloudflare cuts settlement cost; refine to thin facilitator-side wrapper",
+    "expected_summary_signals": [
+      "first-party indexing not the wedge",
+      "Cloudflare settlement unlocks <$0.05",
+      "execution-as-a-service is the lane"
+    ]
+  }
+]

@@ -352,27 +352,6 @@ def _build_routes(settings: Settings) -> dict[str, RouteConfig]:
             ],
             description="Generate the 3-file scaffold bundle for a Pro session",
         )
-        # /pulse is opt-in: register on x402 only when the operator sets a
-        # non-zero PULSE_CALL_PRICE. Pricing for pulse is still TBD; we keep
-        # the wire shape stable so the V2 web app can call it for free while
-        # we decide. "$0", "$0.00", or empty string all parse as free.
-        pulse_raw = (settings.pulse_call_price or "").lstrip("$").strip()
-        try:
-            pulse_amt = float(pulse_raw) if pulse_raw else 0.0
-        except ValueError:
-            pulse_amt = 0.0
-        if pulse_amt > 0:
-            routes["POST /pulse"] = RouteConfig(
-                accepts=[
-                    PaymentOption(
-                        scheme="exact",
-                        pay_to=pay_to,
-                        price=settings.pulse_call_price,
-                        network=chain_id,
-                    ),
-                ],
-                description="Re-run the Advisor Panel and surface deltas vs prior pulse",
-            )
     # S13-COMMO-01..03 — Track E commoditization wedges. Registered in BOTH
     # stub and live modes so Bazaar discovery + the bazaar-extensions tests
     # see them under either deploy. In stub mode the middleware still issues
@@ -416,6 +395,31 @@ def _build_routes(settings: Settings) -> dict[str, RouteConfig]:
         ],
         description="Classify an idea into categories with suggested sources and priority weights",
     )
+    # S14-PULSE-01 — gecko_pulse v1 SKU at $0.50/call. Registered in BOTH
+    # stub and live modes so Bazaar discovery sees it under either deploy.
+    # In stub mode the middleware still issues 402 challenges; only the
+    # facilitator settle is short-circuited.
+    pulse_raw = (settings.pulse_call_price or "").lstrip("$").strip()
+    try:
+        pulse_amt = float(pulse_raw) if pulse_raw else 0.0
+    except ValueError:
+        pulse_amt = 0.0
+    if pulse_amt > 0:
+        routes["POST /pulse"] = RouteConfig(
+            accepts=[
+                PaymentOption(
+                    scheme="exact",
+                    pay_to=pay_to,
+                    price=settings.pulse_call_price,
+                    network=chain_id,
+                ),
+            ],
+            description=(
+                "Recurring product validation: re-runs the advisor panel "
+                "against evolving evidence to surface verdict shifts as "
+                "build progresses"
+            ),
+        )
     return routes
 
 
@@ -1924,7 +1928,7 @@ async def scaffold_call(req: ScaffoldRequest, request: Request) -> dict[str, Any
 
 @app.post("/pulse")
 async def pulse_call(req: PulseRequest, request: Request) -> dict[str, Any]:
-    """S8-API-01 — re-run the Advisor Panel and surface deltas.
+    """S8-API-01 / S14-PULSE-01 — re-run the Advisor Panel and surface deltas.
 
     Free by default in all modes (stub + live) until the team commits to a
     pulse pricing model. When PULSE_CALL_PRICE is set to a non-zero value,
@@ -1936,6 +1940,11 @@ async def pulse_call(req: PulseRequest, request: Request) -> dict[str, Any]:
     from gecko_core.orchestration.advisor import (
         AdvisorSessionNotFoundError,
         run_pulse,
+        run_pulse_v14,
+    )
+    from gecko_core.payments.pulse_credits import (
+        check_pulse_credits,
+        decrement_pulse_credit,
     )
     from gecko_core.routing.catalog import Tier as _Tier
 
@@ -1966,12 +1975,25 @@ async def pulse_call(req: PulseRequest, request: Request) -> dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"invalid tier_preset: {exc}") from exc
 
+    # S14-PULSE-02 — credits-first dispatch. When the wallet has prepaid
+    # credits, decrement one and surface the new balance on the response.
+    credits_after: int | None = None
+    if req.user_wallet:
+        try:
+            current = await check_pulse_credits(user_wallet=req.user_wallet)
+            if current > 0:
+                credits_after = await decrement_pulse_credit(user_wallet=req.user_wallet)
+        except Exception:
+            logger.debug("pulse: credit check failed; falling through")
+
     try:
-        result = await run_pulse(
-            session_id=sid,
-            project_id=pid,
-            tier_preset=tier,
-        )
+        if sid is not None:
+            v14 = await run_pulse_v14(parent_session_id=sid, tier_preset=tier)
+            if credits_after is not None:
+                v14 = v14.model_copy(update={"credits_remaining_after": credits_after})
+            return v14.model_dump(mode="json")
+        # project_id-only legacy path.
+        result = await run_pulse(session_id=None, project_id=pid, tier_preset=tier)
     except AdvisorSessionNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
