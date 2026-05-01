@@ -81,6 +81,15 @@ The unblocker. Bazaar listing requires settlement through the CDP Facilitator at
 
 **Owner:** staff-engineer
 
+### Track H — Parallel-debate dispatch (S12-LATENCY-01) **HIGH**
+
+Per `docs/strategy/mcp-refinement-2026-04-30.md` § "Convergent signal" — 3 of 5 advisor voices flagged 5-voice serial debate latency (20-30s) as binding constraint for agent-side ICP. Parallelize where structure permits.
+
+- **S12-LATENCY-01 — Parallel analyst+critic, serial architect→scoper→judge.**
+  Refactor `packages/gecko-core/src/gecko_core/orchestration/pro/__init__.py`. `asyncio.gather(analyst, critic)` for the parallel pair. Per-voice 15s timeout. Preserve canonical transcript order (replay determinism). Total wall-clock target: ~50% reduction.
+  **Owner:** ai-ml-engineer + software-engineer
+  **Acceptance:** pro-tier `wall_seconds` p50 drops measurably; existing eval gate fixtures unchanged in stub mode.
+
 ### Track I — Production hardening before Bazaar listing (S12-HARDEN-01..04) **CRITICAL — gates Track C**
 
 Per user decision 2026-04-30 (option B from `live-cdp-bazaar-smoke.md` pre-flight): listing in CDP Bazaar surfaces our 402 endpoint to public discovery. Risk is traffic-shaped (DDoS, abuse, prompt injection) not security-shaped (payment gate covers that), but worth a 4-item harden pass before flipping the listing.
