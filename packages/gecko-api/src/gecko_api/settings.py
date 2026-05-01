@@ -35,6 +35,10 @@ class Settings(BaseModel):
     x402_mode: X402Mode = "stub"
     x402_facilitator_url: str | None = None
     gecko_wallet_address: str | None = None
+    # Sprint 12 Track A: Base/EVM treasury, distinct from the Solana
+    # gecko_wallet_address. Used as `pay_to` on routes whose network is
+    # eip155:* (Base mainnet/Sepolia under CDP).
+    gecko_wallet_address_base: str | None = None
     # Friendly network name; the CAIP-2 chain id is on `network_config`.
     x402_network: str = "solana-devnet"
     # Resolved network config (chain_id, facilitator URL default, cluster).
@@ -157,6 +161,7 @@ class Settings(BaseModel):
         # unset, fall back to whatever the network registry advertises.
         facilitator_url = os.environ.get("X402_FACILITATOR_URL") or net.facilitator_url
         wallet = os.environ.get("GECKO_WALLET_ADDRESS")
+        wallet_base = os.environ.get("GECKO_WALLET_ADDRESS_BASE")
 
         # CDP creds: read raw, defer the sentinel check until we know we're
         # actually on mainnet. Pulling the env values regardless lets us
@@ -231,6 +236,7 @@ class Settings(BaseModel):
             x402_mode=mode,  # type: ignore[arg-type]
             x402_facilitator_url=facilitator_url,
             gecko_wallet_address=wallet or "STUB_WALLET_ADDRESS_NOT_FOR_LIVE",
+            gecko_wallet_address_base=wallet_base,
             x402_network=net.name,
             network_config=net,
             cdp_api_key_id=cdp_key_id,

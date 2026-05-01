@@ -124,7 +124,6 @@ def _build_facilitator(settings: Settings) -> FacilitatorClient:
 
 
 def _build_routes(settings: Settings) -> dict[str, RouteConfig]:
-    pay_to = settings.gecko_wallet_address or "STUB_WALLET_ADDRESS_NOT_FOR_LIVE"
     # The x402 lib's RouteConfig.PaymentOption.network expects the CAIP-2
     # chain id (e.g. "solana:EtW..."), NOT the friendly name. The lib runs a
     # facilitator-support check at registration time; passing "solana-devnet"
@@ -134,6 +133,19 @@ def _build_routes(settings: Settings) -> dict[str, RouteConfig]:
     chain_id = (
         settings.network_config.chain_id if settings.network_config else settings.x402_network
     )
+    # Sprint 12 Track A: Base/EVM routes need a 0x payTo, not the Solana
+    # gecko_wallet_address. Pick per network. Without this, eip155:* routes
+    # advertise a Solana base58 address as `payTo` and CDP's USDC settle
+    # call fails with a cryptic "transfer amount exceeds balance" once the
+    # address gets parsed as raw bytes against the EVM ABI.
+    if chain_id and chain_id.startswith("eip155:"):
+        pay_to = (
+            settings.gecko_wallet_address_base
+            or settings.gecko_wallet_address
+            or "STUB_WALLET_ADDRESS_NOT_FOR_LIVE"
+        )
+    else:
+        pay_to = settings.gecko_wallet_address or "STUB_WALLET_ADDRESS_NOT_FOR_LIVE"
     routes: dict[str, RouteConfig] = {
         "POST /research": RouteConfig(
             accepts=[
