@@ -234,7 +234,9 @@ Replace existing roadmap copy with:
 
 Replace existing footer tagline with:
 
-> Built by builders who shipped on frames.ag wallets. Settled on Solana. Distributed via Claude Code skills. No subscriptions, no seats, no models named on the box.
+> Built by builders who ship. Distributed via Claude Code skills, listed in CDP Bazaar. Settles on Solana or Base — bring any x402-capable wallet. No subscriptions, no seats, no models named on the box.
+
+**Why this version (Sprint 12 update):** the prior footer named frames.ag and Solana exclusively. After Sprint 12, Gecko settles through frames.ag on Solana **and** through the CDP Facilitator on Base. The product is wallet-neutral by design (see `docs/runbooks/wallet-options.md`). The footer now reflects that without dropping the frames.ag relationship — frames.ag remains the default for Claude Code skill installs; it is no longer the only path.
 
 ---
 
@@ -244,6 +246,23 @@ Replace existing footer tagline with:
 - The "$0.10" hero anchor — moved to a sub-line; hero is now the action ("plan your next app"), not the price.
 - Token count / model name references in the cost receipt — replaced with capability lines.
 - Per-call cost language — replaced with session-level totals.
+- **Frames.ag-exclusive language (Sprint 12 update).** Any copy that read "settles on frames.ag" or implied a single wallet vendor is now phrased as "settles on Solana or Base — bring any x402-capable wallet." Rationale below.
+
+### Anti-positioning — wallet neutrality (Sprint 12)
+
+**Keep visible:** the frames.ag relationship as our **distribution path** for Claude Code skill installs. The Sprint 11 sub-fold "validation layer above frames.ag" remains correct — that line is about distribution, not product coupling.
+
+**Drop / rewrite anywhere it appears:**
+
+- "frames.ag wallets" as a singular footer credit → replaced with neutral phrasing in Section 10
+- Any cost-receipt block that says "PAID ON-CHAIN — frames.ag" → keep "PAID ON-CHAIN — Solana mainnet · x402" (network, not vendor)
+- Any roadmap / about line that implies Gecko depends on a single wallet → rewrite to "any x402-capable wallet"
+
+**Why:** the product runs above the wallet, not coupled to one. After Sprint 12 we settle on Solana via frames.ag **and** on Base via the CDP Facilitator; users can bring TWITSH, `awal`, custom — anything x402-capable. The wallet is how you pay, not what you bought. Naming a single vendor in the apex copy creates a false dependency story and weakens the "validation layer above any wallet" thesis we grow into.
+
+**What this is not:** a deprecation of frames.ag. The frames.ag partnership is alive — it remains the default wallet for the Claude Code skill, and the Sprint 11 sub-fold credits it as the distribution layer Gecko sits above. The change is positional: distribution is one wallet by default; product is wallet-agnostic by design.
+
+See `docs/runbooks/wallet-options.md` for the supported-wallet matrix.
 
 ---
 
