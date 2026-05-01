@@ -1,0 +1,89 @@
+name: contract-gate
+
+# S14-TEST-POLICY-03 — pre-deploy contract gate. Runs the universal
+# X402Client conformer contract tests + the generalized schema-drift
+# Literal tests on every PR that touches payments code or the gecko-api
+# routes that hand intents off to the payments lane. Blocks merge if any
+# fail.
+#
+# What this would have caught (Sprint 12 retro):
+#   * cae61ed — Solana payTo on a Base x402 route. The schema-drift /
+#     consistency policy in test_literal_consistency.py +
+#     test_payment_mode_consistency.py asserts every shared Literal stays
+#     aligned with its SQL mirror; when 'cdp' was added to one Literal
+#     but not the rest, the suite trips here in CI before merge.
+#   * 19d0a83 — CDP missing assetTransferMethod. The X402Client contract
+#     test exercises CDPX402Client.charge() through the real
+#     _build_payment_requirements + _build_payment_payload code path
+#     against a recorded SettleResponse fixture. A missing field in the
+#     extra dict (or a swapped scheme/network/asset) trips the
+#     fixture's expected_result mismatch.
+#
+# CI runs in stub-fixture mode by default — no live CDP credentials, no
+# `live_cdp` marker invocation. Operators run the gated /verify probe
+# manually via `GECKO_CDP_LIVE_VERIFY=1 uv run pytest -m live_cdp` before
+# any deploy that touches cdp_x402_client.py or cdp.py.
+
+on:
+  pull_request:
+    paths:
+      - "packages/gecko-core/src/gecko_core/payments/**"
+      - "packages/gecko-core/tests/payments/**"
+      - "packages/gecko-core/tests/test_payment_mode_consistency.py"
+      - "packages/gecko-core/tests/test_literal_consistency.py"
+      - "packages/gecko-core/tests/test_cdp_live_verify.py"
+      - "packages/gecko-api/src/gecko_api/**"
+      - "infra/supabase/migrations/**"
+      - ".github/workflows/contract-gate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract-gate:
+    name: Payments contract + schema-drift gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      # Cheaper LLM router for any incidental import-time evals.
+      LLM_ROUTER: openrouter
+      # Force stub mode end-to-end. Both env vars are read by gecko-api
+      # settings + gecko-core payments factory; setting both prevents a
+      # silent default flip.
+      X402_MODE: stub
+      X402_NETWORK: solana-devnet
+      GECKO_WALLET_ADDRESS: STUB
+      # Explicitly NOT set — the live_cdp marker self-skips when these
+      # are absent, so the gated /verify test stays green-as-skipped on
+      # every PR run.
+      GECKO_CDP_LIVE_VERIFY: ""
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.5.30"
+
+      - name: Sync workspace
+        run: uv sync --all-packages
+
+      - name: X402Client conformer contracts (stub-fixture mode)
+        run: uv run pytest packages/gecko-core/tests/payments/test_x402_client_contracts.py -v
+
+      - name: PaymentMode schema-drift consistency
+        run: uv run pytest packages/gecko-core/tests/test_payment_mode_consistency.py -v
+
+      - name: Generalized Literal schema-drift consistency
+        run: uv run pytest packages/gecko-core/tests/test_literal_consistency.py -v
+
+      - name: CDP live-verify (skipped without GECKO_CDP_LIVE_VERIFY=1)
+        # The live_cdp marker self-skips when GECKO_CDP_LIVE_VERIFY is
+        # unset; this step exists so the CI log shows the gated test was
+        # collected. Operators flip it on locally before deploying any
+        # change to cdp_x402_client.py.
+        run: uv run pytest -m live_cdp packages/gecko-core/tests/test_cdp_live_verify.py -v
