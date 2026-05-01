@@ -1,4 +1,4 @@
--- 010_pro_events.sql
+-- 20260427000400_pro_events.sql (renamed from 010_pro_events.sql, F19, 2026-04-30)
 -- Purpose: append-only event log that the Pro-tier SSE endpoint tails.
 --          Producers write turn_start/turn_end/final/error events with a
 --          monotonic per-session `seq`; the SSE handler poll-tails by

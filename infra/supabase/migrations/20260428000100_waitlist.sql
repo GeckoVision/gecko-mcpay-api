@@ -1,4 +1,4 @@
--- 011_waitlist.sql
+-- 20260428000100_waitlist.sql (renamed from 011_waitlist.sql, F19, 2026-04-30)
 -- Purpose: capture pre-launch email signups from geckovision.tech apex landing.
 --          Write-only sink. RLS enabled with no policies, so only the
 --          service role can read/write — the marketing landing's API route
@@ -15,7 +15,7 @@
 --   a separate analytics product. Both nullable (privacy-conscious clients
 --   strip them).
 
-CREATE TABLE waitlist (
+CREATE TABLE IF NOT EXISTS waitlist (
   id            BIGSERIAL PRIMARY KEY,
   email         TEXT NOT NULL,
   email_lower   TEXT GENERATED ALWAYS AS (lower(email)) STORED,
@@ -26,8 +26,8 @@ CREATE TABLE waitlist (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX idx_waitlist_email_lower ON waitlist (email_lower);
-CREATE INDEX idx_waitlist_created_at ON waitlist (created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_email_lower ON waitlist (email_lower);
+CREATE INDEX IF NOT EXISTS idx_waitlist_created_at ON waitlist (created_at DESC);
 
 -- Defense in depth: RLS on, no policies. Only service role can read/write.
 ALTER TABLE waitlist ENABLE ROW LEVEL SECURITY;

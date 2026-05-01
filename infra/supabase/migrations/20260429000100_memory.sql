@@ -1,4 +1,4 @@
--- 018_memory.sql
+-- 20260429000100_memory.sql (renamed from 018_memory.sql, F19, 2026-04-30)
 -- Purpose: native Gecko decision-memory layer (S5-MEM-01). Every paid loop
 --          step (verdict / scaffold / plan / pulse) appends a typed entry
 --          here so the next loop iteration can recall priorities, deltas,
@@ -46,18 +46,29 @@ ALTER TABLE memory ENABLE ROW LEVEL SECURITY;
 -- layer is bearer-auth, and project ownership is enforced at the application
 -- layer in the gecko-api / SessionStore. Callers using anon key only see
 -- entries for scopes the API has already authorized them to read.
-CREATE POLICY "read_all_memory" ON memory FOR SELECT USING (true);
-
--- Self-service privacy escape: a row may be deleted only when the requester
--- can prove ownership of the scope. v1 has no Supabase auth integration,
--- so this is a placeholder: deletes are gated at the application layer
--- (see memory.delete in gecko_core). Once auth lands we tighten this to
--- `auth.uid()::text = scope_id` for scope_type='user'.
-CREATE POLICY "delete_memory_authenticated" ON memory FOR DELETE USING (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='memory' AND policyname='read_all_memory') THEN
+    EXECUTE 'CREATE POLICY "read_all_memory" ON memory FOR SELECT USING (true)';
+  END IF;
+  -- Self-service privacy escape: a row may be deleted only when the requester
+  -- can prove ownership of the scope. v1 has no Supabase auth integration,
+  -- so this is a placeholder: deletes are gated at the application layer
+  -- (see memory.delete in gecko_core). Once auth lands we tighten this to
+  -- `auth.uid()::text = scope_id` for scope_type='user'.
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='memory' AND policyname='delete_memory_authenticated') THEN
+    EXECUTE 'CREATE POLICY "delete_memory_authenticated" ON memory FOR DELETE USING (true)';
+  END IF;
+END $$;
 
 -- Service role bypasses RLS by default — backend writes (auto-journal hooks)
--- use the service_role key.
-GRANT ALL ON TABLE memory TO service_role;
+-- use the service_role key. Skip GRANT if the role is missing (raw Postgres / CI).
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    GRANT ALL ON TABLE memory TO service_role;
+  END IF;
+END $$;
 
 COMMENT ON TABLE memory IS
   'Native Gecko decision-memory layer (S5-MEM-01). Typed entry types for the verdict→scaffold→plan→advise→pulse loop. Embedding computed at save-time from the textual representation of `value`.';
@@ -109,6 +120,12 @@ LANGUAGE sql STABLE AS $$
   LIMIT p_match_limit;
 $$;
 
-GRANT EXECUTE ON FUNCTION gecko_memory_match(TEXT, TEXT, VECTOR(1536), INT, FLOAT) TO service_role;
-GRANT EXECUTE ON FUNCTION gecko_memory_match(TEXT, TEXT, VECTOR(1536), INT, FLOAT) TO authenticated;
-GRANT EXECUTE ON FUNCTION gecko_memory_match(TEXT, TEXT, VECTOR(1536), INT, FLOAT) TO anon;
+DO $$
+DECLARE r TEXT;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['service_role', 'authenticated', 'anon'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+      EXECUTE format('GRANT EXECUTE ON FUNCTION gecko_memory_match(TEXT, TEXT, VECTOR(1536), INT, FLOAT) TO %I', r);
+    END IF;
+  END LOOP;
+END $$;

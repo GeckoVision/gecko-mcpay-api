@@ -1,4 +1,4 @@
--- 009_session_costs_agent.sql
+-- 20260427000300_session_costs_agent.sql (renamed from 009_session_costs_agent.sql, F19, 2026-04-30)
 -- Purpose: Pro tier per-agent cost attribution.
 --          Basic tier continues using rolled-up columns on `sessions`
 --          (cost_llm_usd, cost_embed_usd, cost_tavily_usd, cost_deepgram_usd).
@@ -15,7 +15,7 @@
 --   hot path for Pro UI's per-agent rollup:
 --     SELECT agent, SUM(cost_usd) FROM session_costs
 --      WHERE session_id = $1 AND agent IS NOT NULL GROUP BY agent;
-CREATE TABLE session_costs (
+CREATE TABLE IF NOT EXISTS session_costs (
   id          BIGSERIAL PRIMARY KEY,
   session_id  UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   line_item   TEXT NOT NULL CHECK (line_item IN ('llm','embed','tavily','deepgram')),
@@ -24,8 +24,8 @@ CREATE TABLE session_costs (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_session_costs_session ON session_costs (session_id);
-CREATE INDEX idx_session_costs_agent
+CREATE INDEX IF NOT EXISTS idx_session_costs_session ON session_costs (session_id);
+CREATE INDEX IF NOT EXISTS idx_session_costs_agent
   ON session_costs (session_id, agent)
   WHERE agent IS NOT NULL;
 

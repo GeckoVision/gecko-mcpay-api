@@ -1,4 +1,4 @@
--- 017_v1_source_telemetry.sql
+-- 20260429000000_v1_source_telemetry.sql (renamed from 017_v1_source_telemetry.sql, F19, 2026-04-30)
 -- Purpose: per-session telemetry for V1 source dispatcher (twit.sh, HN, Reddit,
 --          gecko_precedent). twit.sh is the only paid V1 source today; we
 --          carve a dedicated column out from cost_llm_usd so the dashboard
@@ -67,4 +67,9 @@ BEGIN
   END CASE;
 END $$;
 
-GRANT EXECUTE ON FUNCTION gecko_add_session_cost(UUID, TEXT, NUMERIC) TO service_role;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    GRANT EXECUTE ON FUNCTION gecko_add_session_cost(UUID, TEXT, NUMERIC) TO service_role;
+  END IF;
+END $$;

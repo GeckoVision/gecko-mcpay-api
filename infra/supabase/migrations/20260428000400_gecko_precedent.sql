@@ -1,4 +1,4 @@
--- 015_gecko_precedent.sql
+-- 20260428000400_gecko_precedent.sql (renamed from 015_gecko_precedent.sql, F19, 2026-04-30)
 -- Internal Gecko Flywheel — every Pro session writes a (idea_summary,
 -- verdict, comparables) row. Retrieved on future sessions by cosine
 -- similarity on idea_summary embedding. Privacy bound: idea_summary is
@@ -36,11 +36,25 @@ alter table gecko_precedent enable row level security;
 -- All authenticated reads allowed: the cross-session signal IS the value.
 -- Anonymous reads also allowed for now since RLS upstream of /research is
 -- bearer-auth at the API layer; revisit when we add Supabase auth integration.
-create policy "read_all_gecko_precedent" on gecko_precedent for select using (true);
-
--- Users can delete only their own rows (self-service privacy escape).
-create policy "delete_own_gecko_precedent" on gecko_precedent
-  for delete using (auth.uid() = user_id);
+do $$
+begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='gecko_precedent' and policyname='read_all_gecko_precedent') then
+    execute 'create policy "read_all_gecko_precedent" on gecko_precedent for select using (true)';
+  end if;
+  -- Users can delete only their own rows (self-service privacy escape).
+  -- auth.uid() is a Supabase helper; on raw Postgres (CI) it doesn't exist —
+  -- the policy creation will fail. Skip when the helper is unavailable.
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='gecko_precedent' and policyname='delete_own_gecko_precedent') then
+    -- Only attempt the policy if Supabase's auth schema is available.
+    -- On raw Postgres (CI), auth.uid() doesn't exist; skip the policy
+    -- since RLS is enforced at the application layer there anyway.
+    if exists (select 1 from pg_namespace where nspname = 'auth') then
+      execute 'create policy "delete_own_gecko_precedent" on gecko_precedent for delete using (auth.uid() = user_id)';
+    else
+      raise notice 'auth schema not available (raw Postgres / CI); skipping delete_own_gecko_precedent policy';
+    end if;
+  end if;
+end $$;
 
 comment on table gecko_precedent is
   'Internal Gecko Flywheel. Every Pro session persists a category abstraction + verdict + comparables. New sessions retrieve top-5 similar by cosine. Privacy: idea_summary is LLM-abstracted, never verbatim.';

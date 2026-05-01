@@ -1,4 +1,4 @@
--- 019_pulse_runs.sql
+-- 20260429000200_pulse_runs.sql (renamed from 019_pulse_runs.sql, F19, 2026-04-30)
 -- Persist every Advisor Panel pulse run so subsequent pulses can compare
 -- against the most recent prior panel for delta detection (S4-ADVISOR-05
 -- handed off this work; S5-API-02 lands the schema).
@@ -54,9 +54,18 @@ BEGIN
   END IF;
 END $$;
 
-GRANT ALL ON TABLE pulse_runs TO service_role;
-GRANT SELECT ON TABLE pulse_runs TO anon;
-GRANT SELECT ON TABLE pulse_runs TO authenticated;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    GRANT ALL ON TABLE pulse_runs TO service_role;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    GRANT SELECT ON TABLE pulse_runs TO anon;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    GRANT SELECT ON TABLE pulse_runs TO authenticated;
+  END IF;
+END $$;
 
 COMMENT ON TABLE pulse_runs IS
   'Advisor Panel pulse history. Each row is one panel run with per-voice deltas vs the immediately-prior run for the same project (or session, when project_id is NULL).';

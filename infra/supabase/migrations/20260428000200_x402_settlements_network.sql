@@ -1,4 +1,4 @@
--- 012_x402_settlements_network.sql
+-- 20260428000200_x402_settlements_network.sql (renamed from 012_x402_settlements_network.sql, F19, 2026-04-30)
 -- Purpose: attribute each settled x402 tx to either Solana devnet or mainnet so
 --          we can run the cutover canary (10% mainnet rollout) and answer
 --          forensic questions like "which sessions actually settled on mainnet

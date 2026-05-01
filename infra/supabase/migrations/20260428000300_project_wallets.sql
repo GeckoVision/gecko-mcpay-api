@@ -1,4 +1,4 @@
--- 013_project_wallets.sql
+-- 20260428000300_project_wallets.sql (renamed from 013_project_wallets.sql, F19, 2026-04-30)
 -- Purpose: per-project Privy embedded-wallet isolation (Sprint 2 S2-05/06).
 --          Each project gets its own Privy v2 wallet at creation time so
 --          spend is cryptographically bounded per project, not just policy-
@@ -79,4 +79,9 @@ BEGIN
   RETURN v_new_spent;
 END $$;
 
-GRANT EXECUTE ON FUNCTION gecko_increment_project_spent(UUID, NUMERIC) TO service_role;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    GRANT EXECUTE ON FUNCTION gecko_increment_project_spent(UUID, NUMERIC) TO service_role;
+  END IF;
+END $$;
