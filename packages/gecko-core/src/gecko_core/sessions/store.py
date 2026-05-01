@@ -20,7 +20,7 @@ from supabase import Client
 from gecko_core.db import create_supabase_client
 from gecko_core.models import SessionStatus, SourceInfo, Tier
 
-PaymentMode = Literal["stub", "live", "frames"]
+PaymentMode = Literal["stub", "live", "frames", "cdp"]
 
 CostKind = Literal["llm", "embed", "tavily", "deepgram", "twitsh", "v1_sources"]
 
