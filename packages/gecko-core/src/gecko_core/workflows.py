@@ -699,8 +699,143 @@ async def list_sources(
     return await store.list_sources(sid)
 
 
+async def degraded_research(
+    idea: str,
+    *,
+    progress_callback: ProgressCallback | None = None,
+) -> ResearchResult:
+    """S14-HARDEN-01: cache-only research path for backend-down scenarios.
+
+    Reads chunks for the most recent matching session out of the local
+    SQLite cache (``~/.gecko/cache.db``) and synthesizes a minimal
+    ``ResearchResult`` with the validation report carrying a
+    ``mode: degraded`` warning. No fresh sources, no payment gate, no
+    Supabase write — purely a fallback so a founder has *something*
+    actionable when Supabase is unreachable.
+
+    Raises ``RuntimeError`` when the cache is empty (operator should
+    surface this clearly: "no recent runs to fall back to").
+    """
+    from uuid import uuid4
+
+    from gecko_core.models import (
+        PRD,
+        BusinessPlan,
+        Citation,
+        Provenance,
+        ResearchResult,
+        SourceInfo,
+        ValidationReport,
+        Verdict,
+    )
+    from gecko_core.sessions.local_cache import read_recent_chunks
+
+    _emit(progress_callback, "Reading local cache (degraded mode)")
+    chunks = read_recent_chunks(idea_substring=idea[:60], limit=20)
+    if not chunks:
+        raise RuntimeError(
+            "degraded mode: local cache is empty; no recent sessions to fall "
+            "back to. Run `bb research` once successfully to populate the "
+            "cache, then re-run with --degraded when Supabase is down."
+        )
+
+    # Build a single-paragraph synthesis from the cached chunk text.
+    joined = " ".join(str(c.get("text") or "") for c in chunks)[:2000]
+    urls = [str(c.get("source_url") or "") for c in chunks if c.get("source_url")]
+    # De-dup URLs while preserving order.
+    seen: set[str] = set()
+    unique_urls: list[str] = []
+    for u in urls:
+        if u and u not in seen:
+            seen.add(u)
+            unique_urls.append(u)
+
+    # Synthesize Citations off the cached chunks. Provenance carries a
+    # synthetic 'local-cache' provider so the renderer can flag the
+    # degraded origin in the receipt footer.
+    citations: list[Citation] = []
+    for idx, c in enumerate(chunks[:10]):
+        url_str = str(c.get("source_url") or "")
+        if not url_str:
+            continue
+        try:
+            citations.append(
+                Citation(
+                    source_url=url_str,  # type: ignore[arg-type]
+                    chunk_index=int(c.get("chunk_index") or idx),
+                    similarity=0.5,
+                    provenance=Provenance(
+                        provider_name="local-cache",
+                        provider_kind="free",
+                    ),
+                )
+            )
+        except Exception:
+            continue
+
+    warning = (
+        "DEGRADED MODE — Supabase unreachable; this report was synthesized "
+        "from local cache only. No fresh sources fetched. Re-run without "
+        "--degraded once the backend recovers."
+    )
+    validation = ValidationReport(
+        market_size_signal="(unavailable in degraded mode)",
+        competitor_analysis=joined[:600] or "(no cached evidence)",
+        demand_evidence=joined[600:1200] or "(no cached evidence)",
+        risk_flags=[warning],
+        citations=citations,
+        gap_classification="Partial:segment",
+        gap_summary="degraded mode — gap classification unavailable",
+    )
+    business = BusinessPlan(
+        problem="(degraded mode — see validation report)",
+        icp="(unavailable)",
+        solution="(unavailable)",
+        market="(unavailable)",
+        business_model="(unavailable)",
+        channels="(unavailable)",
+        risks=[warning],
+        citations=citations,
+    )
+    prd = PRD(
+        v1_scope=["(degraded mode — re-run when backend is up)"],
+        v2_scope=[],
+        v3_scope=[],
+        acceptance_criteria=[],
+        non_functional=[],
+        success_metrics=[],
+        citations=citations,
+    )
+    sources_out: list[SourceInfo] = []
+    for u in unique_urls[:5]:
+        try:
+            sources_out.append(
+                SourceInfo(
+                    url=u,  # type: ignore[arg-type]
+                    type="web",
+                    chunk_count=sum(1 for c in chunks if c.get("source_url") == u),
+                    indexed_at=__import__("datetime").datetime.now(
+                        __import__("datetime").timezone.utc
+                    ),
+                )
+            )
+        except Exception:
+            continue
+
+    _emit(progress_callback, "Degraded report ready")
+    return ResearchResult(
+        session_id=str(uuid4()),
+        tier="basic",
+        business_plan=business,
+        validation_report=validation,
+        prd=prd,
+        sources=sources_out,
+        verdict=Verdict.REFINE,
+    )
+
+
 # Backward-compatible name used by `gecko_core.__init__` re-export.
 sources = list_sources
 
 
-__all__ = ["ask", "list_sources", "research", "sources"]
+__all__ = ["ask", "degraded_research", "list_sources", "research", "sources"]

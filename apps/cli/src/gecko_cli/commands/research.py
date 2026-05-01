@@ -86,6 +86,17 @@ async def _interactive_approval(candidates: list[SourceCandidate]) -> bool:
         "artifact. Defaults to GECKO_WALLET_ADDRESS_BASE (Phase 1)."
     ),
 )
+@click.option(
+    "--degraded",
+    is_flag=True,
+    default=False,
+    help=(
+        "S14-HARDEN-01: backend-down fallback. Synthesizes a validation "
+        "report from the local SQLite cache (~/.gecko/cache.db) without "
+        "touching Supabase or fresh sources. Skips the payment gate. "
+        "Receipt carries a clear `mode: degraded` warning."
+    ),
+)
 def research_cmd(
     idea: str,
     tier: str,
@@ -96,6 +107,7 @@ def research_cmd(
     publish: bool,
     publish_price: str | None,
     publish_as: str | None,
+    degraded: bool,
 ) -> None:
     """Discover, index, generate. The main workflow."""
     seed = list(urls) if urls else None
@@ -121,17 +133,32 @@ def research_cmd(
         def _progress(msg: str) -> None:
             progress.update(msg)
 
-        result = asyncio.run(
-            gecko_core.research(
-                idea=idea,
-                tier=tier,  # type: ignore[arg-type]
-                urls=seed,
-                auto_approve=auto_approve,
-                approval_callback=None if auto_approve else _interactive_approval,
-                progress_callback=_progress,
-                tier_preset=tier_preset,
+        if degraded:
+            # S14-HARDEN-01: skip the live workflow entirely. Cache-only
+            # synthesis, no Supabase, no payment gate.
+            from gecko_core.workflows import degraded_research
+
+            console.print(
+                "[bold yellow]Degraded mode[/bold yellow] — using local cache; "
+                "no fresh sources will be fetched."
             )
-        )
+            try:
+                result = asyncio.run(degraded_research(idea=idea, progress_callback=_progress))
+            except RuntimeError as exc:
+                console.print(f"[red]degraded mode failed:[/red] {exc}")
+                return
+        else:
+            result = asyncio.run(
+                gecko_core.research(
+                    idea=idea,
+                    tier=tier,  # type: ignore[arg-type]
+                    urls=seed,
+                    auto_approve=auto_approve,
+                    approval_callback=None if auto_approve else _interactive_approval,
+                    progress_callback=_progress,
+                    tier_preset=tier_preset,
+                )
+            )
 
     render_research_result(console, result)
     console.print(f"[dim]session_id: {result.session_id}[/dim]")
