@@ -21,6 +21,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -121,6 +122,92 @@ def _build_facilitator(settings: Settings) -> FacilitatorClient:
             base_url=settings.x402_facilitator_url,
         )
     return HTTPFacilitatorClient(FacilitatorConfig(url=settings.x402_facilitator_url))
+
+
+# S14-CDP-HARDEN-02 — payTo address-format check, fired at app startup.
+#
+# Sprint 12 lesson #4: a Solana base58 address was advertised as `payTo`
+# on Base/EVM routes (cae61ed). CDP parsed it as raw bytes against the
+# EVM ABI and failed `/settle` with a misleading "transfer amount
+# exceeds balance". The reactive fix lived for one sprint as a
+# unit-test guard (S12.5-TEST-03); promote it to a startup-time
+# assertion so a misconfigured deploy refuses to boot rather than
+# silently advertising a broken catalog.
+
+_EVM_ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
+_SOLANA_ADDRESS_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
+_PAYTO_STUB_SENTINEL = "STUB_WALLET_ADDRESS_NOT_FOR_LIVE"
+
+
+class ConfigurationError(RuntimeError):
+    """Raised at startup when a route's payTo doesn't match its network family.
+
+    The misconfigured route would either reject every settle (CDP path)
+    or, worse, advertise an address that looks valid to a relaxed buyer
+    and lands funds in the wrong wallet. Fail at boot, not on the first
+    paid request.
+    """
+
+
+def _assert_payto_format(network: str, pay_to: str, *, route: str) -> None:
+    """Assert ``pay_to`` is well-formed for ``network``.
+
+    Stub-mode sentinel (``STUB_WALLET_ADDRESS_NOT_FOR_LIVE``) is allowed
+    so dev / CI stays green when neither wallet is configured. In any
+    live mode the surrounding settings layer rejects the sentinel up
+    front; this layer is purely about *cross-network* mismatches.
+    """
+    if pay_to == _PAYTO_STUB_SENTINEL:
+        return
+    if network.startswith("eip155:"):
+        if not _EVM_ADDRESS_RE.match(pay_to):
+            raise ConfigurationError(
+                f"route {route!r} advertises network={network!r} but payTo={pay_to!r} "
+                "is not a valid EIP-55 EVM address (0x + 40 hex). "
+                "This is the cae61ed regression class — Solana base58 on a "
+                "Base/EVM route. Set GECKO_WALLET_ADDRESS_BASE."
+            )
+    elif network.startswith("solana"):
+        if pay_to.startswith("0x"):
+            raise ConfigurationError(
+                f"route {route!r} advertises network={network!r} but payTo={pay_to!r} "
+                "looks like an EVM address. Solana routes need a base58 address."
+            )
+        if not _SOLANA_ADDRESS_RE.match(pay_to):
+            raise ConfigurationError(
+                f"route {route!r} advertises network={network!r} but payTo={pay_to!r} "
+                "is not a valid base58 (32-44 chars, no 0/O/I/l)."
+            )
+    else:
+        # Unknown network family — refuse to advertise rather than hope.
+        raise ConfigurationError(
+            f"route {route!r} advertises unknown network family {network!r}; "
+            "only eip155:* and solana* are supported by the address-format check."
+        )
+
+
+def _assert_routes_payto_well_formed(routes: dict[str, RouteConfig]) -> None:
+    """Walk every advertised payment option; raise ``ConfigurationError`` on
+    the first mismatch. Called once at module import after ``_build_routes``.
+
+    Closes Sprint 12 lesson #4 by promoting the unit-test-only check to
+    a startup-time fail-fast.
+    """
+    for pattern, route in routes.items():
+        accepts = route.accepts if isinstance(route.accepts, list) else [route.accepts]
+        for opt in accepts:
+            # ``PaymentOption.pay_to`` is typed ``str | Callable`` in the
+            # x402 lib (the dynamic-resolver shape). We never use the
+            # callable form — every ``_build_routes`` site assigns a plain
+            # string — so narrow defensively. A callable here would be a
+            # forward incompatibility worth surfacing with a clear error.
+            pay_to = opt.pay_to
+            if not isinstance(pay_to, str):
+                raise ConfigurationError(
+                    f"route {pattern!r} payTo is a callable; the "
+                    "address-format check requires a static string."
+                )
+            _assert_payto_format(opt.network, pay_to, route=pattern)
 
 
 def _build_routes(settings: Settings) -> dict[str, RouteConfig]:
@@ -343,6 +430,9 @@ def _build_resource_server(facilitator: FacilitatorClient) -> x402ResourceServer
 _settings = Settings.from_env()
 _facilitator = _build_facilitator(_settings)
 _routes_config = _build_routes(_settings)
+# S14-CDP-HARDEN-02 — startup-time advertisement contract.
+# Fail fast if any route's payTo doesn't match its network family.
+_assert_routes_payto_well_formed(_routes_config)
 _resource_server = _build_resource_server(_facilitator)
 
 # Strong refs to background tasks so they aren't GC'd mid-flight. Tasks
@@ -792,15 +882,26 @@ class ScaffoldRequest(BaseModel):
 
 
 class PulseRequest(BaseModel):
-    """S8-API-01 — HTTP shape for POST /pulse.
+    """S8-API-01 / S14-PULSE-01 — HTTP shape for POST /pulse.
 
-    Either ``session_id`` or ``project_id`` is required; project_id wins
-    when both are given. Matches the MCP gecko_pulse tool.
+    Either ``session_id`` or ``project_id`` is required.
+
+    When ``session_id`` is provided, runs the v14 pulse engine: creates
+    a new ``phase="during_build"`` session row, re-runs the advisor
+    panel, and returns a PulseResult (verdict + gap_classification +
+    closing lines + windowed citations).
+
+    Legacy S5-API-02 surface (project_id only) still runs the
+    closing-line delta detection. session_id wins when both are given.
+
+    ``user_wallet`` is optional. When set, the route checks 12-pack
+    credits BEFORE the per-call x402 settle (S14-PULSE-02).
     """
 
     session_id: str | None = None
     project_id: str | None = None
     tier_preset: str = Field(default="balanced", pattern="^(quality|balanced|budget|free)$")
+    user_wallet: str | None = None
 
 
 # ---------------------------------------------------------------------------
