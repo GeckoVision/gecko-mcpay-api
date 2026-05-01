@@ -512,6 +512,12 @@ class SessionStore:
         """Bulk-insert chunks for a source. Returns the count inserted.
 
         `chunks` is a list of (chunk_index, text, embedding) tuples.
+
+        Chunked at the HTTP layer to keep individual requests under the
+        default httpx read timeout. Some pages (e.g. wiki dumps) emit
+        thousands of chunks; a single 13 MB upsert with 1536-dim vectors
+        regularly trips supabase-py's read timeout. Batching at 500 keeps
+        each request ~3 MB.
         """
         if not chunks:
             return 0
@@ -526,12 +532,18 @@ class SessionStore:
             for idx, text, embedding in chunks
         ]
 
-        def _insert() -> list[dict[str, Any]]:
-            res = self._client.table(self.CHUNKS_TABLE).insert(rows).execute()
+        BATCH_SIZE = 500
+
+        def _insert_batch(batch: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            res = self._client.table(self.CHUNKS_TABLE).insert(batch).execute()
             return cast(list[dict[str, Any]], res.data or [])
 
-        inserted = await asyncio.to_thread(_insert)
-        return len(inserted)
+        total_inserted = 0
+        for i in range(0, len(rows), BATCH_SIZE):
+            batch = rows[i : i + BATCH_SIZE]
+            inserted = await asyncio.to_thread(_insert_batch, batch)
+            total_inserted += len(inserted)
+        return total_inserted
 
     # ------------------------------------------------------------------
     # Projects (per-project vaults)
