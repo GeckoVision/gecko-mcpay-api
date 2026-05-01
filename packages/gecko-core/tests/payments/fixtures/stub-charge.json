@@ -1,0 +1,17 @@
+{
+  "_comment": "S14-TEST-POLICY-01 — fixture for StubX402Client. The stub never hits the network; we record the canonical PaymentResult shape it returns so any drift (e.g. swapping the status Literal, dropping tx_signature) trips the contract test.",
+  "intent": {
+    "intent_id": "stub-contract-fixture-001",
+    "session_id": "00000000-0000-0000-0000-000000000001",
+    "tier": "basic",
+    "amount_usd": "0.01"
+  },
+  "expected_result": {
+    "intent_id": "stub-contract-fixture-001",
+    "status": "success",
+    "tx_signature": null,
+    "error": null
+  },
+  "expected_supported_networks": [],
+  "expected_facilitator_id": "stub"
+}

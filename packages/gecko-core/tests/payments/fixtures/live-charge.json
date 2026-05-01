@@ -1,0 +1,40 @@
+{
+  "_comment": "S14-TEST-POLICY-01 — recorded frames.ag transfer-solana response for LiveX402Client. Replay via respx so CI exercises the real POST shape, response parsing, and Helius confirmation poll path without burning USDC. The tx hash is a synthetic 64-byte hex; Helius is mocked to report 'confirmed' on first poll.",
+  "intent": {
+    "intent_id": "live-contract-fixture-001",
+    "session_id": "00000000-0000-0000-0000-000000000002",
+    "tier": "basic",
+    "amount_usd": "0.01"
+  },
+  "agent_wallet_config": {
+    "apiToken": "fixture-bearer-token-do-not-log",
+    "username": "gecko-fixture",
+    "solanaAddress": "GeCkoFixture1111111111111111111111111111111"
+  },
+  "treasury_address": "GeCkoTreasury11111111111111111111111111111",
+  "frames_response": {
+    "status_code": 200,
+    "body": {
+      "txHash": "5J7pRecordedTxHash5J7pRecordedTxHash5J7pRecordedTxHash5J7pRecordedT",
+      "status": "submitted"
+    }
+  },
+  "rpc_response": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "context": {"slot": 250000000},
+      "value": [
+        {"slot": 250000000, "confirmations": 32, "err": null, "confirmationStatus": "confirmed"}
+      ]
+    }
+  },
+  "expected_result": {
+    "intent_id": "live-contract-fixture-001",
+    "status": "success",
+    "tx_signature": "5J7pRecordedTxHash5J7pRecordedTxHash5J7pRecordedTxHash5J7pRecordedT",
+    "error": null
+  },
+  "expected_supported_networks": ["solana-mainnet", "solana-devnet"],
+  "expected_facilitator_id": "frames-solana"
+}

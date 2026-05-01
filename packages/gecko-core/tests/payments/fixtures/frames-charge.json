@@ -1,0 +1,40 @@
+{
+  "_comment": "S14-TEST-POLICY-01 — recorded frames.ag response for FramesX402Client. Same wire path as LiveX402Client today (FramesX402Client subclasses it); fixture is duplicated so the V2 split (when frames.ag adds policy controls / x402_fetch) trips the test rather than passing silently.",
+  "intent": {
+    "intent_id": "frames-contract-fixture-001",
+    "session_id": "00000000-0000-0000-0000-000000000003",
+    "tier": "basic",
+    "amount_usd": "0.01"
+  },
+  "agent_wallet_config": {
+    "apiToken": "fixture-bearer-token-do-not-log",
+    "username": "gecko-fixture",
+    "solanaAddress": "GeCkoFixture1111111111111111111111111111111"
+  },
+  "treasury_address": "GeCkoTreasury11111111111111111111111111111",
+  "frames_response": {
+    "status_code": 200,
+    "body": {
+      "txHash": "F4mEsRecordedTxHashF4mEsRecordedTxHashF4mEsRecordedTxHashF4mEsRec",
+      "status": "submitted"
+    }
+  },
+  "rpc_response": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "context": {"slot": 250000001},
+      "value": [
+        {"slot": 250000001, "confirmations": 32, "err": null, "confirmationStatus": "finalized"}
+      ]
+    }
+  },
+  "expected_result": {
+    "intent_id": "frames-contract-fixture-001",
+    "status": "success",
+    "tx_signature": "F4mEsRecordedTxHashF4mEsRecordedTxHashF4mEsRecordedTxHashF4mEsRec",
+    "error": null
+  },
+  "expected_supported_networks": ["solana-mainnet", "solana-devnet"],
+  "expected_facilitator_id": "frames"
+}

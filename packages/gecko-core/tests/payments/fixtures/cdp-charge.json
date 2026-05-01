@@ -1,0 +1,29 @@
+{
+  "_comment": "S14-TEST-POLICY-01 — recorded CDP /settle SettleResponse. Replayed via an injected _FacilitatorLike so the contract test exercises CDPX402Client._map_response (the wire-shape boundary) without hitting CDP. The companion live-toggle test in test_cdp_live_verify.py runs only with GECKO_CDP_LIVE_VERIFY=1 (S12.5-TEST-04).",
+  "intent": {
+    "intent_id": "cdp-contract-fixture-001",
+    "session_id": "00000000-0000-0000-0000-000000000004",
+    "tier": "basic",
+    "amount_usd": "0.01"
+  },
+  "treasury_address": "0x000000000000000000000000000000000000dEaD",
+  "settle_response": {
+    "success": true,
+    "transaction": "0xabc1230000000000000000000000000000000000000000000000000000000000",
+    "network": "base-mainnet",
+    "payer": "0x1111111111111111111111111111111111111111"
+  },
+  "expected_result": {
+    "intent_id": "cdp-contract-fixture-001",
+    "status": "success",
+    "tx_signature": "0xabc1230000000000000000000000000000000000000000000000000000000000",
+    "error": null
+  },
+  "expected_supported_networks": [
+    "base-mainnet",
+    "base-sepolia",
+    "eip155:8453",
+    "eip155:84532"
+  ],
+  "expected_facilitator_id": "cdp-base"
+}
