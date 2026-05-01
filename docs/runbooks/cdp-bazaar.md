@@ -132,57 +132,91 @@ runbook for first-settle is `docs/runbooks/cdp-bazaar-listing.md`
        `https://api.cdp.coinbase.com/platform/v2/x402/discovery/search?query=<keyword>`
        and confirm the route shows up.
 
-## 7. Inspect public verdicts (S12-HARDEN-03 audit trail)
+## 7. Inspect public verdicts (S12-HARDEN-03 / S12-HARDEN-05 audit trail)
 
 Every successful `/research` and `/plan` call writes one judge transcript
-record to disk so any verdict that lands in Bazaar is auditable for
-compliance and post-hoc review of misranked verdicts. Capture lives in
+record so any verdict that lands in Bazaar is auditable for compliance
+and post-hoc review of misranked verdicts. Capture lives in
 `packages/gecko-core/src/gecko_core/orchestration/transcripts.py`
 (`capture()` is invoked from `workflows.py::research()` after the verdict
 is finalized, before the auto-journal step). Schema mirrors the eval-side
 capture in `tests/eval/runner.py::_archive_live_transcript`.
 
-**Path resolution** (in order):
+**Backend (S12-HARDEN-05):** `GECKO_TRANSCRIPT_STORE` selects one of:
 
-1. `GECKO_TRANSCRIPT_DIR` env override.
-2. `/var/lib/gecko/judge_transcripts/` when the parent is writable
-   (production VMs / persistent volume).
-3. `/tmp/gecko/transcripts/` fallback (ECS Fargate ephemeral filesystem,
-   local dev). The startup log line records which path was chosen.
+| Mode         | When                                                              |
+|--------------|-------------------------------------------------------------------|
+| `mongo`      | Production default when `MONGODB_URI` is set. Writes to the       |
+|              | `judge_transcripts` collection on the same Mongo instance the     |
+|              | twit.sh cache uses. Indexes: `unique(session_id)` (upsert /       |
+|              | last-write-wins on re-run) and compound `(actual_verdict_v2,      |
+|              | created_at desc)` for "every BUILD verdict in last 30d".          |
+| `filesystem` | Local dev / CI / Mongo fallback. One JSON file per session_id at  |
+|              | `GECKO_TRANSCRIPT_DIR` → `/var/lib/gecko/judge_transcripts/` →    |
+|              | `/tmp/gecko/transcripts/`.                                        |
+| `noop`       | Drop on the floor. Rare; differs from `CAPTURE=false` in intent.  |
 
-**Toggle:** `GECKO_TRANSCRIPT_CAPTURE=false` disables. Default true in
-production; the test conftest flips it false so pytest doesn't litter.
+If `mongo` is selected and the write fails (network blip, auth fail) the
+dispatcher logs a WARN and falls through to the filesystem store so a
+verdict is never lost. The verdict path itself is never blocked.
 
-**Storage decision (S12):** filesystem, per data-engineer's S13 memo
-(`docs/strategy/sprint-13+-data-engineer-memo-2026-04-30.md` § Theme 1
-"Transcripts archive"). Promote to a thin `judge_transcripts (id,
-session_id, transcript_path, created_at)` index table only if S13 rubric
-v2 needs cross-run SQL queries. No transcript text in Postgres.
+**Toggle:** `GECKO_TRANSCRIPT_CAPTURE=false` disables capture entirely.
+Default true in production; the test conftest flips it false so pytest
+doesn't litter $TMP / hit Mongo.
 
 **ECS Fargate note:** Fargate's ephemeral filesystem evaporates on task
-restart. For production listing, mount a persistent volume at
-`/var/lib/gecko/judge_transcripts` (EFS or sidecar S3-sync) before
-flipping the listing live. The fallback to `/tmp/gecko/transcripts/`
-keeps the API alive but the audit trail is lost on restart.
+restart, which is why prod defaults to Mongo. The filesystem fallback
+keeps the API alive on a Mongo outage, but those records are lost on
+the next container restart — investigate the Mongo outage promptly.
 
-### Audit query — single verdict by session_id
+### mongosh queries (primary path)
 
-```bash
-jq '.actual_verdict_v2, .judge_prose, .gap_classification, .gap_summary' \
-  /var/lib/gecko/judge_transcripts/<session_id>.json
+Connect with the same `MONGODB_URI` the API uses, then:
+
+```js
+// Single verdict by session_id
+db.judge_transcripts.find({ session_id: "<uuid>" })
+
+// Every BUILD verdict in the last 20 records (uses the compound index)
+db.judge_transcripts
+  .find({ actual_verdict_v2: "BUILD" })
+  .sort({ created_at: -1 })
+  .limit(20)
+
+// All KILL verdicts in the last 24h
+db.judge_transcripts.find({
+  actual_verdict_v2: "KILL",
+  created_at: { $gte: new Date(Date.now() - 24*60*60*1000) },
+})
+
+// Verdict mix — judge said X, structured surface said Y
+db.judge_transcripts.find({
+  parsed_verdict: { $ne: "UNKNOWN" },
+  $expr: { $ne: ["$parsed_verdict", "$actual_verdict_v2"] },
+})
+
+// Aggregate verdict distribution
+db.judge_transcripts.aggregate([
+  { $group: { _id: "$actual_verdict_v2", count: { $sum: 1 } } },
+])
 ```
 
-### Audit query — all KILL verdicts in the last 24h
+### jq one-liners (filesystem-fallback path)
+
+When the active store is `filesystem` (or after a Mongo outage that fell
+through to disk), the same queries against the JSON files:
 
 ```bash
+# Single verdict by session_id
+jq '.actual_verdict_v2, .judge_prose, .gap_classification, .gap_summary' \
+  /var/lib/gecko/judge_transcripts/<session_id>.json
+
+# All KILL verdicts in the last 24h
 find /var/lib/gecko/judge_transcripts -mtime -1 -name '*.json' \
   -exec jq -r 'select(.actual_verdict_v2 == "KILL")
     | [.session_id, .idea_text, .gap_classification] | @tsv' {} \;
-```
 
-### Audit query — verdicts where the judge said one thing but the structured surface said another
-
-```bash
+# Verdicts where the judge said one thing but the structured surface said another
 find /var/lib/gecko/judge_transcripts -name '*.json' -exec jq -r '
   select(.parsed_verdict != "UNKNOWN" and .parsed_verdict != .actual_verdict_v2)
   | [.session_id, .parsed_verdict, .actual_verdict_v2, .gap_classification] | @tsv

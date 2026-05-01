@@ -31,7 +31,12 @@ except ImportError:  # pragma: no cover - motor is in deps; guard for stripped e
 def _mongo_uri() -> str | None:
     # Read env directly so we don't force a settings import on cold paths.
     uri = os.environ.get("MONGODB_URI") or os.environ.get("MONGO_URI")
-    return uri or None
+    if not uri or uri == "__unset__":
+        # `__unset__` is the SSM sentinel used by infra/push-ssm-params.sh
+        # so ECS task defs can resolve `secrets:` ValueFrom before Mongo is
+        # wired up. Treat it as truly unset.
+        return None
+    return uri
 
 
 def is_mongo_configured() -> bool:

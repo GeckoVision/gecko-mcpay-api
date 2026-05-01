@@ -498,6 +498,17 @@ Resources:
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/TWITSH_WALLET_ADDRESS
             - Name: TWITSH_BASE_URL
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/TWITSH_BASE_URL
+            # S8/S11 — MongoDB connection (twit.sh cache + S12-HARDEN-05
+            # judge_transcripts store). `__unset__` sentinel keeps the task
+            # booting before Mongo is wired up; gecko_core.cache.mongo and
+            # gecko_core.orchestration.transcripts both treat it as unset.
+            - Name: MONGODB_URI
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/MONGODB_URI
+            - Name: MONGODB_DB
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/MONGODB_DB
+            # S12-HARDEN-05 — judge transcript store: mongo | filesystem | noop.
+            - Name: GECKO_TRANSCRIPT_STORE
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/GECKO_TRANSCRIPT_STORE
           LogConfiguration:
             LogDriver: awslogs
             Options:

@@ -25,6 +25,12 @@ def _load_test_env() -> None:
     # capture path (e.g. tests/orchestration/test_transcripts.py) flip this
     # back on with monkeypatch.setenv + GECKO_TRANSCRIPT_DIR.
     os.environ.setdefault("GECKO_TRANSCRIPT_CAPTURE", "false")
+    # S12-HARDEN-05 — default the store to filesystem in tests so a developer
+    # with `MONGODB_URI` in their .env doesn't accidentally write transcripts
+    # to a real Mongo instance during the suite. Tests that exercise the
+    # mongo path (tests/orchestration/test_transcripts_mongo.py) flip this
+    # back to "mongo" via monkeypatch.setenv.
+    os.environ.setdefault("GECKO_TRANSCRIPT_STORE", "filesystem")
 
 
 @pytest.fixture

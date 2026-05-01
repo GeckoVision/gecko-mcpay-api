@@ -95,6 +95,16 @@ declare -A PARAMS=(
   [TWITSH_WALLET_ADDRESS]="TWITSH_WALLET_ADDRESS"
   [TWITSH_ENABLED]="TWITSH_ENABLED"
   [TWITSH_BASE_URL]="TWITSH_BASE_URL"
+
+  # S8/S11 — MongoDB connection used by the twit.sh cache and (S12-HARDEN-05)
+  # the production judge_transcripts store. Single instance, double-purposed.
+  [MONGODB_URI]="MONGODB_URI"
+  [MONGODB_DB]="MONGODB_DB"
+
+  # S12-HARDEN-05 — judge transcript backend selector. One of
+  # mongo | filesystem | noop. Default is mongo when MONGODB_URI is set;
+  # ECS Fargate has ephemeral disk so mongo is the only durable choice.
+  [GECKO_TRANSCRIPT_STORE]="GECKO_TRANSCRIPT_STORE"
 )
 
 echo "==> Region:     $REGION"
@@ -127,6 +137,13 @@ declare -A REQUIRED_AT_BOOT=(
   [TWITSH_WALLET_ADDRESS]="__unset__"
   [TWITSH_ENABLED]="false"
   [TWITSH_BASE_URL]="https://x402.twit.sh"
+  # S12-HARDEN-05 — keep ECS booting cleanly even before Mongo is wired up.
+  # Sentinel "__unset__" on MONGODB_URI causes the transcripts dispatcher to
+  # silently degrade to the filesystem store; gecko_core.cache.mongo treats
+  # the same sentinel as truly unset (cache no-ops on miss).
+  [MONGODB_URI]="__unset__"
+  [MONGODB_DB]="gecko_cache"
+  [GECKO_TRANSCRIPT_STORE]="mongo"
 )
 
 SKIPPED=()

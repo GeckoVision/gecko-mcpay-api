@@ -55,4 +55,7 @@ dev = [
     # Eval harness: ideas.yaml loader.
     "PyYAML>=6.0",
     "types-PyYAML>=6.0",
+    # S12-HARDEN-05: in-process Mongo for transcript-store tests. CI runs
+    # without a real Mongo; mongomock provides a drop-in pymongo fake.
+    "mongomock>=4.1",
 ]
