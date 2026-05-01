@@ -111,11 +111,24 @@ def _discover_recent_projects(since_days: int) -> list[str]:
     default=False,
     help="Persist the rendered review to docs/sprint-reviews/YYYY-MM-DD.md.",
 )
+@click.option(
+    "--write-to",
+    "write_to",
+    type=click.Path(file_okay=True, dir_okay=False, writable=True, resolve_path=False),
+    default=None,
+    help=(
+        "S14-DOGFOOD-01: write the rendered retro to a specific path "
+        "(closes the dogfood loop without manual capture). When set, "
+        "implies --write-doc and overrides the default "
+        "docs/sprint-reviews/<YYYY-MM-DD>.md target."
+    ),
+)
 def sprint_review_cmd(
     since: str,
     project_id: str | None,
     tier_preset: str,
     write_doc: bool,
+    write_to: str | None,
 ) -> None:
     """Synthesize a sprint review for the current repo.
 
@@ -192,11 +205,17 @@ def sprint_review_cmd(
     )
     console.print(panel)
 
-    if write_doc:
-        doc_dir = Path.cwd() / "docs" / "sprint-reviews"
-        doc_dir.mkdir(parents=True, exist_ok=True)
-        today = datetime.now(tz=UTC).date().isoformat()
-        doc_path = doc_dir / f"{today}.md"
+    # S14-DOGFOOD-01: --write-to wins over --write-doc default path.
+    # Setting --write-to implies write enabled even without --write-doc.
+    if write_to is not None or write_doc:
+        if write_to is not None:
+            doc_path = Path(write_to)
+            doc_path.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            doc_dir = Path.cwd() / "docs" / "sprint-reviews"
+            doc_dir.mkdir(parents=True, exist_ok=True)
+            today = datetime.now(tz=UTC).date().isoformat()
+            doc_path = doc_dir / f"{today}.md"
         doc_path.write_text(
             _render_review_markdown(review.model_dump(mode="json")),
             encoding="utf-8",

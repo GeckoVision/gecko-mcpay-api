@@ -71,6 +71,32 @@ def test_sprint_review_writes_doc(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     assert "Proposed next" in body
 
 
+def test_sprint_review_write_to_explicit_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """S14-DOGFOOD-01: --write-to overrides the default doc path so the
+    meta-tool fully closes the dogfood loop without manual capture."""
+
+    async def _fake(**_: Any) -> SprintReview:
+        return _canned_review()
+
+    import gecko_core.review as review_pkg
+
+    monkeypatch.setattr(review_pkg, "build_review", _fake)
+    target = tmp_path / "custom" / "retro.md"
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["sprint-review", "--since", "14d", "--write-to", str(target)],
+        env={"COLUMNS": "240"},
+    )
+    assert result.exit_code == 0, result.output
+    assert target.exists()
+    body = target.read_text(encoding="utf-8")
+    assert "ship feature X" in body
+    assert "Proposed next" in body
+
+
 def test_sprint_review_rejects_bad_since() -> None:
     runner = CliRunner()
     result = runner.invoke(cli, ["sprint-review", "--since", "garbage"])
