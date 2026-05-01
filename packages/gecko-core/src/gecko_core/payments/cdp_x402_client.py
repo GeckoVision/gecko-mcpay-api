@@ -112,6 +112,19 @@ def _build_payment_requirements(
     # Pydantic v2 field names are snake_case; the wire aliases (``payTo``,
     # ``maxTimeoutSeconds``) are produced by ``model_dump(by_alias=True)``
     # at the HTTP boundary, not the constructor.
+    # CDP requires the USDC EIP-712 domain in `extra` so it can verify the
+    # transferWithAuthorization signature. Verified against publish.new's
+    # 402 challenge in docs/strategy/sprint-12-chore-probes-2026-04-30.md.
+    # USDC on Base/Sepolia uses name="USD Coin", version="2", verifyingContract
+    # = the same USDC contract the funds move from.
+    extra: dict[str, Any] = {}
+    if network in (BASE_MAINNET_NETWORK_ID, BASE_SEPOLIA_NETWORK_ID):
+        extra = {
+            "name": "USD Coin",
+            "version": "2",
+            "verifyingContract": asset,
+        }
+
     return PaymentRequirements(
         scheme="exact",
         network=network,
@@ -119,7 +132,7 @@ def _build_payment_requirements(
         amount=str(_usdc_smallest_units(amount_usd)),
         pay_to=pay_to,
         max_timeout_seconds=max_timeout_seconds,
-        extra={},
+        extra=extra,
     )
 
 
