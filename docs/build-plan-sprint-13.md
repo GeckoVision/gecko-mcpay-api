@@ -80,6 +80,31 @@ Web3 pre-payment so S15 Cloudflare integration is a config add, not a 3-class re
   **Owner:** web3-engineer
   **Acceptance:** existing frames.ag + CDP flows pass tests under the Protocol; factory routes correctly per `X402_NETWORK`; `http-cloudflare` slot raises the explicit error.
 
+### Track E — Commoditization expansion (S13-COMMO-01..03) **MED**
+
+Per user prompt 2026-04-30: "beyond judgments, what else can we commoditize?" The 3 highest-leverage candidates that reuse existing infra:
+
+- **S13-COMMO-01 — Standalone advisor voice pricing.** `gecko_advise <session_id> --voice cto` already exists; today it's free (per Sprint 4 deferral). Wire x402 charge: $0.05 per voice via the same payment client used by `gecko_research`. Surface in `bb economics` per-voice line items.
+  **Owner:** web3-engineer (payment hop) + software-engineer (CLI surface)
+  **Acceptance:** paid `gecko_advise` lands a real receipt; `bb economics` shows per-voice charge.
+
+- **S13-COMMO-02 — Session knowledge base queries.** `gecko_ask <session_id>` already exists; wire x402 charge ($0.01-0.05 per query) so other agents can pay to query an already-researched corpus. Shifts a tool from "free dev convenience" to "monetizable surface."
+  **Owner:** software-engineer + web3-engineer
+  **Acceptance:** `gecko_ask <session_id>` charges per call; rate-limit + budget guards in place.
+
+- **S13-COMMO-03 — Classify-as-a-service.** Expose `mcp__gecko__gecko_classify <idea>` returning a paid "here are the 6 sources you should hit, with priority weights." $0.10/call. The classifier is genuine first-party IP; selling classification without selling the verdict opens the developer-tools market.
+  **Owner:** software-engineer + ai-ml-engineer (classifier prompt review)
+  **Acceptance:** new MCP tool + CLI command + Bazaar listing metadata.
+
+These three add SKUs to the existing pricing ladder without expanding the moat surface. Together: estimated <2 days of engineering, real new revenue lines to test.
+
+### Track F — Wallet panel implementation (S13-WALLET-01) **MED**
+
+Spec lands in Sprint 12 Track D (`docs/strategy/wallet-panel-spec-2026-04-30.md`). Implementation here.
+
+- **S13-WALLET-01 — `bb wallet` panel.** Single command shows all configured wallets (frames.ag/TWITSH/awal/publish.new/Paragraph creator) with balances, funding paths, per-rail health. Subcommands: `bb wallet add`, `bb wallet show`, `bb wallet fund`. Match `bb doctor` Rich-table style. **Owner:** product-designer (Rich layout) + software-engineer (state aggregation).
+  **Acceptance:** `bb wallet show` returns all wallets in <2s; first-run with no wallet auto-prompts setup; `bb wallet fund frames.ag` surfaces the OTP+faucet path; `bb wallet fund cdp` surfaces the Coinbase onramp path.
+
 ### Track D — Citation creator attribution **MED**
 
 Per product-designer S13-PD-01. Pre-payment for S14 Paragraph creator surface — receipt anatomy lands first, Paragraph fills it in.
