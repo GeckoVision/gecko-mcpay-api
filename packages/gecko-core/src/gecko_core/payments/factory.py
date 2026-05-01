@@ -149,6 +149,83 @@ def facilitator_id_for_network(network_id: str | None) -> str:
     return "unknown"
 
 
+def resolve_facilitator_client(
+    *,
+    mode: str,
+    network_id: str | None,
+    facilitator_url: str | None,
+    cdp_api_key_id: str | None = None,
+    cdp_api_key_secret: str | None = None,
+) -> object:
+    """Network-aware factory for the **x402-lib middleware** client.
+
+    Sprint 14 S14-PAY-MIGRATE-01: gecko-api previously had an inline
+    ``if settings.x402_network == 'solana-mainnet'`` dispatch in
+    ``main._build_facilitator``. The dispatch is now centralized here so
+    a future Cloudflare / Awal / Base-Sepolia integration is one branch
+    in one module, not a hunt across transports.
+
+    This sits alongside :func:`resolve_client` (which returns the
+    Gecko-internal ``X402Client`` for the settle path). The two functions
+    serve different abstractions:
+
+      * ``resolve_client`` → settles a single Gecko-issued ``PaymentIntent``
+        through one of our concrete clients (Stub/Live/Frames/CDP).
+      * ``resolve_facilitator_client`` → the upstream x402-lib's
+        ``FacilitatorClient`` used by the FastAPI middleware to verify/
+        settle inbound 402 challenges. Same backend (CDP, public x402.org)
+        but a different in-process protocol surface.
+
+    Resolution table mirrors the X402Client factory:
+      * ``mode == 'stub'`` → returns the gecko-api stub facilitator.
+      * ``solana-mainnet`` (or ``base-mainnet``) → CDP HTTP facilitator
+        with JWT auth.
+      * Anything else → public ``HTTPFacilitatorClient`` keyed by
+        ``facilitator_url``.
+
+    The function returns ``object`` because importing the x402 lib types
+    here would re-introduce the import edge we explicitly removed when
+    splitting protocol → factory → client. Callers in gecko-api (where
+    the lib types are first-class) cast at the call site.
+    """
+    # Lazy imports — keep the leaf modules importable without dragging
+    # in optional deps. ``gecko_core`` cannot import from gecko-api, so
+    # the stub branch returns ``None`` and the caller substitutes its
+    # own stub. Only the live + CDP paths are owned here (they are
+    # Gecko-internal concerns regardless of which transport calls them).
+    from x402.http.facilitator_client import HTTPFacilitatorClient
+    from x402.http.facilitator_client_base import FacilitatorConfig
+
+    from gecko_core.payments.cdp import CDPCredentials, build_cdp_facilitator_client
+
+    if mode == "stub":
+        # Stub is gecko-api-shaped; the caller injects it. We return
+        # None so a missing-stub-injection bug surfaces immediately.
+        raise ValueError(
+            "resolve_facilitator_client(mode='stub'): the stub facilitator "
+            "lives in gecko-api; resolve via your transport's stub instead."
+        )
+
+    if not facilitator_url:
+        raise ValueError(f"resolve_facilitator_client(mode={mode!r}): facilitator_url is required")
+
+    # Mainnet networks ride CDP with JWT auth. The credentials must be
+    # non-sentinel — the caller (Settings.from_env) already validates,
+    # but we re-assert here so a future caller that bypasses Settings
+    # gets a clear error instead of a confusing 401 at first request.
+    if (network_id or "").strip().lower() in ("solana-mainnet", "base-mainnet"):
+        if not cdp_api_key_id or not cdp_api_key_secret:
+            raise ValueError(
+                f"resolve_facilitator_client(network={network_id!r}): "
+                "CDP_API_KEY_ID and CDP_API_KEY_SECRET are required for mainnet"
+            )
+        creds = CDPCredentials.from_env_values(cdp_api_key_id, cdp_api_key_secret)
+        return build_cdp_facilitator_client(creds, base_url=facilitator_url)
+
+    # Devnet / public x402.org path — no JWT, just the URL.
+    return HTTPFacilitatorClient(FacilitatorConfig(url=facilitator_url))
+
+
 def resolve_client(
     intent: PaymentIntent | None = None,
     *,

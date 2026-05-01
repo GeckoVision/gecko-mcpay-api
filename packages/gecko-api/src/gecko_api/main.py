@@ -35,7 +35,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from gecko_core.models import AskResult, SourceInfo, Tier
-from gecko_core.payments.cdp import CDPCredentials, build_cdp_facilitator_client
+from gecko_core.payments.factory import resolve_facilitator_client
 from gecko_core.sessions.store import SessionStore
 from pydantic import BaseModel, Field
 from slowapi import Limiter
@@ -43,8 +43,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from starlette.responses import JSONResponse, StreamingResponse
 from x402 import x402ResourceServer
-from x402.http.facilitator_client import HTTPFacilitatorClient
-from x402.http.facilitator_client_base import FacilitatorClient, FacilitatorConfig
+from x402.http.facilitator_client_base import FacilitatorClient
 from x402.http.middleware.fastapi import PaymentMiddlewareASGI
 from x402.http.types import PaymentOption, RouteConfig
 from x402.mechanisms.svm.exact import ExactSvmServerScheme
@@ -89,39 +88,36 @@ logger = logging.getLogger(__name__)
 def _build_facilitator(settings: Settings) -> FacilitatorClient:
     """Pick the right facilitator client for the configured mode + network.
 
-    Stub returns a fake settle. Live and frames talk to a real facilitator
-    over HTTP. On `solana-mainnet` we route to CDP (Coinbase Developer
-    Platform) and sign every verify/settle with a fresh JWT bearer token.
-    Same protocol surface in all three cases — the rest of the stack
-    doesn't care which client it's holding.
+    Sprint 14 S14-PAY-MIGRATE-01: dispatch is delegated to
+    :func:`gecko_core.payments.factory.resolve_facilitator_client` so a
+    new facilitator (Cloudflare in S15) is one entry in core, not a
+    duplicated branch here. Stub stays in gecko-api because
+    ``StubFacilitatorClient`` is transport-shaped (no on-chain settle,
+    just the in-process middleware contract). Everything else — Solana
+    mainnet (CDP), Base mainnet (CDP), devnet/public — flows through
+    the seam.
+
+    Routes use CAIP-2 chain ids; the stub facilitator must advertise the
+    same id the routes register under or the x402 lib raises
+    ``RouteConfigurationError`` on first request.
     """
     if settings.x402_mode == "stub":
-        # Stub must advertise the same network identifier the routes register
-        # under. The x402 lib reconciles route.network against
-        # facilitator.get_supported().kinds[*].network at init time; a mismatch
-        # raises RouteConfigurationError. Routes use CAIP-2 (chain id), so the
-        # stub does too.
         stub_network = (
             settings.network_config.chain_id if settings.network_config else settings.x402_network
         )
         return StubFacilitatorClient(network=stub_network)
 
-    # Live + frames talk to a real facilitator. Mainnet → CDP with JWT auth;
-    # devnet → public x402.org (or whatever X402_FACILITATOR_URL overrides).
+    # Live / frames / cdp all go through the core factory — same dispatch
+    # table for the X402Client and FacilitatorClient surfaces, no inline
+    # ``if x402_network == ...`` left in the transport layer.
     assert settings.x402_facilitator_url is not None  # checked in Settings.from_env
-    if settings.x402_network == "solana-mainnet":
-        # `from_env` already verified non-sentinel CDP creds for mainnet.
-        assert settings.cdp_api_key_id is not None
-        assert settings.cdp_api_key_secret is not None
-        creds = CDPCredentials.from_env_values(
-            settings.cdp_api_key_id,
-            settings.cdp_api_key_secret,
-        )
-        return build_cdp_facilitator_client(
-            creds,
-            base_url=settings.x402_facilitator_url,
-        )
-    return HTTPFacilitatorClient(FacilitatorConfig(url=settings.x402_facilitator_url))
+    return resolve_facilitator_client(  # type: ignore[return-value]
+        mode=settings.x402_mode,
+        network_id=settings.x402_network,
+        facilitator_url=settings.x402_facilitator_url,
+        cdp_api_key_id=settings.cdp_api_key_id,
+        cdp_api_key_secret=settings.cdp_api_key_secret,
+    )
 
 
 # S14-CDP-HARDEN-02 — payTo address-format check, fired at app startup.
@@ -231,6 +227,14 @@ def _build_routes(settings: Settings) -> dict[str, RouteConfig]:
             or settings.gecko_wallet_address
             or "STUB_WALLET_ADDRESS_NOT_FOR_LIVE"
         )
+        # S14-CDP-HARDEN-03 — EIP-55 checksum-encode the eip155:* payTo
+        # before it appears in any PaymentRequirements / /.well-known
+        # listing. Mixed-case Solana base58 untouched (gated on chain_id).
+        # The output is byte-stable across deploys regardless of how the
+        # operator wrote the env value.
+        from gecko_core.payments.cdp_x402_client import to_evm_checksum_address
+
+        pay_to = to_evm_checksum_address(pay_to)
     else:
         pay_to = settings.gecko_wallet_address or "STUB_WALLET_ADDRESS_NOT_FOR_LIVE"
     routes: dict[str, RouteConfig] = {
