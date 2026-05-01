@@ -199,6 +199,56 @@ _ROUTE_OUTPUT_SCHEMA: dict[str, Any] = {
 }
 
 
+# S13-COMMO-01 — POST /advise schemas.
+_ADVISE_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["session_id", "voice"],
+    "additionalProperties": False,
+    "properties": {
+        "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "UUID of a prior /research session to advise against.",
+        },
+        "voice": {
+            "type": "string",
+            "enum": [
+                "ceo",
+                "cto",
+                "business_manager",
+                "product_manager",
+                "staff_manager",
+                "bm",
+                "pm",
+                "sm",
+            ],
+            "description": (
+                "Which advisor voice to invoke. Aliases bm/pm/sm map to "
+                "business_manager / product_manager / staff_manager."
+            ),
+        },
+        "tier_preset": {
+            "type": "string",
+            "enum": _TIER_PRESET_ENUM,
+            "default": "balanced",
+        },
+    },
+}
+
+_ADVISE_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "description": "AdvisorVoiceResult — single voice output_md + tokens metadata.",
+    "properties": {
+        "role": {"type": "string"},
+        "output_md": {"type": "string"},
+        "model_used": {"type": "string"},
+        "closing_line": {"type": "string"},
+        "tokens_in": {"type": "integer"},
+        "tokens_out": {"type": "integer"},
+        "prepay_usd": {"type": "number"},
+    },
+}
+
 # ---------------------------------------------------------------------------
 # Extension registry — one entry per paid route eligible for Bazaar listing
 # ---------------------------------------------------------------------------
@@ -335,6 +385,34 @@ BAZAAR_EXTENSIONS: dict[str, BazaarExtension] = {
             "properties": {
                 "input": _ROUTE_INPUT_SCHEMA,
                 "output": _ROUTE_OUTPUT_SCHEMA,
+            },
+        },
+    ),
+    "POST /advise": BazaarExtension(
+        description=(
+            "Single advisor voice (CEO/CTO/Business/Product/Staff Manager) "
+            "against an existing research session: cheap focused guidance "
+            "from one persona instead of the full 5-voice panel. Use when "
+            "you want a targeted second opinion on a specific dimension "
+            "(go-to-market, technical feasibility, etc.) without paying "
+            "for the whole panel."
+        ),
+        tags=[
+            "advisor-voice",
+            "founder-validation",
+            "single-persona",
+            "follow-up",
+        ],
+        input={
+            "session_id": "00000000-0000-0000-0000-000000000000",
+            "voice": "cto",
+            "tier_preset": "balanced",
+        },
+        schema={
+            "type": "object",
+            "properties": {
+                "input": _ADVISE_INPUT_SCHEMA,
+                "output": _ADVISE_OUTPUT_SCHEMA,
             },
         },
     ),

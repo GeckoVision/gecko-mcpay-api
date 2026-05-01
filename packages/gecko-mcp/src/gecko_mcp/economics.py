@@ -142,6 +142,21 @@ def economics(session_id: str, verify: bool) -> None:
     # rollup so the dashboard reflects the workflow-level $0.10 cap.
     click.echo(f"  twitsh   {_fmt_usd(body.get('cost_twitsh_usd'))}")
     click.echo(f"  v1 srcs  {_fmt_usd(body.get('cost_v1_sources_usd'))}")
+    # S13-COMMO-01..03 — Track E line items. Only render when >0 so
+    # legacy sessions without these charges still print clean.
+    advisor_cost = body.get("cost_advisor_usd")
+    ask_cost = body.get("cost_ask_usd")
+    classify_cost = body.get("cost_classify_usd")
+    advisor_n = body.get("advisor_calls_count") or 0
+    ask_n = body.get("ask_calls_count") or 0
+    if advisor_cost and float(advisor_cost) > 0:
+        suffix = f"  ({advisor_n} voice{'s' if advisor_n != 1 else ''})" if advisor_n else ""
+        click.echo(f"  advisor  {_fmt_usd(advisor_cost)}{suffix}")
+    if ask_cost and float(ask_cost) > 0:
+        suffix = f"  ({ask_n} call{'s' if ask_n != 1 else ''})" if ask_n else ""
+        click.echo(f"  ask      {_fmt_usd(ask_cost)}{suffix}")
+    if classify_cost and float(classify_cost) > 0:
+        click.echo(f"  classify {_fmt_usd(classify_cost)}")
     click.echo("  ───────────────────")
     click.echo(f"  total    {_fmt_usd(cost_total)}")
 

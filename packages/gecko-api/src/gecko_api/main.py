@@ -282,6 +282,21 @@ def _build_routes(settings: Settings) -> dict[str, RouteConfig]:
                 ],
                 description="Re-run the Advisor Panel and surface deltas vs prior pulse",
             )
+    # S13-COMMO-01..03 — Track E commoditization wedges. Registered in BOTH
+    # stub and live modes so Bazaar discovery + the bazaar-extensions tests
+    # see them under either deploy. In stub mode the middleware still issues
+    # 402 challenges; only the facilitator settle is short-circuited.
+    routes["POST /advise"] = RouteConfig(
+        accepts=[
+            PaymentOption(
+                scheme="exact",
+                pay_to=pay_to,
+                price=settings.advisor_voice_price,
+                network=chain_id,
+            ),
+        ],
+        description="Invoke a single advisor voice (CEO/CTO/BM/PM/SM) on an existing session",
+    )
     return routes
 
 
@@ -757,6 +772,38 @@ class PulseRequest(BaseModel):
 
     session_id: str | None = None
     project_id: str | None = None
+    tier_preset: str = Field(default="balanced", pattern="^(quality|balanced|budget|free)$")
+
+
+# ---------------------------------------------------------------------------
+# S13-COMMO-01..03 — Track E commoditization request shapes.
+# ---------------------------------------------------------------------------
+
+
+_VOICE_CHOICES_LITERAL = (
+    "ceo",
+    "cto",
+    "business_manager",
+    "product_manager",
+    "staff_manager",
+    "bm",
+    "pm",
+    "sm",
+)
+
+
+class AdviseRequest(BaseModel):
+    """S13-COMMO-01 — request shape for paid POST /advise.
+
+    Mirrors the MCP `gecko_advise` tool. `voice` aliases (bm/pm/sm) resolve
+    inside `gecko_core.orchestration.advisor.generate_voice`.
+    """
+
+    session_id: str = Field(..., min_length=1)
+    voice: str = Field(
+        ...,
+        pattern="^(ceo|cto|business_manager|product_manager|staff_manager|bm|pm|sm)$",
+    )
     tier_preset: str = Field(default="balanced", pattern="^(quality|balanced|budget|free)$")
 
 
@@ -1284,6 +1331,63 @@ async def ask(session_id: str, req: AskRequest) -> AskResult:
         return await gecko_core.ask(session_id=session_id, question=req.question)
     except NotImplementedError as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
+
+
+# ---------------------------------------------------------------------------
+# S13-COMMO-01 — Track E paid advisor voice.
+# ---------------------------------------------------------------------------
+
+
+@app.post("/advise")
+async def advise_call(req: AdviseRequest, request: Request) -> dict[str, Any]:
+    """S13-COMMO-01 — paid single advisor voice ($0.05).
+
+    Same pipeline as the MCP `gecko_advise` tool / `bb advise` CLI. Paid in
+    live mode via x402; in stub mode the route is unregistered and the
+    handler is reachable directly without a 402 challenge.
+    """
+    from uuid import UUID as _UUID
+
+    from gecko_core.orchestration.advisor import (
+        AdvisorSessionNotFoundError,
+        generate_voice,
+    )
+    from gecko_core.routing.catalog import Tier as _Tier
+
+    try:
+        sid = _UUID(req.session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid session_id") from exc
+
+    try:
+        tier = _Tier(req.tier_preset)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"invalid tier_preset: {exc}") from exc
+
+    # Touch the payment payload to record we ran post-settle (live mode).
+    _ = getattr(request.state, "payment_payload", None)
+
+    try:
+        voice_result = await generate_voice(sid, req.voice, tier_preset=tier)
+    except AdvisorSessionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("advise: voice generation failed for %s", sid)
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+
+    # Bookkeeping: record the per-voice charge so `bb economics` shows it
+    # alongside research costs. Best-effort.
+    store = SessionStore.from_env()
+    try:
+        await store.add_cost(sid, "advisor", _route_price_usd("POST /advise"))
+    except Exception:  # pragma: no cover — best-effort
+        logger.warning("advise: could not record advisor charge for %s", sid)
+
+    payload = voice_result.model_dump(mode="json")
+    payload["prepay_usd"] = _route_price_usd("POST /advise")
+    return payload
 
 
 # S5-API-03: tiered /route pricing. Each path is gated by x402 at a

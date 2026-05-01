@@ -97,6 +97,14 @@ class Settings(BaseModel):
     # in stub mode (deferred pricing — operator can flip via PULSE_CALL_PRICE).
     scaffold_call_price: str = "$0.05"
     pulse_call_price: str = "$0.00"
+    # S13-COMMO-01..03: Track E commoditization wedges. Each is a flat
+    # per-call charge advertised on a dedicated route. Stub mode skips
+    # registration (matches /review pattern) so dogfood loops run free.
+    advisor_voice_price: str = "$0.05"
+    ask_call_price: str = "$0.01"
+    classify_call_price: str = "$0.10"
+    # Free quota for /sessions/{id}/ask before the paid /ask route kicks in.
+    ask_free_quota_per_session: int = 100
 
     # S5-API-03: tiered /route pricing. Sprint 4 shipped a single flat
     # $0.02 charge; Sprint 5 splits it into three paths so heavy callers
@@ -225,6 +233,15 @@ class Settings(BaseModel):
         review_price = os.environ.get("REVIEW_CALL_PRICE", "$0.10")
         scaffold_price = os.environ.get("SCAFFOLD_CALL_PRICE", "$0.05")
         pulse_price = os.environ.get("PULSE_CALL_PRICE", "$0.00")
+        # S13-COMMO-01..03 — Track E pricing knobs.
+        advisor_voice_price = os.environ.get("ADVISOR_VOICE_PRICE", "$0.05")
+        ask_call_price = os.environ.get("ASK_CALL_PRICE", "$0.01")
+        classify_call_price = os.environ.get("CLASSIFY_CALL_PRICE", "$0.10")
+        ask_free_quota_raw = os.environ.get("ASK_FREE_QUOTA_PER_SESSION", "100")
+        try:
+            ask_free_quota = int(ask_free_quota_raw)
+        except ValueError:
+            ask_free_quota = 100
         # S5-API-03: tiered /route pricing. ROUTE_CALL_PRICE stays as the
         # legacy single-tier knob (back-compat); the three new vars below
         # let operators tune each tier independently.
@@ -260,6 +277,10 @@ class Settings(BaseModel):
             route_price_default=route_price_default,
             route_price_premium=route_price_premium,
             route_price_upgrade=route_price_upgrade,
+            advisor_voice_price=advisor_voice_price,
+            ask_call_price=ask_call_price,
+            classify_call_price=classify_call_price,
+            ask_free_quota_per_session=ask_free_quota,
             events_secret=events_secret,
         )
 

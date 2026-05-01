@@ -106,8 +106,10 @@ _SCAFFOLD_DESCRIPTION = (
 _ADVISE_DESCRIPTION = (
     "Run a single advisor voice (CEO, CTO, business_manager, "
     "product_manager, or staff_manager) over an existing session. Cheaper "
-    "than `gecko_plan` (1 LLM call vs 5). FREE in Sprint 4 — pricing "
-    "decision deferred to Sprint 5 once economics are confirmed."
+    "than `gecko_plan` (1 LLM call vs 5). $0.05 per voice via x402 on "
+    "POST /advise (S13-COMMO-01); the MCP path stays free for local "
+    "introspection. Each charge increments cost_advisor_usd on the "
+    "session so `bb economics <id>` shows it as a per-voice line item."
 )
 
 _PLAN_DESCRIPTION = (

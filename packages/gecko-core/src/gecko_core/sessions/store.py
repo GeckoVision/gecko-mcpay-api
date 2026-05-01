@@ -45,7 +45,19 @@ The drift is caught at runtime: `tests/test_payment_mode_consistency.py`
 asserts `typing.get_args(PaymentMode)` matches `PAYMENT_MODES` exactly,
 and a startup-time assertion below catches it before any test runs."""
 
-CostKind = Literal["llm", "embed", "tavily", "deepgram", "twitsh", "v1_sources"]
+CostKind = Literal[
+    "llm",
+    "embed",
+    "tavily",
+    "deepgram",
+    "twitsh",
+    "v1_sources",
+    # S13-COMMO-01..03 — Track E commoditization SKUs. Each is its own
+    # column on `sessions` so `bb economics` can render line items.
+    "advisor",
+    "ask",
+    "classify",
+]
 
 ProEventType = Literal["turn_start", "turn_end", "final", "error"]
 
@@ -87,6 +99,13 @@ class SessionEconomics(BaseModel):
     cost_deepgram_usd: float
     cost_twitsh_usd: float = 0.0
     cost_v1_sources_usd: float = 0.0
+    # S13-COMMO-01..03 — Track E line items. Default 0.0 so models loaded
+    # from databases that haven't yet run the migration still validate.
+    cost_advisor_usd: float = 0.0
+    cost_ask_usd: float = 0.0
+    cost_classify_usd: float = 0.0
+    advisor_calls_count: int = 0
+    ask_calls_count: int = 0
     cost_total_usd: float
     margin_usd: float | None
     x402_tx_signature: str | None
@@ -369,6 +388,8 @@ class SessionStore:
                 .select(
                     "id,price_usd,cost_llm_usd,cost_embed_usd,cost_tavily_usd,"
                     "cost_deepgram_usd,cost_twitsh_usd,cost_v1_sources_usd,"
+                    "cost_advisor_usd,cost_ask_usd,cost_classify_usd,"
+                    "advisor_calls_count,ask_calls_count,"
                     "cost_total_usd,margin_usd,x402_tx_signature"
                 )
                 .eq("id", str(session_id))
@@ -391,6 +412,11 @@ class SessionStore:
             cost_deepgram_usd=float(row.get("cost_deepgram_usd") or 0),
             cost_twitsh_usd=float(row.get("cost_twitsh_usd") or 0),
             cost_v1_sources_usd=float(row.get("cost_v1_sources_usd") or 0),
+            cost_advisor_usd=float(row.get("cost_advisor_usd") or 0),
+            cost_ask_usd=float(row.get("cost_ask_usd") or 0),
+            cost_classify_usd=float(row.get("cost_classify_usd") or 0),
+            advisor_calls_count=int(row.get("advisor_calls_count") or 0),
+            ask_calls_count=int(row.get("ask_calls_count") or 0),
             cost_total_usd=float(row.get("cost_total_usd") or 0),
             margin_usd=_as_float_or_none(row.get("margin_usd")),
             x402_tx_signature=row.get("x402_tx_signature"),
