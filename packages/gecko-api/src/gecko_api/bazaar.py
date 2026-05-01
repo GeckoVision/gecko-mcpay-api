@@ -249,6 +249,27 @@ _ADVISE_OUTPUT_SCHEMA: dict[str, Any] = {
     },
 }
 
+# S13-COMMO-02 — POST /ask schemas.
+_ASK_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["session_id", "question"],
+    "additionalProperties": False,
+    "properties": {
+        "session_id": {"type": "string", "minLength": 1},
+        "question": {"type": "string", "minLength": 3, "maxLength": 500},
+    },
+}
+
+_ASK_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "description": "AskResult — grounded answer with citations.",
+    "properties": {
+        "answer": {"type": "string"},
+        "citations": {"type": "array"},
+        "prepay_usd": {"type": "number"},
+    },
+}
+
 # ---------------------------------------------------------------------------
 # Extension registry — one entry per paid route eligible for Bazaar listing
 # ---------------------------------------------------------------------------
@@ -413,6 +434,32 @@ BAZAAR_EXTENSIONS: dict[str, BazaarExtension] = {
             "properties": {
                 "input": _ADVISE_INPUT_SCHEMA,
                 "output": _ADVISE_OUTPUT_SCHEMA,
+            },
+        },
+    ),
+    "POST /ask": BazaarExtension(
+        description=(
+            "Grounded follow-up question against an existing research "
+            "session's knowledge base: pulls citations from the indexed "
+            "corpus, no fresh research run. Use when an agent needs to "
+            "interrogate a previously-researched corpus without paying "
+            "the full /research price each time."
+        ),
+        tags=[
+            "follow-up",
+            "knowledge-base",
+            "grounded-qa",
+            "citations",
+        ],
+        input={
+            "session_id": "00000000-0000-0000-0000-000000000000",
+            "question": "What were the top three competitor risks?",
+        },
+        schema={
+            "type": "object",
+            "properties": {
+                "input": _ASK_INPUT_SCHEMA,
+                "output": _ASK_OUTPUT_SCHEMA,
             },
         },
     ),

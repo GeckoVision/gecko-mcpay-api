@@ -297,6 +297,20 @@ def _build_routes(settings: Settings) -> dict[str, RouteConfig]:
         ],
         description="Invoke a single advisor voice (CEO/CTO/BM/PM/SM) on an existing session",
     )
+    # S13-COMMO-02 — paid follow-up against a session's KB (POST /ask, $0.01).
+    # The free /sessions/{id}/ask path stays available; this route is what
+    # callers hit AFTER the per-session free quota is exhausted.
+    routes["POST /ask"] = RouteConfig(
+        accepts=[
+            PaymentOption(
+                scheme="exact",
+                pay_to=pay_to,
+                price=settings.ask_call_price,
+                network=chain_id,
+            ),
+        ],
+        description="Ask a grounded follow-up against an existing session's knowledge base",
+    )
     return routes
 
 
@@ -805,6 +819,19 @@ class AdviseRequest(BaseModel):
         pattern="^(ceo|cto|business_manager|product_manager|staff_manager|bm|pm|sm)$",
     )
     tier_preset: str = Field(default="balanced", pattern="^(quality|balanced|budget|free)$")
+
+
+class PaidAskRequest(BaseModel):
+    """S13-COMMO-02 — request shape for paid POST /ask.
+
+    Distinct from `AskRequest` (used by the free `/sessions/{id}/ask`) because
+    the paid surface carries `session_id` in the body — Bazaar collapses
+    bare-UUID path segments, so a paid `/sessions/{id}/ask` would lose its
+    listing. Keeping the body-keyed `/ask` keeps the catalog entry distinct.
+    """
+
+    session_id: str = Field(..., min_length=1)
+    question: str = Field(..., min_length=3, max_length=500)
 
 
 # ---------------------------------------------------------------------------
@@ -1326,11 +1353,83 @@ async def research_pro_retry(
 
 @app.post("/sessions/{session_id}/ask", response_model=AskResult)
 async def ask(session_id: str, req: AskRequest) -> AskResult:
-    """Free follow-up. Once a session is paid for, queries are unlimited."""
+    """Free follow-up — first N queries per session, then paid via POST /ask.
+
+    S13-COMMO-02: track per-session call count; once it exceeds
+    `ASK_FREE_QUOTA_PER_SESSION` (default 100), return 402 pointing at the
+    paid `POST /ask` route. Existing callers under the quota see no behavior
+    change. Counter is incremented on every successful free call so the
+    paid surface picks up exactly when the quota expires.
+    """
+    quota = _settings.ask_free_quota_per_session
+    store = SessionStore.from_env()
     try:
-        return await gecko_core.ask(session_id=session_id, question=req.question)
+        sid = UUID(session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid session_id") from exc
+
+    # Read current count BEFORE the call so we can refuse over-quota requests
+    # without burning an LLM. Best-effort: if economics lookup fails (e.g.
+    # session not yet persisted in test mode), fall back to allowing the call.
+    try:
+        econ = await store.get_economics(sid)
+    except Exception:  # pragma: no cover — best-effort
+        econ = None
+    used = econ.ask_calls_count if econ is not None else 0
+    if used >= quota:
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "error": "ask_quota_exceeded",
+                "message": (
+                    f"Free quota of {quota} ask calls exhausted for this session. "
+                    "Use POST /ask (paid, $0.01/call) to continue."
+                ),
+                "paid_route": "POST /ask",
+                "ask_calls_count": used,
+                "quota": quota,
+            },
+        )
+
+    try:
+        result = await gecko_core.ask(session_id=session_id, question=req.question)
     except NotImplementedError as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
+
+    # Increment the free-quota counter. Best-effort — never fail the user
+    # response on bookkeeping.
+    try:
+        await _bump_ask_count(store, sid)
+    except Exception:  # pragma: no cover — best-effort
+        logger.warning("ask: could not bump ask_calls_count for %s", sid)
+
+    return result
+
+
+async def _bump_ask_count(store: SessionStore, session_id: UUID) -> None:
+    """Increment ask_calls_count without touching cost columns.
+
+    `gecko_add_session_cost` short-circuits when the amount is 0, so we pass
+    a vanishingly small value (rounded to 0 in NUMERIC(12,6)) to bump the
+    counter without dirtying the cost line. Service-role only.
+    """
+
+    def _update() -> None:
+        client = store._client  # internal access — same package boundary.
+        client.rpc(
+            "gecko_add_session_cost",
+            {
+                "p_session_id": str(session_id),
+                "p_kind": "ask",
+                "p_amount_usd": 0.0000001,
+            },
+        ).execute()
+
+    try:
+        await asyncio.to_thread(_update)
+    except Exception:  # pragma: no cover — best-effort
+        # In tests where the RPC isn't wired up, swallow silently.
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -1388,6 +1487,48 @@ async def advise_call(req: AdviseRequest, request: Request) -> dict[str, Any]:
     payload = voice_result.model_dump(mode="json")
     payload["prepay_usd"] = _route_price_usd("POST /advise")
     return payload
+
+
+# ---------------------------------------------------------------------------
+# S13-COMMO-02 — Track E paid follow-up (post-quota).
+# ---------------------------------------------------------------------------
+
+
+@app.post("/ask")
+async def paid_ask_call(req: PaidAskRequest, request: Request) -> dict[str, Any]:
+    """S13-COMMO-02 — paid follow-up ($0.01).
+
+    Mirrors the free `POST /sessions/{id}/ask` but with `session_id` in the
+    body so Bazaar's bare-UUID path collapse doesn't merge it with the free
+    catalog entry. Use this AFTER the per-session free quota is exhausted.
+    """
+    from uuid import UUID as _UUID
+
+    try:
+        sid = _UUID(req.session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid session_id") from exc
+
+    _ = getattr(request.state, "payment_payload", None)
+
+    try:
+        result = await gecko_core.ask(session_id=req.session_id, question=req.question)
+    except NotImplementedError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("paid_ask: failed for %s", sid)
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+
+    store = SessionStore.from_env()
+    try:
+        await store.add_cost(sid, "ask", _route_price_usd("POST /ask"))
+    except Exception:  # pragma: no cover — best-effort
+        logger.warning("paid_ask: could not record ask charge for %s", sid)
+
+    return {
+        **result.model_dump(mode="json"),
+        "prepay_usd": _route_price_usd("POST /ask"),
+    }
 
 
 # S5-API-03: tiered /route pricing. Each path is gated by x402 at a

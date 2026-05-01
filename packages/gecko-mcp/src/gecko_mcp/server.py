@@ -56,7 +56,11 @@ _RESEARCH_DESCRIPTION = (
 _ASK_DESCRIPTION = (
     "Ask a follow-up question grounded in an existing session's knowledge "
     "base. Cites the chunks used inline. Requires the session_id returned "
-    "by a prior `gecko_research` call."
+    "by a prior `gecko_research` call. First N calls per session are FREE "
+    "(default 100, configurable via ASK_FREE_QUOTA_PER_SESSION); after the "
+    "quota is exhausted, the free `/sessions/{id}/ask` route returns 402 "
+    "and callers must hit the paid `POST /ask` ($0.01/call via x402, "
+    "S13-COMMO-02)."
 )
 
 _SOURCES_DESCRIPTION = (
