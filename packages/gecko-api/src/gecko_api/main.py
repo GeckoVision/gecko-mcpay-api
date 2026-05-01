@@ -47,6 +47,10 @@ from x402.http.types import PaymentOption, RouteConfig
 from x402.mechanisms.svm.exact import ExactSvmServerScheme
 
 from gecko_api.auth import verify_frames_token
+from gecko_api.bazaar import (
+    BAZAAR_EXTENSIONS,
+    extension_as_dict,
+)
 from gecko_api.events_token import (
     EVENTS_PREFIX,
     RETRY_PREFIX,
@@ -1766,22 +1770,28 @@ async def well_known_x402() -> dict[str, Any]:
     catalog: list[dict[str, Any]] = []
     for pattern, route in _routes_config.items():
         accepts = route.accepts if isinstance(route.accepts, list) else [route.accepts]
-        catalog.append(
-            {
-                "route": pattern,
-                "description": route.description,
-                "accepts": [
-                    {
-                        "scheme": opt.scheme,
-                        "network": opt.network,
-                        "price": opt.price,
-                        "payTo": opt.pay_to,
-                        "maxTimeoutSeconds": opt.max_timeout_seconds,
-                    }
-                    for opt in accepts
-                ],
-            }
-        )
+        entry: dict[str, Any] = {
+            "route": pattern,
+            "description": route.description,
+            "accepts": [
+                {
+                    "scheme": opt.scheme,
+                    "network": opt.network,
+                    "price": opt.price,
+                    "payTo": opt.pay_to,
+                    "maxTimeoutSeconds": opt.max_timeout_seconds,
+                }
+                for opt in accepts
+            ],
+        }
+        # S12-BAZAAR-01: surface the CDP Bazaar discoveryExtension blob
+        # so a payer-side client can fetch the input/output schema before
+        # paying, and so the CDP facilitator (Track A, separate ticket)
+        # can attach it to settle-time metadata.
+        ext = BAZAAR_EXTENSIONS.get(pattern)
+        if ext is not None:
+            entry["bazaarExtension"] = extension_as_dict(ext)
+        catalog.append(entry)
     return {
         "x402_version": 2,
         "mode": _settings.x402_mode,
