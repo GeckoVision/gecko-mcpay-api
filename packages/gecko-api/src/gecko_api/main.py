@@ -53,6 +53,12 @@ from gecko_api.bazaar import (
     BAZAAR_EXTENSIONS,
     extension_as_dict,
 )
+from gecko_api.circuit_breaker import (
+    RETRY_AFTER_SECONDS as _CIRCUIT_RETRY_AFTER_SECONDS,
+)
+from gecko_api.circuit_breaker import (
+    get_breaker as _get_cost_breaker,
+)
 from gecko_api.events_token import (
     EVENTS_PREFIX,
     RETRY_PREFIX,
@@ -587,14 +593,66 @@ class _BodySizeLimitMiddleware:
         await self.app(scope, _flat_receive, send)
 
 
-# Order: rate limit (outermost, cheapest reject) → body size → x402.
-# Add body-size FIRST so rate-limit (added second below) wraps it.
-app.add_middleware(_BodySizeLimitMiddleware, max_bytes=_MAX_REQUEST_BODY_BYTES)
+# ---------------------------------------------------------------------------
+# S12-HARDEN-04 — cost circuit breaker on /research and /plan.
+#
+# When the rolling-window LLM-spend tracker (gecko_api.circuit_breaker)
+# exceeds the per-minute budget, NEW POSTs are rejected with 503 +
+# Retry-After: 30. Existing in-flight handlers complete normally — the
+# breaker only short-circuits new arrivals. Sits ahead of x402 so we
+# don't burn a verify call on a request we'll refuse anyway.
+# ---------------------------------------------------------------------------
+
+
+class _CostCircuitBreakerMiddleware:
+    """Short-circuit /research and /plan when the cost breaker is open."""
+
+    def __init__(self, app: Any, *, paths: frozenset[str]) -> None:
+        self.app = app
+        self.paths = paths
+
+    async def __call__(
+        self,
+        scope: dict[str, Any],
+        receive: Callable[[], Awaitable[dict[str, Any]]],
+        send: Callable[[dict[str, Any]], Awaitable[None]],
+    ) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        path = scope.get("path", "")
+        method = scope.get("method", "").upper()
+        if method != "POST" or path not in self.paths:
+            await self.app(scope, receive, send)
+            return
+        if _get_cost_breaker().is_open():
+            await _send_json_error(
+                send,
+                status=503,
+                detail=(
+                    "service temporarily over capacity (cost circuit breaker "
+                    f"open); retry after {_CIRCUIT_RETRY_AFTER_SECONDS}s"
+                ),
+                extra_headers=[(b"retry-after", str(_CIRCUIT_RETRY_AFTER_SECONDS).encode())],
+            )
+            return
+        await self.app(scope, receive, send)
+
+
+# Order outer→inner: body-size → rate-limit → cost-breaker → x402.
+# Body-size is OUTERMOST so a 100KB abuse payload always returns 400.
+# Rate-limit runs second so unpaid spam is rejected with 429 before the
+# breaker has a chance to mask it as 503. Breaker sits just above x402
+# so authenticated paid traffic is the only kind that ever sees it open.
+# Each `add_middleware` wraps the previous, so add in REVERSE order:
+# breaker first (innermost of the three), then rate-limit, then body-size.
+app.add_middleware(_CostCircuitBreakerMiddleware, paths=_RATE_LIMITED_PATHS)
 app.add_middleware(
     _UnauthenticatedRateLimitMiddleware,
     rate_per_minute=_UNPAID_RATE_LIMIT_PER_MINUTE,
     paths=_RATE_LIMITED_PATHS,
 )
+app.add_middleware(_BodySizeLimitMiddleware, max_bytes=_MAX_REQUEST_BODY_BYTES)
 
 
 # Internal ops routes (S2X-09: /internal/twitsh/balance for EventBridge).
@@ -695,6 +753,17 @@ class PulseRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+# S12-HARDEN-04 — coarse LLM-spend estimate fed to the cost circuit
+# breaker at the top of each handler. Conservative; the breaker only
+# needs a window signal, not exact accounting. Values tuned so a burst
+# of ~50 concurrent /research calls trips the $5/min cap.
+_ROUTE_SPEND_ESTIMATE_USD: dict[str, float] = {
+    "POST /research": 0.10,
+    "POST /research/pro": 1.50,
+    "POST /plan": 0.10,
+}
+
+
 def _route_price_usd(route: str) -> float:
     """Pull the advertised USD price for a route from the x402 config.
 
@@ -728,6 +797,11 @@ async def research(req: ResearchRequest, request: Request) -> Any:
     fast we let payment settle synchronously while research keeps running;
     the client polls GET /sessions/{id}/result for completion.
     """
+    # S12-HARDEN-04 — record an estimated LLM spend so the rolling-window
+    # breaker has signal even when the background workflow hasn't reported
+    # actual cost yet. Conservative; refined post-completion via SessionStore.
+    _get_cost_breaker().record_spend(_ROUTE_SPEND_ESTIMATE_USD["POST /research"])
+
     store = SessionStore.from_env()
 
     # S2-06: per-project budget cap pre-flight. Reject at-or-over-cap projects
@@ -840,6 +914,8 @@ async def research_pro(req: ResearchRequest, request: Request) -> Any:
     10 minutes. Clients pass it as `?token=...` (or Authorization: Bearer ...)
     on GET /research/pro/{session_id}/events to subscribe to the SSE stream.
     """
+    _get_cost_breaker().record_spend(_ROUTE_SPEND_ESTIMATE_USD["POST /research/pro"])
+
     store = SessionStore.from_env()
 
     # S2-06: same pre-flight gate as /research — block the paid call when
@@ -1319,6 +1395,8 @@ async def plan_call(req: PlanRequest, request: Request) -> dict[str, Any]:
         generate_panel,
     )
     from gecko_core.routing.catalog import Tier as _Tier
+
+    _get_cost_breaker().record_spend(_ROUTE_SPEND_ESTIMATE_USD["POST /plan"])
 
     if req.tier_preset not in _PLAN_TIER_PRESETS:
         raise HTTPException(

@@ -2,7 +2,7 @@
 
 The 30/min/IP cap applies only to the 402-response path (no X-Payment
 header). Authenticated paid traffic bypasses entirely — payment is the
-rate gate. This test hits /research 50× from one IP without payment and
+rate gate. This test hits /research 50x from one IP without payment and
 asserts that 429s appear well before the 50th call.
 """
 
@@ -56,7 +56,7 @@ def test_paid_calls_bypass_rate_limit(client: TestClient) -> None:
     the `accepted` block matches a registered route), so we send a bogus
     payload — x402 will reject with a 402 error rather than 429. The
     point: the rate limiter should NOT short-circuit before x402 sees it,
-    which we verify by hitting the endpoint 50× with a bogus X-Payment
+    which we verify by hitting the endpoint 50x with a bogus X-Payment
     header and asserting 429 never appears.
     """
     statuses = []
