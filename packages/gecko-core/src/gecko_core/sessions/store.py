@@ -20,6 +20,19 @@ from supabase import Client
 from gecko_core.db import create_supabase_client
 from gecko_core.models import SessionStatus, SourceInfo, Tier
 
+SessionPhase = Literal["pre_product", "during_build", "ongoing"]
+"""S13-PHASE-01 — lifecycle phase a session belongs to.
+
+`pre_product` is the legacy default and what every existing row carries:
+the user is researching whether to build a thing. `during_build` covers
+sessions kicked off mid-build (S14 `gecko_pulse` is the first consumer).
+`ongoing` is the post-launch operational tier S15 will plug into.
+
+Mirrors the CHECK constraint in
+`infra/supabase/migrations/20260501100000_session_phase.sql`. Drift between
+this Literal and the SQL CHECK is caught at insert time — Postgres will
+reject anything not in the trio."""
+
 PaymentMode = Literal["stub", "live", "frames", "cdp"]
 """Session-row payment-mode literal.
 
@@ -153,6 +166,11 @@ class SessionRecord(BaseModel):
     x402_tx_signature: str | None = None
     project_id: UUID | None = None
     paid_from_wallet_address: str | None = None
+    # S13-PHASE-01 — lifecycle phase + parent linkage. Defaults match the
+    # SQL column defaults so models loaded from databases that haven't yet
+    # run the phase migration still validate.
+    phase: SessionPhase = "pre_product"
+    parent_session_id: UUID | None = None
     created_at: datetime
     completed_at: datetime | None = None
     deleted_at: datetime | None = None
@@ -184,14 +202,27 @@ class SessionStore:
         idea: str,
         tier: Tier,
         payment_mode: PaymentMode = "stub",
+        *,
+        phase: SessionPhase = "pre_product",
+        parent_session_id: UUID | None = None,
     ) -> UUID:
-        """Insert a new session row and return its UUID. Status starts at 'pending'."""
+        """Insert a new session row and return its UUID. Status starts at 'pending'.
+
+        `phase` and `parent_session_id` are S13-PHASE-01. They default to the
+        legacy values so every existing call site stays correct without a
+        change. `parent_session_id` is intended for `gecko_pulse` (S14):
+        the pulse session points back at the `pre_product` research that
+        spawned it, and the FK guarantees the parent exists.
+        """
         payload: dict[str, Any] = {
             "idea": idea,
             "tier": tier,
             "payment_mode": payment_mode,
             "status": "pending",
+            "phase": phase,
         }
+        if parent_session_id is not None:
+            payload["parent_session_id"] = str(parent_session_id)
 
         def _insert() -> dict[str, Any]:
             res = self._client.table(self.SESSIONS_TABLE).insert(payload).execute()
@@ -1380,6 +1411,7 @@ __all__ = [
     "ProEventType",
     "ProjectWallet",
     "SessionEconomics",
+    "SessionPhase",
     "SessionRecord",
     "SessionStore",
     "SettlementNetwork",

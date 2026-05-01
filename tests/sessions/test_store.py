@@ -92,7 +92,30 @@ async def test_create_returns_uuid_and_persists_payload() -> None:
         "tier": "basic",
         "payment_mode": "stub",
         "status": "pending",
+        "phase": "pre_product",
     }
+
+
+@pytest.mark.asyncio
+async def test_create_with_phase_and_parent_session_id() -> None:
+    """S13-PHASE-01 — create() threads phase + parent_session_id into the row."""
+    sid = uuid4()
+    parent_id = uuid4()
+    fake = FakeClient()
+    fake.queue("sessions", [{"id": str(sid)}])
+    store = SessionStore(client=fake)  # type: ignore[arg-type]
+
+    result = await store.create(
+        idea="pulse on hotel guide",
+        tier="pro",
+        phase="during_build",
+        parent_session_id=parent_id,
+    )
+
+    assert result == sid
+    payload = fake.queries["sessions"].calls[0][1][0]
+    assert payload["phase"] == "during_build"
+    assert payload["parent_session_id"] == str(parent_id)
 
 
 @pytest.mark.asyncio
