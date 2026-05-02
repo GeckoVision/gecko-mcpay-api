@@ -35,6 +35,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from gecko_core.models import AskResult, SourceInfo, Tier
+from gecko_core.payments.constants import STUB_WALLET_ADDRESS_NOT_FOR_LIVE
 from gecko_core.payments.factory import resolve_facilitator_client
 from gecko_core.sessions.store import SessionStore
 from pydantic import BaseModel, Field
@@ -132,7 +133,7 @@ def _build_facilitator(settings: Settings) -> FacilitatorClient:
 
 _EVM_ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
 _SOLANA_ADDRESS_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
-_PAYTO_STUB_SENTINEL = "STUB_WALLET_ADDRESS_NOT_FOR_LIVE"
+_PAYTO_STUB_SENTINEL = STUB_WALLET_ADDRESS_NOT_FOR_LIVE
 
 
 class ConfigurationError(RuntimeError):
@@ -225,7 +226,7 @@ def _build_routes(settings: Settings) -> dict[str, RouteConfig]:
         pay_to = (
             settings.gecko_wallet_address_base
             or settings.gecko_wallet_address
-            or "STUB_WALLET_ADDRESS_NOT_FOR_LIVE"
+            or STUB_WALLET_ADDRESS_NOT_FOR_LIVE
         )
         # S14-CDP-HARDEN-03 — EIP-55 checksum-encode the eip155:* payTo
         # before it appears in any PaymentRequirements / /.well-known
@@ -236,7 +237,7 @@ def _build_routes(settings: Settings) -> dict[str, RouteConfig]:
 
         pay_to = to_evm_checksum_address(pay_to)
     else:
-        pay_to = settings.gecko_wallet_address or "STUB_WALLET_ADDRESS_NOT_FOR_LIVE"
+        pay_to = settings.gecko_wallet_address or STUB_WALLET_ADDRESS_NOT_FOR_LIVE
     routes: dict[str, RouteConfig] = {
         "POST /research": RouteConfig(
             accepts=[

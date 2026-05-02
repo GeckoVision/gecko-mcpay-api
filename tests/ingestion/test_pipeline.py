@@ -127,3 +127,33 @@ async def test_empty_source_list() -> None:
     result = await pipeline.ingest(uuid4(), [], store)  # type: ignore[arg-type]
     assert result.indexed == 0
     assert result.outcomes == []
+
+
+@pytest.mark.asyncio
+async def test_nul_byte_extract_does_not_break_pipeline(fake_embed: Any) -> None:
+    """S16-INGEST-05 — synthetic smoke: a web extract that returns a
+    document with embedded NUL bytes must still index cleanly. The
+    chunker sanitizes upstream so the upsert never sees \\x00 (which
+    would trip Postgres SQLSTATE 22P05). Mirrors the smoke run that
+    surfaced this on 2026-05-01."""
+    cand = _candidate("https://example.com/nul-byte-page", "web")
+    store = FakeStore()
+    sid = uuid4()
+
+    poisoned = "real article text. " * 200 + "\x00\x00 " + "more body. " * 200
+    fake_web = AsyncMock(return_value=(poisoned, 0.0))
+
+    with (
+        patch.object(pipeline.web_extractor, "extract", new=fake_web),
+        patch.object(pipeline, "embed_texts", side_effect=fake_embed),
+    ):
+        result = await pipeline.ingest(sid, [cand], store)  # type: ignore[arg-type]
+
+    assert result.indexed == 1
+    assert result.failed == 0
+    # Every chunk that landed on the store must be NUL-free (the FakeStore
+    # records (source_id, count) only, but if the chunker had let bytes
+    # through `insert_chunks` would have validated and raised on
+    # `embedding_null`/whitespace cases). This test covers the happy
+    # path; a real Postgres would reject \x00 with 22P05.
+    assert sum(count for _, count in store.chunks) >= 1

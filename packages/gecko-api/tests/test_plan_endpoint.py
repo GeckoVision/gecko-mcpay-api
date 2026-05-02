@@ -25,7 +25,7 @@ from fastapi.testclient import TestClient
 
 # Force stub mode BEFORE importing the app — settings are frozen at import time.
 os.environ.setdefault("X402_MODE", "stub")
-os.environ.setdefault("GECKO_WALLET_ADDRESS", "STUB_TEST_WALLET")
+os.environ.setdefault("GECKO_WALLET_ADDRESS", "STUB_WALLET_ADDRESS_NOT_FOR_LIVE")
 os.environ.pop("PLAN_CALL_PRICE", None)
 
 

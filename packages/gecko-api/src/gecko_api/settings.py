@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 
 from gecko_core.payments.cdp import is_unconfigured
+from gecko_core.payments.constants import STUB_WALLET_ADDRESS_NOT_FOR_LIVE
 
 # Single source of truth (S12.5-TEST-01) — pulled from gecko_core so the
 # accepted X402_MODE set, the session-store PaymentMode literal, and the
@@ -259,7 +260,7 @@ class Settings(BaseModel):
         return cls(
             x402_mode=mode,  # type: ignore[arg-type]
             x402_facilitator_url=facilitator_url,
-            gecko_wallet_address=wallet or "STUB_WALLET_ADDRESS_NOT_FOR_LIVE",
+            gecko_wallet_address=wallet or STUB_WALLET_ADDRESS_NOT_FOR_LIVE,
             gecko_wallet_address_base=wallet_base,
             x402_network=net.name,
             network_config=net,

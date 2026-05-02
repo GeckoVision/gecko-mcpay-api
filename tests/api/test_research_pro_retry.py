@@ -53,7 +53,7 @@ def _record(
 @pytest.fixture
 def client_and_secret() -> Iterator[tuple[TestClient, AsyncMock, str]]:
     os.environ["X402_MODE"] = "stub"
-    os.environ["GECKO_WALLET_ADDRESS"] = "STUB_TEST_WALLET"
+    os.environ["GECKO_WALLET_ADDRESS"] = "STUB_WALLET_ADDRESS_NOT_FOR_LIVE"
     os.environ["EVENTS_SECRET"] = "test-secret-fixed-for-retry-fixture"
     _purge_gecko_api_modules()
 

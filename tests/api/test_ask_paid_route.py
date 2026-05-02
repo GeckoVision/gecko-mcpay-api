@@ -19,7 +19,7 @@ def _purge_gecko_api_modules() -> None:
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     os.environ["X402_MODE"] = "stub"
-    os.environ["GECKO_WALLET_ADDRESS"] = "STUB_TEST_WALLET"
+    os.environ["GECKO_WALLET_ADDRESS"] = "STUB_WALLET_ADDRESS_NOT_FOR_LIVE"
     os.environ["X402_NETWORK"] = "solana-devnet"
     os.environ.pop("ASK_CALL_PRICE", None)
     os.environ.pop("ASK_FREE_QUOTA_PER_SESSION", None)
@@ -64,7 +64,7 @@ def test_paid_ask_route_returns_402_without_payment(client: TestClient) -> None:
 def test_free_ask_under_quota_passes_through() -> None:
     """Under quota, the free `/sessions/{id}/ask` returns the AskResult."""
     os.environ["X402_MODE"] = "stub"
-    os.environ["GECKO_WALLET_ADDRESS"] = "STUB_TEST_WALLET"
+    os.environ["GECKO_WALLET_ADDRESS"] = "STUB_WALLET_ADDRESS_NOT_FOR_LIVE"
     os.environ["X402_NETWORK"] = "solana-devnet"
     _purge_gecko_api_modules()
 
@@ -103,7 +103,7 @@ def test_free_ask_under_quota_passes_through() -> None:
 def test_free_ask_over_quota_returns_402_with_paid_route_pointer() -> None:
     """Over quota, returns 402 carrying the paid_route hint."""
     os.environ["X402_MODE"] = "stub"
-    os.environ["GECKO_WALLET_ADDRESS"] = "STUB_TEST_WALLET"
+    os.environ["GECKO_WALLET_ADDRESS"] = "STUB_WALLET_ADDRESS_NOT_FOR_LIVE"
     os.environ["X402_NETWORK"] = "solana-devnet"
     _purge_gecko_api_modules()
 

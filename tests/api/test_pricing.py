@@ -56,7 +56,7 @@ def _build_fake_store() -> AsyncMock:
 def client() -> Iterator[TestClient]:
     """TestClient against gecko_api in X402_MODE=stub with default prices."""
     os.environ["X402_MODE"] = "stub"
-    os.environ["GECKO_WALLET_ADDRESS"] = "STUB_TEST_WALLET"
+    os.environ["GECKO_WALLET_ADDRESS"] = "STUB_WALLET_ADDRESS_NOT_FOR_LIVE"
     # Scrub any developer .env override so we exercise the default prices.
     os.environ.pop("RESEARCH_BASIC_PRICE", None)
     os.environ.pop("RESEARCH_PRO_PRICE", None)

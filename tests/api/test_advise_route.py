@@ -18,7 +18,7 @@ def _purge_gecko_api_modules() -> None:
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     os.environ["X402_MODE"] = "stub"
-    os.environ["GECKO_WALLET_ADDRESS"] = "STUB_TEST_WALLET"
+    os.environ["GECKO_WALLET_ADDRESS"] = "STUB_WALLET_ADDRESS_NOT_FOR_LIVE"
     # Force a Solana network so the x402 lib's scheme-registration check
     # passes — `_build_resource_server` only registers `solana:*`. Without
     # this an env-leaked base-mainnet from a sibling test trips

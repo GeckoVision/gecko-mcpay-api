@@ -21,7 +21,7 @@ import sys
 import pytest
 
 os.environ.setdefault("X402_MODE", "stub")
-os.environ.setdefault("GECKO_WALLET_ADDRESS", "STUB_TEST_WALLET")
+os.environ.setdefault("GECKO_WALLET_ADDRESS", "STUB_WALLET_ADDRESS_NOT_FOR_LIVE")
 
 
 @pytest.fixture(autouse=True)

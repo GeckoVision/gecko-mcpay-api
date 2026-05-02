@@ -18,7 +18,7 @@ def _purge_gecko_api_modules() -> None:
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     os.environ["X402_MODE"] = "stub"
-    os.environ["GECKO_WALLET_ADDRESS"] = "STUB_TEST_WALLET"
+    os.environ["GECKO_WALLET_ADDRESS"] = "STUB_WALLET_ADDRESS_NOT_FOR_LIVE"
     os.environ["X402_NETWORK"] = "solana-devnet"
     os.environ.pop("CLASSIFY_CALL_PRICE", None)
     _purge_gecko_api_modules()
