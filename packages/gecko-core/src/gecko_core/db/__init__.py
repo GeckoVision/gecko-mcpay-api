@@ -1,8 +1,18 @@
-"""Shared Supabase client factory + settings.
+"""Database accessors for gecko-core.
 
-Lives at gecko_core.db (not under sessions/) because ingestion and rag will
-also need a service-role client. Service-role key is server-side only — never
-exposed to gecko-mcpay-app, which uses the anon key + RLS via gecko-api.
+Two stores live here:
+
+- **Supabase (Postgres + pgvector)** — sessions, sources, payments, memory.
+  Public surface: :class:`SupabaseSettings`, :func:`create_supabase_client`.
+  Re-exported from this package so legacy imports
+  ``from gecko_core.db import create_supabase_client`` keep working.
+
+- **MongoDB Atlas** — chunks + chunk_embedding_cache + chunks_write_audit
+  in the ``gecko_rag`` database (post S18 cutover). See
+  :mod:`gecko_core.db.mongo`.
+
+Chunk-store selection goes through :func:`get_chunk_store` — default
+``supabase`` until S18-MONGO-CUTOVER-01 flips it to ``mongo``.
 """
 
 from __future__ import annotations
@@ -12,6 +22,8 @@ from functools import lru_cache
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from supabase import Client, create_client
+
+from gecko_core.db.chunk_store import ChunkStore, ChunkStoreSettings, get_chunk_store
 
 
 class SupabaseSettings(BaseSettings):
@@ -54,3 +66,12 @@ def create_supabase_client(
         else service_role_key
     )
     return create_client(url, key)
+
+
+__all__ = [
+    "ChunkStore",
+    "ChunkStoreSettings",
+    "SupabaseSettings",
+    "create_supabase_client",
+    "get_chunk_store",
+]
