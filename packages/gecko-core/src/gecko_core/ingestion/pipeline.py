@@ -27,7 +27,7 @@ from gecko_core.sessions.store import SessionStore
 
 from . import web as web_extractor
 from . import youtube as youtube_extractor
-from .audit import ErrorKind, classify_exception, classify_partial_batch
+from .audit import ErrorKind, classify_exception
 from .chunker import chunk as chunk_text
 from .embedder import embed as embed_texts
 from .types import IngestionResult, SourceOutcome
@@ -344,12 +344,13 @@ async def _process_one(
                     },
                 )
                 raise
-            # FM-1 detection: insert_chunks reports a count < attempted →
-            # silent partial-batch drop. Surface it to the audit row even
-            # when no exception fired (this is the whole point of S16-INGEST-01).
+            # S16-INGEST-02 — `insert_chunks` is now transactional + idempotent:
+            # either the whole batch commits or it raises. A no-exception
+            # short-write outcome (the old FM-1 path) is unreachable, so
+            # the audit error_kind is unconditionally `none` here.
             audit_succeeded = inserted
             audit_failed = max(0, len(rows) - inserted)
-            audit_error_kind = classify_partial_batch(attempted=len(rows), succeeded=inserted)
+            audit_error_kind = "none"
             await store.set_source_chunk_count(source_id, inserted)
             if embed_tokens > 0:
                 from .embedder import estimate_embed_cost_usd

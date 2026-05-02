@@ -32,13 +32,15 @@ ErrorKind = Literal[
     "embedding_null",
     "dim_mismatch",
     "supabase_5xx",
-    "partial_batch",
     "unknown",
 ]
-"""Canonical set of audit failure buckets. Mirrors the SQL CHECK in
-`infra/supabase/migrations/20260501140000_chunks_write_audit.sql`. Adding
-a value: update this Literal AND ship a migration that ALTERs the CHECK.
-Schema-drift test enforces equality."""
+"""Canonical set of audit failure buckets. Mirrors the SQL CHECK in the
+*latest* `*_chunks_write_audit*.sql` migration (last-write-wins —
+20260502004217 dropped `partial_batch` after S16-INGEST-02 made
+`insert_chunks` transactional, which makes FM-1 unreachable).
+
+Adding a value: update this Literal AND ship a migration that ALTERs
+the CHECK. Schema-drift test enforces equality (Pattern A from CLAUDE.md)."""
 
 ERROR_KINDS: tuple[ErrorKind, ...] = get_args(ErrorKind)
 
@@ -105,6 +107,18 @@ def classify_exception(exc: BaseException) -> ErrorKind:
     msg = _msg(exc)
     status = _status_code(exc)
 
+    # --- ChunkValidationError (S16-INGEST-02 pre-flight) ----------------
+    # Carries an explicit `kind` attr ('empty_text' | 'dim_mismatch') so
+    # we don't re-parse the message — Pattern A: the producer labels it,
+    # the classifier respects the label.
+    if cls == "ChunkValidationError":
+        kind = getattr(exc, "kind", None)
+        if kind == "empty_text":
+            return "embedding_null"
+        if kind == "dim_mismatch":
+            return "dim_mismatch"
+        return "unknown"
+
     # --- Embedder side (FM-3) -------------------------------------------
     if cls == "RateLimitError" or "rate limit" in msg or "ratelimit" in msg:
         # The pipeline raises *after* embedder retries are exhausted. From
@@ -150,30 +164,23 @@ def classify_exception(exc: BaseException) -> ErrorKind:
     return "unknown"
 
 
-def classify_partial_batch(*, attempted: int, succeeded: int) -> ErrorKind:
-    """Classify a no-exception-but-short-write outcome.
-
-    `insert_chunks` (`store.py:611-622`) accumulates per-batch insert
-    counts without a transaction. If the function returns a count less
-    than the number of rows attempted, batches mid-stream silently
-    dropped — that's FM-1, the partial-batch failure. Calling this with
-    `succeeded == attempted` yields `none` (the success bucket).
-    """
-    if attempted < 0 or succeeded < 0:
-        raise ValueError("counts must be non-negative")
-    if succeeded == attempted:
-        return "none"
-    if succeeded < attempted:
-        return "partial_batch"
-    # succeeded > attempted shouldn't happen; treat as a logic bug, not a
-    # silent success.
-    return "unknown"
-
-
 __all__ = [
     "ERROR_KINDS",
     "ChunksWriteAudit",
     "ErrorKind",
     "classify_exception",
-    "classify_partial_batch",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Removed in S16-INGEST-02 (kept here as a tombstone so future readers can
+# trace the change without spelunking git):
+#
+#   classify_partial_batch(attempted, succeeded) -> "partial_batch" | "none"
+#
+# Removed because `SessionStore.insert_chunks` is now transactional with
+# `ON CONFLICT (source_id, chunk_index) DO NOTHING`. A short-write outcome
+# without an exception is no longer reachable: either the whole batch
+# commits or it raises. The `partial_batch` ErrorKind was dropped from
+# the SQL CHECK in migration 20260502004217. Pattern A simplification.
+# ---------------------------------------------------------------------------

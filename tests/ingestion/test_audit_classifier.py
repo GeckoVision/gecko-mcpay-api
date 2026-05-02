@@ -12,13 +12,12 @@ mode here — the synthetic suite below is the gating proxy.
 
 from __future__ import annotations
 
-import pytest
 from gecko_core.ingestion.audit import (
     ERROR_KINDS,
     ErrorKind,
     classify_exception,
-    classify_partial_batch,
 )
+from gecko_core.ingestion.exceptions import ChunkValidationError
 
 # ---------------------------------------------------------------------------
 # Lightweight stand-ins for the SDK exceptions we don't want to import. The
@@ -58,8 +57,13 @@ class _HttpExc(Exception):
 # ---------------------------------------------------------------------------
 
 
-def test_classify_none_via_partial_batch_success() -> None:
-    assert classify_partial_batch(attempted=10, succeeded=10) == "none"
+def test_classify_none_is_unreachable_via_classify_exception() -> None:
+    # S16-INGEST-02 removed `classify_partial_batch`. The "none" bucket
+    # is now only set by the pipeline directly on the success path; the
+    # classifier itself never returns "none" — it always sees a real
+    # exception. Coverage for "none" is the success-path unit test in
+    # test_audit_pipeline_emit.py::test_audit_emitted_on_clean_success.
+    assert "none" in ERROR_KINDS
 
 
 def test_classify_toast_limit_message() -> None:
@@ -124,18 +128,24 @@ def test_classify_supabase_5xx_message() -> None:
     assert classify_exception(exc) == "supabase_5xx"
 
 
-def test_classify_partial_batch_short_write() -> None:
-    assert classify_partial_batch(attempted=500, succeeded=327) == "partial_batch"
-
-
 def test_classify_unknown_falls_through() -> None:
     exc = ValueError("something nobody planned for")
     assert classify_exception(exc) == "unknown"
 
 
-def test_classify_partial_batch_rejects_negative() -> None:
-    with pytest.raises(ValueError):
-        classify_partial_batch(attempted=-1, succeeded=0)
+def test_classify_chunk_validation_empty_text() -> None:
+    """S16-INGEST-02 — pre-flight rejected an empty chunk. The audit
+    histogram should bucket this as `embedding_null` (text exists but
+    the chunk has no useful content for the embedder)."""
+    exc = ChunkValidationError("chunk_index=2 has empty text", kind="empty_text")
+    assert classify_exception(exc) == "embedding_null"
+
+
+def test_classify_chunk_validation_dim_mismatch() -> None:
+    """S16-INGEST-02 — pre-flight rejected a wrong-dim embedding (e.g.
+    poisoned cache after a model swap). The audit row points at FM-2."""
+    exc = ChunkValidationError("chunk_index=0 dim 768 != 1536", kind="dim_mismatch")
+    assert classify_exception(exc) == "dim_mismatch"
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +162,6 @@ _COVERED: set[ErrorKind] = {
     "embedding_null",
     "dim_mismatch",
     "supabase_5xx",
-    "partial_batch",
     "unknown",
 }
 

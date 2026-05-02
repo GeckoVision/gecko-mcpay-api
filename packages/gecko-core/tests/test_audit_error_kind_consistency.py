@@ -26,19 +26,29 @@ def test_error_kind_literal_matches_runtime_tuple() -> None:
 
 def _latest_error_kind_check_values() -> tuple[str, ...]:
     """Walk migrations in name order; the last file that sets a CHECK on
-    chunks_write_audit.error_kind wins. Returns the parsed value tuple."""
+    chunks_write_audit.error_kind wins. Returns the parsed value tuple.
+
+    S16-INGEST-02 broadened this beyond the original
+    `*chunks_write_audit*.sql` glob: a follow-up migration may ALTER the
+    CHECK without including the table name in its own file name (e.g.
+    `*_drop_partial_batch.sql`). The matching window is now "any
+    migration that mentions both `chunks_write_audit` and an
+    `error_kind IN (...)` clause" — last-write-wins by file name order.
+    """
     pattern = re.compile(
         r"error_kind\s+IN\s*\(\s*((?:'[a-z_0-9]+'(?:\s*,\s*)?)+)\s*\)",
         re.IGNORECASE,
     )
     last_values: tuple[str, ...] | None = None
-    for path in sorted(_MIGRATIONS_DIR.glob("*chunks_write_audit*.sql")):
+    for path in sorted(_MIGRATIONS_DIR.glob("*.sql")):
         sql = path.read_text(encoding="utf-8")
+        if "chunks_write_audit" not in sql:
+            continue
         for raw in pattern.findall(sql):
             values = tuple(v.strip().strip("'") for v in raw.split(","))
             last_values = values
     if last_values is None:  # pragma: no cover
-        raise RuntimeError("no error_kind CHECK constraint found in chunks_write_audit migration")
+        raise RuntimeError("no error_kind CHECK constraint found in any migration")
     return last_values
 
 

@@ -583,6 +583,19 @@ class SessionStore:
             return None
         return UUID(str(rows[0]["id"]))
 
+    # S16-INGEST-02 — embedding dim is a single source of truth. If we
+    # ever migrate to a different model + dim, this constant moves AND
+    # the matching pgvector column type moves in lockstep via a migration.
+    EMBED_DIM = 1536
+
+    # S16-INGEST-02 — outermost batch size, then halved on retryable
+    # errors (`toast_limit` / `supabase_5xx`). The ticket says retry with
+    # `batch_size // 2` twice — capped at 2 halvings means the smallest
+    # batch we ever attempt is ~125 rows, which is well below the TOAST
+    # ceiling for 1536-float vectors (~9 KB / row).
+    _INSERT_INITIAL_BATCH_SIZE = 500
+    _INSERT_MAX_HALVINGS = 2
+
     async def insert_chunks(
         self,
         session_id: UUID,
@@ -593,14 +606,48 @@ class SessionStore:
 
         `chunks` is a list of (chunk_index, text, embedding) tuples.
 
+        S16-INGEST-02 — transactional + idempotent.
+          - Pre-flight validation rejects empty text / wrong-dim vectors
+            via `ChunkValidationError` BEFORE any DB round-trip.
+          - Each batch goes through Postgres upsert with
+            `ON CONFLICT (source_id, chunk_index) DO NOTHING`, so a
+            re-run of the same source produces zero duplicates.
+          - On `toast_limit` / `supabase_5xx`, the failing batch is halved
+            and retried twice. After two halvings the exception is
+            re-raised so the audit row records the real error_kind.
+
         Chunked at the HTTP layer to keep individual requests under the
         default httpx read timeout. Some pages (e.g. wiki dumps) emit
         thousands of chunks; a single 13 MB upsert with 1536-dim vectors
-        regularly trips supabase-py's read timeout. Batching at 500 keeps
-        each request ~3 MB.
+        regularly trips supabase-py's read timeout.
         """
         if not chunks:
             return 0
+
+        # Lazy import — avoid a top-level cycle (audit imports nothing
+        # from sessions, but exceptions lives next to it).
+        from gecko_core.ingestion.audit import classify_exception
+        from gecko_core.ingestion.exceptions import ChunkValidationError
+
+        # ----- Pre-flight validation (S16-INGEST-02) ----------------------
+        # Refuse a doomed insert before the wire. `_filter_embeddable` in
+        # the pipeline should already have dropped empties, but if it
+        # ever regresses we surface here as `embedding_null` (kind=
+        # 'empty_text' on the exception) instead of letting Postgres trip
+        # the new `chunks_text_nonempty_check`.
+        for idx, text, embedding in chunks:
+            if not text or not text.strip():
+                raise ChunkValidationError(
+                    f"chunk_index={idx} has empty/whitespace text",
+                    kind="empty_text",
+                )
+            if len(embedding) != self.EMBED_DIM:
+                raise ChunkValidationError(
+                    f"chunk_index={idx} embedding dim {len(embedding)} "
+                    f"!= expected {self.EMBED_DIM}",
+                    kind="dim_mismatch",
+                )
+
         rows: list[dict[str, Any]] = [
             {
                 "session_id": str(session_id),
@@ -612,34 +659,76 @@ class SessionStore:
             for idx, text, embedding in chunks
         ]
 
-        BATCH_SIZE = 500
-
-        def _insert_batch(batch: list[dict[str, Any]]) -> list[dict[str, Any]]:
-            res = self._client.table(self.CHUNKS_TABLE).insert(batch).execute()
+        def _upsert_batch(batch: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            # ON CONFLICT (source_id, chunk_index) DO NOTHING — the
+            # existing UNIQUE constraint covers it. Idempotent re-runs
+            # of the same source produce zero duplicate rows; supabase-py
+            # returns the rows it actually inserted (skipped conflicts
+            # are absent from `data`), so the count is the *new* writes.
+            res = (
+                self._client.table(self.CHUNKS_TABLE)
+                .upsert(
+                    batch,
+                    on_conflict="source_id,chunk_index",
+                    ignore_duplicates=True,
+                )
+                .execute()
+            )
             return cast(list[dict[str, Any]], res.data or [])
 
-        # S16-INGEST-01 — structured kwargs so the same fields that land
-        # in `chunks_write_audit` also show up in stdout via stdlib `extra`.
-        # No structlog dep yet; `extra={...}` is the structlog-compatible
-        # forward path. `error_kind=partial_batch` is emitted on the FM-1
-        # silent-drop path (inserted < attempted, no exception).
+        async def _insert_with_shedding(batch: list[dict[str, Any]], halvings_left: int) -> int:
+            """Run one batch transactionally; halve + retry on retryable kinds."""
+            try:
+                # Result list discarded: ON CONFLICT DO NOTHING omits
+                # conflicts from `data`, but our durability count comes
+                # from the input batch length on the success branch
+                # below — that's the right number for an idempotent
+                # upsert (re-runs report all rows durable, not 0).
+                await asyncio.to_thread(_upsert_batch, batch)
+            except Exception as exc:
+                kind = classify_exception(exc)
+                if kind in {"toast_limit", "supabase_5xx"} and halvings_left > 0 and len(batch) > 1:
+                    half = max(1, len(batch) // 2)
+                    logger.warning(
+                        "store.insert_chunks.shed_and_retry",
+                        extra={
+                            "session_id": str(session_id),
+                            "source_id": str(source_id),
+                            "batch_size": len(batch),
+                            "next_batch_size": half,
+                            "halvings_left": halvings_left,
+                            "error_kind": kind,
+                            "exc": exc.__class__.__name__,
+                        },
+                    )
+                    left = batch[:half]
+                    right = batch[half:]
+                    a = await _insert_with_shedding(left, halvings_left - 1)
+                    b = await _insert_with_shedding(right, halvings_left - 1)
+                    return a + b
+                # Non-retryable, or out of halvings: re-raise so the
+                # pipeline's audit row gets the real error_kind.
+                raise
+            # On supabase-py upsert with ignore_duplicates, conflicting
+            # rows are skipped — `len(inserted)` is the count of *new*
+            # rows. We treat all batch rows as "successfully durable"
+            # because either we just wrote them OR they were already
+            # present from a prior run (which is exactly what idempotency
+            # promises). FM-1 silent partial-drop without an exception
+            # is no longer reachable here: a partial supabase response
+            # without an error would be a contract break, not a normal
+            # mode of operation.
+            return len(batch)
+
+        # Walk through the rows in initial-size batches; each batch is
+        # transactional + idempotent + retry-on-shed. No accumulator of
+        # "partial wins" — either every batch resolves cleanly or the
+        # exception bubbles up.
         total_inserted = 0
-        for i in range(0, len(rows), BATCH_SIZE):
-            batch = rows[i : i + BATCH_SIZE]
-            inserted = await asyncio.to_thread(_insert_batch, batch)
-            total_inserted += len(inserted)
-            if len(inserted) < len(batch):
-                logger.warning(
-                    "store.insert_chunks.partial_batch",
-                    extra={
-                        "session_id": str(session_id),
-                        "source_id": str(source_id),
-                        "batch_size": len(batch),
-                        "succeeded": len(inserted),
-                        "failed": len(batch) - len(inserted),
-                        "error_kind": "partial_batch",
-                    },
-                )
+        for i in range(0, len(rows), self._INSERT_INITIAL_BATCH_SIZE):
+            batch = rows[i : i + self._INSERT_INITIAL_BATCH_SIZE]
+            total_inserted += await _insert_with_shedding(batch, self._INSERT_MAX_HALVINGS)
+
         logger.info(
             "store.insert_chunks.done",
             extra={
@@ -647,7 +736,7 @@ class SessionStore:
                 "source_id": str(source_id),
                 "batch_size": len(rows),
                 "succeeded": total_inserted,
-                "error_kind": "none" if total_inserted == len(rows) else "partial_batch",
+                "error_kind": "none",
             },
         )
         return total_inserted
@@ -953,6 +1042,7 @@ class SessionStore:
 
         rows = await asyncio.to_thread(_select)
         out: dict[int, list[float]] = {}
+        evict_indices: list[int] = []
         for r in rows:
             idx = r.get("chunk_index")
             emb = r.get("embedding")
@@ -967,9 +1057,60 @@ class SessionStore:
                     emb = _json.loads(emb)
                 except Exception:
                     continue
-            if isinstance(emb, list):
-                out[int(idx)] = [float(v) for v in emb]
+            if not isinstance(emb, list):
+                continue
+            vec = [float(v) for v in emb]
+            # S16-INGEST-02 — dim-validate cache hit. FM-2 (poisoned
+            # cache after a model change) returns a wrong-dim vector
+            # that would trip Postgres `vector(1536)` mismatch on the
+            # downstream insert, fail the whole batch, and surface as
+            # `dim_mismatch` after a wasted DB round-trip. Catch it here
+            # and evict so the pipeline re-embeds.
+            if len(vec) != self.EMBED_DIM:
+                logger.warning(
+                    "store.cache.dim_mismatch_evict",
+                    extra={
+                        "url_hash": url_hash,
+                        "chunk_index": int(idx),
+                        "got_dim": len(vec),
+                        "expected_dim": self.EMBED_DIM,
+                        "error_kind": "dim_mismatch",
+                    },
+                )
+                evict_indices.append(int(idx))
+                continue
+            out[int(idx)] = vec
+
+        # Evict poisoned rows OUT OF BAND of the read path's contract:
+        # the cache is best-effort, so a delete failure here must not
+        # fail the lookup. The pipeline will simply re-embed the missing
+        # indices on this run; if the eviction also fails, next run
+        # tries again. Idempotency wins.
+        if evict_indices:
+            try:
+                await asyncio.to_thread(self._evict_chunk_cache, url_hash, evict_indices)
+            except Exception as exc:  # pragma: no cover — best-effort
+                logger.info(
+                    "store.cache.evict_failed url_hash=%s err=%s",
+                    url_hash,
+                    exc.__class__.__name__,
+                )
         return out
+
+    def _evict_chunk_cache(self, url_hash: str, indices: list[int]) -> None:
+        """Delete poisoned cache rows. Sync helper invoked via to_thread.
+
+        Kept private; the only caller is `get_chunk_cache`'s eviction path.
+        Filtered by `url_hash` first so RLS / index pruning does the right
+        thing even on a large cache.
+        """
+        (
+            self._client.table(self.CHUNK_EMBEDDING_CACHE_TABLE)
+            .delete()
+            .eq("url_hash", url_hash)
+            .in_("chunk_index", indices)
+            .execute()
+        )
 
     async def put_chunk_cache(
         self,
