@@ -1,4 +1,14 @@
-"""Tests for V11-01 — bound concurrency + RateLimitError retry."""
+"""Tests for V11-01 — bound concurrency + RateLimitError retry.
+
+S16-INGEST-04: the legacy `_RETRY_BACKOFFS_S` constant was removed in
+S16-INGEST-03 when fixed backoffs were replaced with full-jitter
+exponential. These tests still cover meaningful behavior that
+`tests/ingestion/test_embedder_retry_jitter.py` does NOT (the happy
+path with no retry, the single-transient retry case, and non-rate-limit
+exceptions short-circuiting). They are kept and rewired against the
+new symbols (`asyncio.sleep` + `_full_jitter_backoff`) so jitter
+sleeps are skipped without depending on a removed module attribute.
+"""
 
 from __future__ import annotations
 
@@ -37,8 +47,19 @@ def _rate_limit_error(code: str = "tokens") -> openai.RateLimitError:
 
 @pytest.fixture(autouse=True)
 def _fast_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Skip the real backoff sleeps so tests stay fast."""
-    monkeypatch.setattr(embedder, "_RETRY_BACKOFFS_S", (0.0, 0.0, 0.0, 0.0))
+    """Skip the real jittered sleeps so tests stay fast.
+
+    S16-INGEST-04 — replaces the old `_RETRY_BACKOFFS_S` patch. The
+    embedder now sleeps via `asyncio.sleep(_full_jitter_backoff(n))`;
+    we stub both so the unit under test executes the retry control
+    flow without spending wall-clock time on jitter draws.
+    """
+
+    async def _instant_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(embedder.asyncio, "sleep", _instant_sleep)
+    monkeypatch.setattr(embedder, "_full_jitter_backoff", lambda _attempt: 0.0)
 
 
 @pytest.mark.asyncio
@@ -65,12 +86,16 @@ async def test_one_transient_then_success() -> None:
 
 
 @pytest.mark.asyncio
-async def test_four_rate_limits_raises() -> None:
-    create = AsyncMock(side_effect=[_rate_limit_error() for _ in range(4)])
+async def test_max_attempts_rate_limits_raises() -> None:
+    """S16-INGEST-04 — was `test_four_rate_limits_raises` against the
+    legacy 4-attempt cap. Cap is now 5 (`_MAX_ATTEMPTS`); after 5
+    consecutive rate-limit responses the last one propagates."""
+    side_effects: list[Any] = [_rate_limit_error() for _ in range(embedder._MAX_ATTEMPTS)]
+    create = AsyncMock(side_effect=side_effects)
     with pytest.raises(openai.RateLimitError):
         await embedder.embed(["hi"], client=_fake_client(create), model="text-embedding-3-small")
-    # Max 4 attempts; no fifth.
-    assert create.await_count == 4
+    # Exactly _MAX_ATTEMPTS calls; no extra attempt past the cap.
+    assert create.await_count == embedder._MAX_ATTEMPTS
 
 
 @pytest.mark.asyncio
