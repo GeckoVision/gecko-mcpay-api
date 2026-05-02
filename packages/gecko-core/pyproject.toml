@@ -35,6 +35,15 @@ dependencies = [
     "x402[evm,svm]>=2.8.0",
 ]
 
+[project.optional-dependencies]
+# S19-VOYAGE-RERANK-01 — Voyage AI post-retrieval reranker. Optional so the
+# legacy install (GECKO_RERANKER unset / "none") stays slim and never imports
+# voyageai. Operators that want the reranker install with:
+#   uv sync --extra rerank
+# The voyage_rerank module imports voyageai lazily inside the call site so an
+# install without this extra still passes type-check and unit tests.
+rerank = ["voyageai>=0.2"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

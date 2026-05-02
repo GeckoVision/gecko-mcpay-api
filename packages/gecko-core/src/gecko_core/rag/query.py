@@ -192,6 +192,14 @@ class RagChunk(BaseModel):
     # provider_kind migration still validate (matches the SQL DEFAULT).
     provider_kind: ProviderKind = "web"
 
+    # S19-VOYAGE-RERANK-01 — populated only when the Voyage reranker is on
+    # (`GECKO_RERANKER=voyage`) AND the call succeeded. Stays None on the
+    # legacy path so eval consumers can detect "was this slate reranked?"
+    # by `chunk.rerank_score is not None`. NB: Voyage's relevance score is
+    # on a different scale than cosine `similarity`; downstream citation
+    # grounding still reads `similarity`, this is a side-channel for eval.
+    rerank_score: float | None = None
+
 
 async def rag_query(
     session_id: UUID,
@@ -315,11 +323,29 @@ async def rag_query(
 
         rows = await asyncio.to_thread(_rpc)
     chunks = [RagChunk.model_validate(row) for row in rows]
-    # Apply per-provider boost + re-sort + truncate to caller's top_k.
-    # When hybrid retrieval is on, reserve a quota of slots for non-web
-    # provider chunks so the wedge providers survive the truncate stage.
+    # Composition order (S19-VOYAGE-RERANK-01):
+    #   1. provider boost — per-kind multiplicative weights on cosine sim
+    #   2. quota rescue   — guarantee non-web wedge providers survive truncate
+    #   3. Voyage rerank  — semantic re-score on the shape-balanced slate
+    # The order is load-bearing: structural rescue must happen before any
+    # semantic re-score, otherwise wedge providers get evicted before
+    # Voyage gets to evaluate them.
+    #
+    # Slate width: when the reranker is OFF we truncate to `top_k` here.
+    # When the reranker is ON we keep the slate up to RERANK_TOP_K_INPUT
+    # so Voyage gets the full candidate window the plan specifies (K=20),
+    # then Voyage trims to `top_k`.
+    from gecko_core.rag.voyage_rerank import (
+        RERANK_TOP_K_INPUT,
+        _flag_enabled,
+        voyage_rerank,
+    )
+
     reserve = per_kind_quota if use_hybrid else 0
-    return _rerank_by_provider(chunks, top_k, reserve_quota=reserve)
+    pre_voyage_k = RERANK_TOP_K_INPUT if _flag_enabled() else top_k
+    boosted = _rerank_by_provider(chunks, pre_voyage_k, reserve_quota=reserve)
+
+    return await voyage_rerank(question, boosted, top_n=top_k)
 
 
 __all__ = ["RagChunk", "_rerank_by_provider", "rag_query"]
