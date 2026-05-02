@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 import pytest
 from click.testing import CliRunner
 from gecko_cli.commands.doctor import (
+    check_bazaar,
     check_frames_wallet,
     check_llm_ping,
     check_llm_resolution,
@@ -448,3 +449,98 @@ def test_doctor_cmd_exits_1_on_failure(
     result = CliRunner().invoke(doctor_cmd, [])
     assert result.exit_code == 1
     assert "FAIL" in result.output or "failed" in result.output
+
+
+# ---------------------------------------------------------------------------
+# S16-OBS-01 — Bazaar row
+# ---------------------------------------------------------------------------
+
+
+from decimal import Decimal as _Decimal  # noqa: E402
+
+
+class _FakeBazaarLedger:
+    def __init__(self, total: _Decimal) -> None:
+        self._total = total
+
+    async def daily_total_usd(self) -> _Decimal:
+        return self._total
+
+
+def _probe_factory(*, primary_ok: bool, fallback_ok: bool, elapsed: float = 0.05):
+    async def _probe(url: str) -> tuple[bool, float]:
+        if "agentic.market" in url:
+            return primary_ok, elapsed
+        return fallback_ok, elapsed
+
+    return _probe
+
+
+@pytest.mark.asyncio
+async def test_check_bazaar_green_when_reachable_and_low_spend() -> None:
+    row = await check_bazaar(
+        {"X402_CONSUMER_MODE": "stub", "GECKO_BAZAAR_DAILY_USD_CAP": "5.00"},
+        ledger=_FakeBazaarLedger(_Decimal("1.50")),
+        probe=_probe_factory(primary_ok=True, fallback_ok=True),
+    )
+    assert row.status == "ok"
+    assert "agentic.market=up" in row.detail
+    assert "cdp=up" in row.detail
+    assert "spend=$1.50/$5.00" in row.detail
+    assert "remaining $3.50" in row.detail
+
+
+@pytest.mark.asyncio
+async def test_check_bazaar_yellow_when_primary_down() -> None:
+    row = await check_bazaar(
+        {"X402_CONSUMER_MODE": "stub", "GECKO_BAZAAR_DAILY_USD_CAP": "5.00"},
+        ledger=_FakeBazaarLedger(_Decimal("0.10")),
+        probe=_probe_factory(primary_ok=False, fallback_ok=True),
+    )
+    assert row.status == "warn"
+    assert "agentic.market=down" in row.detail
+
+
+@pytest.mark.asyncio
+async def test_check_bazaar_red_when_spend_over_cap() -> None:
+    row = await check_bazaar(
+        {"X402_CONSUMER_MODE": "stub", "GECKO_BAZAAR_DAILY_USD_CAP": "5.00"},
+        ledger=_FakeBazaarLedger(_Decimal("5.50")),
+        probe=_probe_factory(primary_ok=True, fallback_ok=True),
+    )
+    assert row.status == "err"
+    assert "spend=$5.50/$5.00" in row.detail
+
+
+@pytest.mark.asyncio
+async def test_check_bazaar_yellow_when_spend_at_80_percent() -> None:
+    row = await check_bazaar(
+        {"X402_CONSUMER_MODE": "stub", "GECKO_BAZAAR_DAILY_USD_CAP": "5.00"},
+        ledger=_FakeBazaarLedger(_Decimal("4.00")),
+        probe=_probe_factory(primary_ok=True, fallback_ok=True),
+    )
+    assert row.status == "warn"
+
+
+@pytest.mark.asyncio
+async def test_check_bazaar_red_when_both_hosts_down() -> None:
+    row = await check_bazaar(
+        {"X402_CONSUMER_MODE": "stub", "GECKO_BAZAAR_DAILY_USD_CAP": "5.00"},
+        ledger=_FakeBazaarLedger(_Decimal("0.00")),
+        probe=_probe_factory(primary_ok=False, fallback_ok=False),
+    )
+    assert row.status == "err"
+    assert "agentic.market=down" in row.detail
+    assert "cdp=down" in row.detail
+
+
+@pytest.mark.asyncio
+async def test_check_bazaar_handles_missing_ledger_gracefully() -> None:
+    """No SUPABASE env + no injected ledger → 'spend=?' detail, status from reachability."""
+    row = await check_bazaar(
+        {"X402_CONSUMER_MODE": "stub"},
+        ledger=None,
+        probe=_probe_factory(primary_ok=True, fallback_ok=True),
+    )
+    assert row.status == "ok"
+    assert "spend=?" in row.detail

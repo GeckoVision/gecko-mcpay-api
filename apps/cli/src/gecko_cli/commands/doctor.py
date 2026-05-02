@@ -19,6 +19,7 @@ import asyncio
 import os
 import sys
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any, Literal, Protocol
 from uuid import uuid4
 
@@ -439,6 +440,7 @@ async def _run_all(
         check_x402(env),
         check_cdp_http_timeout(env),
         check_frames_wallet(env),
+        await check_bazaar(env),
     ]
     # Only attempt the memory roundtrip when Supabase env is present —
     # otherwise the failure is double-counted with the env row.
@@ -477,6 +479,130 @@ def render_table(rows: list[CheckRow]) -> Table:
     for r in rows:
         table.add_row(r.name, _GLYPH[r.status], r.detail)
     return table
+
+
+# ---------------------------------------------------------------------------
+# S16-OBS-01 — Bazaar reachability + spend row
+# ---------------------------------------------------------------------------
+
+
+# 2-second cap per probe so a slow primary doesn't pin doctor.
+_BAZAAR_PROBE_TIMEOUT_S = 2.0
+
+
+async def _probe_bazaar_endpoint(url: str) -> tuple[bool, float]:
+    """GET ``url`` with a tight timeout; return (reachable, elapsed_seconds).
+
+    Reachability == 2xx OR 4xx (server is up, just doesn't like our query).
+    A 5xx or transport error is unreachable. Auth challenges on the
+    discovery endpoints aren't expected today, but a 401 would still
+    count as "the host is alive" so doctor flags reachability, not auth.
+    """
+    import time as _time
+
+    import httpx
+
+    started = _time.monotonic()
+    try:
+        async with httpx.AsyncClient(timeout=_BAZAAR_PROBE_TIMEOUT_S) as c:
+            resp = await c.get(url)
+    except Exception:
+        return False, _time.monotonic() - started
+    elapsed = _time.monotonic() - started
+    return (resp.status_code < 500), elapsed
+
+
+async def check_bazaar(
+    env: dict[str, str],
+    *,
+    ledger: Any | None = None,
+    probe: Any | None = None,
+) -> CheckRow:
+    """One row reflecting Bazaar discovery reachability + outbound spend.
+
+    Mirrors the Paragraph row pattern (S14-PARA-03): a single row, one
+    line of detail summarising mode + reachability + spend.
+
+    Status:
+      * green — both discovery hosts reachable AND today's spend < 80% cap
+      * yellow — one host unreachable, OR spend in [80%, 100%] of cap
+      * red — both hosts unreachable, OR spend exceeds cap
+
+    ``ledger`` and ``probe`` are test seams. Production wires
+    ``BazaarSpendLedger.from_env`` + the live HTTP probe.
+    """
+    from gecko_core.payments.bazaar_discovery import (
+        AGENTIC_MARKET_BASE_URL,
+        CDP_DISCOVERY_BASE_URL,
+    )
+
+    mode = env.get("X402_CONSUMER_MODE") or "stub"
+    daily_cap_raw = env.get("GECKO_BAZAAR_DAILY_USD_CAP")
+    try:
+        daily_cap = Decimal(daily_cap_raw) if daily_cap_raw else Decimal("5.00")
+    except Exception:
+        daily_cap = Decimal("5.00")
+
+    probe_fn = probe or _probe_bazaar_endpoint
+    primary_url = f"{AGENTIC_MARKET_BASE_URL}/v1/services?limit=1"
+    fallback_url = f"{CDP_DISCOVERY_BASE_URL}/resources?limit=1"
+
+    primary_task = asyncio.create_task(probe_fn(primary_url))
+    fallback_task = asyncio.create_task(probe_fn(fallback_url))
+    primary_ok, primary_elapsed = await primary_task
+    fallback_ok, fallback_elapsed = await fallback_task
+
+    # Spend lookup. Best-effort: if the ledger isn't reachable we
+    # downgrade to a "ledger unavailable" detail line rather than
+    # claiming green.
+    spend_today: Decimal | None = None
+    ledger_error: str | None = None
+    if ledger is None and env.get("SUPABASE_URL") and env.get("SUPABASE_SERVICE_ROLE_KEY"):
+        try:
+            from gecko_core.payments.spend_ledger import BazaarSpendLedger
+
+            ledger = BazaarSpendLedger.from_env()
+        except Exception as exc:
+            ledger_error = f"ledger unavailable: {exc.__class__.__name__}"
+
+    if ledger is not None:
+        try:
+            spend_today = await ledger.daily_total_usd()
+        except Exception as exc:
+            ledger_error = f"daily_total_usd failed: {exc.__class__.__name__}"
+
+    # Compose status from the two axes.
+    reachability_count = int(primary_ok) + int(fallback_ok)
+    status: Status
+    if reachability_count == 0:
+        status = "err"
+    elif reachability_count == 1:
+        status = "warn"
+    else:
+        status = "ok"
+
+    if spend_today is not None:
+        ratio = spend_today / daily_cap if daily_cap > 0 else Decimal("0")
+        if ratio > 1:
+            status = "err"
+        elif ratio >= Decimal("0.80") and status == "ok":
+            status = "warn"
+
+    # Detail string — keep on one line for table render.
+    primary_label = (
+        f"agentic.market={('up' if primary_ok else 'down')}@{primary_elapsed * 1000:.0f}ms"
+    )
+    fallback_label = f"cdp={('up' if fallback_ok else 'down')}@{fallback_elapsed * 1000:.0f}ms"
+    if spend_today is not None:
+        remaining = max(daily_cap - spend_today, Decimal("0"))
+        spend_label = f"spend=${spend_today:.2f}/${daily_cap:.2f} (remaining ${remaining:.2f})"
+    elif ledger_error:
+        spend_label = f"spend=? ({ledger_error})"
+    else:
+        spend_label = "spend=? (ledger not configured)"
+
+    detail = f"mode={mode} {primary_label} {fallback_label} {spend_label}"
+    return CheckRow("Bazaar", status, detail)
 
 
 async def chunks_write_audit_recent_rows(days: int = 7) -> list[CheckRow]:
@@ -576,6 +702,7 @@ def doctor_cmd(recent: bool, recent_days: int) -> None:
 
 __all__ = [
     "CheckRow",
+    "check_bazaar",
     "check_cdp_http_timeout",
     "check_frames_wallet",
     "check_llm_ping",
