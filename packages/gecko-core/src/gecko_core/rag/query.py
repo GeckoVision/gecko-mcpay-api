@@ -17,6 +17,11 @@ from pydantic import BaseModel, Field, field_validator
 
 from gecko_core.ingestion.embedder import embed
 from gecko_core.models import _validate_citation_uri
+from gecko_core.rag.self_citation import (
+    SELF_CITATION_DOWNWEIGHT,
+    is_self_citation,
+    is_self_referential_idea,
+)
 from gecko_core.sessions.store import SessionStore
 from gecko_core.sources.types import PROVIDER_KINDS, ProviderKind
 
@@ -101,7 +106,11 @@ def _resolve_per_kind_quota() -> int:
 
 
 def _rerank_by_provider(
-    chunks: list[RagChunk], top_k: int, *, reserve_quota: int | None = None
+    chunks: list[RagChunk],
+    top_k: int,
+    *,
+    reserve_quota: int | None = None,
+    self_citation_active: bool = False,  # S20-SELF-CITATION-GUARD-01
 ) -> list[RagChunk]:
     """Apply per-provider boosts to similarity, re-sort, return top_k.
 
@@ -126,6 +135,13 @@ def _rerank_by_provider(
     boosted: list[RagChunk] = []
     for c in chunks:
         w = weights.get(c.provider_kind, 1.0)
+        # S20-SELF-CITATION-GUARD-01 — when the idea is itself about Gecko's
+        # product space, multiplicatively down-weight chunks resolving to
+        # Gecko-owned domains. Soft guard, not a filter: the chunk stays
+        # eligible but loses the structural advantage of self-citation
+        # circularity. Stacks with the per-provider boost.
+        if self_citation_active and is_self_citation(c.source_url):
+            w *= SELF_CITATION_DOWNWEIGHT
         if w == 1.0:
             boosted.append(c)
             continue
@@ -343,7 +359,21 @@ async def rag_query(
 
     reserve = per_kind_quota if use_hybrid else 0
     pre_voyage_k = RERANK_TOP_K_INPUT if _flag_enabled() else top_k
-    boosted = _rerank_by_provider(chunks, pre_voyage_k, reserve_quota=reserve)
+    # S20-SELF-CITATION-GUARD-01 — detect Gecko-self-referential ideas at the
+    # entry point and pass the flag through so the per-provider rerank can
+    # down-weight Gecko-domain chunks. See gecko_core.rag.self_citation.
+    self_citation_active = is_self_referential_idea(question)
+    if self_citation_active:
+        logger.info(
+            "rag.self_citation.active question_excerpt=%s",
+            question[:60],
+        )
+    boosted = _rerank_by_provider(
+        chunks,
+        pre_voyage_k,
+        reserve_quota=reserve,
+        self_citation_active=self_citation_active,
+    )
 
     return await voyage_rerank(question, boosted, top_n=top_k)
 

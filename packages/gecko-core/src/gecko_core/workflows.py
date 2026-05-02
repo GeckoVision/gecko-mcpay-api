@@ -506,6 +506,10 @@ async def _run_pro_debate(
             precedents=precedents,
             tier_preset=tier_preset,
             gap_classification=base_result.validation_report.gap_classification,
+            # S20-DISTRIBUTION-CRITIC-01 — pass the basic-tier ICP so the
+            # critic gets the distribution/GTM fragment when the idea + ICP
+            # trip the B2B / 2-sided heuristic detector.
+            icp=base_result.business_plan.icp,
         )
     except ImportError as exc:
         logger.warning("AG2 not installed; pro tier degraded to basic: %s", exc)

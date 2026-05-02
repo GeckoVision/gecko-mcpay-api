@@ -197,11 +197,112 @@ def feature_not_product_fragment_for(gap_classification: str | None) -> str | No
     return None
 
 
+# ---------------------------------------------------------------------------
+# Distribution / GTM critic fragment (S20-DISTRIBUTION-CRITIC-01)
+# ---------------------------------------------------------------------------
+# Stress-matrix #3 from docs/sprint-reviews/2026-05-02-s18-s19-review.md §5
+# ("a new app for hotels — generate local guides personally built for them")
+# showed the 5-voice debate nailing PMF and missing the actual blocker:
+# B2B distribution into hotel chains. Same failure mode applies to any
+# 2-sided marketplace idea — the model rates "is the product good?" and
+# never asks "can we acquire side A cheaply enough to attract side B?".
+#
+# This is a SIBLING fragment to FEATURE_NOT_PRODUCT_FRAGMENT, not a 6th
+# voice. Adding a 6th voice would expand REQUIRED_AGENTS, the V1
+# consistency test, the AG2 max_round budget, the SSE event ordering, and
+# the eval rubric — that's L scope. Appending a fragment is S scope and
+# composes cleanly with the existing feature-not-product gating.
+#
+# Detection is heuristic substring matching on idea + ICP, NOT an LLM
+# call: cheap, deterministic, replayable. A typed B2B/2-sided field on
+# ValidationReport is the cleaner long-term path (S21 follow-up); for
+# S20 we stay narrow.
+
+DISTRIBUTION_CRITIC_FRAGMENT: str = (
+    "GTM CONTEXT: this idea has B2B or two-sided dynamics. "
+    "Before concluding GO, name the distribution moat explicitly: "
+    "(a) what's the wedge into the first 10 customers, (b) does "
+    "selling to one side of the marketplace get the other side "
+    "cheaper or more expensive, (c) is the buyer the user, and if "
+    "not, who pays first? If you can't answer (a) concretely, "
+    "REFINE — product-market fit doesn't matter without distribution-fit."
+)
+
+# Curated B2B keyword set. Cuts from the draft list to avoid false
+# positives:
+#   - "saas", "api", "platform" — appear in nearly every modern tech
+#     idea ("AI platform for X"), would overfire on consumer SaaS.
+#   - "agency", "agencies" — too ambiguous (agency-as-autonomy vs.
+#     agency-as-firm); the named verticals below cover the B2B
+#     services case more precisely.
+# What stays: explicit B2B markers ("b2b", "enterprise"), procurement
+# language ("vendor", "wholesale", "distributor", "supplier",
+# "procurement", "channel sales"), and named B2B verticals where the
+# distribution problem is the well-known blocker ("hotels", "hospitals",
+# "law firms", "insurance"). "Marketplace" stays under the 2-sided set
+# below where it belongs semantically.
+_B2B_KEYWORDS: frozenset[str] = frozenset(
+    {
+        "b2b",
+        "enterprise",
+        "vendor",
+        "wholesale",
+        "distributor",
+        "supplier",
+        "hotels",
+        "hospitals",
+        "law firms",
+        "insurance",
+        "procurement",
+        "channel sales",
+    }
+)
+
+# 2-sided / marketplace hints. Cuts:
+#   - bare "match" — fires on prose ("match the user's needs"). The
+#     more specific "buyer and seller" / role-pair phrases catch real
+#     marketplace intent without prose collisions.
+#   - bare "platform" — see above.
+# What stays: explicit role-pair phrases (high precision) plus
+# "marketplace" itself (high recall on the canonical case).
+_TWO_SIDED_HINTS: frozenset[str] = frozenset(
+    {
+        "buyer and seller",
+        "creator and viewer",
+        "host and guest",
+        "driver and rider",
+        "marketplace",
+        "two-sided",
+        "two sided",
+    }
+)
+
+
+def distribution_critic_fragment_for(idea: str, icp: str | None = "") -> str | None:
+    """Return the fragment when the idea/ICP triggers B2B or 2-sided detection.
+
+    Pure substring match on a lowercased ``idea + " " + icp`` haystack — no
+    LLM call, no I/O. Returns ``None`` (parallel to
+    ``feature_not_product_fragment_for``) when no trigger fires so the
+    caller can cleanly skip the append step.
+    """
+    if not idea and not icp:
+        return None
+    text = f"{idea or ''} {icp or ''}".lower()
+    if any(k in text for k in _B2B_KEYWORDS):
+        return DISTRIBUTION_CRITIC_FRAGMENT
+    if any(k in text for k in _TWO_SIDED_HINTS):
+        return DISTRIBUTION_CRITIC_FRAGMENT
+    return None
+
+
 __all__ = [
+    "DISTRIBUTION_CRITIC_FRAGMENT",
     "FEATURE_NOT_PRODUCT_FRAGMENT",
     "FEATURE_NOT_PRODUCT_GAP_TRIGGERS",
     "REQUIRED_AGENTS",
     "PromptsConfigError",
+    "distribution_critic_fragment_for",
     "feature_not_product_fragment_for",
     "load_prompts",
 ]

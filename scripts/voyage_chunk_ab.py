@@ -63,18 +63,45 @@ SESSION_ID = UUID("6cc0a982-8e21-4517-9d9f-565a867ef58d")
 TOP_K = 8
 IDEAL_K = 3  # top-K proxy for the "ideal" surrogate set per query
 
+# S20-RAG-EVAL-LABELS-01 — labels file path. When `_meta.labeling_status ==
+# "labeled"`, real human labels supersede the top-3 proxy. When "candidates_only"
+# (or the file is absent), we log a WARN and fall through to the proxy. The
+# label-driven precision formula is documented inline in `_label_driven_precision`.
+LABELS_PATH = REPO_ROOT / "tests" / "eval" / "labels" / "holdout_chunk_truth.json"
+
 # Queries chosen to match the corpus (agentic payments / x402 / MCP).
 # Eight queries: enough to smooth single-call noise, small enough that
 # the spend stays well under the $5 cap.
 QUERIES: list[dict[str, str]] = [
-    {"id": "q-x402-protocol", "text": "How does the x402 payment protocol work end-to-end between agent and facilitator?"},
-    {"id": "q-agent-pay-agent", "text": "Can autonomous AI agents pay each other for services without human approval?"},
-    {"id": "q-mcp-payments", "text": "How do MCP servers integrate with agentic payments and what is the threat model?"},
-    {"id": "q-l402-vs-x402", "text": "What is the difference between L402 and x402 for agentic commerce?"},
+    {
+        "id": "q-x402-protocol",
+        "text": "How does the x402 payment protocol work end-to-end between agent and facilitator?",
+    },
+    {
+        "id": "q-agent-pay-agent",
+        "text": "Can autonomous AI agents pay each other for services without human approval?",
+    },
+    {
+        "id": "q-mcp-payments",
+        "text": "How do MCP servers integrate with agentic payments and what is the threat model?",
+    },
+    {
+        "id": "q-l402-vs-x402",
+        "text": "What is the difference between L402 and x402 for agentic commerce?",
+    },
     {"id": "q-solana-x402", "text": "How does x402 work on Solana versus EVM chains?"},
-    {"id": "q-facilitator-trust", "text": "What is the trust model of the x402 facilitator and what attacks does it mitigate?"},
-    {"id": "q-bazaar-paid-context", "text": "What does Bazaar paid-context provide beyond Tavily search results?"},
-    {"id": "q-agent-commerce-risk", "text": "What are the security risks of autonomous agents executing onchain payments?"},
+    {
+        "id": "q-facilitator-trust",
+        "text": "What is the trust model of the x402 facilitator and what attacks does it mitigate?",
+    },
+    {
+        "id": "q-bazaar-paid-context",
+        "text": "What does Bazaar paid-context provide beyond Tavily search results?",
+    },
+    {
+        "id": "q-agent-commerce-risk",
+        "text": "What are the security risks of autonomous agents executing onchain payments?",
+    },
 ]
 
 # Pricing (current vendor cards, May 2026):
@@ -139,11 +166,102 @@ def citation_precision(returned: list[dict[str, Any]], ideal: set[tuple[str, int
     return hit / len(returned)
 
 
+def _string_chunk_key(c: dict[str, Any]) -> str:
+    """Match the labels file format: ``f"{source_id}#{chunk_index}"``."""
+    return f"{c['source_id']}#{int(c['chunk_index'])}"
+
+
+def load_labels() -> dict[str, Any] | None:
+    """Read the labels file, if present. Returns the parsed payload or None."""
+    if not LABELS_PATH.exists():
+        return None
+    try:
+        return json.loads(LABELS_PATH.read_text())  # type: ignore[no-any-return]
+    except json.JSONDecodeError as exc:
+        print(f"WARN: labels file at {LABELS_PATH} is not valid JSON: {exc}")
+        return None
+
+
+def label_driven_precision(
+    returned: list[dict[str, Any]],
+    must_cite: set[str],
+    should_cite: set[str],
+    must_not_cite: set[str],
+) -> float:
+    """Citation precision against hand-labeled ground truth.
+
+    Formula (cap in [0, 1]):
+        score = (|returned ∩ must_cite| + 0.5 * |returned ∩ should_cite|
+                 - 1.0 * |returned ∩ must_not_cite|) / |returned|
+
+    must_cite hits are full credit, should_cite are bonus (+0.5 each),
+    must_not_cite are penalties (−1.0 each). The denominator stays
+    |returned| so the result is comparable to the proxy formula above.
+    """
+    if not returned:
+        return 0.0
+    keys = [_string_chunk_key(c) for c in returned]
+    must_hit = sum(1 for k in keys if k in must_cite)
+    should_hit = sum(1 for k in keys if k in should_cite)
+    not_hit = sum(1 for k in keys if k in must_not_cite)
+    raw = (must_hit + 0.5 * should_hit - 1.0 * not_hit) / float(len(returned))
+    return max(0.0, min(1.0, raw))
+
+
 async def main() -> int:
     print(f"[voyage_chunk_ab] session={SESSION_ID} queries={len(QUERIES)} top_k={TOP_K}")
     if not os.environ.get("VOYAGE_API_KEY"):
         print("ERROR: VOYAGE_API_KEY not set in env; aborting")
         return 2
+
+    # S20-RAG-EVAL-LABELS-01 — decide whether to use real labels or fall through
+    # to the top-3 proxy. The proxy is biased-against-arm-B by construction
+    # (see module docstring); real labels remove that bias. We log loudly so
+    # the operator knows which mode this run used.
+    labels_payload = load_labels()
+    labels_mode = "proxy"
+    if labels_payload is not None:
+        status = (labels_payload.get("_meta") or {}).get("labeling_status")
+        if status == "labeled":
+            labels_mode = "labels"
+            print(
+                f"[voyage_chunk_ab] labels file at {LABELS_PATH.name} is LABELED — using real ground truth"
+            )
+        elif status == "candidates_only":
+            print(
+                f"WARN: labels file is unlabeled (labeling_status='candidates_only'); "
+                f"using top-3 proxy. Hand-label {LABELS_PATH.relative_to(REPO_ROOT)} "
+                f"then flip status to 'labeled'."
+            )
+        else:
+            print(
+                f"WARN: labels file labeling_status={status!r} (expected 'labeled' or 'candidates_only'); using proxy"
+            )
+    else:
+        print(f"WARN: no labels file at {LABELS_PATH.relative_to(REPO_ROOT)}; using top-3 proxy")
+
+    # When real labels are live, drive the loop from the labels file
+    # (one row per labeled idea) instead of the hard-coded QUERIES list.
+    # The QUERIES list stays as the proxy-mode default because those queries
+    # match the existing R3 corpus by design.
+    if labels_mode == "labels":
+        labeled_ideas = labels_payload.get("ideas") or {}  # type: ignore[union-attr]
+        queries_iter: list[dict[str, str]] = [
+            {"id": idea_id, "text": payload["idea_text"]}
+            for idea_id, payload in labeled_ideas.items()
+        ]
+        # Per-idea label sets keyed by idea_id (== query_id in this mode).
+        label_sets: dict[str, dict[str, set[str]]] = {
+            idea_id: {
+                "must_cite": set(payload.get("must_cite") or []),
+                "should_cite": set(payload.get("should_cite") or []),
+                "must_not_cite": set(payload.get("must_not_cite") or []),
+            }
+            for idea_id, payload in labeled_ideas.items()
+        }
+    else:
+        queries_iter = QUERIES
+        label_sets = {}
 
     per_query: list[dict[str, Any]] = []
     arm_a_lat: list[float] = []
@@ -152,15 +270,26 @@ async def main() -> int:
     arm_b_prec: list[float] = []
     arm_b_rerank_populated_count = 0
 
-    for q in QUERIES:
+    for q in queries_iter:
         a = await run_arm("A", q)
         b = await run_arm("B", q)
 
-        # Ideal proxy: arm A's top-3 chunks. (Caveat: biases against arm B.)
-        ideal: set[tuple[str, int]] = {_chunk_key(c) for c in a["chunks"][:IDEAL_K]}
-
-        a_prec = citation_precision(a["chunks"], ideal)
-        b_prec = citation_precision(b["chunks"], ideal)
+        if labels_mode == "labels":
+            ls = label_sets.get(
+                q["id"], {"must_cite": set(), "should_cite": set(), "must_not_cite": set()}
+            )
+            a_prec = label_driven_precision(
+                a["chunks"], ls["must_cite"], ls["should_cite"], ls["must_not_cite"]
+            )
+            b_prec = label_driven_precision(
+                b["chunks"], ls["must_cite"], ls["should_cite"], ls["must_not_cite"]
+            )
+            ideal: set[tuple[str, int]] = set()  # not used in labeled mode
+        else:
+            # Ideal proxy: arm A's top-3 chunks. (Caveat: biases against arm B.)
+            ideal = {_chunk_key(c) for c in a["chunks"][:IDEAL_K]}
+            a_prec = citation_precision(a["chunks"], ideal)
+            b_prec = citation_precision(b["chunks"], ideal)
 
         arm_a_lat.append(a["latency_ms"])
         arm_b_lat.append(b["latency_ms"])
@@ -228,17 +357,18 @@ async def main() -> int:
     #   approximate $0.05 / 1k calls ~= $0.0004 total
     # - OpenAI embed: 1 call/query * 16 (8 queries * 2 arms)
     #   ~ avg 20 tokens/query => 320 tokens => ~$0.0000064
-    voyage_calls = len(QUERIES)  # only arm B calls Voyage
+    voyage_calls = len(queries_iter)  # only arm B calls Voyage
     voyage_cost_est = voyage_calls * (VOYAGE_RERANK2_USD_PER_1K / 1000.0)
-    embed_calls = len(QUERIES) * 2
+    embed_calls = len(queries_iter) * 2
     embed_tokens_est = embed_calls * 25  # ~25 tok/query incl framing
     embed_cost_est = embed_tokens_est * (EMBED_3_SMALL_USD_PER_1M_TOKENS / 1_000_000.0)
     total_cost_est = round(voyage_cost_est + embed_cost_est, 6)
 
     aggregate = {
-        "n_queries": len(QUERIES),
+        "n_queries": len(queries_iter),
         "top_k": TOP_K,
-        "ideal_proxy_k": IDEAL_K,
+        "ideal_proxy_k": IDEAL_K if labels_mode == "proxy" else None,
+        "labels_mode": labels_mode,
         "arm_A": {
             "citation_precision": _stats(arm_a_prec),
             "latency_ms": _stats(arm_a_lat),
@@ -272,7 +402,12 @@ async def main() -> int:
     out = {
         "date": datetime.now(UTC).strftime("%Y-%m-%d"),
         "session_id": str(SESSION_ID),
-        "ground_truth": "top-K proxy (arm A top-3) — NOT real ground truth",
+        "ground_truth": (
+            "hand-labeled (S20-RAG-EVAL-LABELS-01)"
+            if labels_mode == "labels"
+            else "top-K proxy (arm A top-3) — NOT real ground truth"
+        ),
+        "labels_mode": labels_mode,
         "aggregate": aggregate,
         "per_query": per_query,
     }

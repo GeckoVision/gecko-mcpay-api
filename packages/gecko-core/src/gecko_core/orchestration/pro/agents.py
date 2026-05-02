@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from gecko_core.orchestration.pro.prompts import (
     REQUIRED_AGENTS,
+    distribution_critic_fragment_for,
     feature_not_product_fragment_for,
     load_prompts,
 )
@@ -21,24 +22,41 @@ if TYPE_CHECKING:  # pragma: no cover - typing-only
     from autogen import GroupChatManager
 
 
-def _agent_specs(*, gap_classification: str | None = None) -> tuple[tuple[str, str], ...]:
+def _agent_specs(
+    *,
+    gap_classification: str | None = None,
+    idea: str | None = None,
+    icp: str | None = None,
+) -> tuple[tuple[str, str], ...]:
     """Resolve (agent_name, system_message) pairs in the canonical order.
 
     Reads from the prompts loader (default JSON or GECKO_PROMPTS_PATH override).
     Order matches REQUIRED_AGENTS so the GroupChat sees a deterministic sequence.
 
     When ``gap_classification`` matches the feature-not-product trigger set
-    (S20-FEATURE-NOT-PRODUCT-CRITIC-01), the conditional fragment is appended
-    to the critic's system message. Pure-function append — same input ⇒ same
-    output, so the assembly stays deterministic for replay.
+    (S20-FEATURE-NOT-PRODUCT-CRITIC-01), that fragment is appended to the
+    critic. When ``idea`` / ``icp`` trip the B2B / 2-sided detector
+    (S20-DISTRIBUTION-CRITIC-01), the distribution fragment is appended too.
+
+    Fragment ordering when both fire: feature-not-product FIRST, distribution
+    SECOND. Stable order matters for transcript replay determinism and so
+    eval-rubric prompt diffs are minimal/legible. Feature-not-product comes
+    first because it's the older fragment (S20-FEATURE-NOT-PRODUCT-CRITIC-01,
+    landed pre-DISTRIBUTION) — appending new fragments at the end avoids
+    perturbing the assembly order of older ones.
     """
     prompts = load_prompts()
-    fragment = feature_not_product_fragment_for(gap_classification)
+    fnp_fragment = feature_not_product_fragment_for(gap_classification)
+    dist_fragment = distribution_critic_fragment_for(idea or "", icp or "")
     out: list[tuple[str, str]] = []
     for name in REQUIRED_AGENTS:
         sys_msg = prompts[name]
-        if fragment is not None and name == "critic":
-            sys_msg = f"{sys_msg}\n\n{fragment}"
+        if name == "critic":
+            # Stable order: feature-not-product, then distribution.
+            if fnp_fragment is not None:
+                sys_msg = f"{sys_msg}\n\n{fnp_fragment}"
+            if dist_fragment is not None:
+                sys_msg = f"{sys_msg}\n\n{dist_fragment}"
         out.append((name, sys_msg))
     return tuple(out)
 
@@ -85,6 +103,8 @@ def build_groupchat(
     model_matrix: dict[str, str] | None = None,
     temperature_matrix: dict[str, float] | None = None,
     gap_classification: str | None = None,
+    idea: str | None = None,
+    icp: str | None = None,
 ) -> GroupChatManager:
     """Construct the 5-agent GroupChat for the Pro debate.
 
@@ -115,7 +135,7 @@ def build_groupchat(
     # Typed as list[Any] so mypy doesn't complain about list invariance
     # between ConversableAgent and the Agent supertype GroupChat expects.
     agents: list[Any] = []
-    for name, sys_msg in _agent_specs(gap_classification=gap_classification):
+    for name, sys_msg in _agent_specs(gap_classification=gap_classification, idea=idea, icp=icp):
         if name in m_matrix or name in t_matrix:
             agent_cfg = _override_agent_cfg(
                 llm_config,

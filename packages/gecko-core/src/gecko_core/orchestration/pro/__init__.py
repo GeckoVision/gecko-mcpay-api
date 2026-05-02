@@ -197,6 +197,7 @@ async def generate(
     precedents: list[GeckoPrecedent] | None = None,
     tier_preset: str | None = None,
     gap_classification: str | None = None,
+    icp: str | None = None,
 ) -> DebateTranscript:
     """Run the 5-agent debate.
 
@@ -242,6 +243,14 @@ async def generate(
     # narrower signature continue to work (same pattern as model_matrix).
     if gap_classification is not None:
         bg_kwargs["gap_classification"] = gap_classification
+    # S20-DISTRIBUTION-CRITIC-01: forward idea + icp to build_groupchat so the
+    # critic gets the distribution/GTM fragment when B2B / 2-sided dynamics are
+    # detected. Only forward when icp is supplied (the S20+ callsite path) so
+    # legacy test fakes that monkeypatch build_groupchat with a narrower
+    # signature keep working — same opt-in plumbing as gap_classification.
+    if icp is not None:
+        bg_kwargs["idea"] = idea
+        bg_kwargs["icp"] = icp
     manager = build_groupchat(llm_config, **bg_kwargs) if bg_kwargs else build_groupchat(llm_config)
     chat = manager.groupchat
     agents_by_name = {a.name: a for a in chat.agents}
