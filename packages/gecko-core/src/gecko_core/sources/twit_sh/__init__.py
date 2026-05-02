@@ -236,26 +236,49 @@ def _stub_tweets(idea: str, categories: set[str]) -> list[dict[str, Any]]:
     """Deterministic synthetic tweets for stub-mode `bb research`.
 
     Mirrors the contract of a real twit.sh search response: keys match
-    the live shape so renderers / tests can't tell them apart. The
-    tweets reference the idea verbatim (truncated) so the dogfood smoke
-    has an obvious provenance trail and the agent prompt sees real
-    surface text rather than empty placeholders.
+    the live shape so renderers / tests can't tell them apart.
+
+    S19-STUB-FIXTURES-01: keyword-templated against the idea string so
+    the demo screenshot reads as topical signal rather than canned
+    "[stub] Builders are talking about <idea>" boilerplate. Bucket
+    selection lives in ``gecko_core.sources._idea_keywords``; we just
+    fill the templates here. The "[stub]" prefix is dropped so the
+    surface text matches the live shape — the ``stub`` flag on the
+    payload is the canonical "this came from a fixture" signal.
     """
-    snippet = (idea or "").strip()
-    if len(snippet) > 100:
-        snippet = snippet[:97] + "..."
-    cat_str = ", ".join(sorted(categories)) if categories else "builders"
+    from gecko_core.sources._idea_keywords import (
+        bucket_payload,
+        pick_bucket,
+        top_keywords,
+    )
+
+    bucket = pick_bucket(idea, categories)
+    payload = bucket_payload(bucket)
+    kws = top_keywords(idea, n=3)
+    primary_kw = kws[0]
+    secondary_kw = kws[1] if len(kws) > 1 else primary_kw
+
+    hooks = payload["tweet_hooks"]
+    # Two hooks → two tweets. Each templates {kw} against a different
+    # top keyword so they don't both repeat the same word.
+    text_a = hooks[0].format(kw=primary_kw)
+    text_b = hooks[1 % len(hooks)].format(kw=secondary_kw)
+
+    # Cap each text at ~280 chars to mirror live twit.sh truncation.
+    def _cap(s: str) -> str:
+        return s if len(s) <= 280 else s[:277] + "..."
+
     return [
         {
-            "text": f"[stub] Builders are talking about: {snippet}",
-            "author_handle": "@stub_builder",
+            "text": _cap(text_a),
+            "author_handle": f"@builder_{primary_kw}"[:15],
             "url": "https://x402.twit.sh/stub/1",
             "engagement": {"likes": 42, "replies": 7, "reposts": 12},
             "created_at": "2026-05-01T00:00:00Z",
         },
         {
-            "text": f"[stub] Early {cat_str} signal mentioning {snippet[:60]}",
-            "author_handle": "@stub_signal",
+            "text": _cap(text_b),
+            "author_handle": f"@signal_{secondary_kw}"[:15],
             "url": "https://x402.twit.sh/stub/2",
             "engagement": {"likes": 18, "replies": 3, "reposts": 5},
             "created_at": "2026-05-01T00:00:00Z",

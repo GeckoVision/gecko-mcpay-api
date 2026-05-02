@@ -452,6 +452,80 @@ def _default_fixtures_dir() -> Path:
     return here.parents[5] / "tests" / "payments" / "fixtures" / "bazaar_discovery"
 
 
+def _idea_bucket(query: str) -> str:
+    """Resolve the templating bucket for a stub-discovery search query.
+
+    Thin wrapper over ``_idea_keywords.pick_bucket`` — kept module-local
+    so the import sits next to the synthesis helper that uses it.
+    """
+    from gecko_core.sources._idea_keywords import pick_bucket
+
+    return pick_bucket(query)
+
+
+def _synthesize_bucket_resources(query: str, *, bucket: str) -> list[BazaarResource]:
+    """S19: build ``BazaarResource`` objects whose metadata cites idea tokens.
+
+    Returns 3 priced resources. Each carries one templated
+    ``service_titles`` slot filled with a top idea keyword, a
+    bucket-aligned ``category``, and a USDC accepts[] entry priced at
+    $0.01 (within the default $0.50 session cap so the provider's
+    filter doesn't drop it).
+    """
+    from gecko_core.sources._idea_keywords import bucket_payload, top_keywords
+
+    payload = bucket_payload(bucket)
+    titles = payload["service_titles"]
+    merchants = payload["merchants"]
+    categories = payload["categories"]
+    kws = top_keywords(query, n=3)
+
+    resources: list[BazaarResource] = []
+    for i, title_tpl in enumerate(titles):
+        kw = kws[i % len(kws)]
+        merchant = merchants[i % len(merchants)]
+        category = categories[i % len(categories)]
+        title = title_tpl.format(kw=kw)
+        # 0.01 USDC priced — under the $0.50 session cap.
+        req = PaymentRequirements(
+            network="Base",
+            asset="USDC",
+            pay_to="",
+            amount="10000",  # 0.01 USDC in atomic units
+            max_amount_required=Decimal("0.01"),
+            description=f"{title} — pay-per-call agentic endpoint",
+            extra={"method": "GET", "provider_name": merchant, "parameters": []},
+            raw={},
+        )
+        # Description is intentionally short and idea-aware so the
+        # citation surface text reads as topical even after the
+        # GenericBazaarAdapter stub-fetch joins it with the URL.
+        description = f"{title} for {kw}-related ideas. {merchant} provides the underlying signal."
+        meta = {
+            "service_id": f"{bucket}-{kw}-{i}",
+            "service_name": title,
+            "category": category,
+            "description": description,
+            "domain": "example.com",
+            "provider": merchant,
+            "service_networks": ["Base"],
+            "endpoint_description": description,
+            "method": "GET",
+        }
+        resources.append(
+            BazaarResource(
+                resource_url=(f"https://example.com/x402/{merchant.lower()}/{bucket}/{kw}"),
+                resource_type="http",
+                x402_version=2,
+                accepts=[req],
+                last_updated=None,
+                metadata=meta,
+                source_directory="agentic.market",
+            )
+        )
+    return resources
+
+
 class StubDiscoveryClient:
     """Reads recorded fixtures off disk; no network.
 
@@ -505,7 +579,21 @@ class StubDiscoveryClient:
         max_usd_price: Decimal | None = None,
         limit: int = 20,
     ) -> list[BazaarResource]:
-        am = _parse_agentic_market_services(self._load("agentic_market_search_lisbon_hotel.json"))
+        # S19-STUB-FIXTURES-01 — idea-aware. The recorded fixture is
+        # all-hospitality and ships canned travel content for every
+        # research run; route topical queries to the matching bucket
+        # and synthesize resources whose metadata references the idea
+        # tokens. Hospitality queries continue to load the recorded
+        # fixture so the bazaar_discovery tests (which assert
+        # ``source_directory == "agentic.market"`` against query="hotel")
+        # keep passing.
+        bucket = _idea_bucket(query)
+        if bucket == "hospitality":
+            am = _parse_agentic_market_services(
+                self._load("agentic_market_search_lisbon_hotel.json")
+            )
+        else:
+            am = _synthesize_bucket_resources(query, bucket=bucket)
         filtered = _filter_resources(am, network=network, asset=asset, max_usd_price=max_usd_price)
         return filtered[:limit]
 
