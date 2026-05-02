@@ -25,8 +25,10 @@
 -- ---------------------------------------------------------------------------
 
 ALTER TABLE chunks
-  ADD COLUMN provider_kind TEXT NOT NULL DEFAULT 'web';
+  ADD COLUMN IF NOT EXISTS provider_kind TEXT NOT NULL DEFAULT 'web';
 
+ALTER TABLE chunks
+  DROP CONSTRAINT IF EXISTS chunks_provider_kind_check;
 ALTER TABLE chunks
   ADD CONSTRAINT chunks_provider_kind_check
   CHECK (provider_kind IN (
@@ -39,15 +41,17 @@ COMMENT ON COLUMN chunks.provider_kind IS
 -- Per-provider grouping queries (e.g. "how many bazaar chunks did this
 -- session retrieve?") scan the column directly. Cheap btree index — the
 -- cardinality is bounded by the Literal's arity (8 today).
-CREATE INDEX chunks_provider_kind_idx ON chunks (provider_kind);
+CREATE INDEX IF NOT EXISTS chunks_provider_kind_idx ON chunks (provider_kind);
 
 -- ---------------------------------------------------------------------------
 -- sources.provider_kind  +  extend sources.type CHECK to allow 'provider'
 -- ---------------------------------------------------------------------------
 
 ALTER TABLE sources
-  ADD COLUMN provider_kind TEXT NOT NULL DEFAULT 'web';
+  ADD COLUMN IF NOT EXISTS provider_kind TEXT NOT NULL DEFAULT 'web';
 
+ALTER TABLE sources
+  DROP CONSTRAINT IF EXISTS sources_provider_kind_check;
 ALTER TABLE sources
   ADD CONSTRAINT sources_provider_kind_check
   CHECK (provider_kind IN (
