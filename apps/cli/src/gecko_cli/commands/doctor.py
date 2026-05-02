@@ -479,18 +479,92 @@ def render_table(rows: list[CheckRow]) -> Table:
     return table
 
 
+async def chunks_write_audit_recent_rows(days: int = 7) -> list[CheckRow]:
+    """S16-INGEST-01 — last `days` rollup of `chunks_write_audit.error_kind`.
+
+    Renders one CheckRow per error_kind, status mirroring the bucket:
+    `none` → ok; everything else → warn (so `bb doctor --recent` doesn't
+    flip exit code red on observability data alone — that's the job of
+    the connectivity rows).
+    """
+    try:
+        from gecko_core.sessions.store import SessionStore
+
+        store = SessionStore.from_env()
+    except Exception as exc:
+        return [
+            CheckRow(
+                "Recent ingest audit",
+                "warn",
+                f"skipped — store unavailable ({exc.__class__.__name__})",
+            )
+        ]
+
+    try:
+        rollup = await store.chunks_write_audit_rollup_recent(days=days)
+    except Exception as exc:
+        return [
+            CheckRow(
+                "Recent ingest audit",
+                "warn",
+                f"rollup failed: {exc.__class__.__name__}: {exc}",
+            )
+        ]
+
+    if not rollup:
+        return [
+            CheckRow(
+                f"Ingest audit (last {days}d)",
+                "ok",
+                "no ingestion runs recorded in window",
+            )
+        ]
+    rows: list[CheckRow] = []
+    for entry in rollup:
+        kind = str(entry["error_kind"])
+        count = int(entry["count"])
+        status: Status = "ok" if kind == "none" else "warn"
+        rows.append(
+            CheckRow(
+                f"ingest.{kind}",
+                status,
+                f"{count} batch(es) in last {days}d",
+            )
+        )
+    return rows
+
+
 @click.command("doctor")
-def doctor_cmd() -> None:
+@click.option(
+    "--recent",
+    is_flag=True,
+    default=False,
+    help="Append a 7-day rollup of chunks_write_audit error_kinds (S16-INGEST-01).",
+)
+@click.option(
+    "--recent-days",
+    type=int,
+    default=7,
+    show_default=True,
+    help="Window for --recent rollup (days).",
+)
+def doctor_cmd(recent: bool, recent_days: int) -> None:
     """Resolve env, ping the memory table, and print pass/fail per check.
 
     Exit code: 0 if no checks failed, 1 otherwise. Warnings do not affect
     exit code.
+
+    `--recent` adds a 7-day rollup of the chunks_write_audit table — one
+    row per `error_kind` bucket. Useful for "did the last dogfood run hit
+    any unknowns?".
     """
     # S10-CLI-01 (F17): `.env` is now loaded by the parent `cli` group via
     # `find_dotenv()` walk-up before any subcommand runs. `bb doctor` no
     # longer needs its own `load_dotenv` shim — by the time we get here,
     # `os.environ` already reflects the merged shell + .env state.
     rows = asyncio.run(_run_all(dict(os.environ), store=None))
+    if recent:
+        rows.extend(asyncio.run(chunks_write_audit_recent_rows(days=recent_days)))
     console.print(render_table(rows))
 
     failed = [r for r in rows if r.status == "err"]
@@ -509,6 +583,7 @@ __all__ = [
     "check_memory_roundtrip",
     "check_supabase_env",
     "check_x402",
+    "chunks_write_audit_recent_rows",
     "doctor_cmd",
     "render_table",
 ]

@@ -84,12 +84,23 @@ async def _create_with_retry(
                 if attempt >= _MAX_ATTEMPTS:
                     break
                 backoff = _RETRY_BACKOFFS_S[attempt - 1]
+                # S16-INGEST-01 — structured kwargs so log scrapers can
+                # bucket the retry path by `error_kind`. The pipeline's
+                # audit row will record the *terminal* outcome; this log
+                # gives per-attempt visibility into the retry cliff (FM-3).
                 logger.info(
                     "embed retry %d/%d after RateLimitError %s (sleep %.1fs)",
                     attempt,
                     _MAX_ATTEMPTS,
                     _rate_limit_code(exc),
                     backoff,
+                    extra={
+                        "batch_size": len(batch),
+                        "error_kind": "embedding_null",
+                        "attempt": attempt,
+                        "max_attempts": _MAX_ATTEMPTS,
+                        "rate_limit_code": _rate_limit_code(exc),
+                    },
                 )
             else:
                 tokens = resp.usage.total_tokens if resp.usage is not None else 0

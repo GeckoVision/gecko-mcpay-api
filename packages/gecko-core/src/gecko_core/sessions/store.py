@@ -9,7 +9,8 @@ avoid blocking the event loop.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+import logging
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Literal, cast
 from uuid import UUID
@@ -19,6 +20,8 @@ from supabase import Client
 
 from gecko_core.db import create_supabase_client
 from gecko_core.models import SessionStatus, SourceInfo, Tier
+
+logger = logging.getLogger(__name__)
 
 SessionPhase = Literal["pre_product", "during_build", "ongoing"]
 """S13-PHASE-01 — lifecycle phase a session belongs to.
@@ -223,6 +226,7 @@ class SessionStore:
     SOURCES_TABLE = "sources"
     CHUNKS_TABLE = "chunks"
     CHUNK_EMBEDDING_CACHE_TABLE = "chunk_embedding_cache"
+    CHUNKS_WRITE_AUDIT_TABLE = "chunks_write_audit"
 
     def __init__(self, client: Client) -> None:
         self._client = client
@@ -614,12 +618,111 @@ class SessionStore:
             res = self._client.table(self.CHUNKS_TABLE).insert(batch).execute()
             return cast(list[dict[str, Any]], res.data or [])
 
+        # S16-INGEST-01 — structured kwargs so the same fields that land
+        # in `chunks_write_audit` also show up in stdout via stdlib `extra`.
+        # No structlog dep yet; `extra={...}` is the structlog-compatible
+        # forward path. `error_kind=partial_batch` is emitted on the FM-1
+        # silent-drop path (inserted < attempted, no exception).
         total_inserted = 0
         for i in range(0, len(rows), BATCH_SIZE):
             batch = rows[i : i + BATCH_SIZE]
             inserted = await asyncio.to_thread(_insert_batch, batch)
             total_inserted += len(inserted)
+            if len(inserted) < len(batch):
+                logger.warning(
+                    "store.insert_chunks.partial_batch",
+                    extra={
+                        "session_id": str(session_id),
+                        "source_id": str(source_id),
+                        "batch_size": len(batch),
+                        "succeeded": len(inserted),
+                        "failed": len(batch) - len(inserted),
+                        "error_kind": "partial_batch",
+                    },
+                )
+        logger.info(
+            "store.insert_chunks.done",
+            extra={
+                "session_id": str(session_id),
+                "source_id": str(source_id),
+                "batch_size": len(rows),
+                "succeeded": total_inserted,
+                "error_kind": "none" if total_inserted == len(rows) else "partial_batch",
+            },
+        )
         return total_inserted
+
+    # ------------------------------------------------------------------
+    # S16-INGEST-01 — chunks_write_audit. One row per source-batch exit.
+    # Best-effort: if the audit insert fails we log and swallow — audit
+    # observability must NEVER mask the real ingestion outcome.
+    # ------------------------------------------------------------------
+
+    async def insert_chunks_write_audit(
+        self,
+        *,
+        session_id: UUID,
+        source_id: UUID | None,
+        batch_size: int,
+        succeeded: int,
+        failed: int,
+        error_kind: str,
+        embed_model: str | None,
+    ) -> None:
+        """Persist one audit row. Service-role only; never expose anon."""
+        row: dict[str, Any] = {
+            "session_id": str(session_id),
+            "source_id": str(source_id) if source_id is not None else None,
+            "batch_size": batch_size,
+            "succeeded": succeeded,
+            "failed": failed,
+            "error_kind": error_kind,
+            "embed_model": embed_model,
+        }
+
+        def _insert() -> None:
+            self._client.table(self.CHUNKS_WRITE_AUDIT_TABLE).insert(row).execute()
+
+        # Audit is best-effort. The classifier exists precisely so we
+        # don't lose the outcome — but losing the *audit row* must not
+        # crash the request. Caller already logged the real outcome.
+        import contextlib
+
+        with contextlib.suppress(Exception):
+            await asyncio.to_thread(_insert)
+
+    async def chunks_write_audit_rollup_recent(
+        self,
+        *,
+        days: int = 7,
+    ) -> list[dict[str, Any]]:
+        """Return [{error_kind, count}] for the last `days`. Used by
+        `bb doctor --recent`. PostgREST has no GROUP BY, so we pull the
+        raw `error_kind` column over the window and aggregate in Python —
+        the table is small (one row per source-batch) and the window is
+        bounded.
+        """
+        from datetime import datetime, timedelta
+
+        since = (datetime.now(UTC) - timedelta(days=days)).isoformat()
+
+        def _select() -> list[dict[str, Any]]:
+            res = (
+                self._client.table(self.CHUNKS_WRITE_AUDIT_TABLE)
+                .select("error_kind")
+                .gte("captured_at", since)
+                .execute()
+            )
+            return cast(list[dict[str, Any]], res.data or [])
+
+        rows = await asyncio.to_thread(_select)
+        counts: dict[str, int] = {}
+        for r in rows:
+            kind = str(r.get("error_kind") or "unknown")
+            counts[kind] = counts.get(kind, 0) + 1
+        # Stable order: success first, then failure buckets alphabetical.
+        ordered = sorted(counts.items(), key=lambda kv: (kv[0] != "none", kv[0]))
+        return [{"error_kind": k, "count": v} for k, v in ordered]
 
     async def match_chunks_windowed(
         self,

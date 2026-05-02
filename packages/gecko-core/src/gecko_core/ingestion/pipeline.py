@@ -27,6 +27,7 @@ from gecko_core.sessions.store import SessionStore
 
 from . import web as web_extractor
 from . import youtube as youtube_extractor
+from .audit import ErrorKind, classify_exception, classify_partial_batch
 from .chunker import chunk as chunk_text
 from .embedder import embed as embed_texts
 from .types import IngestionResult, SourceOutcome
@@ -112,6 +113,42 @@ def _openai_error_detail(exc: BaseException) -> str:
     return " ".join(parts)
 
 
+async def _emit_audit(
+    store: SessionStore,
+    *,
+    session_id: UUID,
+    source_id: UUID | None,
+    batch_size: int,
+    succeeded: int,
+    failed: int,
+    error_kind: ErrorKind,
+    embed_model: str | None,
+) -> None:
+    """Best-effort audit emission. Tolerates stores that don't implement
+    `insert_chunks_write_audit` (FakeStore in tests, older deployments
+    pre-migration). Never raises — observability must not mask the real
+    outcome."""
+    fn = getattr(store, "insert_chunks_write_audit", None)
+    if fn is None:
+        return
+    try:
+        await fn(
+            session_id=session_id,
+            source_id=source_id,
+            batch_size=batch_size,
+            succeeded=succeeded,
+            failed=failed,
+            error_kind=error_kind,
+            embed_model=embed_model,
+        )
+    except Exception as exc:  # pragma: no cover — audit is best-effort
+        logger.info(
+            "ingest.audit.emit_failed exc=%s",
+            exc.__class__.__name__,
+            extra={"error_kind": error_kind, "session_id": str(session_id)},
+        )
+
+
 async def _process_one(
     session_id: UUID,
     candidate: SourceCandidate,
@@ -120,6 +157,18 @@ async def _process_one(
 ) -> SourceOutcome:
     url = str(candidate.url)
     uhash = url_hash(url)
+    # S16-INGEST-01 — audit accumulators. Populated as the pipeline
+    # progresses; emitted once at exit (success OR failure).
+    source_id_for_audit: UUID | None = None
+    batch_size_for_audit = 0
+    embed_model_for_audit: str | None = None
+    # Final audit error_kind — overwritten as the pipeline progresses.
+    # `none` for clean success; classifier output otherwise.
+    audit_error_kind: ErrorKind = "none"
+    audit_succeeded = 0
+    audit_failed = 0
+    audit_skip = False
+
     async with sem:
         try:
             logger.info(
@@ -127,6 +176,7 @@ async def _process_one(
                 url,
                 candidate.type,
                 session_id,
+                extra={"session_id": str(session_id), "url": url},
             )
             source_id = await store.insert_source(
                 session_id=session_id,
@@ -135,11 +185,14 @@ async def _process_one(
                 type_=candidate.type,
             )
             if source_id is None:
-                # Duplicate — already ingested for this session.
+                # Duplicate — already ingested for this session. Audit row
+                # is uninteresting (skip).
                 logger.info("ingest.dedup url=%s reason=session_duplicate", url)
+                audit_skip = True
                 return SourceOutcome(
                     url=url, type=candidate.type, status="skipped", reason="duplicate"
                 )
+            source_id_for_audit = source_id
 
             text, deepgram_seconds, tavily_extract_cost = await _extract(candidate)
             logger.info(
@@ -154,6 +207,7 @@ async def _process_one(
                 # bills per attempt. Recording before the early return below.
                 await store.add_cost(session_id, "tavily", tavily_extract_cost)
             if not text:
+                audit_skip = True
                 return SourceOutcome(
                     url=url,
                     type=candidate.type,
@@ -176,12 +230,14 @@ async def _process_one(
                 len(pieces),
             )
             if not pieces:
+                audit_skip = True
                 return SourceOutcome(
                     url=url,
                     type=candidate.type,
                     status="skipped",
                     reason="empty_after_chunk",
                 )
+            batch_size_for_audit = len(pieces)
 
             # S8-INGEST-03 — cross-session embedding cache. When a chunk for
             # this url_hash + chunk_index has been embedded before, reuse it
@@ -220,6 +276,12 @@ async def _process_one(
                         exc.__class__.__name__,
                         detail,
                         len(missing_texts),
+                        extra={
+                            "session_id": str(session_id),
+                            "source_id": str(source_id),
+                            "batch_size": len(missing_texts),
+                            "error_kind": classify_exception(exc),
+                        },
                     )
                     raise
                 if len(new_embeddings) != len(missing_texts):
@@ -249,6 +311,19 @@ async def _process_one(
                     len(pieces),
                 )
 
+            # Resolve the active embed model once — used both for cost
+            # attribution AND for the audit row's `embed_model` column so
+            # operators can see whether a failure correlates with a model
+            # change (FM-2 cache dim drift).
+            try:
+                from .settings import get_ingestion_settings as _get_ingest
+
+                embed_model_for_audit = _get_ingest().embed_model
+            except Exception:
+                # Settings can fail to resolve in tests / stub mode; that
+                # must not block the real pipeline. Audit just records None.
+                embed_model_for_audit = None
+
             embeddings = [cached_lookup[i] for i in range(len(pieces))]
             rows = list(zip(range(len(pieces)), pieces, embeddings, strict=True))
             try:
@@ -261,8 +336,20 @@ async def _process_one(
                     str(exc)[:200],
                     len(rows),
                     len(embeddings[0]) if embeddings else 0,
+                    extra={
+                        "session_id": str(session_id),
+                        "source_id": str(source_id),
+                        "batch_size": len(rows),
+                        "error_kind": classify_exception(exc),
+                    },
                 )
                 raise
+            # FM-1 detection: insert_chunks reports a count < attempted →
+            # silent partial-batch drop. Surface it to the audit row even
+            # when no exception fired (this is the whole point of S16-INGEST-01).
+            audit_succeeded = inserted
+            audit_failed = max(0, len(rows) - inserted)
+            audit_error_kind = classify_partial_batch(attempted=len(rows), succeeded=inserted)
             await store.set_source_chunk_count(source_id, inserted)
             if embed_tokens > 0:
                 from .embedder import estimate_embed_cost_usd
@@ -285,11 +372,20 @@ async def _process_one(
             )
         except Exception as exc:  # per-source isolation
             # Don't leak API keys / payloads — just the type + summary.
+            audit_error_kind = classify_exception(exc)
+            audit_failed = batch_size_for_audit or 0
+            audit_succeeded = 0
             logger.warning(
                 "ingest.failed url=%s exc=%s msg=%s",
                 url,
                 exc.__class__.__name__,
                 str(exc)[:200],
+                extra={
+                    "session_id": str(session_id),
+                    "source_id": str(source_id_for_audit) if source_id_for_audit else None,
+                    "batch_size": batch_size_for_audit,
+                    "error_kind": audit_error_kind,
+                },
             )
             return SourceOutcome(
                 url=url,
@@ -297,6 +393,22 @@ async def _process_one(
                 status="failed",
                 reason=f"{exc.__class__.__name__}: {exc}",
             )
+        finally:
+            # S16-INGEST-01 — one audit row per source-batch exit. Skipped
+            # for the "this candidate never reached the chunk-write path"
+            # cases (duplicate / no_content / empty_after_chunk) — those
+            # have nothing useful to bucket.
+            if not audit_skip:
+                await _emit_audit(
+                    store,
+                    session_id=session_id,
+                    source_id=source_id_for_audit,
+                    batch_size=batch_size_for_audit,
+                    succeeded=audit_succeeded,
+                    failed=audit_failed,
+                    error_kind=audit_error_kind,
+                    embed_model=embed_model_for_audit,
+                )
 
 
 async def ingest(
