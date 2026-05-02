@@ -70,7 +70,11 @@ def cli(
     yes: bool,
     non_interactive: bool,
 ) -> None:
-    """Gecko — Builder Bootstrap Platform."""
+    """Gecko — Builder Bootstrap Platform.
+
+    Gecko produces grounded, adversarial verdicts on pre-ideas — a judgment
+    you can buy, sell, or stake on.
+    """
     # S10-CLI-01 (F17): universal `.env` loading. Every `bb` subcommand —
     # not just `bb doctor` — needs project env vars resolved BEFORE its
     # callback runs. `override=False` so values already exported in the

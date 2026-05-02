@@ -1,7 +1,11 @@
 # Builder Bootstrap Platform — Product Story
 **For:** Co-founder (Design)
-**Date:** April 25, 2026
+**Date:** April 25, 2026 (wedge sentence updated 2026-05-02 per S18-WEDGE-CLAIM-01)
 **From:** Ernani
+
+---
+
+> **Wedge (S18):** Gecko produces grounded, adversarial verdicts on pre-ideas — a judgment you can buy, sell, or stake on.
 
 ---
 
