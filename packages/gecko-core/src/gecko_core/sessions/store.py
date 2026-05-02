@@ -660,9 +660,22 @@ class SessionStore:
         default httpx read timeout. Some pages (e.g. wiki dumps) emit
         thousands of chunks; a single 13 MB upsert with 1536-dim vectors
         regularly trips supabase-py's read timeout.
+
+        S18-MONGO-WRITE-01 — when ``GECKO_CHUNK_STORE=mongo``, dispatch to
+        :func:`gecko_core.db.mongo_chunks.insert_chunks_mongo` and bypass
+        the entire Supabase upsert path.
         """
         if not chunks:
             return 0
+
+        from gecko_core.db import get_chunk_store
+
+        if get_chunk_store() == "mongo":
+            from gecko_core.db.mongo_chunks import insert_chunks_mongo
+
+            return await insert_chunks_mongo(
+                session_id, source_id, chunks, provider_kind=provider_kind
+            )
 
         # Lazy import — avoid a top-level cycle (audit imports nothing
         # from sessions, but exceptions lives next to it).
@@ -847,7 +860,27 @@ class SessionStore:
         error_kind: str,
         embed_model: str | None,
     ) -> None:
-        """Persist one audit row. Service-role only; never expose anon."""
+        """Persist one audit row. Service-role only; never expose anon.
+
+        S18-MONGO-WRITE-01 — dispatches to Mongo when the chunk store flag
+        is ``mongo``. Audit remains best-effort in both stores.
+        """
+        from gecko_core.db import get_chunk_store
+
+        if get_chunk_store() == "mongo":
+            from gecko_core.db.mongo_chunks import insert_chunks_write_audit_mongo
+
+            await insert_chunks_write_audit_mongo(
+                session_id=session_id,
+                source_id=source_id,
+                batch_size=batch_size,
+                succeeded=succeeded,
+                failed=failed,
+                error_kind=error_kind,
+                embed_model=embed_model,
+            )
+            return
+
         row: dict[str, Any] = {
             "session_id": str(session_id),
             "source_id": str(source_id) if source_id is not None else None,
@@ -1124,9 +1157,19 @@ class SessionStore:
         callers (the pipeline) should always pass the active model from
         `IngestionSettings().embed_model` so a model swap forces a
         re-embed instead of returning a poisoned vector.
+
+        S18-MONGO-WRITE-01 — Mongo branch lives in
+        :func:`gecko_core.db.mongo_chunks.get_chunk_cache_mongo`.
         """
         if not indices:
             return {}
+
+        from gecko_core.db import get_chunk_store
+
+        if get_chunk_store() == "mongo":
+            from gecko_core.db.mongo_chunks import get_chunk_cache_mongo
+
+            return await get_chunk_cache_mongo(url_hash, indices, embed_model=embed_model)
 
         def _select() -> list[dict[str, Any]]:
             q = (
@@ -1230,8 +1273,19 @@ class SessionStore:
         the new PK column. When None, the column DEFAULT
         ('text-embedding-3-small') applies — preserves pre-S16 behavior
         for any legacy caller that hasn't been updated.
+
+        S18-MONGO-WRITE-01 — Mongo branch in
+        :func:`gecko_core.db.mongo_chunks.put_chunk_cache_mongo`.
         """
         if not rows:
+            return
+
+        from gecko_core.db import get_chunk_store
+
+        if get_chunk_store() == "mongo":
+            from gecko_core.db.mongo_chunks import put_chunk_cache_mongo
+
+            await put_chunk_cache_mongo(url_hash, rows, embed_model=embed_model)
             return
         payload: list[dict[str, Any]] = [
             {
