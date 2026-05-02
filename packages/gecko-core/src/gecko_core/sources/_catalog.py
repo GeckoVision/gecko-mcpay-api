@@ -56,6 +56,15 @@ _ENTRIES: tuple[SourceCatalogEntry, ...] = (
         gating="Crypto/defi only",
         cost_per_call="$0.005",
     ),
+    # S16-BAZAAR-CONSUMER-03: catalog-led x402 buyer. Always applies — the
+    # Bazaar catalog is universal and per-query relevance is decided at
+    # discovery time. Live-mode pay() gated on S16-BAZAAR-CONSUMER-04.
+    SourceCatalogEntry(
+        name="bazaar",
+        description="x402-paid Bazaar resources (catalog-led; one generic adapter consumes any).",
+        gating="Always (per-query catalog discovery)",
+        cost_per_call="≤ $0.50 per session (capped)",
+    ),
 )
 
 for _entry in _ENTRIES:
