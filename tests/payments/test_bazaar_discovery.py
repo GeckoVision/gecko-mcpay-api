@@ -26,6 +26,7 @@ import respx
 from gecko_core.payments.bazaar_discovery import (
     AGENTIC_MARKET_BASE_URL,
     CDP_DISCOVERY_BASE_URL,
+    CDP_SEARCH_LIMIT_MAX,
     AgenticMarketDiscoveryClient,
     BazaarDiscoveryClient,
     BazaarResource,
@@ -35,6 +36,7 @@ from gecko_core.payments.bazaar_discovery import (
     StubDiscoveryClient,
     _parse_agentic_market_services,
     _parse_cdp_resources,
+    _parse_cdp_search_response,
     resolve_discovery_client,
 )
 
@@ -280,6 +282,93 @@ async def test_dual_dedupes_by_resource_url() -> None:
 # ---------------------------------------------------------------------------
 # Cache TTL
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# CDP /discovery/search (S16-BAZAAR-DISCOVERY-02) — new shape, server-side
+# maxUsdPrice filter, limit clamp.
+# ---------------------------------------------------------------------------
+
+
+def test_cdp_search_response_parser_extracts_telemetry() -> None:
+    payload = _load("cdp_search_weather.json")
+    resources, telemetry = _parse_cdp_search_response(payload)
+
+    assert len(resources) == 3
+    assert {r.source_directory for r in resources} == {"cdp"}
+    # Resource shape: each has ≥1 accepts entry with USD-denominated cap.
+    for r in resources:
+        assert r.accepts
+        assert r.x402_version == 2
+        for a in r.accepts:
+            assert a.network
+            assert a.asset
+            assert a.max_amount_required is not None
+
+    assert telemetry["partial_results"] is False
+    assert telemetry["search_method"] == "vector"
+    assert telemetry["result_count"] == 3
+    assert telemetry["x402_version"] == 2
+
+
+@pytest.mark.asyncio
+async def test_cdp_search_uses_search_endpoint_with_full_params() -> None:
+    """``CDPDiscoveryClient.search`` hits ``/search`` (not ``/resources``)
+    and forwards ``query``, ``network``, ``asset``, ``maxUsdPrice``,
+    ``limit`` to the server."""
+    payload = _load("cdp_search_weather.json")
+    with respx.mock(assert_all_called=False) as router:
+        route = router.get(f"{CDP_DISCOVERY_BASE_URL}/search").mock(
+            return_value=httpx.Response(200, json=payload)
+        )
+        client = CDPDiscoveryClient(ttl_s=60)
+        out = await client.search(
+            "weather",
+            network="eip155:8453",
+            asset="0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+            max_usd_price=Decimal("0.05"),
+            limit=10,
+        )
+
+        assert route.called
+        # Verify params are present on the recorded request.
+        request = route.calls[0].request
+        params = dict(request.url.params)
+        assert params["query"] == "weather"
+        assert params["network"] == "eip155:8453"
+        assert params["asset"] == "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+        assert params["limit"] == "10"
+        # `maxUsdPrice` is a plain decimal string — no scientific
+        # notation, parsed server-side as float.
+        # Plain decimal string, no scientific notation, parsed
+        # server-side as float per the CDP docs.
+        assert params["maxUsdPrice"] == "0.05"
+
+        # Network filter applied at accepts[] level: any Solana-only
+        # resource gets dropped.
+        for r in out:
+            for a in r.accepts:
+                assert "8453" in a.network
+
+
+@pytest.mark.asyncio
+async def test_cdp_search_clamps_limit_above_server_cap(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """``limit > 20`` is clamped client-side with a warning log."""
+    payload = _load("cdp_search_weather.json")
+    with respx.mock(assert_all_called=False) as router:
+        route = router.get(f"{CDP_DISCOVERY_BASE_URL}/search").mock(
+            return_value=httpx.Response(200, json=payload)
+        )
+        client = CDPDiscoveryClient()
+        with caplog.at_level("WARNING"):
+            await client.search("weather", limit=100)
+
+        request = route.calls[0].request
+        assert dict(request.url.params)["limit"] == str(CDP_SEARCH_LIMIT_MAX)
+        # Warning log captured.
+        assert any("clamping" in rec.getMessage() for rec in caplog.records)
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,67 @@
+{
+  "resources": [
+    {
+      "resource": "https://api.weather.example.com/v1/forecast",
+      "type": "http",
+      "x402Version": 2,
+      "lastUpdated": "2026-05-01T12:00:00.000Z",
+      "description": "Weather forecast — daily forecast for a given lat/lon. Returns 7-day outlook with temp/precip/wind.",
+      "accepts": [
+        {
+          "scheme": "exact",
+          "network": "eip155:8453",
+          "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "amount": "10000",
+          "payTo": "0x5d6dF6b10C54617dac4Bf9993ad9fA384b7B36d3",
+          "maxTimeoutSeconds": 60,
+          "extra": {"name": "USD Coin", "version": "2"}
+        }
+      ],
+      "extensions": {"bazaar": {"category": "weather"}},
+      "quality": {"l30DaysTotalCalls": 5421, "l30DaysUniquePayers": 312}
+    },
+    {
+      "resource": "https://api.openmeteo-x402.example.com/forecast",
+      "type": "http",
+      "x402Version": 2,
+      "lastUpdated": "2026-04-29T08:30:00.000Z",
+      "description": "Open-Meteo x402 mirror — hourly forecast, no API key required, pay-per-call.",
+      "accepts": [
+        {
+          "scheme": "exact",
+          "network": "eip155:8453",
+          "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "amount": "5000",
+          "payTo": "0x9fA384b7B36d35d6dF6b10C54617dac4Bf9993ad",
+          "maxTimeoutSeconds": 60,
+          "extra": {"name": "USD Coin", "version": "2"}
+        }
+      ],
+      "extensions": {},
+      "quality": {"l30DaysTotalCalls": 1203, "l30DaysUniquePayers": 87}
+    },
+    {
+      "resource": "https://radar.example.com/api/v1/precip",
+      "type": "http",
+      "x402Version": 2,
+      "lastUpdated": "2026-04-30T19:14:02.881Z",
+      "description": "High-res precipitation radar — 5-minute polled US/EU precip nowcast.",
+      "accepts": [
+        {
+          "scheme": "exact",
+          "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+          "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "amount": "20000",
+          "payTo": "AbbuSAH5Ur4a47KSVEzy4dP4wvLY8DSvdQDbJuJjiWfW",
+          "maxTimeoutSeconds": 60,
+          "extra": {"feePayer": "BFK9TLC3edb13K6v4YyH3DwPb5DSUpkWvb7XnqCL9b4F"}
+        }
+      ],
+      "extensions": {},
+      "quality": {"l30DaysTotalCalls": 412, "l30DaysUniquePayers": 19}
+    }
+  ],
+  "partialResults": false,
+  "searchMethod": "vector",
+  "x402Version": 2
+}

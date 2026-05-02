@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -45,6 +46,14 @@ from pathlib import Path
 from typing import Any, Final, Literal, Protocol, runtime_checkable
 
 import httpx
+
+logger = logging.getLogger(__name__)
+
+# CDP /discovery/search server-side `limit` cap. Anything above is clamped
+# client-side with a warning so callers don't silently get truncated
+# without a log trail. Documented at
+# https://docs.cdp.coinbase.com/x402/bazaar (S16-BAZAAR-DISCOVERY-02).
+CDP_SEARCH_LIMIT_MAX: Final[int] = 20
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -149,6 +158,7 @@ class BazaarDiscoveryClient(Protocol):
         network: str | None = None,
         asset: str | None = None,
         max_usd_price: Decimal | None = None,
+        limit: int = 20,
     ) -> list[BazaarResource]: ...
 
 
@@ -373,6 +383,34 @@ def _parse_cdp_accept(a: dict[str, Any]) -> PaymentRequirements:
     )
 
 
+def _parse_cdp_search_response(
+    payload: dict[str, Any],
+) -> tuple[list[BazaarResource], dict[str, Any]]:
+    """Parse the CDP ``/discovery/search`` response shape.
+
+    Wire shape per ``https://docs.cdp.coinbase.com/x402/bazaar`` (verified
+    against fixture ``cdp_search_weather.json``):
+
+    .. code-block:: json
+
+      {"resources": [...], "partialResults": false,
+       "searchMethod": "vector" | "fts", "x402Version": 2}
+
+    Note ``resources`` (not ``items``) — distinct from the ``/resources``
+    browse endpoint. Returns a tuple of (resources, telemetry) where
+    telemetry is logged at debug level by the live client; we don't
+    push it onto BazaarResource so the seam stays narrow.
+    """
+    resources = _parse_cdp_resources(payload)
+    telemetry = {
+        "partial_results": bool(payload.get("partialResults", False)),
+        "search_method": payload.get("searchMethod", ""),
+        "x402_version": payload.get("x402Version", 2),
+        "result_count": len(resources),
+    }
+    return resources, telemetry
+
+
 def _parse_cdp_resources(payload: dict[str, Any]) -> list[BazaarResource]:
     """Map CDP discovery shape (``items[]`` for /resources, ``resources[]``
     for /search) → BazaarResource."""
@@ -465,9 +503,11 @@ class StubDiscoveryClient:
         network: str | None = None,
         asset: str | None = None,
         max_usd_price: Decimal | None = None,
+        limit: int = 20,
     ) -> list[BazaarResource]:
         am = _parse_agentic_market_services(self._load("agentic_market_search_lisbon_hotel.json"))
-        return _filter_resources(am, network=network, asset=asset, max_usd_price=max_usd_price)
+        filtered = _filter_resources(am, network=network, asset=asset, max_usd_price=max_usd_price)
+        return filtered[:limit]
 
 
 # ---------------------------------------------------------------------------
@@ -541,6 +581,7 @@ class AgenticMarketDiscoveryClient:
         network: str | None = None,
         asset: str | None = None,
         max_usd_price: Decimal | None = None,
+        limit: int = 20,
     ) -> list[BazaarResource]:
         key: CacheKey = (
             "search",
@@ -548,7 +589,7 @@ class AgenticMarketDiscoveryClient:
             network,
             asset,
             str(max_usd_price) if max_usd_price else None,
-            None,
+            limit,
         )
         cached = self._cache.get(key)
         if cached is not None:
@@ -558,6 +599,7 @@ class AgenticMarketDiscoveryClient:
         filtered = _filter_resources(
             resources, network=network, asset=asset, max_usd_price=max_usd_price
         )
+        filtered = filtered[:limit]
         self._cache.put(key, filtered)
         return filtered
 
@@ -633,22 +675,88 @@ class CDPDiscoveryClient:
         network: str | None = None,
         asset: str | None = None,
         max_usd_price: Decimal | None = None,
+        pay_to: str | None = None,
+        scheme: str | None = None,
+        extensions: str | None = None,
+        limit: int = 20,
     ) -> list[BazaarResource]:
+        """Semantic search via CDP ``/discovery/search``.
+
+        Wire docs: ``https://docs.cdp.coinbase.com/x402/bazaar``. Query
+        params:
+
+          * ``query`` — required, semantic search string
+          * ``network`` — CAIP-2 (e.g. ``eip155:8453``, ``solana:5eyk…``)
+          * ``asset`` — token contract / mint
+          * ``payTo`` — exact recipient
+          * ``maxUsdPrice`` — server-side budget filter (string, parsed
+            as float by CDP). When set we drop client-side filtering of
+            the same dimension since the server already applied it.
+          * ``scheme`` / ``extensions`` — passthrough
+          * ``limit`` — server caps at 20; we clamp client-side and warn
+
+        Response shape: ``{resources: [...], partialResults, searchMethod,
+        x402Version}``. No offset/limit pagination — caller refines query
+        instead.
+        """
+        clamped_limit = limit
+        if limit > CDP_SEARCH_LIMIT_MAX:
+            logger.warning(
+                "cdp /discovery/search limit=%d exceeds server cap %d; clamping",
+                limit,
+                CDP_SEARCH_LIMIT_MAX,
+            )
+            clamped_limit = CDP_SEARCH_LIMIT_MAX
+        if limit <= 0:
+            clamped_limit = 1
+
         key: CacheKey = (
-            "search",
+            f"search:{pay_to or ''}:{scheme or ''}:{extensions or ''}",
             query,
             network,
             asset,
             str(max_usd_price) if max_usd_price else None,
-            None,
+            clamped_limit,
         )
         cached = self._cache.get(key)
         if cached is not None:
             return cached
-        payload = await self._get("/search", params={"q": query})
-        resources = _parse_cdp_resources(payload)
+
+        params: dict[str, Any] = {"query": query, "limit": clamped_limit}
+        if network is not None:
+            params["network"] = network
+        if asset is not None:
+            params["asset"] = asset
+        if pay_to is not None:
+            params["payTo"] = pay_to
+        if scheme is not None:
+            params["scheme"] = scheme
+        if extensions is not None:
+            params["extensions"] = extensions
+        if max_usd_price is not None:
+            # CDP parses ``maxUsdPrice`` as a string-to-float; pass as
+            # plain decimal string (no scientific notation).
+            params["maxUsdPrice"] = format(max_usd_price, "f")
+
+        payload = await self._get("/search", params=params)
+        resources, telemetry = _parse_cdp_search_response(payload)
+        logger.debug(
+            "cdp search query=%r results=%d method=%s partial=%s",
+            query,
+            telemetry["result_count"],
+            telemetry["search_method"],
+            telemetry["partial_results"],
+        )
+        # Server-side already filtered on max_usd_price when supplied;
+        # client-side filter still runs for network/asset to enforce
+        # `accepts[]`-level constraints (CDP filters at resource level).
         filtered = _filter_resources(
-            resources, network=network, asset=asset, max_usd_price=max_usd_price
+            resources,
+            network=network,
+            asset=asset,
+            # Server already applied max_usd_price; passing None here
+            # avoids re-filtering the same dimension client-side.
+            max_usd_price=None,
         )
         self._cache.put(key, filtered)
         return filtered
@@ -752,6 +860,7 @@ class DualDiscoveryClient:
         network: str | None = None,
         asset: str | None = None,
         max_usd_price: Decimal | None = None,
+        limit: int = 20,
     ) -> list[BazaarResource]:
         key: CacheKey = (
             "search",
@@ -759,21 +868,29 @@ class DualDiscoveryClient:
             network,
             asset,
             str(max_usd_price) if max_usd_price else None,
-            None,
+            limit,
         )
         cached = self._cache.get(key)
         if cached is not None:
             return cached
         try:
             primary = await self._primary.search(
-                query, network=network, asset=asset, max_usd_price=max_usd_price
+                query,
+                network=network,
+                asset=asset,
+                max_usd_price=max_usd_price,
+                limit=limit,
             )
         except Exception as exc:
             if not self._is_fallback_worthy(exc):
                 raise
             primary = []
         fallback = await self._fallback.search(
-            query, network=network, asset=asset, max_usd_price=max_usd_price
+            query,
+            network=network,
+            asset=asset,
+            max_usd_price=max_usd_price,
+            limit=limit,
         )
         merged = self._merge(primary, fallback)
         self._cache.put(key, merged)
@@ -801,6 +918,7 @@ def resolve_discovery_client(mode: DiscoveryMode = "stub") -> BazaarDiscoveryCli
 __all__ = [
     "AGENTIC_MARKET_BASE_URL",
     "CDP_DISCOVERY_BASE_URL",
+    "CDP_SEARCH_LIMIT_MAX",
     "AgenticMarketDiscoveryClient",
     "BazaarDiscoveryClient",
     "BazaarResource",
