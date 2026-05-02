@@ -6,10 +6,8 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-
 from gecko_core.db import mongo as mongo_mod
 from gecko_core.db import mongo_chunks
-
 
 # ---------------------------------------------------------------------------
 # Fakes — async collection stubs that record calls
@@ -91,7 +89,7 @@ class _FakeChunksCollection:
                 for k, v in query.items()
             )
         ]
-        self.deleted = before - len(self.docs)  # noqa: B023 — testing aid
+        self.deleted = before - len(self.docs)
 
     async def bulk_write(self, ops: list[Any], ordered: bool = True) -> None:
         for op in ops:

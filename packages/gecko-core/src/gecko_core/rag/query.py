@@ -244,38 +244,76 @@ async def rag_query(
     )
     per_kind_quota = _resolve_per_kind_quota()
 
-    def _rpc() -> list[dict[str, Any]]:
-        # Underscore name to reach the inner Client; we keep the seam thin to
-        # avoid leaking supabase types into gecko-core's public surface.
-        client = store._client
+    # S18-MONGO-READ-01 — dispatch on chunk store. Mongo path uses
+    # $vectorSearch + app-side per-kind quota (mirrors the Postgres
+    # match_chunks_hybrid SQL function 1:1). Supabase path stays on the
+    # RPC seam.
+    from gecko_core.db import get_chunk_store
+
+    if get_chunk_store() == "mongo":
+        from gecko_core.db.mongo_reads import (
+            match_chunks_hybrid_mongo,
+            match_chunks_mongo,
+        )
+
         if use_hybrid:
             try:
-                res = client.rpc(
-                    "match_chunks_hybrid",
-                    {
-                        "p_session_id": str(session_id),
-                        "query_embedding": query_embedding,
-                        "match_count": fetch_k,
-                        "per_kind_quota": per_kind_quota,
-                    },
-                ).execute()
-                return cast(list[dict[str, Any]], res.data or [])
+                rows = await match_chunks_hybrid_mongo(
+                    session_id=session_id,
+                    query_embedding=query_embedding,
+                    match_count=fetch_k,
+                    per_kind_quota=per_kind_quota,
+                )
             except Exception as exc:
                 logger.warning(
-                    "rag.hybrid.fallback err=%s (falling back to match_chunks)",
+                    "rag.mongo.hybrid.fallback err=%s",
                     exc,
                 )
-        res = client.rpc(
-            "match_chunks",
-            {
-                "p_session_id": str(session_id),
-                "query_embedding": query_embedding,
-                "match_count": fetch_k,
-            },
-        ).execute()
-        return cast(list[dict[str, Any]], res.data or [])
+                rows = await match_chunks_mongo(
+                    session_id=session_id,
+                    query_embedding=query_embedding,
+                    match_count=fetch_k,
+                )
+        else:
+            rows = await match_chunks_mongo(
+                session_id=session_id,
+                query_embedding=query_embedding,
+                match_count=fetch_k,
+            )
+    else:
 
-    rows = await asyncio.to_thread(_rpc)
+        def _rpc() -> list[dict[str, Any]]:
+            # Underscore name to reach the inner Client; we keep the seam thin to
+            # avoid leaking supabase types into gecko-core's public surface.
+            client = store._client
+            if use_hybrid:
+                try:
+                    res = client.rpc(
+                        "match_chunks_hybrid",
+                        {
+                            "p_session_id": str(session_id),
+                            "query_embedding": query_embedding,
+                            "match_count": fetch_k,
+                            "per_kind_quota": per_kind_quota,
+                        },
+                    ).execute()
+                    return cast(list[dict[str, Any]], res.data or [])
+                except Exception as exc:
+                    logger.warning(
+                        "rag.hybrid.fallback err=%s (falling back to match_chunks)",
+                        exc,
+                    )
+            res = client.rpc(
+                "match_chunks",
+                {
+                    "p_session_id": str(session_id),
+                    "query_embedding": query_embedding,
+                    "match_count": fetch_k,
+                },
+            ).execute()
+            return cast(list[dict[str, Any]], res.data or [])
+
+        rows = await asyncio.to_thread(_rpc)
     chunks = [RagChunk.model_validate(row) for row in rows]
     # Apply per-provider boost + re-sort + truncate to caller's top_k.
     # When hybrid retrieval is on, reserve a quota of slots for non-web

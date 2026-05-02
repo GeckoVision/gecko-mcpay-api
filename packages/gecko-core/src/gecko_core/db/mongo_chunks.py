@@ -73,6 +73,7 @@ async def insert_chunks_mongo(
     *,
     provider_kind: ProviderKind = "web",
     project_id: UUID | None = None,
+    source_url: str | None = None,
 ) -> int:
     """Bulk-insert chunks. Returns count of *new* documents written.
 
@@ -105,10 +106,14 @@ async def insert_chunks_mongo(
         )
 
     now = datetime.now(UTC)
+    # source_url is denormalized onto the chunk doc so M4 read paths don't
+    # need a Supabase round-trip per query — sources stay on Supabase, but
+    # chunks own their own URL for citation rendering.
     docs: list[dict[str, Any]] = [
         {
             "session_id": str(session_id),
             "source_id": str(source_id),
+            "source_url": source_url,
             "chunk_index": idx,
             "text": text,
             "embedding": embedding,

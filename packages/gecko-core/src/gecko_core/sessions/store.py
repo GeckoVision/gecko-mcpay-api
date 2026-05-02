@@ -641,6 +641,7 @@ class SessionStore:
         chunks: list[tuple[int, str, list[float]]],
         *,
         provider_kind: ProviderKind = "web",
+        source_url: str | None = None,
     ) -> int:
         """Bulk-insert chunks for a source. Returns the count inserted.
 
@@ -674,7 +675,11 @@ class SessionStore:
             from gecko_core.db.mongo_chunks import insert_chunks_mongo
 
             return await insert_chunks_mongo(
-                session_id, source_id, chunks, provider_kind=provider_kind
+                session_id,
+                source_id,
+                chunks,
+                provider_kind=provider_kind,
+                source_url=source_url,
             )
 
         # Lazy import — avoid a top-level cycle (audit imports nothing
@@ -949,7 +954,24 @@ class SessionStore:
         vector ANN — exactly the order chunks_project_captured_at_idx is
         built for. `window_days=None` (or <=0) disables the temporal cap;
         `project_id=None` matches across projects (rare; caller decides).
+
+        S18-MONGO-READ-01 — when ``GECKO_CHUNK_STORE=mongo`` dispatches to
+        :func:`gecko_core.db.mongo_reads.match_chunks_windowed_mongo` which
+        applies the same project + temporal filter via ``$vectorSearch.filter``.
         """
+        from gecko_core.db import get_chunk_store
+
+        if get_chunk_store() == "mongo":
+            from gecko_core.db.mongo_reads import match_chunks_windowed_mongo
+
+            rows = await match_chunks_windowed_mongo(
+                query_embedding=query_embedding,
+                window_days=window_days,
+                project_id=project_id,
+                match_count=match_count,
+            )
+            return [ChunkMatch.model_validate(r) for r in rows]
+
         params: dict[str, Any] = {
             "query_embedding": query_embedding,
             "window_days": window_days,

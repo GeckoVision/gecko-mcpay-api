@@ -386,7 +386,9 @@ async def _process_one(
             embeddings = [cached_lookup[i] for i in range(len(pieces))]
             rows = list(zip(range(len(pieces)), pieces, embeddings, strict=True))
             try:
-                inserted = await store.insert_chunks(session_id, source_id, rows)
+                inserted = await store.insert_chunks(
+                    session_id, source_id, rows, source_url=url
+                )
             except Exception as exc:
                 logger.warning(
                     "ingest.upsert.failed url=%s exc=%s msg=%s n_rows=%d vector_dim=%d",
@@ -776,7 +778,11 @@ async def ingest_provider_chunks(
         rows = list(zip(indices, pieces, embeddings, strict=True))
         try:
             inserted = await store.insert_chunks(
-                session_id, source_id, rows, provider_kind=provider_kind
+                session_id,
+                source_id,
+                rows,
+                provider_kind=provider_kind,
+                source_url=synthetic_uri,
             )
         except Exception as exc:
             audit_error_kind = classify_exception(exc)
