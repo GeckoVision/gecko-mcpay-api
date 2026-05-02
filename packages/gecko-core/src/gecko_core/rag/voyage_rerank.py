@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -143,10 +144,77 @@ async def voyage_rerank(
         logger.warning("rag.voyage_rerank.fallback err=no_usable_results")
         return chunks[:top_n]
 
-    # TODO(S19+): batch reranker calls per session if multi-question
-    # synthesis trips the 90s budget. Per-question calls are acceptable
-    # for the demo runbook; revisit when fan-out > 3 questions/session.
     return reordered
+
+
+async def voyage_rerank_batch(
+    items: list[tuple[str, list[RagChunk]]],
+    *,
+    top_n: int = RERANK_TOP_N_OUTPUT,
+) -> list[list[RagChunk]]:
+    """Parallel-rerank N (query, chunks) pairs in one fan-out (S20-RERANKER-BATCH-01).
+
+    Each tuple's chunks slate is reranked independently against its own
+    query; results are returned in input order. Per-item failures degrade
+    locally to ``chunks[:top_n]`` so one bad call never poisons the rest.
+
+    Why this exists: pro-tier multi-question synthesis can fan out N
+    `voyage_rerank` calls per session. The Voyage SDK has no
+    multi-query-single-call endpoint, so "batching" here means dispatching
+    all N calls concurrently via ``asyncio.gather`` rather than awaiting
+    them sequentially. On a 5-question fan-out at 300-800ms/call this
+    reclaims ~2-3s of latency budget.
+
+    Contract:
+
+    * Empty ``items`` -> returns ``[]`` without invoking Voyage.
+    * Flag off (``GECKO_RERANKER`` != "voyage") -> per-item passthrough
+      to ``chunks[:top_n]`` without invoking Voyage at all.
+    * On per-item exception -> log a warning, degrade *that item only* to
+      ``chunks[:top_n]`` (the other items still see their reranked slates).
+    * Output length and order match input exactly: ``output[i]`` is the
+      reranked slate for ``items[i]``.
+
+    Note: this helper is additive. ``voyage_rerank`` semantics for the
+    single-question path are unchanged, and the basic-tier (single-question)
+    path continues to use ``voyage_rerank`` directly.
+    """
+    if not items:
+        return []
+
+    # Fast-path: when the reranker is off, never construct coroutines that
+    # would spin up a Voyage client. Cheaper and matches single-call
+    # passthrough semantics exactly.
+    if not _flag_enabled():
+        return [chunks[:top_n] for _, chunks in items]
+
+    started = time.perf_counter()
+    coros = [voyage_rerank(q, c, top_n=top_n) for q, c in items]
+    raw = await asyncio.gather(*coros, return_exceptions=True)
+
+    out: list[list[RagChunk]] = []
+    failures = 0
+    for i, result in enumerate(raw):
+        if isinstance(result, BaseException):
+            failures += 1
+            logger.warning(
+                "rag.voyage_rerank.batch.item_failed idx=%d err=%s",
+                i,
+                result,
+            )
+            out.append(items[i][1][:top_n])
+        else:
+            out.append(result)
+
+    wall_ms = int((time.perf_counter() - started) * 1000)
+    voyage_calls = len(items) - failures
+    logger.info(
+        "voyage_rerank.batch.done n_items=%d voyage_calls=%d wall_ms=%d",
+        len(items),
+        voyage_calls,
+        wall_ms,
+    )
+    return out
 
 
 __all__ = [
@@ -155,4 +223,5 @@ __all__ = [
     "RERANK_TOP_K_INPUT",
     "RERANK_TOP_N_OUTPUT",
     "voyage_rerank",
+    "voyage_rerank_batch",
 ]
