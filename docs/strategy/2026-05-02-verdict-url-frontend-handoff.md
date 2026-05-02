@@ -78,3 +78,98 @@ The teaser endpoint allows `Access-Control-Allow-Origin: *`. Server-side fetches
 - Revocation / refund window UI
 
 #10 ships the unauthenticated teaser; #11 ships the paid view + settlement.
+
+---
+
+## #11 update — paid view + paywall (S20-X402-VERDICT-SETTLE-01)
+
+The paid surface lives at `/v/[hash]/detail/page.tsx`. Two equivalent backend URLs:
+
+```
+GET /v1/verdict/<hash>?detail=full   ← canonical (matches contract doc)
+GET /v1/verdict/<hash>/detail        ← path alias; 308-redirects to canonical
+```
+
+The frontend should always issue the canonical query-string form; the path alias exists for wallet-side x402 flows that prefer path-segment resources.
+
+### 402 challenge body (no `X-Payment` header)
+
+```json
+HTTP 402
+{
+  "error": "payment_required",
+  "message": "x402 settlement required for verdict detail",
+  "verdict_hash": "<echo>",
+  "price_usdc": "2.50",
+  "x402_challenge": {
+    "scope": "verdict:<hash>",
+    "price_usdc": "2.50",
+    "pay_to": "<recipient address>",
+    "network": "stub|solana-mainnet|base-mainnet|...",
+    "facilitator": "stub|frames-solana|cdp-base|...",
+    "challenge_id": "<server nonce>"
+  },
+  "last_failure": "<optional — present iff a previous attempt was rejected>"
+}
+```
+
+The frontend's wallet flow:
+
+1. Reads `x402_challenge` from the 402 body.
+2. In **stub mode** (`network=="stub"`), produces an `X-Payment` header of the form `stub:<verdict_hash>:<nonce>` and retries.
+3. In **live mode**, hands the challenge to the buyer's wallet (frames.ag for Solana / CDP wallet for Base) which signs an x402 v2 PaymentPayload, base64-encodes it, and retries with `X-Payment: <base64>`.
+
+If the retry fails (bad signature, scope mismatch), the next 402 carries `last_failure` so diagnostic copy can render without a follow-up round-trip.
+
+### 200 paid response
+
+```json
+HTTP 200
+{
+  "verdict_hash": "<full-64-hex>",
+  "verdict_hash_short": "verdict@<12-hex>",
+  "verdict": "GO|REFINE|PIVOT|KILL",
+  "idea_text": "...",
+  "tier": "basic|pro",
+  "created_at": "2026-05-02T14:33:00Z",
+
+  "judge_prose_full": "<full synthesizer prose, no excerpt cap>",
+  "gap_classification": "Partial:UX",
+  "gap_summary": "...",
+  "provider_mix_flag": "balanced|single_provider_dominates|thin_diversity|null",
+
+  "business_plan": { ... | null },
+  "validation_report": { ... including all citations | null },
+  "prd": { ... | null },
+  "advisor_voices": [ ... | null ],
+  "transcript": { ... | null },
+  "agent_turns": { ... | null },
+
+  "settlement_receipt": {
+    "verdict_hash": "<echo>",
+    "tx_signature": "<chain-specific signature, null in stub mode>",
+    "facilitator": "stub|frames-solana|cdp-base|...",
+    "settled_at": "2026-05-02T14:35:11Z"
+  }
+}
+```
+
+`business_plan` / `validation_report` / `prd` / `advisor_voices` / `transcript` are nullable: the persisted `judge_transcripts` document doesn't always carry the full ResearchResult shape, so the frontend renders conditionally and degrades gracefully when a field is absent.
+
+### Render layout (paid view)
+
+1. Hero: idea + verdict badge (same colors as teaser).
+2. Full prose block (`judge_prose_full`) — no excerpt cap.
+3. **Citations panel** — `validation_report.citations`, grouped by `provider_kind`. The S20 `provider_mix_flag` chip lives here too; show "balanced" / "thin diversity" / "single provider dominates" inline so the buyer sees the corpus shape at the same glance as the verdict.
+4. **Advisor voices** — one card per voice in `advisor_voices` (skeptic / founder / etc.), with their per-voice verdict and 1–2 sentence summary. Dissent is the artifact buyers pay for; surface it prominently.
+5. **PRD + Business plan** — collapsed by default; expand on click.
+6. **Debate transcript** — `agent_turns` rendered as a chat-style timeline. Pro tier only; basic tier has no transcript.
+7. Footer: settlement receipt block (truncated `tx_signature` with explorer link, `facilitator` chip, `settled_at` relative time).
+
+### Stub-mode flow (development)
+
+While `X402_VERDICT_SETTLE_LIVE` is unset, the backend serves stub challenges. Frontend should ship a "stub wallet" component that, on click, generates the `stub:<verdict_hash>:<nonce>` X-Payment header and retries. This unblocks dev / preview environments without funded wallets.
+
+### Live-mode rollout
+
+Live x402 settlement is feature-flagged behind `X402_VERDICT_SETTLE_LIVE=1` on the backend. **The flag stays off until the Pattern C contract test (`tests/payments/test_verdict_settle_contract.py`) is recorded green against the real facilitator's `/verify` AND `/settle` endpoints.** Frontend can build the live wallet flow against stub mode; the wire format is identical.

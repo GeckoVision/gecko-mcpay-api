@@ -310,6 +310,30 @@ def check_x402_mode(environ: dict[str, str] | None = None) -> CheckResult:
         detail += f" networks=[{', '.join(client.supported_networks)}]"
     if not raw:
         detail += " (X402_MODE unset, defaulting to 'stub')"
+
+    # S20-X402-VERDICT-SETTLE-01 (#11) — verdict-paywall live flag is
+    # gated independently of X402_MODE. Surface the resolved value here
+    # so an operator inspecting "is the verdict paywall live?" can read
+    # both gates from one doctor line.
+    try:
+        from gecko_core.payments.verdict_settle import (
+            VERDICT_SETTLE_LIVE_ENV,
+            is_verdict_settle_live_enabled,
+            resolve_verdict_settle_mode,
+        )
+    except Exception:
+        # Optional surface — never fail the doctor on a missing import.
+        pass
+    else:
+        verdict_live = is_verdict_settle_live_enabled(env)
+        verdict_mode = resolve_verdict_settle_mode(
+            x402_mode=mode,
+            live_flag=verdict_live,
+        )
+        detail += (
+            f" verdict_paywall_mode={verdict_mode} "
+            f"({VERDICT_SETTLE_LIVE_ENV}={'1' if verdict_live else '0'})"
+        )
     return CheckResult(name="env:X402_MODE", ok=True, detail=detail)
 
 

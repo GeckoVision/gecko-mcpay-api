@@ -50,6 +50,23 @@ from gecko_core.payments.protocol import (
     ConfirmationStatus,
     PaymentReceipt,
 )
+from gecko_core.payments.verdict_settle import (
+    VERDICT_DETAIL_PRICE_USDC,
+    VERDICT_SETTLE_LIVE_ENV,
+    InvalidVerdictPaymentError,
+    VerdictPaymentError,
+    VerdictPaywallNotLiveError,
+    is_verdict_settle_live_enabled,
+    make_verdict_payment_requirement,
+    resolve_verdict_settle_mode,
+    verify_verdict_payment,
+)
+from gecko_core.payments.verdict_settle import (
+    PaymentRequirements as VerdictPaymentRequirements,
+)
+from gecko_core.payments.verdict_settle import (
+    SettlementReceipt as VerdictSettlementReceipt,
+)
 from gecko_core.payments.verifier import (
     VerifyResult,
     VerifyTarget,
@@ -82,6 +99,8 @@ __all__ = [
     "CREATOR_PAYOUT_DEFAULT_PER_CITE_USD",
     "NETWORKS",
     "PAYMENT_MODES",
+    "VERDICT_DETAIL_PRICE_USDC",
+    "VERDICT_SETTLE_LIVE_ENV",
     "CDPAuthProvider",
     "CDPCredentials",
     "CDPFacilitatorClient",
@@ -91,6 +110,7 @@ __all__ = [
     "CDPX402Error",
     "ConfirmationStatus",
     "FramesX402Client",
+    "InvalidVerdictPaymentError",
     "LiveX402Client",
     "NetworkConfig",
     "NetworkKind",
@@ -101,6 +121,10 @@ __all__ = [
     "PaymentRequiredError",
     "PaymentResult",
     "StubX402Client",
+    "VerdictPaymentError",
+    "VerdictPaymentRequirements",
+    "VerdictPaywallNotLiveError",
+    "VerdictSettlementReceipt",
     "VerifyResult",
     "VerifyTarget",
     "X402Client",
@@ -111,15 +135,19 @@ __all__ = [
     "get_client",
     "is_stub_signature",
     "is_unconfigured",
+    "is_verdict_settle_live_enabled",
+    "make_verdict_payment_requirement",
     "price_for",
     "resolve_client",
     "resolve_client_for_network",
     "resolve_network",
     "resolve_per_cite_amount_usd",
     "resolve_rpc_url",
+    "resolve_verdict_settle_mode",
     "run_payment_gate",
     "settle_creator_payouts",
     "summarize",
     "verify_target",
     "verify_targets",
+    "verify_verdict_payment",
 ]

@@ -49,6 +49,13 @@ markers = [
     # mode runs in CI; live re-record requires GECKO_BAZAAR_LIVE=1 and a
     # funded buyer wallet. See tests/payments/test_bazaar_consumer_contract.py.
     "live_bazaar: gated buyer-side x402 contract test (cassette replay by default)",
+    # S20-X402-VERDICT-SETTLE-01 (#11): gated cassette test for the
+    # verdict-paywall x402 flow against the real facilitator's
+    # /verify AND /settle endpoints (Pattern C — Sprint 12 CDP failed
+    # because only /verify was exercised). Replay mode runs in CI;
+    # live re-record requires GECKO_VERDICT_X402_LIVE=1 + a funded
+    # buyer wallet. See tests/payments/test_verdict_settle_contract.py.
+    "live_x402_verdict: gated verdict-paywall x402 contract test (cassette replay by default)",
 ]
 
 [dependency-groups]

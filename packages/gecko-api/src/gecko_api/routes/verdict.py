@@ -152,6 +152,32 @@ def _get_collection() -> Any | None:
 # ``?detail=full`` will be enforced in S20 #11 when the detail surface is
 # split into its own (paid) route — at which point each FastAPI handler
 # carries its own slowapi decorator and the buckets are clean.
+@router.get("/{hash}/detail", response_model=None)
+@limiter.limit("10/minute")
+async def get_verdict_detail(
+    request: Request,
+    hash: str,
+) -> JSONResponse | RedirectResponse:
+    """Path-segment alias for ``?detail=full``.
+
+    S20-X402-VERDICT-SETTLE-01 (#11). The frontend handoff doc names
+    ``?detail=full`` as the canonical surface, so we keep that working
+    on the same router. This handler exists so a buyer who hits
+    ``/v1/verdict/<hash>/detail`` directly (e.g. a wallet-side x402
+    flow that constructs the resource URL from the path-segment form)
+    is redirected to the canonical query-string form. slowapi gets a
+    real 10/min bucket on this handler — separate from the teaser's
+    60/min — so the paywall surface can't be hammered.
+    """
+    # Use a 308 (permanent + method-preserving) so the buyer's
+    # X-Payment header survives the redirect. Browsers and httpx both
+    # honor 308's method-preservation; 302 would silently downgrade
+    # POSTs to GET (irrelevant today since we're GET-only, but cheap
+    # future-proofing for the wallet-callback flow).
+    target = f"/v1/verdict/{hash}?detail=full"
+    return RedirectResponse(url=target, status_code=308, headers=_TEASER_CORS_HEADERS)
+
+
 @router.get("/{hash}", response_model=None)
 @limiter.limit("60/minute")
 async def get_verdict(
@@ -200,18 +226,146 @@ async def _teaser(*, request: Request, hash_: str) -> JSONResponse | RedirectRes
 
 
 async def _detail_full_stub(*, request: Request, hash_: str) -> JSONResponse:
-    # 402 stub for ``?detail=full``. #11 will replace this with the x402
-    # facilitator handshake; the response body shape (``price_usdc``) is
-    # already the contract surface so the frontend renders dynamic copy.
-    return _json_response(
-        status_code=402,
-        content={
-            "error": "payment_required",
-            "message": "x402 settlement coming in S20 #11",
-            "verdict_hash": hash_,
-            "price_usdc": _DEFAULT_DETAIL_PRICE_USDC,
-        },
+    """402 / 200 dispatch for ``?detail=full`` — the verdict paywall.
+
+    S20-X402-VERDICT-SETTLE-01 (#11). Replaces the static 402 stub from
+    #10 with a real x402 paywall:
+
+    * No ``X-Payment`` header → return 402 with the ``PaymentRequirements``
+      challenge body. The frontend's wallet flow signs against that
+      challenge and retries with the resulting signed payload.
+    * ``X-Payment`` present → call ``verify_verdict_payment``. On
+      success, return 200 with the full ResearchResult-shaped body
+      from the persisted ``judge_transcripts`` document. On failure,
+      return 402 with the same challenge so the buyer can retry.
+
+    Mode resolution is delegated to ``verdict_settle.resolve_verdict_settle_mode``
+    so the env-var gates (``X402_MODE`` + ``X402_VERDICT_SETTLE_LIVE``)
+    live in one place.
+    """
+    from gecko_core.payments.verdict_settle import (
+        InvalidVerdictPaymentError,
+        VerdictPaymentError,
+        make_verdict_payment_requirement,
+        resolve_verdict_settle_mode,
+        verify_verdict_payment,
     )
+
+    # Validate the hash shape early — same 404 path as the teaser, so
+    # we don't leak "this hash exists but you must pay" vs "no such
+    # hash" via the paywall surface either.
+    if not hash_ or not _is_hex(hash_) or len(hash_) != _FULL_HASH_LEN:
+        return _not_found(echo=hash_)
+
+    coll = _get_collection()
+    if coll is None:
+        return _not_found(echo=hash_)
+
+    doc = _find_most_recent(coll, {"verdict_hash": hash_})
+    if doc is None:
+        return _not_found(echo=hash_)
+
+    mode = resolve_verdict_settle_mode()
+    requirement = await make_verdict_payment_requirement(hash_, mode=mode)
+
+    payment_header = request.headers.get("x-payment") or request.headers.get("X-Payment")
+    if not payment_header:
+        return _challenge_response(verdict_hash=hash_, requirement=requirement)
+
+    try:
+        receipt = await verify_verdict_payment(
+            payment_header,
+            verdict_hash=hash_,
+            mode=mode,
+        )
+    except InvalidVerdictPaymentError as exc:
+        # Bad / replayed / scope-mismatched signature — re-issue the
+        # challenge. We surface the failure reason in the body so the
+        # buyer's wallet UX can show "scope mismatch" / "expired" etc.
+        return _challenge_response(
+            verdict_hash=hash_,
+            requirement=requirement,
+            failure=str(exc),
+        )
+    except VerdictPaymentError as exc:
+        # Facilitator-side error or live-mode misconfiguration. We
+        # surface verbatim per the CLAUDE.md "never catch-and-rephrase"
+        # rule — just wrap it in a 402 envelope.
+        return _challenge_response(
+            verdict_hash=hash_,
+            requirement=requirement,
+            failure=f"{type(exc).__name__}: {exc}",
+        )
+
+    return _json_response(
+        status_code=200,
+        content=_detail_payload(doc=doc, receipt=receipt),
+    )
+
+
+def _challenge_response(
+    *,
+    verdict_hash: str,
+    requirement: Any,
+    failure: str | None = None,
+) -> JSONResponse:
+    """Build the 402 body. ``failure`` is surfaced when the buyer's
+    last attempt was rejected so the frontend can render diagnostic
+    copy without a follow-up round-trip."""
+    body: dict[str, Any] = {
+        "error": "payment_required",
+        "message": "x402 settlement required for verdict detail",
+        "verdict_hash": verdict_hash,
+        "price_usdc": requirement.price_usdc,
+        "x402_challenge": requirement.to_response_body(),
+    }
+    if failure:
+        body["last_failure"] = failure
+    return _json_response(status_code=402, content=body)
+
+
+def _detail_payload(*, doc: dict[str, Any], receipt: Any) -> dict[str, Any]:
+    """Full-content response after a successful settlement.
+
+    Mirrors the JSON shape called out in the ticket. Fields not
+    present in the persisted ``judge_transcripts`` document degrade
+    gracefully to ``None`` — the eval-side schema includes reserved
+    slots for ``advisor_voices`` / ``advisor_consensus`` etc. that
+    aren't populated for legacy rows. The frontend handoff doc
+    documents the optional fields explicitly.
+
+    ``transcript`` from the production-side capture lives in
+    ``agent_turns`` (S17 rename); we surface it under both names so
+    the post-settlement view doesn't have to know which schema
+    version produced the row.
+    """
+    full_hash = str(doc.get("verdict_hash") or "")
+    return {
+        "verdict_hash": full_hash,
+        "verdict_hash_short": _short_hash_token(full_hash) if full_hash else None,
+        "verdict": doc.get("actual_verdict_v2"),
+        "idea_text": doc.get("idea_text"),
+        "tier": doc.get("tier"),
+        "created_at": _format_created_at(doc.get("created_at")),
+        # Full prose, not the teaser excerpt — the buyer paid for it.
+        "judge_prose_full": doc.get("judge_prose"),
+        "gap_classification": doc.get("gap_classification"),
+        "gap_summary": doc.get("gap_summary"),
+        "provider_mix_flag": doc.get("provider_mix_flag"),
+        # Optional richer payloads. Present when the workflow that
+        # wrote the transcript stamped them; ``None`` for legacy rows.
+        # The frontend renders conditionally per the handoff doc.
+        "business_plan": doc.get("business_plan"),
+        "validation_report": doc.get("validation_report"),
+        "prd": doc.get("prd"),
+        "advisor_voices": doc.get("advisor_voices"),
+        # Debate transcript — surfaced as ``agent_turns`` in the
+        # persisted shape (S17 rename). Expose under the legacy name
+        # too so older frontend builds keep working.
+        "transcript": doc.get("agent_turns"),
+        "agent_turns": doc.get("agent_turns"),
+        "settlement_receipt": receipt.to_response_body(),
+    }
 
 
 # ---------------------------------------------------------------------------
