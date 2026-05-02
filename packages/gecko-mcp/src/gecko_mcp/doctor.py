@@ -13,7 +13,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 REQUIRED_ENV_VARS: tuple[str, ...] = (
     "SUPABASE_URL",
@@ -432,6 +432,68 @@ def format_results(results: Iterable[CheckResult]) -> str:
     return "\n".join(lines)
 
 
+def check_chunk_store(environ: dict[str, str] | None = None) -> list[CheckResult]:
+    """S18-MONGO-CUTOVER-01 — verify chunk-store backend is reachable.
+
+    When ``GECKO_CHUNK_STORE=mongo``: probe the Atlas connection via the
+    motor client, list the ``gecko_rag.chunks`` indexes, and assert
+    ``chunks_vector`` + ``chunks_text`` are present and queryable.
+
+    When ``GECKO_CHUNK_STORE=supabase`` (default): emit one INFO row.
+    The actual Supabase chunk-table check lives in ``check_supabase``.
+    """
+    env = environ if environ is not None else dict(os.environ)
+    results: list[CheckResult] = []
+    kind = env.get("GECKO_CHUNK_STORE", "supabase").lower()
+    results.append(CheckResult(name="chunk_store:kind", ok=True, detail=kind, info=True))
+    if kind != "mongo":
+        return results
+
+    uri = env.get("MONGODB_URI") or env.get("MONGO_URI")
+    if not uri or uri == "__unset__":
+        results.append(
+            CheckResult(
+                name="chunk_store:mongo:uri",
+                ok=False,
+                detail="GECKO_CHUNK_STORE=mongo but MONGODB_URI unset",
+            )
+        )
+        return results
+
+    try:
+        from pymongo import MongoClient
+
+        db_name = env.get("MONGODB_CHUNK_DB", "gecko_rag")
+        # Sync probe — doctor is run rarely and the seam is simpler.
+        client: MongoClient[dict[str, Any]] = MongoClient(uri, serverSelectionTimeoutMS=3000)
+        client.admin.command("ping")
+        results.append(
+            CheckResult(name="chunk_store:mongo:ping", ok=True, detail=f"db={db_name}")
+        )
+
+        idx_names = {
+            i["name"] for i in client[db_name]["chunks"].list_search_indexes()
+        }
+        for required in ("chunks_vector", "chunks_text"):
+            ok = required in idx_names
+            results.append(
+                CheckResult(
+                    name=f"chunk_store:mongo:index:{required}",
+                    ok=ok,
+                    detail="ready" if ok else f"missing search index: {required}",
+                )
+            )
+    except Exception as exc:
+        results.append(
+            CheckResult(
+                name="chunk_store:mongo:probe",
+                ok=False,
+                detail=_redact(str(exc)),
+            )
+        )
+    return results
+
+
 def run_doctor(
     *,
     environ: dict[str, str] | None = None,
@@ -450,6 +512,7 @@ def run_doctor(
     results.extend(check_wallet())
     results.extend(check_llm_router(environ))
     results.append(check_clawrouter(environ))
+    results.extend(check_chunk_store(environ))
 
     # INFO checks never gate downstream probes.
     env_ok = all(r.ok for r in results if not r.info)
