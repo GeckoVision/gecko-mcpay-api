@@ -1,0 +1,1372 @@
+{
+  "date": "2026-05-02",
+  "session_id": "6cc0a982-8e21-4517-9d9f-565a867ef58d",
+  "ground_truth": "top-K proxy (arm A top-3) \u2014 NOT real ground truth",
+  "aggregate": {
+    "n_queries": 8,
+    "top_k": 8,
+    "ideal_proxy_k": 3,
+    "arm_A": {
+      "citation_precision": {
+        "median": 0.375,
+        "mean": 0.375,
+        "min": 0.375,
+        "max": 0.375
+      },
+      "latency_ms": {
+        "median": 1321.535,
+        "mean": 1585.1537,
+        "min": 1208.76,
+        "max": 3498.46
+      }
+    },
+    "arm_B": {
+      "citation_precision": {
+        "median": 0.3125,
+        "mean": 0.2812,
+        "min": 0.125,
+        "max": 0.375
+      },
+      "latency_ms": {
+        "median": 1847.635,
+        "mean": 1855.7687,
+        "min": 1565.94,
+        "max": 2221.7
+      },
+      "rerank_score_populated_query_count": 8
+    },
+    "delta": {
+      "citation_precision_pp_mean": -9.38,
+      "citation_precision_pp_median": -6.25,
+      "latency_p50_ms": 526.1
+    },
+    "gate": {
+      "spec": "delta_prec_pp_mean >= 10 AND delta_lat_p50_ms <= 300",
+      "prec_lift_ok": false,
+      "latency_ok": false,
+      "tripped": false
+    },
+    "cost_est_usd": {
+      "voyage_calls": 8,
+      "voyage_usd": 0.0004,
+      "embed_calls": 16,
+      "embed_tokens_est": 400,
+      "embed_usd": 8e-06,
+      "total_usd": 0.000408
+    }
+  },
+  "per_query": [
+    {
+      "query_id": "q-x402-protocol",
+      "query_text": "How does the x402 payment protocol work end-to-end between agent and facilitator?",
+      "ideal_keys": [
+        [
+          "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+          0
+        ],
+        [
+          "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+          1
+        ],
+        [
+          "8b7ba7ab-2d39-49af-8e61-1627f3857fdc",
+          0
+        ]
+      ],
+      "arm_A": {
+        "latency_ms": 3498.46,
+        "n_returned": 8,
+        "citation_precision": 0.375,
+        "chunks": [
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 1,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.7724,
+            "rerank_score": null
+          },
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 0,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.7558,
+            "rerank_score": null
+          },
+          {
+            "source_id": "8b7ba7ab-2d39-49af-8e61-1627f3857fdc",
+            "chunk_index": 0,
+            "source_url": "bazaar://bazaar-http",
+            "provider_kind": "bazaar",
+            "similarity": 0.6643,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 1,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6345,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 0,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6222,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 2,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6072,
+            "rerank_score": null
+          },
+          {
+            "source_id": "8d878d74-5f16-41b5-a5ca-6317025deb68",
+            "chunk_index": 0,
+            "source_url": "twitsh://session/6cc0a982-8e21-4517-9d9f-565a867ef58d",
+            "provider_kind": "twitsh",
+            "similarity": 0.5665,
+            "rerank_score": null
+          },
+          {
+            "source_id": "8d878d74-5f16-41b5-a5ca-6317025deb68",
+            "chunk_index": 1,
+            "source_url": "twitsh://session/6cc0a982-8e21-4517-9d9f-565a867ef58d",
+            "provider_kind": "twitsh",
+            "similarity": 0.5441,
+            "rerank_score": null
+          }
+        ]
+      },
+      "arm_B": {
+        "latency_ms": 2221.7,
+        "n_returned": 8,
+        "citation_precision": 0.375,
+        "chunks": [
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 0,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.7558,
+            "rerank_score": 0.8164
+          },
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 1,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.7724,
+            "rerank_score": 0.7891
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 35,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5481,
+            "rerank_score": 0.4707
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 7,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5433,
+            "rerank_score": 0.4668
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 15,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5669,
+            "rerank_score": 0.4668
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 41,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5437,
+            "rerank_score": 0.4629
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 4,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.548,
+            "rerank_score": 0.457
+          },
+          {
+            "source_id": "8b7ba7ab-2d39-49af-8e61-1627f3857fdc",
+            "chunk_index": 0,
+            "source_url": "bazaar://bazaar-http",
+            "provider_kind": "bazaar",
+            "similarity": 0.6643,
+            "rerank_score": 0.377
+          }
+        ]
+      },
+      "delta": {
+        "citation_precision_pp": 0.0,
+        "latency_ms": -1276.76
+      }
+    },
+    {
+      "query_id": "q-agent-pay-agent",
+      "query_text": "Can autonomous AI agents pay each other for services without human approval?",
+      "ideal_keys": [
+        [
+          "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+          0
+        ],
+        [
+          "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+          1
+        ],
+        [
+          "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+          1
+        ]
+      ],
+      "arm_A": {
+        "latency_ms": 1220.32,
+        "n_returned": 8,
+        "citation_precision": 0.375,
+        "chunks": [
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 0,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.7973,
+            "rerank_score": null
+          },
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 1,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.741,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 1,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6868,
+            "rerank_score": null
+          },
+          {
+            "source_id": "8b7ba7ab-2d39-49af-8e61-1627f3857fdc",
+            "chunk_index": 0,
+            "source_url": "bazaar://bazaar-http",
+            "provider_kind": "bazaar",
+            "similarity": 0.6812,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 0,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6746,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 2,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6722,
+            "rerank_score": null
+          },
+          {
+            "source_id": "8d878d74-5f16-41b5-a5ca-6317025deb68",
+            "chunk_index": 0,
+            "source_url": "twitsh://session/6cc0a982-8e21-4517-9d9f-565a867ef58d",
+            "provider_kind": "twitsh",
+            "similarity": 0.5784,
+            "rerank_score": null
+          },
+          {
+            "source_id": "8d878d74-5f16-41b5-a5ca-6317025deb68",
+            "chunk_index": 1,
+            "source_url": "twitsh://session/6cc0a982-8e21-4517-9d9f-565a867ef58d",
+            "provider_kind": "twitsh",
+            "similarity": 0.5561,
+            "rerank_score": null
+          }
+        ]
+      },
+      "arm_B": {
+        "latency_ms": 1889.27,
+        "n_returned": 8,
+        "citation_precision": 0.25,
+        "chunks": [
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 0,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.7973,
+            "rerank_score": 0.7266
+          },
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 1,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.741,
+            "rerank_score": 0.5156
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 35,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5318,
+            "rerank_score": 0.5039
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 15,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5516,
+            "rerank_score": 0.5
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 2,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5331,
+            "rerank_score": 0.4941
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 45,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5316,
+            "rerank_score": 0.4844
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 41,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5314,
+            "rerank_score": 0.4785
+          },
+          {
+            "source_id": "8d878d74-5f16-41b5-a5ca-6317025deb68",
+            "chunk_index": 0,
+            "source_url": "twitsh://session/6cc0a982-8e21-4517-9d9f-565a867ef58d",
+            "provider_kind": "twitsh",
+            "similarity": 0.5784,
+            "rerank_score": 0.3418
+          }
+        ]
+      },
+      "delta": {
+        "citation_precision_pp": -12.5,
+        "latency_ms": 668.95
+      }
+    },
+    {
+      "query_id": "q-mcp-payments",
+      "query_text": "How do MCP servers integrate with agentic payments and what is the threat model?",
+      "ideal_keys": [
+        [
+          "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+          0
+        ],
+        [
+          "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+          1
+        ],
+        [
+          "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+          0
+        ]
+      ],
+      "arm_A": {
+        "latency_ms": 1303.68,
+        "n_returned": 8,
+        "citation_precision": 0.375,
+        "chunks": [
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 0,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.7412,
+            "rerank_score": null
+          },
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 1,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.707,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 0,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.7015,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 1,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6952,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 2,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6835,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 3,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6593,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 4,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6106,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 5,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.598,
+            "rerank_score": null
+          }
+        ]
+      },
+      "arm_B": {
+        "latency_ms": 1861.16,
+        "n_returned": 8,
+        "citation_precision": 0.375,
+        "chunks": [
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 1,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6952,
+            "rerank_score": 0.5547
+          },
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 0,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.7412,
+            "rerank_score": 0.5156
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 0,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.7015,
+            "rerank_score": 0.4961
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 3,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6593,
+            "rerank_score": 0.4863
+          },
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 1,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.707,
+            "rerank_score": 0.4766
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 2,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6835,
+            "rerank_score": 0.4375
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 29,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5545,
+            "rerank_score": 0.4141
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 40,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5499,
+            "rerank_score": 0.4102
+          }
+        ]
+      },
+      "delta": {
+        "citation_precision_pp": 0.0,
+        "latency_ms": 557.48
+      }
+    },
+    {
+      "query_id": "q-l402-vs-x402",
+      "query_text": "What is the difference between L402 and x402 for agentic commerce?",
+      "ideal_keys": [
+        [
+          "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+          0
+        ],
+        [
+          "8b7ba7ab-2d39-49af-8e61-1627f3857fdc",
+          0
+        ],
+        [
+          "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+          1
+        ]
+      ],
+      "arm_A": {
+        "latency_ms": 1431.7,
+        "n_returned": 8,
+        "citation_precision": 0.375,
+        "chunks": [
+          {
+            "source_id": "8b7ba7ab-2d39-49af-8e61-1627f3857fdc",
+            "chunk_index": 0,
+            "source_url": "bazaar://bazaar-http",
+            "provider_kind": "bazaar",
+            "similarity": 0.6938,
+            "rerank_score": null
+          },
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 0,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.683,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 1,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.679,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 0,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6688,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 2,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6646,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 3,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6491,
+            "rerank_score": null
+          },
+          {
+            "source_id": "8d878d74-5f16-41b5-a5ca-6317025deb68",
+            "chunk_index": 0,
+            "source_url": "twitsh://session/6cc0a982-8e21-4517-9d9f-565a867ef58d",
+            "provider_kind": "twitsh",
+            "similarity": 0.5705,
+            "rerank_score": null
+          },
+          {
+            "source_id": "8d878d74-5f16-41b5-a5ca-6317025deb68",
+            "chunk_index": 1,
+            "source_url": "twitsh://session/6cc0a982-8e21-4517-9d9f-565a867ef58d",
+            "provider_kind": "twitsh",
+            "similarity": 0.5559,
+            "rerank_score": null
+          }
+        ]
+      },
+      "arm_B": {
+        "latency_ms": 1834.11,
+        "n_returned": 8,
+        "citation_precision": 0.375,
+        "chunks": [
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 0,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.683,
+            "rerank_score": 0.5664
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 1,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.679,
+            "rerank_score": 0.5391
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 2,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6646,
+            "rerank_score": 0.4395
+          },
+          {
+            "source_id": "8b7ba7ab-2d39-49af-8e61-1627f3857fdc",
+            "chunk_index": 0,
+            "source_url": "bazaar://bazaar-http",
+            "provider_kind": "bazaar",
+            "similarity": 0.6938,
+            "rerank_score": 0.4219
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 0,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6688,
+            "rerank_score": 0.3965
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 3,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6492,
+            "rerank_score": 0.3848
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 47,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5602,
+            "rerank_score": 0.375
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 35,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5583,
+            "rerank_score": 0.375
+          }
+        ]
+      },
+      "delta": {
+        "citation_precision_pp": 0.0,
+        "latency_ms": 402.41
+      }
+    },
+    {
+      "query_id": "q-solana-x402",
+      "query_text": "How does x402 work on Solana versus EVM chains?",
+      "ideal_keys": [
+        [
+          "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+          0
+        ],
+        [
+          "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+          1
+        ],
+        [
+          "8b7ba7ab-2d39-49af-8e61-1627f3857fdc",
+          0
+        ]
+      ],
+      "arm_A": {
+        "latency_ms": 1208.76,
+        "n_returned": 8,
+        "citation_precision": 0.375,
+        "chunks": [
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 0,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.6536,
+            "rerank_score": null
+          },
+          {
+            "source_id": "8b7ba7ab-2d39-49af-8e61-1627f3857fdc",
+            "chunk_index": 0,
+            "source_url": "bazaar://bazaar-http",
+            "provider_kind": "bazaar",
+            "similarity": 0.6339,
+            "rerank_score": null
+          },
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 1,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.6278,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 1,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.5627,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 2,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.5544,
+            "rerank_score": null
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 15,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5529,
+            "rerank_score": null
+          },
+          {
+            "source_id": "8d878d74-5f16-41b5-a5ca-6317025deb68",
+            "chunk_index": 1,
+            "source_url": "twitsh://session/6cc0a982-8e21-4517-9d9f-565a867ef58d",
+            "provider_kind": "twitsh",
+            "similarity": 0.5246,
+            "rerank_score": null
+          },
+          {
+            "source_id": "8d878d74-5f16-41b5-a5ca-6317025deb68",
+            "chunk_index": 0,
+            "source_url": "twitsh://session/6cc0a982-8e21-4517-9d9f-565a867ef58d",
+            "provider_kind": "twitsh",
+            "similarity": 0.5144,
+            "rerank_score": null
+          }
+        ]
+      },
+      "arm_B": {
+        "latency_ms": 1565.94,
+        "n_returned": 8,
+        "citation_precision": 0.375,
+        "chunks": [
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 0,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.6536,
+            "rerank_score": 0.4648
+          },
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 1,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.6278,
+            "rerank_score": 0.4395
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 35,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5434,
+            "rerank_score": 0.4316
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 7,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5416,
+            "rerank_score": 0.4316
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 29,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5412,
+            "rerank_score": 0.4316
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 15,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5529,
+            "rerank_score": 0.418
+          },
+          {
+            "source_id": "8b7ba7ab-2d39-49af-8e61-1627f3857fdc",
+            "chunk_index": 0,
+            "source_url": "bazaar://bazaar-http",
+            "provider_kind": "bazaar",
+            "similarity": 0.6339,
+            "rerank_score": 0.4004
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 1,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5442,
+            "rerank_score": 0.3965
+          }
+        ]
+      },
+      "delta": {
+        "citation_precision_pp": 0.0,
+        "latency_ms": 357.18
+      }
+    },
+    {
+      "query_id": "q-facilitator-trust",
+      "query_text": "What is the trust model of the x402 facilitator and what attacks does it mitigate?",
+      "ideal_keys": [
+        [
+          "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+          0
+        ],
+        [
+          "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+          1
+        ],
+        [
+          "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+          1
+        ]
+      ],
+      "arm_A": {
+        "latency_ms": 1375.24,
+        "n_returned": 8,
+        "citation_precision": 0.375,
+        "chunks": [
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 0,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.6298,
+            "rerank_score": null
+          },
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 1,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.6115,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 1,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6086,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 0,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6036,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 2,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.597,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 4,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.5875,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 3,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.5851,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 5,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.5716,
+            "rerank_score": null
+          }
+        ]
+      },
+      "arm_B": {
+        "latency_ms": 1799.49,
+        "n_returned": 8,
+        "citation_precision": 0.125,
+        "chunks": [
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 0,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.6298,
+            "rerank_score": 0.4629
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 14,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5621,
+            "rerank_score": 0.4121
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 35,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5632,
+            "rerank_score": 0.4102
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 38,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.562,
+            "rerank_score": 0.4102
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 27,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5631,
+            "rerank_score": 0.4102
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 15,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5684,
+            "rerank_score": 0.4102
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 22,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.562,
+            "rerank_score": 0.3926
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 41,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5622,
+            "rerank_score": 0.3867
+          }
+        ]
+      },
+      "delta": {
+        "citation_precision_pp": -25.0,
+        "latency_ms": 424.25
+      }
+    },
+    {
+      "query_id": "q-bazaar-paid-context",
+      "query_text": "What does Bazaar paid-context provide beyond Tavily search results?",
+      "ideal_keys": [
+        [
+          "8b7ba7ab-2d39-49af-8e61-1627f3857fdc",
+          0
+        ],
+        [
+          "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+          0
+        ],
+        [
+          "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+          1
+        ]
+      ],
+      "arm_A": {
+        "latency_ms": 1319.14,
+        "n_returned": 8,
+        "citation_precision": 0.375,
+        "chunks": [
+          {
+            "source_id": "8b7ba7ab-2d39-49af-8e61-1627f3857fdc",
+            "chunk_index": 0,
+            "source_url": "bazaar://bazaar-http",
+            "provider_kind": "bazaar",
+            "similarity": 0.8104,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 0,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6506,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 1,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.641,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 4,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6334,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 2,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6288,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 3,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6229,
+            "rerank_score": null
+          },
+          {
+            "source_id": "8d878d74-5f16-41b5-a5ca-6317025deb68",
+            "chunk_index": 0,
+            "source_url": "twitsh://session/6cc0a982-8e21-4517-9d9f-565a867ef58d",
+            "provider_kind": "twitsh",
+            "similarity": 0.6015,
+            "rerank_score": null
+          },
+          {
+            "source_id": "8d878d74-5f16-41b5-a5ca-6317025deb68",
+            "chunk_index": 1,
+            "source_url": "twitsh://session/6cc0a982-8e21-4517-9d9f-565a867ef58d",
+            "provider_kind": "twitsh",
+            "similarity": 0.6005,
+            "rerank_score": null
+          }
+        ]
+      },
+      "arm_B": {
+        "latency_ms": 1965.4,
+        "n_returned": 8,
+        "citation_precision": 0.125,
+        "chunks": [
+          {
+            "source_id": "8b7ba7ab-2d39-49af-8e61-1627f3857fdc",
+            "chunk_index": 0,
+            "source_url": "bazaar://bazaar-http",
+            "provider_kind": "bazaar",
+            "similarity": 0.8104,
+            "rerank_score": 0.4512
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 29,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5557,
+            "rerank_score": 0.4219
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 35,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5531,
+            "rerank_score": 0.418
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 2,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5579,
+            "rerank_score": 0.3965
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 4,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5541,
+            "rerank_score": 0.3945
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 28,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5596,
+            "rerank_score": 0.3867
+          },
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 1,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.5856,
+            "rerank_score": 0.2949
+          },
+          {
+            "source_id": "8d878d74-5f16-41b5-a5ca-6317025deb68",
+            "chunk_index": 0,
+            "source_url": "twitsh://session/6cc0a982-8e21-4517-9d9f-565a867ef58d",
+            "provider_kind": "twitsh",
+            "similarity": 0.6015,
+            "rerank_score": 0.291
+          }
+        ]
+      },
+      "delta": {
+        "citation_precision_pp": -25.0,
+        "latency_ms": 646.26
+      }
+    },
+    {
+      "query_id": "q-agent-commerce-risk",
+      "query_text": "What are the security risks of autonomous agents executing onchain payments?",
+      "ideal_keys": [
+        [
+          "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+          0
+        ],
+        [
+          "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+          1
+        ],
+        [
+          "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+          1
+        ]
+      ],
+      "arm_A": {
+        "latency_ms": 1323.93,
+        "n_returned": 8,
+        "citation_precision": 0.375,
+        "chunks": [
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 0,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.8064,
+            "rerank_score": null
+          },
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 1,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.7833,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 1,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6314,
+            "rerank_score": null
+          },
+          {
+            "source_id": "8b7ba7ab-2d39-49af-8e61-1627f3857fdc",
+            "chunk_index": 0,
+            "source_url": "bazaar://bazaar-http",
+            "provider_kind": "bazaar",
+            "similarity": 0.6295,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 0,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6256,
+            "rerank_score": null
+          },
+          {
+            "source_id": "3111f5d4-dfa6-4454-b363-95d9beb5ad75",
+            "chunk_index": 2,
+            "source_url": "https://www.hospitalitynet.org/news/4132086/agentic-hospitalitys-travelos-mcp-chatgpt-app-is-putting-brands-not-intermediaries-at-the-center-of-ai-bookings",
+            "provider_kind": "web",
+            "similarity": 0.6202,
+            "rerank_score": null
+          },
+          {
+            "source_id": "8d878d74-5f16-41b5-a5ca-6317025deb68",
+            "chunk_index": 0,
+            "source_url": "twitsh://session/6cc0a982-8e21-4517-9d9f-565a867ef58d",
+            "provider_kind": "twitsh",
+            "similarity": 0.5221,
+            "rerank_score": null
+          },
+          {
+            "source_id": "8d878d74-5f16-41b5-a5ca-6317025deb68",
+            "chunk_index": 1,
+            "source_url": "twitsh://session/6cc0a982-8e21-4517-9d9f-565a867ef58d",
+            "provider_kind": "twitsh",
+            "similarity": 0.5056,
+            "rerank_score": null
+          }
+        ]
+      },
+      "arm_B": {
+        "latency_ms": 1709.08,
+        "n_returned": 8,
+        "citation_precision": 0.25,
+        "chunks": [
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 0,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.8064,
+            "rerank_score": 0.8008
+          },
+          {
+            "source_id": "080f6db0-1e01-4ac3-981e-ea2a0124d093",
+            "chunk_index": 1,
+            "source_url": "https://news.ycombinator.com/item?id=45271711",
+            "provider_kind": "web",
+            "similarity": 0.7833,
+            "rerank_score": 0.5703
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 29,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5166,
+            "rerank_score": 0.4766
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 17,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.516,
+            "rerank_score": 0.4668
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 28,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.518,
+            "rerank_score": 0.4648
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 15,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5259,
+            "rerank_score": 0.4648
+          },
+          {
+            "source_id": "7c4823d2-4d9d-47d8-b2dc-586939a47af3",
+            "chunk_index": 41,
+            "source_url": "https://getalby.com/blog/agentic-commerce-a-guide-to-l402-x402-and-mpp",
+            "provider_kind": "web",
+            "similarity": 0.5171,
+            "rerank_score": 0.4629
+          },
+          {
+            "source_id": "8d878d74-5f16-41b5-a5ca-6317025deb68",
+            "chunk_index": 0,
+            "source_url": "twitsh://session/6cc0a982-8e21-4517-9d9f-565a867ef58d",
+            "provider_kind": "twitsh",
+            "similarity": 0.522,
+            "rerank_score": 0.332
+          }
+        ]
+      },
+      "delta": {
+        "citation_precision_pp": -12.5,
+        "latency_ms": 385.15
+      }
+    }
+  ]
+}
