@@ -134,6 +134,60 @@ def test_doctor_gecko_api_reachable_passes(monkeypatch: pytest.MonkeyPatch) -> N
     assert "reachable" in result.detail
 
 
+def test_voyage_check_skipped_when_reranker_off() -> None:
+    """S19-VOYAGE-API-KEY-01 — reranker unset → INFO row only, no api_key row."""
+    from gecko_mcp.doctor import check_voyage_api_key
+
+    rows = check_voyage_api_key(environ={})
+    names = {r.name for r in rows}
+    assert "reranker:kind" in names
+    assert "voyage:api_key" not in names
+    [info] = [r for r in rows if r.name == "reranker:kind"]
+    assert info.ok is True
+    assert info.info is True
+    assert info.detail == "none"
+
+
+def test_voyage_check_fails_when_key_missing() -> None:
+    """GECKO_RERANKER=voyage with no VOYAGE_API_KEY → exit 1, names the var."""
+    env = {var: "x" for var in REQUIRED_ENV_VARS} | {
+        "X402_MODE": "stub",
+        "GECKO_RERANKER": "voyage",
+    }
+    manifest = {
+        "extensions": list(REQUIRED_EXTENSIONS),
+        "tables": list(REQUIRED_TABLES),
+        "functions": list(REQUIRED_FUNCTIONS),
+    }
+    exit_code, report = run_doctor(environ=env, supabase_client=_FakeSupabase(manifest))
+    assert exit_code == 1, report
+    assert "VOYAGE_API_KEY" in report
+    assert "voyage:api_key" in report
+
+
+def test_voyage_check_passes_with_key() -> None:
+    """Both env vars set → ok=True row, secret never appears in rendered output."""
+    secret = "pa-test-secret-value-do-not-log"
+    env = {var: "x" for var in REQUIRED_ENV_VARS} | {
+        "X402_MODE": "stub",
+        "GECKO_RERANKER": "voyage",
+        "VOYAGE_API_KEY": secret,
+    }
+    manifest = {
+        "extensions": list(REQUIRED_EXTENSIONS),
+        "tables": list(REQUIRED_TABLES),
+        "functions": list(REQUIRED_FUNCTIONS),
+    }
+    exit_code, report = run_doctor(environ=env, supabase_client=_FakeSupabase(manifest))
+    assert exit_code == 0, report
+    assert "voyage:api_key" in report
+    # The full secret must NEVER appear in rendered output.
+    assert secret not in report
+    # Only the prefix sentinel + last-4 suffix may surface.
+    assert "pa-..." in report
+    assert secret[-4:] in report  # last 4 chars are the only slice we expose
+
+
 def test_doctor_cli_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
     """End-to-end: invoking the Click command with no env returns non-zero."""
     from click.testing import CliRunner

@@ -467,13 +467,9 @@ def check_chunk_store(environ: dict[str, str] | None = None) -> list[CheckResult
         # Sync probe — doctor is run rarely and the seam is simpler.
         client: MongoClient[dict[str, Any]] = MongoClient(uri, serverSelectionTimeoutMS=3000)
         client.admin.command("ping")
-        results.append(
-            CheckResult(name="chunk_store:mongo:ping", ok=True, detail=f"db={db_name}")
-        )
+        results.append(CheckResult(name="chunk_store:mongo:ping", ok=True, detail=f"db={db_name}"))
 
-        idx_names = {
-            i["name"] for i in client[db_name]["chunks"].list_search_indexes()
-        }
+        idx_names = {i["name"] for i in client[db_name]["chunks"].list_search_indexes()}
         for required in ("chunks_vector", "chunks_text"):
             ok = required in idx_names
             results.append(
@@ -491,6 +487,64 @@ def check_chunk_store(environ: dict[str, str] | None = None) -> list[CheckResult
                 detail=_redact(str(exc)),
             )
         )
+    return results
+
+
+def check_voyage_api_key(environ: dict[str, str] | None = None) -> list[CheckResult]:
+    """S19-VOYAGE-API-KEY-01 — verify Voyage AI key when reranker is enabled.
+
+    When ``GECKO_RERANKER=voyage``: ``VOYAGE_API_KEY`` must be set, non-empty,
+    and have the expected ``pa-`` prefix per Voyage SDK docs. We never make a
+    real Voyage API call (their preview API has no SLA and we don't want to
+    hit it on every doctor run); env presence + plausible-prefix is enough.
+
+    When ``GECKO_RERANKER`` is unset or ``none``: emit a single INFO row and
+    skip the API-key check entirely.
+
+    Security: the key is never echoed. We surface a sentinel of the form
+    ``pa-...<last4>`` (first 3 + last 4 chars) to confirm not-empty without
+    leaking the secret. See CLAUDE.md "NEVER log API keys, even in errors".
+    """
+    env = environ if environ is not None else dict(os.environ)
+    results: list[CheckResult] = []
+    kind = (env.get("GECKO_RERANKER") or "none").strip().lower()
+    results.append(CheckResult(name="reranker:kind", ok=True, detail=kind, info=True))
+    if kind != "voyage":
+        return results
+
+    key = env.get("VOYAGE_API_KEY", "")
+    if not key:
+        results.append(
+            CheckResult(
+                name="voyage:api_key",
+                ok=False,
+                detail="GECKO_RERANKER=voyage but VOYAGE_API_KEY is unset",
+            )
+        )
+        return results
+
+    if not key.startswith("pa-"):
+        # Plausible-prefix check — Voyage SDK keys start with "pa-". We
+        # do NOT echo the actual key in the failure detail.
+        results.append(
+            CheckResult(
+                name="voyage:api_key",
+                ok=False,
+                detail="VOYAGE_API_KEY does not have expected 'pa-' prefix",
+            )
+        )
+        return results
+
+    # Redact: first 3 chars (the "pa-" prefix) + ellipsis + last 4 chars.
+    # Never include any middle slice of the secret.
+    suffix = key[-4:] if len(key) >= 8 else "????"
+    results.append(
+        CheckResult(
+            name="voyage:api_key",
+            ok=True,
+            detail=f"prefix=pa-...{suffix}",
+        )
+    )
     return results
 
 
@@ -513,6 +567,7 @@ def run_doctor(
     results.extend(check_llm_router(environ))
     results.append(check_clawrouter(environ))
     results.extend(check_chunk_store(environ))
+    results.extend(check_voyage_api_key(environ))
 
     # INFO checks never gate downstream probes.
     env_ok = all(r.ok for r in results if not r.info)
