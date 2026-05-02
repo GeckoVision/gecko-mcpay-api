@@ -1638,11 +1638,8 @@ async def _bump_ask_count(store: SessionStore, session_id: UUID) -> None:
             },
         ).execute()
 
-    try:
+    with contextlib.suppress(Exception):
         await asyncio.to_thread(_update)
-    except Exception:  # pragma: no cover — best-effort
-        # In tests where the RPC isn't wired up, swallow silently.
-        pass
 
 
 # ---------------------------------------------------------------------------

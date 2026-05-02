@@ -171,6 +171,17 @@ def classify_exception(exc: BaseException) -> ErrorKind:
     if "503" in msg or "502" in msg or "504" in msg or "500 internal" in msg:
         return "supabase_5xx"
 
+    # --- httpx transport-level disconnects ------------------------------
+    # PostgREST closes the connection mid-write under load (most common
+    # cause: stale schema cache after a column add — the row references
+    # a column the cache doesn't know yet). Treat as retryable so the
+    # halve-and-retry path engages; if it's truly stale schema, the user
+    # gets the same error after halving and we surface it for diagnosis.
+    if cls in {"RemoteProtocolError", "ProtocolError", "ReadError", "ConnectError"}:
+        return "supabase_5xx"
+    if "server disconnected" in msg or "connection reset" in msg:
+        return "supabase_5xx"
+
     return "unknown"
 
 

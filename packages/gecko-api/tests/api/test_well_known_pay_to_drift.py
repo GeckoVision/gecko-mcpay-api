@@ -31,7 +31,7 @@ from fastapi.testclient import TestClient
 # Address format regexes — kept loose enough to accept stub-mode addresses
 # (any non-empty placeholder) while still rejecting cross-network use.
 _EVM_ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
-# Solana base58: valid alphabet excludes 0/O/I/l. Length range 32–44 covers
+# Solana base58: valid alphabet excludes 0/O/I/l. Length range 32-44 covers
 # all real pubkeys plus the gecko-wallet stub. Excludes anything starting
 # with 0x.
 _SOLANA_ADDRESS_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")

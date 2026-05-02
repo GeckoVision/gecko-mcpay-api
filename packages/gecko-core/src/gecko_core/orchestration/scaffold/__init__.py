@@ -63,7 +63,9 @@ def _detect_verdict(transcript: dict[str, Any] | None, summary: str | None) -> s
     that prefix; we do NOT free-search the whole transcript because the
     other agents may quote the word "ship" / "kill" in passing.
 
-    Returns one of {'ship', 'kill', 'pivot', 'unknown'}.
+    Returns one of {'go', 'ship', 'build', 'pivot', 'refine', 'kill', 'unknown'}.
+    Legacy ``KILL`` / ``BUILD`` / ``SHIP`` strings are preserved for transcripts
+    persisted before S17-TONE-01; new debates emit GO / PIVOT / REFINE.
     """
     candidate = (summary or "").strip()
     if not candidate and transcript is not None:
@@ -75,8 +77,11 @@ def _detect_verdict(transcript: dict[str, Any] | None, summary: str | None) -> s
                     break
     if not candidate:
         return "unknown"
-    # Look for the first "Verdict:" line — the judge prompt mandates this format.
-    match = re.search(r"verdict\s*[:\-]\s*(ship|kill|pivot)", candidate, re.IGNORECASE)
+    match = re.search(
+        r"verdict\s*[:\-—–]?\s*\**\s*(go|ship|build|pivot|refine|kill)",
+        candidate,
+        re.IGNORECASE,
+    )
     if match:
         return match.group(1).lower()
     return "unknown"
@@ -258,17 +263,10 @@ async def generate_scaffold(
         )
 
     verdict = _detect_verdict(transcript, summary_str)
-    if verdict == "kill":
-        raise KillVerdictError(
-            f"session {sid} verdict was KILL; refusing to scaffold a killed idea"
-        )
-    if verdict not in {"ship", "pivot"}:
-        # Unknown verdict treated as a soft-kill — surfaces loudly so the
-        # user re-runs the debate or files a bug rather than getting a
-        # generic scaffold.
+    if verdict not in {"go", "ship", "build", "pivot", "refine", "kill"}:
         raise ScaffoldError(
             f"could not determine verdict for session {sid} "
-            "(expected 'ship' or 'pivot' in judge's final paragraph)"
+            "(expected 'go' / 'pivot' / 'refine' in judge's final paragraph)"
         )
 
     transcript_block = _format_transcript(transcript)

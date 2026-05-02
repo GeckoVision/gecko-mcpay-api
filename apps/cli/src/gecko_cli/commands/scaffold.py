@@ -55,7 +55,7 @@ def scaffold_cmd(session_id: str, output_dir: Path) -> None:
         result = asyncio.run(generate_scaffold(sid, output_dir))
     except KillVerdictError as exc:
         console.print(f"[red]Refused:[/red] {exc}")
-        console.print("[dim]Scaffolding is only available for SHIP / PIVOT verdicts.[/dim]")
+        console.print("[dim]Scaffolding is available for GO / PIVOT / REFINE verdicts.[/dim]")
         raise SystemExit(2) from exc
     except SessionNotFoundError as exc:
         console.print(f"[red]Not found:[/red] {exc}")
