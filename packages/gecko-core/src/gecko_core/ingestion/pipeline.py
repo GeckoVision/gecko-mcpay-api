@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
 import openai
@@ -30,7 +30,18 @@ from . import youtube as youtube_extractor
 from .audit import ErrorKind, classify_exception
 from .chunker import chunk as chunk_text
 from .embedder import embed as embed_texts
-from .types import IngestionResult, SourceOutcome
+from .types import IngestionResult, ProviderChunk, SourceOutcome
+
+if TYPE_CHECKING:  # ProviderKind is only used as a type hint here.
+    # Imported lazily to avoid a top-level cycle: ``gecko_core/__init__.py``
+    # rebinds the ``sources`` attribute on the ``gecko_core`` package to a
+    # workflow function, so anything that pulls ``gecko_core.sources`` in
+    # mid-``__init__`` ends up shadowing the package attribute and
+    # downstream ``import gecko_core.sources.X`` calls fail with
+    # ``cannot import name 'X' from 'list_sources'`` (see S17-WEDGE-WIRE-02
+    # debugging notes). Deferring the import keeps the live attribute
+    # binding intact.
+    from gecko_core.sources.types import ProviderKind
 
 logger = logging.getLogger(__name__)
 
@@ -579,9 +590,263 @@ async def dispatch_providers(
     return results, degraded
 
 
+async def ingest_provider_chunks(
+    *,
+    session_id: UUID,
+    provider_kind: ProviderKind,
+    resource_id: str,
+    synthetic_uri: str,
+    chunks: list[ProviderChunk],
+    store: SessionStore,
+) -> int:
+    """Embed provider-supplied chunks and insert into the ``chunks`` table.
+
+    S17-WEDGE-WIRE-02. Reuses the same embedder, embedding cache, and
+    audit path as Tavily ingestion (``_process_one``). The intent is
+    explicit: dispatched provider payloads (Bazaar / Arxiv / twit.sh)
+    end up in the same retrieval index Tavily web chunks do, so
+    ``match_chunks`` can return them as first-class citations.
+
+    Design notes (see ``docs/strategy/2026-05-02-wedge-wire-path-b-design.md``):
+      §1.4  Synthetic URI per (session, provider, resource):
+              bazaar: ``bazaar://<service>/<resource>``
+              arxiv:  real ``https://arxiv.org/abs/<id>`` URL
+              twitsh: ``twitsh://session/<session_id>``
+      §2     One source row per ``synthetic_uri``; idempotent on
+              ``(session_id, url_hash)``. Cache lookup mirrors Tavily.
+      §2.4   A single chunk failing to embed must not fail the session;
+              we let the embedder's existing retry/halving cover the
+              transient layer and emit an audit row on persistent failure.
+
+    Args:
+        session_id:       The session that owns these chunks.
+        provider_kind:    Canonical chunks-table column value.
+        resource_id:      Stable identifier of the upstream resource
+                          (used in logs + the in-memory grouping pass).
+        synthetic_uri:    Source row's ``url`` value. Idempotency key.
+        chunks:           Pre-rendered ProviderChunk records. Empty
+                          ``text`` entries are filtered before embedding.
+        store:            The SessionStore implementation.
+
+    Returns:
+        Number of chunks the store reported as durable. Returns ``0``
+        on duplicate-source dedup, empty input, or full embed failure.
+    """
+    if not chunks:
+        return 0
+
+    # Strip empties up-front — same contract as ``_filter_embeddable``.
+    embeddable = [c for c in chunks if c.text and c.text.strip()]
+    if not embeddable:
+        return 0
+
+    uhash = hashlib.sha256(synthetic_uri.encode("utf-8")).hexdigest()
+
+    # Insert (or look up) the synthetic source row. ``type_="provider"``
+    # was added to the existing CHECK constraint by S17-WEDGE-DATA-01.
+    try:
+        source_id = await store.insert_source(
+            session_id=session_id,
+            url=synthetic_uri,
+            url_hash=uhash,
+            type_="provider",
+            provider_kind=provider_kind,
+        )
+    except Exception as exc:
+        logger.warning(
+            "ingest_provider_chunks.insert_source_failed provider=%s uri=%s exc=%s msg=%s",
+            provider_kind,
+            synthetic_uri,
+            exc.__class__.__name__,
+            str(exc)[:200],
+            extra={"session_id": str(session_id), "provider_kind": provider_kind},
+        )
+        return 0
+
+    if source_id is None:
+        # Duplicate (session_id, url_hash). Re-ingestion is a no-op:
+        # the chunks are already there from a prior run.
+        logger.info(
+            "ingest_provider_chunks.dedup provider=%s uri=%s reason=duplicate_source",
+            provider_kind,
+            synthetic_uri,
+        )
+        return 0
+
+    # Resolve the active embed model so cache filtering uses the right
+    # fingerprint (mirrors S16-INGEST-03 in ``_process_one``).
+    try:
+        from .settings import get_ingestion_settings as _get_ingest
+
+        active_embed_model: str | None = _get_ingest().embed_model
+    except Exception:
+        active_embed_model = None
+
+    # The chunks table's ``(source_id, chunk_index)`` UNIQUE constraint
+    # requires distinct indices under the synthetic source. The adapters
+    # produce per-resource indices (e.g. each Bazaar service starts at 0);
+    # re-key here so cross-resource collisions don't drop rows on upsert.
+    pieces: list[str] = [c.text for c in embeddable]
+    indices = list(range(len(pieces)))
+
+    # Cache lookup — same shape as the Tavily path. Best-effort: any
+    # cache failure degrades to "embed everything fresh".
+    cached_lookup: dict[int, list[float]] = {}
+    cache_get = getattr(store, "get_chunk_cache", None)
+    if cache_get is not None:
+        try:
+            cached_lookup = await _call_cache_get(
+                cache_get,
+                uhash,
+                indices,
+                active_embed_model,
+            )
+        except Exception as exc:
+            logger.info(
+                "ingest_provider_chunks.cache_lookup_failed provider=%s uri=%s err=%s",
+                provider_kind,
+                synthetic_uri,
+                exc.__class__.__name__,
+            )
+            cached_lookup = {}
+
+    missing_idxs = [i for i in indices if i not in cached_lookup]
+    embed_tokens = 0
+    audit_error_kind: ErrorKind = "none"
+    audit_succeeded = 0
+    audit_failed = 0
+    batch_size_for_audit = len(pieces)
+
+    try:
+        if missing_idxs:
+            missing_texts = [pieces[i] for i in missing_idxs]
+            try:
+                new_embeddings, embed_tokens = await embed_texts(missing_texts)
+            except openai.OpenAIError as exc:
+                # Persistent embed failure across the whole missing set.
+                # Surface the audit row + degrade — no partial write.
+                audit_error_kind = classify_exception(exc)
+                audit_failed = batch_size_for_audit
+                logger.warning(
+                    "ingest_provider_chunks.embed_failed provider=%s uri=%s exc=%s",
+                    provider_kind,
+                    synthetic_uri,
+                    exc.__class__.__name__,
+                    extra={
+                        "session_id": str(session_id),
+                        "source_id": str(source_id),
+                        "batch_size": len(missing_texts),
+                        "error_kind": audit_error_kind,
+                    },
+                )
+                return 0
+            if len(new_embeddings) != len(missing_texts):
+                raise RuntimeError(
+                    f"embedder returned {len(new_embeddings)} vectors for "
+                    f"{len(missing_texts)} inputs (shape mismatch)"
+                )
+            for idx, vec in zip(missing_idxs, new_embeddings, strict=True):
+                cached_lookup[idx] = vec
+            cache_put = getattr(store, "put_chunk_cache", None)
+            if cache_put is not None:
+                try:
+                    await _call_cache_put(
+                        cache_put,
+                        uhash,
+                        [(i, pieces[i], cached_lookup[i]) for i in missing_idxs],
+                        active_embed_model,
+                    )
+                except Exception as exc:  # cache write is best-effort
+                    logger.info(
+                        "ingest_provider_chunks.cache_store_failed provider=%s uri=%s err=%s",
+                        provider_kind,
+                        synthetic_uri,
+                        exc.__class__.__name__,
+                    )
+        else:
+            logger.info(
+                "ingest_provider_chunks.embed.skipped provider=%s uri=%s "
+                "reason=full_cache_hit chunks=%d",
+                provider_kind,
+                synthetic_uri,
+                len(pieces),
+            )
+
+        embeddings = [cached_lookup[i] for i in indices]
+        rows = list(zip(indices, pieces, embeddings, strict=True))
+        try:
+            inserted = await store.insert_chunks(
+                session_id, source_id, rows, provider_kind=provider_kind
+            )
+        except Exception as exc:
+            audit_error_kind = classify_exception(exc)
+            audit_failed = len(rows)
+            logger.warning(
+                "ingest_provider_chunks.upsert_failed provider=%s uri=%s exc=%s msg=%s",
+                provider_kind,
+                synthetic_uri,
+                exc.__class__.__name__,
+                str(exc)[:200],
+                extra={
+                    "session_id": str(session_id),
+                    "source_id": str(source_id),
+                    "batch_size": len(rows),
+                    "error_kind": audit_error_kind,
+                },
+            )
+            return 0
+
+        try:
+            await store.set_source_chunk_count(source_id, inserted)
+        except Exception as exc:  # pragma: no cover — best-effort
+            logger.info(
+                "ingest_provider_chunks.chunk_count_set_failed provider=%s err=%s",
+                provider_kind,
+                exc.__class__.__name__,
+            )
+
+        if embed_tokens > 0:
+            from .embedder import estimate_embed_cost_usd
+
+            try:
+                cost = estimate_embed_cost_usd(active_embed_model or "", embed_tokens)
+                await store.add_cost(session_id, "embed", cost)
+            except Exception as exc:  # pragma: no cover
+                logger.info(
+                    "ingest_provider_chunks.add_cost_failed provider=%s err=%s",
+                    provider_kind,
+                    exc.__class__.__name__,
+                )
+
+        audit_succeeded = inserted
+        audit_error_kind = "none"
+        logger.info(
+            "ingest_provider_chunks.indexed provider=%s uri=%s resource=%s "
+            "chunks=%d embed_tokens=%d",
+            provider_kind,
+            synthetic_uri,
+            resource_id,
+            inserted,
+            embed_tokens,
+        )
+        return inserted
+    finally:
+        await _emit_audit(
+            store,
+            session_id=session_id,
+            source_id=source_id,
+            batch_size=batch_size_for_audit,
+            succeeded=audit_succeeded,
+            failed=audit_failed,
+            error_kind=audit_error_kind,
+            embed_model=active_embed_model,
+        )
+
+
 __all__ = [
     "MAX_CONCURRENT_SOURCES",
     "dispatch_providers",
     "ingest",
+    "ingest_provider_chunks",
     "url_hash",
 ]

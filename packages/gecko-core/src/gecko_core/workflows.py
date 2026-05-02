@@ -50,6 +50,20 @@ from gecko_core.sessions.store import CostKind, PaymentMode, SessionStore
 logger = logging.getLogger(__name__)
 
 
+# S17-WEDGE-WIRE-02 — Feature flag for the Path B chunk-ingest behavior.
+# When False, ``_dispatch_stub_integration_providers`` falls back to the
+# pre-WIRE-02 behavior (cost ledger only, no chunk insert) — that's the
+# demo fallback if anything regresses Wednesday. Read once at module
+# import; flipping requires a process restart.
+# See: docs/strategy/2026-05-02-wedge-wire-path-b-design.md §6.1
+_WEDGE_WIRE_ENABLED: bool = os.getenv("GECKO_WEDGE_WIRE_ENABLED", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+
+
 ApprovalCallback = Callable[[list[SourceCandidate]], Awaitable[bool]]
 ProgressCallback = Callable[[str], None]
 
@@ -650,10 +664,27 @@ async def _dispatch_stub_integration_providers(
     twitsh_result = results.get("twit_sh")
     arxiv_result = results.get("arxiv")
 
+    # S17-WEDGE-WIRE-02 — chunk-ingest counters. ``*_chunks`` is the
+    # number of payloads dispatched (legacy attribution); ``*_indexed``
+    # is the number of chunks now durable in the ``chunks`` table for
+    # the session, ready for ``match_chunks`` retrieval. Identical when
+    # the flag is on, indexed=0 when off (rollback hatch).
+    from gecko_core.ingestion.pipeline import ingest_provider_chunks
+    from gecko_core.sources.arxiv.embed_adapter import (
+        _abs_url_for as _arxiv_abs_url_for,
+    )
+    from gecko_core.sources.arxiv.embed_adapter import (
+        to_chunks as _arxiv_to_chunks,
+    )
+    from gecko_core.sources.bazaar.embed_adapter import to_chunks as _bazaar_to_chunks
+    from gecko_core.sources.twit_sh.embed_adapter import to_chunks as _twitsh_to_chunks
+
     bazaar_chunks = 0
+    bazaar_indexed = 0
     bazaar_cost = 0.0
     if bazaar_result is not None and bazaar_result.fired:
-        bazaar_chunks = len(bazaar_result.payload.get("chunks") or [])
+        bazaar_payload_chunks = bazaar_result.payload.get("chunks") or []
+        bazaar_chunks = len(bazaar_payload_chunks)
         bazaar_cost = float(bazaar_result.cost_usd or 0.0)
         if bazaar_cost > 0:
             try:
@@ -666,10 +697,64 @@ async def _dispatch_stub_integration_providers(
             except Exception as exc:  # pragma: no cover
                 logger.warning("integrate-01: bazaar add_cost failed: %s", exc)
 
+        if _WEDGE_WIRE_ENABLED and bazaar_payload_chunks:
+            # The bazaar provider returns chunk *dicts* shaped like
+            # ``BazaarChunk._asdict()``; coerce back into the dataclass
+            # the embed adapter expects so to_chunks() can read the
+            # structured metadata fields.
+            from decimal import Decimal as _Decimal
+
+            from gecko_core.sources.bazaar.types import BazaarChunk as _BazaarChunk
+
+            coerced: list[_BazaarChunk] = []
+            for raw in bazaar_payload_chunks:
+                if not isinstance(raw, dict):
+                    continue
+                try:
+                    cost_raw = raw.get("cost_usd", "0")
+                    cost = _Decimal(str(cost_raw)) if cost_raw is not None else _Decimal("0")
+                except Exception:
+                    cost = _Decimal("0")
+                coerced.append(
+                    _BazaarChunk(
+                        text=str(raw.get("text") or ""),
+                        provider_kind=str(raw.get("provider_kind") or "bazaar"),
+                        cost_usd=cost,
+                        metadata=dict(raw.get("metadata") or {}),
+                        creator_handle=raw.get("creator_handle"),
+                    )
+                )
+            adapted = _bazaar_to_chunks(coerced)
+            # Group by resource_id so each Bazaar service lands as its
+            # own synthetic source row — matches §1.4 of the design memo.
+            grouped: dict[str, list[Any]] = {}
+            for ch in adapted:
+                grouped.setdefault(ch.resource_id, []).append(ch)
+            for resource_id, group in grouped.items():
+                synthetic_uri = f"bazaar://{resource_id}"
+                try:
+                    n = await ingest_provider_chunks(
+                        session_id=session_id,
+                        provider_kind="bazaar",
+                        resource_id=resource_id,
+                        synthetic_uri=synthetic_uri,
+                        chunks=group,
+                        store=store,
+                    )
+                    bazaar_indexed += int(n)
+                except Exception as exc:  # pragma: no cover — degrade
+                    logger.warning(
+                        "wedge-wire: bazaar ingest failed (resource=%s): %s",
+                        resource_id,
+                        exc,
+                    )
+
     twitsh_chunks = 0
+    twitsh_indexed = 0
     twitsh_cost = 0.0
     if twitsh_result is not None and twitsh_result.fired:
-        twitsh_chunks = len(twitsh_result.payload.get("tweets") or [])
+        twitsh_tweets = twitsh_result.payload.get("tweets") or []
+        twitsh_chunks = len(twitsh_tweets)
         twitsh_cost = float(twitsh_result.cost_usd or 0.0)
         if twitsh_cost > 0:
             try:
@@ -677,36 +762,80 @@ async def _dispatch_stub_integration_providers(
             except Exception as exc:  # pragma: no cover
                 logger.warning("integrate-01: twitsh add_cost failed: %s", exc)
 
+        if _WEDGE_WIRE_ENABLED and twitsh_tweets:
+            twitsh_adapted = _twitsh_to_chunks(twitsh_tweets)
+            if twitsh_adapted:
+                synthetic_uri = f"twitsh://session/{session_id}"
+                try:
+                    twitsh_indexed = await ingest_provider_chunks(
+                        session_id=session_id,
+                        provider_kind="twitsh",
+                        resource_id=str(session_id),
+                        synthetic_uri=synthetic_uri,
+                        chunks=twitsh_adapted,
+                        store=store,
+                    )
+                except Exception as exc:  # pragma: no cover — degrade
+                    logger.warning("wedge-wire: twitsh ingest failed: %s", exc)
+
     # Arxiv: free, no spend to debit. Surface chunk count so the
     # dashboard can answer "did Arxiv contribute on this run?".
     arxiv_chunks = 0
+    arxiv_indexed = 0
     if arxiv_result is not None and arxiv_result.fired:
-        arxiv_chunks = len(arxiv_result.payload.get("chunks") or [])
+        arxiv_payload_chunks = arxiv_result.payload.get("chunks") or []
+        arxiv_chunks = len(arxiv_payload_chunks)
+        if _WEDGE_WIRE_ENABLED and arxiv_payload_chunks:
+            arxiv_adapted = _arxiv_to_chunks(arxiv_payload_chunks)
+            # One synthetic source row per arxiv entry — they have real
+            # abstract URLs (memo §1.4), grouping is by abs_url.
+            for ch in arxiv_adapted:
+                synthetic_uri = _arxiv_abs_url_for({"metadata": ch.metadata})
+                try:
+                    n = await ingest_provider_chunks(
+                        session_id=session_id,
+                        provider_kind="arxiv",
+                        resource_id=ch.resource_id,
+                        synthetic_uri=synthetic_uri,
+                        chunks=[ch],
+                        store=store,
+                    )
+                    arxiv_indexed += int(n)
+                except Exception as exc:  # pragma: no cover — degrade
+                    logger.warning(
+                        "wedge-wire: arxiv ingest failed (resource=%s): %s",
+                        ch.resource_id,
+                        exc,
+                    )
 
     # Single structured log line — feeds the post-Wave-2 dashboard that
     # answers "did the wedge fire on this run?". Stable key=value form
     # so log-aggregators can pivot without regex contortions.
     logger.info(
-        "integrate01_dispatch session_id=%s payment_mode=%s "
-        "bazaar_chunks=%d bazaar_cost_usd=%.6f "
-        "twitsh_chunks=%d twitsh_cost_usd=%.6f "
-        "arxiv_chunks=%d "
+        "integrate01_dispatch session_id=%s payment_mode=%s wedge_wire=%s "
+        "bazaar_chunks=%d bazaar_indexed=%d bazaar_cost_usd=%.6f "
+        "twitsh_chunks=%d twitsh_indexed=%d twitsh_cost_usd=%.6f "
+        "arxiv_chunks=%d arxiv_indexed=%d "
         "tavily_quota=%d arxiv_quota=%d",
         session_id,
         payment_mode,
+        "on" if _WEDGE_WIRE_ENABLED else "off",
         bazaar_chunks,
+        bazaar_indexed,
         bazaar_cost,
         twitsh_chunks,
+        twitsh_indexed,
         twitsh_cost,
         arxiv_chunks,
+        arxiv_indexed,
         tavily_quota,
         arxiv_quota,
     )
 
     return (
-        f"dispatch: bazaar {bazaar_chunks} chunks (${bazaar_cost:.4f}) · "
-        f"twitsh {twitsh_chunks} tweets (${twitsh_cost:.4f}) · "
-        f"arxiv {arxiv_chunks} abstracts"
+        f"dispatch: bazaar {bazaar_chunks} chunks (${bazaar_cost:.4f}, indexed {bazaar_indexed}) · "
+        f"twitsh {twitsh_chunks} tweets (${twitsh_cost:.4f}, indexed {twitsh_indexed}) · "
+        f"arxiv {arxiv_chunks} abstracts (indexed {arxiv_indexed})"
     )
 
 

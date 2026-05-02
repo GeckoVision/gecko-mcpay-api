@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, HttpUrl
 
 from gecko_core.ingestion.embedder import embed
 from gecko_core.sessions.store import SessionStore
+from gecko_core.sources.types import ProviderKind
 
 
 class RagChunk(BaseModel):
@@ -29,6 +30,10 @@ class RagChunk(BaseModel):
     chunk_index: int
     text: str
     similarity: float = Field(ge=0.0, le=1.0)
+    # S17-WEDGE-DATA-01 — provider attribution surfaced through match_chunks.
+    # Defaults to 'web' so rows from databases that haven't yet run the
+    # provider_kind migration still validate (matches the SQL DEFAULT).
+    provider_kind: ProviderKind = "web"
 
 
 async def rag_query(

@@ -20,6 +20,7 @@ from supabase import Client
 
 from gecko_core.db import create_supabase_client
 from gecko_core.models import SessionStatus, SourceInfo, Tier
+from gecko_core.sources.types import ProviderKind
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +187,10 @@ class ChunkMatch(BaseModel):
     text: str
     captured_at: datetime
     similarity: float
+    # S17-WEDGE-DATA-01 — provider attribution surfaced through the RPC.
+    # Defaults to 'web' so rows from databases that haven't yet run the
+    # provider_kind migration still validate (matches the SQL DEFAULT).
+    provider_kind: ProviderKind = "web"
 
     model_config = {"frozen": True}
 
@@ -551,19 +556,28 @@ class SessionStore:
         session_id: UUID,
         url: str,
         url_hash: str,
-        type_: Literal["youtube", "web"],
+        type_: Literal["youtube", "web", "provider"],
+        *,
+        provider_kind: ProviderKind = "web",
     ) -> UUID | None:
         """Insert a source row idempotently.
 
         Returns the new row's UUID, or None if the (session_id, url_hash)
         already exists. Uses upsert with ignore_duplicates so re-ingest of the
         same URL is a no-op rather than an error.
+
+        S17-WEDGE-DATA-01 — `provider_kind` defaults to ``"web"`` so legacy
+        Tavily callers stay correct without a change. ``type_="provider"``
+        is the new shape for synthetic Bazaar/Arxiv/twit.sh source rows
+        (see design memo §1.4); the existing CHECK is extended to allow
+        it in the same migration.
         """
         payload: dict[str, Any] = {
             "session_id": str(session_id),
             "url": url,
             "url_hash": url_hash,
             "type": type_,
+            "provider_kind": provider_kind,
         }
 
         def _upsert() -> list[dict[str, Any]]:
@@ -601,6 +615,8 @@ class SessionStore:
         session_id: UUID,
         source_id: UUID,
         chunks: list[tuple[int, str, list[float]]],
+        *,
+        provider_kind: ProviderKind = "web",
     ) -> int:
         """Bulk-insert chunks for a source. Returns the count inserted.
 
@@ -648,6 +664,8 @@ class SessionStore:
                     kind="dim_mismatch",
                 )
 
+        # S17-WEDGE-DATA-01 — provider_kind defaults to 'web' for Tavily
+        # callers; WIRE-02 passes the real value for bazaar/arxiv/twitsh.
         rows: list[dict[str, Any]] = [
             {
                 "session_id": str(session_id),
@@ -655,6 +673,7 @@ class SessionStore:
                 "chunk_index": idx,
                 "text": text,
                 "embedding": embedding,
+                "provider_kind": provider_kind,
             }
             for idx, text, embedding in chunks
         ]

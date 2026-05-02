@@ -7,7 +7,45 @@ need them to render summaries.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+from typing import Any
+
 from pydantic import BaseModel, Field
+
+
+# S17-WEDGE-WIRE-02 — Tiny structural shape that each provider's
+# ``embed_adapter.to_chunks(...)`` returns. Keeps the per-provider
+# rendering logic isolated in the provider package while letting the
+# shared ``ingest_provider_chunks`` pipeline consume a uniform record.
+#
+# Note: ``provider_kind`` is intentionally NOT a field here — it is
+# applied by ``ingest_provider_chunks`` at the call boundary, not by
+# the adapter. See ``docs/strategy/2026-05-02-wedge-wire-path-b-design.md``
+# §2.1 for the rationale (no shared switch-statement adapter).
+@dataclass(frozen=True)
+class ProviderChunk:
+    """One embeddable unit produced by a provider's embed adapter.
+
+    Attributes:
+        resource_id:  Stable identifier for the upstream resource the
+            chunk belongs to (Bazaar service slug, arxiv id, session id
+            for twit.sh, ...). Used to group chunks under the same
+            synthetic ``sources`` row.
+        chunk_index: Order within ``resource_id``. Persisted to
+            ``chunks.chunk_index`` for idempotency.
+        text:        The text that will be embedded + retrieved. Must
+            be non-empty after strip; empties are filtered out before
+            the embedder is called.
+        metadata:    Free-form dict carried alongside the chunk. The
+            ingest path does not persist this today (no ``metadata``
+            column on ``chunks``) — kept for future structured-citation
+            work and for unit tests that want to assert provenance.
+    """
+
+    resource_id: str
+    chunk_index: int
+    text: str
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class SourceOutcome(BaseModel):
