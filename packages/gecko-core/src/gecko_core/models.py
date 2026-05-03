@@ -10,7 +10,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Literal, TypedDict
 
-from pydantic import BaseModel, Field, HttpUrl, field_validator
+from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
 Tier = Literal["basic", "pro"]
 
@@ -515,8 +515,36 @@ class PRD(BaseModel):
     )
     @classmethod
     def _coerce_str_to_list(cls, v: object) -> object:
+        # Permissive boundary coercion — same posture as the
+        # `low_grounding` / `provider_mix_flag` flags: we'd rather absorb
+        # mild LLM output drift than fail validation on a string-vs-list
+        # flap. Three observed shapes from real prompt invocations:
+        #   1. The model returns a single string instead of a list — wrap.
+        #   2. The model returns list items as dicts (e.g.
+        #      ``{"criterion": "..."}`` or ``{"text": "..."}``). Pydantic
+        #      would then reject each dict against ``str``. Flatten by
+        #      pulling the first string-valued field out.
+        #   3. The model returns a list with mixed string + dict items.
         if isinstance(v, str):
             return [v] if v.strip() else []
+        if isinstance(v, list):
+            normalised: list[str] = []
+            for item in v:
+                if isinstance(item, str):
+                    if item.strip():
+                        normalised.append(item)
+                elif isinstance(item, dict):
+                    # Pull the first non-empty string value from the dict.
+                    # Common LLM keys: criterion / text / value / item /
+                    # description. We don't enumerate; the first string-
+                    # valued entry wins.
+                    for candidate in item.values():
+                        if isinstance(candidate, str) and candidate.strip():
+                            normalised.append(candidate)
+                            break
+                else:
+                    normalised.append(str(item))
+            return normalised
         return v
 
 
@@ -575,6 +603,28 @@ class Competitor(BaseModel):
     axis: CompetitorAxis | None = None
     why_we_are_not_them: str | None = None
     flag: CompetitorFlag | None = None
+
+    # 2026-05-03 dogfood bug: gpt-4o-mini intermittently emits the
+    # competitor description under `description` (and occasionally
+    # `summary` / `what_they_do_text`) instead of the prompted
+    # `what_they_do`, even though the system message names the field
+    # explicitly. Same permissive boundary posture as PRD list coercion
+    # and `low_grounding`: absorb the drift here rather than fail the
+    # whole MarketLandscape and force a `--refresh` retry. The prompt
+    # remains the source of truth; this is a safety net, not the spec.
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_what_they_do_aliases(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        if data.get("what_they_do"):
+            return data
+        for alias in ("description", "what_they_do_text", "summary", "details"):
+            value = data.get(alias)
+            if isinstance(value, str) and value.strip():
+                data = {**data, "what_they_do": value}
+                return data
+        return data
 
 
 class MarketLandscape(BaseModel):

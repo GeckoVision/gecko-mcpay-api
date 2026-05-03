@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "gecko": {
-      "command": "/home/nan/.local/bin/gecko-mcp",
-      "args": ["serve"],
+      "command": "uvx",
+      "args": ["gecko-mcp@0.1.7", "serve"],
       "env": {
         "GECKO_API_URL": "https://api.geckovision.tech"
       }

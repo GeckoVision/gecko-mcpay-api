@@ -220,6 +220,93 @@ def test_closing_line_fallback_when_missing() -> None:
     assert out == "last line of body"
 
 
+# Captured from the 2026-05-03 dogfood run on session
+# c19109bb-0ca9-4bca-8df4-af0c074936bd. Both voices produced bodies that
+# inherited the prompt's section-heading style (``## <Prefix>:``) for the
+# closing line — which the original strict regex rejected, triggering
+# retry → ``no_closing_line`` after 2 attempts. The loosened regex must
+# accept these shapes verbatim.
+_CTO_DOGFOOD_BODY_2026_05_03 = """\
+## Tech roadmap (3 named refactor priorities)
+1. Migrate Postgres ivfflat index on `chunks.embedding` to HNSW once chunks > 1M rows — Why: ivfflat recall degrades past 1M and query p95 will breach 800ms. Trigger to start: chunk count > 1M OR p95 > 800ms.
+2. Move `chunks` + `embeddings` from Supabase Postgres to MongoDB Atlas — Why: free-tier storage cap already hit at zero paying users. Trigger to start: as soon as Mongo cutover plan lands.
+3. Replace `text-embedding-3-small` with Voyage AI `voyage-3-lite` — Why: ~30% retrieval quality lift on technical text per Voyage benchmarks. Trigger to start: after Mongo cutover stabilizes.
+
+## Infra investments by quarter
+- This quarter: ~$300/mo MongoDB Atlas M10 cluster.
+- Next quarter: ~$200/mo Helius RPC mainnet plan.
+- Two quarters out: ~$150/mo Voyage embeddings API.
+
+## First named hire to make
+Senior platform engineer — own the x402 mainnet cutover, ship the canary monitor by day 30.
+
+## Where I disagree with the panel
+CEO wants to defer the HNSW refactor to Q3 — I disagree. By the time chunks > 1M, retrieval quality will have already silently degraded, harming verdict quality. The cost of deferring is invisible until users churn.
+
+## Critical path: ship the Mongo cutover before any new vertical fixtures land."""
+
+_STAFF_DOGFOOD_BODY_2026_05_03 = """\
+## Next-sprint backlog (3-5 tickets)
+TICKET-01: Mongo cutover — Owner: CTO call. Why: CTO ranked it #1 priority and storage is at cap. Acceptance: `bb research --idea "smoke"` writes chunks to Mongo Atlas, no Supabase chunk writes. Effort: L.
+TICKET-02: Pricing A/B test on paywall — Owner: business_manager call. Why: business_manager flagged it as the lever. Acceptance: 200 visitors hit landing page, $49/$99 split 50/50. Effort: M.
+TICKET-03: SAFE-diff parser MVP — Owner: product_manager call. Why: product_manager top backlog item. Acceptance: parser ingests two SAFE PDFs and returns a JSON delta. Effort: M.
+TICKET-04: x402 mainnet canary — Owner: CTO call. Why: CTO infra investment this quarter. Acceptance: 3 successful test settlements on Solana mainnet, alerting wired. Effort: M.
+TICKET-05: Twit.sh launch thread — Owner: business_manager call. Why: 40% of channel reallocation. Acceptance: thread posted, > 100 impressions in 48h. Effort: S.
+
+## Defer calls (1-2)
+DEFER Voyage embedding swap until after Mongo cutover stabilizes (chunks-in-Mongo for 7 days clean). DEFER first platform-engineer hire until x402 canary green for 14 days.
+
+## Blocker resolution plan
+CTO wants Mongo cutover; product_manager wants SAFE-diff parser MVP — both touch chunks. Blocker: SAFE-diff parser writes chunks to whatever backend is live, so Mongo cutover must land first or the parser will be re-pointed mid-sprint. Resolution: order TICKET-01 before TICKET-03 in the sprint board.
+
+## Sprint history reflection
+Prior sprints over-invested in Supabase migrations that will be thrown away in S18. Pattern to NOT repeat: do not ship more chunks-in-Supabase code paths after the cutover plan lands.
+
+## Where the panel disagrees (your synthesis)
+CEO wants to defer the Mongo cutover until paying users justify the cost; CTO says it's critical path now because storage is at cap with zero users. My call: ship the cutover this sprint, because storage-at-cap is a hard block on dogfooding the next 5-idea stress matrix.
+
+## Sprint plan: 1) TICKET-01 Mongo cutover, 2) TICKET-03 SAFE-diff parser MVP, 3) TICKET-02 pricing A/B test, 4) TICKET-04 x402 mainnet canary, 5) TICKET-05 twit.sh launch thread."""
+
+
+def test_closing_line_accepts_markdown_heading_prefix() -> None:
+    """S20 regression: models inherit the prompt's ``## <Prefix>:`` section
+    style on the closing line, especially after long structured bodies.
+    The loosened regex must accept that shape verbatim. Captured from the
+    2026-05-03 e2e dogfood run (session c19109bb-...936bd).
+    """
+    cto_out = extract_closing_line(AgentRole.cto, _CTO_DOGFOOD_BODY_2026_05_03)
+    assert cto_out == (
+        "Critical path: ship the Mongo cutover before any new vertical fixtures land."
+    ), f"cto extraction mismatch: {cto_out!r}"
+
+    staff_out = extract_closing_line(AgentRole.staff_manager, _STAFF_DOGFOOD_BODY_2026_05_03)
+    assert staff_out.startswith("Sprint plan: 1) TICKET-01 Mongo cutover"), (
+        f"staff_manager extraction mismatch: {staff_out!r}"
+    )
+    assert "twit.sh launch thread" in staff_out
+
+
+def test_closing_line_accepts_bold_emphasis_prefix() -> None:
+    """Some models render the final line as ``**Sprint plan:** ...`` —
+    bold-only without ``##``. The loosened regex must accept that too.
+    """
+    body = "## Synthesis\nbody body body\n\n**Sprint plan:** 1) ship X, 2) defer Y."
+    out = extract_closing_line(AgentRole.staff_manager, body)
+    assert out == "Sprint plan: 1) ship X, 2) defer Y."
+
+
+def test_closing_line_still_rejects_midline_false_positives() -> None:
+    """The line-anchor must hold — a mid-paragraph mention of the prefix
+    should NOT be picked up as the closing line.
+    """
+    body = (
+        "Here we discuss the strategic priority of the team in passing.\n"
+        "Strategic priority: lock the design-partner LOI with Carta.\n"
+    )
+    out = extract_closing_line(AgentRole.ceo, body)
+    assert out == "Strategic priority: lock the design-partner LOI with Carta."
+
+
 def test_panel_voice_order_is_stable() -> None:
     """CEO first, staff_manager last per persona-dependency chain."""
     assert PANEL_VOICE_ORDER[0] == AgentRole.ceo
@@ -640,7 +727,7 @@ async def test_run_voice_matches_on_retry(
     ]
     assert len(ceo_calls) == 2
     retry_sys = next(m for m in ceo_calls[1]["messages"] if m["role"] == "system")["content"]
-    assert "MUST end your response with a line" in retry_sys
+    assert "MUST end your response with a single line" in retry_sys
     assert ceo_calls[1]["temperature"] == 0.2
 
     ceo_voice = next(v for v in panel.voices if v.role == AgentRole.ceo)

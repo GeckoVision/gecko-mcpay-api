@@ -78,7 +78,10 @@ def test_doctor_x402_invalid_value_fails() -> None:
 
 
 def test_doctor_passes_with_full_env_and_migrations() -> None:
-    env = {var: "x" for var in REQUIRED_ENV_VARS} | {"X402_MODE": "stub", "VOYAGE_API_KEY": _VOYAGE_KEY}
+    env = {var: "x" for var in REQUIRED_ENV_VARS} | {
+        "X402_MODE": "stub",
+        "VOYAGE_API_KEY": _VOYAGE_KEY,
+    }
     manifest = {
         "extensions": list(REQUIRED_EXTENSIONS),
         "tables": list(REQUIRED_TABLES),
@@ -92,7 +95,10 @@ def test_doctor_passes_with_full_env_and_migrations() -> None:
 
 
 def test_doctor_fails_when_migrations_missing() -> None:
-    env = {var: "x" for var in REQUIRED_ENV_VARS} | {"X402_MODE": "stub", "VOYAGE_API_KEY": _VOYAGE_KEY}
+    env = {var: "x" for var in REQUIRED_ENV_VARS} | {
+        "X402_MODE": "stub",
+        "VOYAGE_API_KEY": _VOYAGE_KEY,
+    }
     manifest: dict[str, list[str]] = {"extensions": [], "tables": [], "functions": []}
     exit_code, report = run_doctor(environ=env, supabase_client=_FakeSupabase(manifest))
     assert exit_code == 1

@@ -33,14 +33,35 @@ logger = logging.getLogger(__name__)
 
 # Closing-line patterns per role. Each voice prompt enforces a specific
 # trailing line; we extract it here so callers can render a one-line
-# summary. Anchors are anchored to a line start so prose mentioning
+# summary.
+#
+# Why ``(?:#+\s*|[*_-]+\s*)?``: the prompts themselves render the closing
+# line as a section header (``## Sprint plan: <list>``) right above the
+# final-line instruction, so models — especially after long structured
+# bodies (CTO refactor table, staff_manager sprint synthesis) — naturally
+# inherit the ``##`` heading style. The regex used to anchor on
+# ``^\s*Strategic priority:`` only, which silently rejected ``## Strategic
+# priority:`` / ``**Sprint plan:**`` and then triggered the retry path
+# with a contradictory suffix. We now accept (a) bare form, (b) ATX
+# headings (``#``/``##``/``###``...), and (c) bold/italic emphasis runs.
+# Anchors are still anchored at line start so prose mentioning
 # "strategic priority:" mid-paragraph doesn't false-positive.
+_HEADING_PREFIX = r"(?:#+\s*|[*_]{1,3}\s*)?"
+
 _CLOSING_PATTERNS: dict[AgentRole, re.Pattern[str]] = {
-    AgentRole.ceo: re.compile(r"(?im)^\s*Strategic priority:\s*(.+?)\s*$"),
-    AgentRole.cto: re.compile(r"(?im)^\s*Critical path:\s*(.+?)\s*$"),
-    AgentRole.business_manager: re.compile(r"(?im)^\s*Lever this sprint:\s*(.+?)\s*$"),
-    AgentRole.product_manager: re.compile(r"(?im)^\s*Top backlog item:\s*(.+?)\s*$"),
-    AgentRole.staff_manager: re.compile(r"(?im)^\s*Sprint plan:\s*(.+?)\s*$"),
+    AgentRole.ceo: re.compile(
+        rf"(?im)^\s*{_HEADING_PREFIX}Strategic priority:\s*(.+?)\s*[*_]*\s*$"
+    ),
+    AgentRole.cto: re.compile(rf"(?im)^\s*{_HEADING_PREFIX}Critical path:\s*(.+?)\s*[*_]*\s*$"),
+    AgentRole.business_manager: re.compile(
+        rf"(?im)^\s*{_HEADING_PREFIX}Lever this sprint:\s*(.+?)\s*[*_]*\s*$"
+    ),
+    AgentRole.product_manager: re.compile(
+        rf"(?im)^\s*{_HEADING_PREFIX}Top backlog item:\s*(.+?)\s*[*_]*\s*$"
+    ),
+    AgentRole.staff_manager: re.compile(
+        rf"(?im)^\s*{_HEADING_PREFIX}Sprint plan:\s*(.+?)\s*[*_]*\s*$"
+    ),
 }
 
 
@@ -62,16 +83,42 @@ _ROLE_PREFIX: dict[AgentRole, str] = {
 
 # S9-ADVISOR-01: strict suffix appended to system prompt on retry. Lists
 # every accepted prefix so the model can't claim ambiguity.
+#
+# Note: the bundled prompts show the final-line as a ``## <Prefix>:``
+# section heading and *also* tell the model the LAST line must be bare.
+# That contradiction caused the original retry suffix to be inconsistent
+# (CEO/CTO/PM/staff with ``##``, business_manager bare). We now restate
+# the canonical bare form for every voice and explicitly note that the
+# heading variant is acceptable, matching the loosened regex.
 _RETRY_SYSTEM_SUFFIX = (
     "\n\nYour previous response did not end with a structured closing line.\n"
-    "You MUST end your response with a line starting with EXACTLY one of:\n"
-    '- "## Strategic priority:"\n'
-    '- "## Critical path:"\n'
+    "You MUST end your response with a single line starting with EXACTLY one of:\n"
+    '- "Strategic priority:"\n'
+    '- "Critical path:"\n'
     '- "Lever this sprint:"\n'
-    '- "## Top backlog item:"\n'
-    '- "## Sprint plan:"\n'
-    "Output ONLY the final response. The closing line must be the LAST line."
+    '- "Top backlog item:"\n'
+    '- "Sprint plan:"\n'
+    "A leading markdown heading (e.g. '## Sprint plan:') is acceptable, "
+    "but the prefix word(s) and the colon must appear on the LAST line of "
+    "your response, followed by the named focus / experiment / item.\n"
+    "Output ONLY the revised response. No preamble."
 )
+
+
+_LEADING_EMPHASIS_RE = re.compile(r"^[*_]{1,3}\s*")
+_TRAILING_EMPHASIS_RE = re.compile(r"\s*[*_]{1,3}$")
+
+
+def _strip_emphasis(value: str) -> str:
+    """Strip surrounding markdown emphasis runs (``**``/``*``/``_``).
+
+    Handles the ``**Prefix:** body`` shape where the regex captures
+    ``** body`` because the closing ``**`` lives between the colon and
+    the body. We collapse any leading emphasis run on the captured value.
+    """
+    cleaned = _LEADING_EMPHASIS_RE.sub("", value).strip()
+    cleaned = _TRAILING_EMPHASIS_RE.sub("", cleaned).strip()
+    return cleaned
 
 
 def match_closing_line(role: AgentRole, output_md: str) -> str | None:
@@ -88,7 +135,8 @@ def match_closing_line(role: AgentRole, output_md: str) -> str | None:
         last = m
     if last is None:
         return None
-    return f"{_ROLE_PREFIX[role]} {last.group(1).strip()}"
+    body = _strip_emphasis(last.group(1).strip())
+    return f"{_ROLE_PREFIX[role]} {body}"
 
 
 def extract_closing_line(role: AgentRole, output_md: str) -> str:
