@@ -1,0 +1,48 @@
+{
+  "idea_id": "saas-kill-team-standup-bot",
+  "idea_text": "Slack standup bot that asks each team member 3 questions every morning and posts an AI summary to a channel, $5/seat/mo.",
+  "judge_prose": "TAM: 3\nWEDGE: 2\nV1_FEASIBILITY: 3\n\nVerdict: KILL \u2014 The market is saturated with established competitors and Slack's own integrated features, leaving no clear differentiation or buyer-segment wedge for this product.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+  "parsed_verdict": "kill",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 5.5,
+    "source_grounding": 6.0,
+    "verdict_justification": 5.0,
+    "cost_predictability": 3.5,
+    "verdict_correctness": 10.0
+  },
+  "expected_verdict": "kill",
+  "expected_verdict_v2": "KILL",
+  "actual_verdict": "kill",
+  "actual_verdict_v2": "PIVOT",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM Assessment**: The reachable TAM is limited due to the saturation of the standup bot market. Existing competitors like Geekbot (~3k paid teams), Standuply, Range, and Polly dominate the space, indicating a crowded market with minimal differentiation (source: G2 Team Standup category 2025). The introduction of Slack's free Workflow Builder Q&A flows further erodes potential market share (source: Slack changelog 2024).\n\n- **Comparable Products**: No recent shipped comparable exists that successfully differentiated itself in this space. The two prior unknowns from Gecko's evaluation suggest that similar products have either failed to gain traction or have been absorbed by Slack's built-in features, indicating a high risk of failure for new entrants.\n\n- **Customer Dynamics**: Current customers of standup bots are paying for features that are now commoditized. For example, AI summaries are expected as standard in many tools, and existing users are already paying for these features through their Slack subscriptions, which diminishes the willingness to pay an additional $5/seat/mo for a standalone solution.\n\n- **Counterfactual Scenario**: If this Slack standup bot is not shipped, teams will likely continue using existing solutions or Slack's built-in features without significant disruption. This indicates that the proposed product does not address an urgent need or gap in the market, leading to a potential kill signal.\n\n- **Market Trends**: The trend towards integrated solutions within platforms like Slack suggests that standalone bots are becoming less viable. The industry signal from Slack's own AI summary product indicates a shift towards bundled features, further diminishing the appeal of a separate standup bot offering. \n\n- **Conclusion**: Given the saturated market, lack of recent successful comparables, and the commoditization of features, the proposed Slack standup bot lacks a compelling value proposition and faces significant barriers to entry.",
+      "tokens_in": 774,
+      "tokens_out": 377
+    },
+    "critic": {
+      "text": "**Risks:**\n\n1. **Market Saturation:** The standup bot market is already crowded with established players like Geekbot, Standuply, Range, and Polly. With Slack's own AI summary feature now available for free, there's no clear differentiation for your product. This makes it highly unlikely that teams will pay for an additional service when they can get similar functionality at no cost.\n\n2. **Lack of Unique Value Proposition:** The idea lacks a compelling buyer-segment wedge. Without a unique angle or feature that sets it apart from existing solutions, it's just another commodity product. The risk here is that potential customers will see it as redundant, leading to low adoption rates.\n\n3. **Regulatory and Compliance Risks:** Depending on the industry, there may be compliance issues related to data privacy and handling of sensitive information in standup summaries. If the bot inadvertently captures or shares confidential information, it could expose the company to legal risks, especially in regulated sectors.\n\nChange my mind by: Providing a specific company (with a named contact) that has committed to paying for this service within 30 days of launch.",
+      "tokens_in": 774,
+      "tokens_out": 225
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1160,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "**V1: Slack Standup Bot for Remote Teams**\n\n**User Segment:** Remote teams using Slack for daily standups.\n\n**Payment Moment:** Teams will pay $5/seat/mo after a 14-day trial period if they find value in the AI-generated summaries.\n\n**Acceptance Criteria:**\n1. **Prompt Users Daily:** The bot sends a message to each team member every morning asking three predefined questions about their previous day\u2019s work and their goals for the day.\n2. **Collect Responses:** Each team member can respond directly to the bot, and the bot aggregates these responses without any errors.\n3. **Generate Summary:** The bot compiles the responses into a coherent AI-generated summary and posts it to a designated Slack channel by 10 AM each day.\n4. **Track Engagement:** The bot tracks and reports the number of team members who responded each day, providing a simple dashboard view of engagement.\n5. **Trial Conversion Rate:** At least 10% of teams using the bot during the trial period convert to paid subscriptions by the end of the trial.\n\nV1_FEASIBLE_IN_4_DAYS: no",
+      "tokens_in": 1309,
+      "tokens_out": 226
+    },
+    "judge": {
+      "text": "TAM: 3\nWEDGE: 2\nV1_FEASIBILITY: 3\n\nVerdict: KILL \u2014 The market is saturated with established competitors and Slack's own integrated features, leaving no clear differentiation or buyer-segment wedge for this product.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+      "tokens_in": 2683,
+      "tokens_out": 66
+    }
+  }
+}

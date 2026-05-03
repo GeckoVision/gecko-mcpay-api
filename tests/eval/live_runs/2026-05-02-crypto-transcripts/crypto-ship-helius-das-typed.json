@@ -1,0 +1,48 @@
+{
+  "idea_id": "crypto-ship-helius-das-typed",
+  "idea_text": "Typed Python SDK over Helius DAS: codegen Pydantic models from Solana token metadata, expose typed cNFT queries to Claude Code via MCP.",
+  "judge_prose": "TAM: 6\nWEDGE: 7\nV1_FEASIBILITY: 8\n\nVerdict: SHIP V1 to Solana Python developers. The idea targets a specific segment of developers using Helius DAS, with a clear demand for typed SDKs to improve integration with tools like Claude Code. The community's expressed need and the alignment with industry norms for typed schemas support the potential for adoption.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+  "parsed_verdict": "ship",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 5.5,
+    "source_grounding": 4.5,
+    "verdict_justification": 6.5,
+    "cost_predictability": 4.0,
+    "verdict_correctness": 5.0
+  },
+  "expected_verdict": "ship",
+  "expected_verdict_v2": "BUILD",
+  "actual_verdict": "ship",
+  "actual_verdict_v2": "REFINE",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM**: Targeting ~3,200 dev orgs using Helius DAS, with potential ACV of $3-8K for SDKs. This results in a reachable TAM of ~$9.6M - $25.6M in year 1, assuming 10-30% adoption of the new typed SDK. This is a narrow focus compared to the broader Solana ecosystem, which is saturated with untyped SDKs.\n\n- **Comparable**: No recent shipped comparable exists for a typed SDK specifically targeting Helius DAS. The closest is the \"Typed Python SDK + MCP wrapper for an entrenched untyped data-provider API,\" but it remains unknown if it has shipped or gained traction.\n\n- **Current Payment Dynamics**: Developers currently rely on untyped JSON responses from Helius, which complicates integration with tools like Claude Code. The lack of typed schemas increases debugging time and costs, as devs may spend $400/hr on engineers to handle type mismatches.\n\n- **Counterfactual**: If this SDK is not shipped, developers will continue to struggle with untyped JSON, leading to inefficiencies and potential churn to other ecosystems or solutions that offer typed interfaces. This creates a risk of stagnation in the Solana Python developer community.\n\n- **Community Demand**: Strong demand signals from the Solana Python developer community, evidenced by consistent requests for a \"typed Helius SDK + MCP\" in 2025-2026, indicate a clear need for this solution (source: twit_sh @0xMert_, @aeyakovenko).\n\n- **Industry Norm**: The established practice of OpenAPI-to-Pydantic codegen in the broader Python ecosystem suggests that a typed SDK would not only meet developer needs but also align with industry standards, further validating the potential for adoption.",
+      "tokens_in": 814,
+      "tokens_out": 370
+    },
+    "critic": {
+      "text": "**Risks:**\n\n1. **Regulatory Compliance**: If the SDK inadvertently exposes sensitive user data or fails to comply with data protection regulations (like GDPR), it could put the founder and the company at legal risk. This is particularly relevant given the financial nature of the data being handled in the Solana ecosystem.\n\n2. **Market Demand Validation**: While there are mentions of interest from Solana Python developers, the evidence is not strong enough. The specific user personas who would pay within 30 days are not clearly identified. Without concrete commitments from named users, the risk of building something that doesn't meet market needs is high.\n\n3. **Technical Viability**: The integration of typed models with Claude Code via MCP could face unforeseen technical challenges. If the Pydantic models do not align well with the existing Helius DAS API or if the code generation process is not seamless, it could lead to a subpar developer experience, ultimately affecting adoption.\n\nChange my mind by: Providing a signed commitment from a specific Solana Python developer (e.g., @0xMert_ or @aeyakovenko) to pay for the SDK within 30 days of launch.",
+      "tokens_in": 814,
+      "tokens_out": 238
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1206,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "**V1: Typed Python SDK for Helius DAS**\n\nV1 focuses on delivering a minimal viable product that provides a typed Python SDK for Helius DAS, specifically targeting Solana Python developers. This SDK will generate Pydantic models from Solana token metadata and expose typed cNFT queries to Claude Code via MCP.\n\n**Acceptance Criteria:**\n1. Generate Pydantic models from Solana token metadata, allowing users to validate and serialize data types correctly.\n2. Expose at least one typed cNFT query through the SDK that successfully interacts with the Helius DAS API, returning structured data.\n3. Provide clear documentation on how to install and use the SDK, including example code snippets for the generated Pydantic models and cNFT queries.\n4. Ensure that the SDK passes unit tests for the generated models and queries, demonstrating correct functionality and type safety.\n5. Deliver a demo showcasing the SDK in action, highlighting its benefits over the existing untyped JSON SDK.\n\nV1_FEASIBLE_IN_4_DAYS: yes",
+      "tokens_in": 1355,
+      "tokens_out": 207
+    },
+    "judge": {
+      "text": "TAM: 6\nWEDGE: 7\nV1_FEASIBILITY: 8\n\nVerdict: SHIP V1 to Solana Python developers. The idea targets a specific segment of developers using Helius DAS, with a clear demand for typed SDKs to improve integration with tools like Claude Code. The community's expressed need and the alignment with industry norms for typed schemas support the potential for adoption.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+      "tokens_in": 2710,
+      "tokens_out": 97
+    }
+  }
+}

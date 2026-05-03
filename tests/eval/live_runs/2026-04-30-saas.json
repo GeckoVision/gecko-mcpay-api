@@ -1,0 +1,257 @@
+{
+  "date": "2026-04-30",
+  "git_sha": "d322034",
+  "mode": "live",
+  "reruns": 3,
+  "suite": "saas",
+  "aggregate": {
+    "kill_rate": 0.533,
+    "verdict_accuracy": 1.0,
+    "median_score": 5.17,
+    "median_weighted_score": 6.807,
+    "median_cost_usd": 0.0016,
+    "n": 15
+  },
+  "ideas": [
+    {
+      "id": "saas-ship-stripe-webhook-replay",
+      "expected_verdict": "ship",
+      "actual_verdict": "ship",
+      "scores": {
+        "agent_voice": 4.83,
+        "source_grounding": 4.33,
+        "verdict_justification": 6.33,
+        "cost_predictability": 3.67,
+        "verdict_correctness": 10.0
+      },
+      "wall_seconds": 31.256,
+      "tokens_total": 7941,
+      "cost_usd": 0.0016,
+      "v1_sources_cost_usd": 0.0
+    },
+    {
+      "id": "saas-ship-grant-budget-nih-r01",
+      "expected_verdict": "ship",
+      "actual_verdict": "ship",
+      "scores": {
+        "agent_voice": 5.17,
+        "source_grounding": 4.67,
+        "verdict_justification": 6.5,
+        "cost_predictability": 3.67,
+        "verdict_correctness": 10.0
+      },
+      "wall_seconds": 23.994,
+      "tokens_total": 7817,
+      "cost_usd": 0.0016,
+      "v1_sources_cost_usd": 0.0
+    },
+    {
+      "id": "saas-ship-mcp-postgres-rls-tester",
+      "expected_verdict": "ship",
+      "actual_verdict": "ship",
+      "scores": {
+        "agent_voice": 5.17,
+        "source_grounding": 5.5,
+        "verdict_justification": 6.67,
+        "cost_predictability": 4.0,
+        "verdict_correctness": 10.0
+      },
+      "wall_seconds": 24.284,
+      "tokens_total": 7995,
+      "cost_usd": 0.0017,
+      "v1_sources_cost_usd": 0.0
+    },
+    {
+      "id": "saas-ship-deposition-summarizer",
+      "expected_verdict": "ship",
+      "actual_verdict": "ship",
+      "scores": {
+        "agent_voice": 5.17,
+        "source_grounding": 5.17,
+        "verdict_justification": 6.67,
+        "cost_predictability": 3.83,
+        "verdict_correctness": 10.0
+      },
+      "wall_seconds": 20.447,
+      "tokens_total": 7674,
+      "cost_usd": 0.0016,
+      "v1_sources_cost_usd": 0.0
+    },
+    {
+      "id": "saas-ship-cli-feature-flag-diff",
+      "expected_verdict": "ship",
+      "actual_verdict": "ship",
+      "scores": {
+        "agent_voice": 5.5,
+        "source_grounding": 4.67,
+        "verdict_justification": 6.67,
+        "cost_predictability": 3.83,
+        "verdict_correctness": 10.0
+      },
+      "wall_seconds": 23.356,
+      "tokens_total": 7812,
+      "cost_usd": 0.0016,
+      "v1_sources_cost_usd": 0.0
+    },
+    {
+      "id": "saas-ship-vertical-hvac-permit",
+      "expected_verdict": "ship",
+      "actual_verdict": "ship",
+      "scores": {
+        "agent_voice": 5.17,
+        "source_grounding": 6.0,
+        "verdict_justification": 6.67,
+        "cost_predictability": 4.0,
+        "verdict_correctness": 10.0
+      },
+      "wall_seconds": 22.755,
+      "tokens_total": 8099,
+      "cost_usd": 0.0016,
+      "v1_sources_cost_usd": 0.0
+    },
+    {
+      "id": "saas-ship-mcp-datadog-explainer",
+      "expected_verdict": "ship",
+      "actual_verdict": "ship",
+      "scores": {
+        "agent_voice": 5.17,
+        "source_grounding": 4.83,
+        "verdict_justification": 6.67,
+        "cost_predictability": 3.83,
+        "verdict_correctness": 10.0
+      },
+      "wall_seconds": 23.944,
+      "tokens_total": 8296,
+      "cost_usd": 0.0017,
+      "v1_sources_cost_usd": 0.0
+    },
+    {
+      "id": "saas-kill-meeting-summarizer-ai",
+      "expected_verdict": "kill",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 5.17,
+        "source_grounding": 5.17,
+        "verdict_justification": 7.17,
+        "cost_predictability": 3.5,
+        "verdict_correctness": 10.0
+      },
+      "wall_seconds": 19.721,
+      "tokens_total": 7285,
+      "cost_usd": 0.0014,
+      "v1_sources_cost_usd": 0.0
+    },
+    {
+      "id": "saas-kill-ai-resume-builder",
+      "expected_verdict": "kill",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 4.5,
+        "source_grounding": 5.5,
+        "verdict_justification": 6.83,
+        "cost_predictability": 3.33,
+        "verdict_correctness": 10.0
+      },
+      "wall_seconds": 22.693,
+      "tokens_total": 7355,
+      "cost_usd": 0.0015,
+      "v1_sources_cost_usd": 0.0
+    },
+    {
+      "id": "saas-kill-gpt-email-assistant",
+      "expected_verdict": "kill",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 5.17,
+        "source_grounding": 5.0,
+        "verdict_justification": 7.0,
+        "cost_predictability": 3.67,
+        "verdict_correctness": 10.0
+      },
+      "wall_seconds": 20.639,
+      "tokens_total": 7686,
+      "cost_usd": 0.0015,
+      "v1_sources_cost_usd": 0.0
+    },
+    {
+      "id": "saas-kill-ai-blog-generator",
+      "expected_verdict": "kill",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 4.83,
+        "source_grounding": 5.0,
+        "verdict_justification": 7.0,
+        "cost_predictability": 3.5,
+        "verdict_correctness": 10.0
+      },
+      "wall_seconds": 24.354,
+      "tokens_total": 7667,
+      "cost_usd": 0.0016,
+      "v1_sources_cost_usd": 0.0
+    },
+    {
+      "id": "saas-kill-no-code-app-builder",
+      "expected_verdict": "kill",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 6.17,
+        "source_grounding": 5.0,
+        "verdict_justification": 7.0,
+        "cost_predictability": 4.83,
+        "verdict_correctness": 10.0
+      },
+      "wall_seconds": 24.742,
+      "tokens_total": 8296,
+      "cost_usd": 0.0017,
+      "v1_sources_cost_usd": 0.0
+    },
+    {
+      "id": "saas-kill-ai-customer-support",
+      "expected_verdict": "kill",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 4.17,
+        "source_grounding": 4.67,
+        "verdict_justification": 7.0,
+        "cost_predictability": 3.17,
+        "verdict_correctness": 10.0
+      },
+      "wall_seconds": 21.703,
+      "tokens_total": 7199,
+      "cost_usd": 0.0014,
+      "v1_sources_cost_usd": 0.0
+    },
+    {
+      "id": "saas-kill-team-standup-bot",
+      "expected_verdict": "kill",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 5.83,
+        "source_grounding": 5.33,
+        "verdict_justification": 7.0,
+        "cost_predictability": 4.0,
+        "verdict_correctness": 10.0
+      },
+      "wall_seconds": 22.908,
+      "tokens_total": 7768,
+      "cost_usd": 0.0016,
+      "v1_sources_cost_usd": 0.0
+    },
+    {
+      "id": "saas-kill-ai-social-scheduler",
+      "expected_verdict": "kill",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 5.83,
+        "source_grounding": 5.17,
+        "verdict_justification": 6.83,
+        "cost_predictability": 4.67,
+        "verdict_correctness": 10.0
+      },
+      "wall_seconds": 28.304,
+      "tokens_total": 7905,
+      "cost_usd": 0.0016,
+      "v1_sources_cost_usd": 0.0
+    }
+  ]
+}

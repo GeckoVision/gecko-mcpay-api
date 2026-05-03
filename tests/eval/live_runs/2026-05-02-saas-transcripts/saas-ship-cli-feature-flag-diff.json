@@ -1,0 +1,48 @@
+{
+  "idea_id": "saas-ship-cli-feature-flag-diff",
+  "idea_text": "CLI that diffs feature-flag states across LaunchDarkly + Statsig + Unleash environments and produces a single audit report for SOC2 reviews.",
+  "judge_prose": "TAM: 6\nWEDGE: 7\nV1_FEASIBILITY: 8\n\nVerdict: SHIP V1 to platform engineering leads at organizations using multiple feature flagging tools for SOC2 audit preparation. The demand is validated by public requests from engineering leads at major companies, and the tool addresses a clear pain point in the SOC2 compliance process by providing a unified audit report across multiple platforms.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+  "parsed_verdict": "ship",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 5.5,
+    "source_grounding": 5.0,
+    "verdict_justification": 6.5,
+    "cost_predictability": 4.0,
+    "verdict_correctness": 10.0
+  },
+  "expected_verdict": "ship",
+  "expected_verdict_v2": "REFINE",
+  "actual_verdict": "ship",
+  "actual_verdict_v2": "REFINE",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM**: Reachable TAM is approximately ~15,000 organizations (5,000 from LaunchDarkly, 2,000 from Statsig, and 8,000 from Unleash) that may require a unified audit report for SOC2 compliance. This is a clear target market as these organizations often co-deploy multiple feature flagging tools (source: SOC2 audit firms PwC/Deloitte 2024).\n\n- **Comparable**: Drata, which automates evidence collection for SOC2 audits across various SaaS vendors, achieved unicorn status in 2022. This indicates a strong market for tools that simplify compliance processes across multiple platforms (source: Drata reached unicorn status in 2022).\n\n- **Current Spend**: Organizations currently spend significant resources on compliance, with SOC2 audit prep often requiring dedicated engineering time. For example, companies may allocate $400/hr for engineers to compile and prepare audit evidence manually, highlighting a potential cost-saving opportunity with a CLI tool (source: Drata integrations catalog 2025).\n\n- **Counterfactual**: If this CLI tool is not developed, organizations will continue to face inefficiencies in gathering and reporting feature-flag states across multiple vendors, potentially leading to increased audit costs and longer preparation times. This creates a clear pain point that the proposed solution addresses.\n\n- **Demand Signal**: There is active demand from platform engineering leads at major companies (e.g., @stripe, @vercel, @supabase) for a unified tool to manage feature flag diffs for SOC2 preparation, indicating a validated need in the market (source: twit_sh 2025).",
+      "tokens_in": 815,
+      "tokens_out": 332
+    },
+    "critic": {
+      "text": "**Analyst:**\nThe idea of creating a CLI that diffs feature-flag states across multiple platforms (LaunchDarkly, Statsig, Unleash) and generates a single audit report for SOC2 reviews is compelling. The demand is evident from the public requests by platform engineering leads, and the lack of existing solutions in the market presents a clear opportunity. The context provided indicates a strong need for a tool that can streamline the audit process for organizations using multiple feature-flagging tools. \n\n**Critic:**\n1. **Regulatory Risk:** The tool must ensure compliance with SOC2 requirements without inadvertently exposing sensitive data or creating legal liabilities. If the CLI mishandles data or fails to meet compliance standards, it could put the founder in legal jeopardy. This is a significant risk that must be addressed before shipping.\n\n2. **Market Saturation Risk:** While there is a clear need for a multi-vendor diff tool, the market for compliance and audit tools is crowded. If the CLI does not offer a distinct advantage over existing solutions like Drata or Vanta, it risks being overshadowed and failing to gain traction.\n\n3. **User Adoption Risk:** The success of the CLI hinges on convincing organizations to adopt it over their existing processes. If the tool does not demonstrate clear, measurable benefits in terms of time savings or ease of use, it may struggle to gain a user base. The public requests from platform engineering leads are promising, but they need to translate into actual commitments to pay.\n\nChange my mind by: Providing a signed commitment from a specific user (e.g., @stripe, @vercel, or @supabase eng) to pay for the tool within 30 days of launch.",
+      "tokens_in": 815,
+      "tokens_out": 345
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1276,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "**Architect:**\nTo build the CLI that diffs feature-flag states across LaunchDarkly, Statsig, and Unleash, we need to focus on a minimal viable product (MVP) that delivers the core functionality required for SOC2 audit preparation. Here\u2019s a proposed architecture for V1:\n\n1. **Data Collection Module**: This will interface with the APIs of LaunchDarkly, Statsig, and Unleash to collect feature-flag states. Each integration will need to handle authentication and data retrieval efficiently.\n\n2. **Diff Engine**: This component will compare the feature-flag states across the different platforms. It should be able to identify discrepancies and generate a report detailing the differences.\n\n3. **Report Generation**: Once the diff is complete, the CLI should format the findings into a structured audit report that aligns with SOC2 requirements. This report should be easily exportable (e.g., in PDF or Markdown format).\n\n4. **User Interface**: Since this is a CLI tool, we will need to ensure that the command-line interface is user-friendly, with clear commands and options for users to specify which environments to compare and how to generate the report.\n\n5. **Testing and Validation**: We will need to implement unit tests and integration tests to ensure that the CLI works correctly with all three platforms and that the diff logic is accurate.\n\nThis architecture allows us to focus on the essential features needed for V1 while ensuring that we can expand functionality in future versions.\n\n**Next Steps for V1**:\n- Define the specific API endpoints and data formats for each feature flag vendor.\n- Create a basic command-line interface that allows users to specify their configurations.\n- Implement the diff logic and report generation.\n\nThis approach will ensure we deliver a functional CLI that meets the immediate needs of our target user segment for SOC2 audit preparation.\n\nNow, let\u2019s define the acceptance criteria for V1. \n\n**Acceptance Criteria for V1**:\n1. Retrieve feature-flag states from LaunchDarkly, Statsig, and Unleash for a specified environment and display them in the CLI.\n2. Compare the retrieved feature-flag states across the three platforms and identify discrepancies, outputting the differences in the CLI.\n3. Generate a structured audit report in Markdown format that includes the differences identified, ready for SOC2 review.\n4. Provide clear documentation on how to use the CLI, including installation instructions and command examples.\n\nV1_FEASIBLE_IN_4_DAYS: yes",
+      "tokens_in": 1425,
+      "tokens_out": 502
+    },
+    "judge": {
+      "text": "TAM: 6\nWEDGE: 7\nV1_FEASIBILITY: 8\n\nVerdict: SHIP V1 to platform engineering leads at organizations using multiple feature flagging tools for SOC2 audit preparation. The demand is validated by public requests from engineering leads at major companies, and the tool addresses a clear pain point in the SOC2 compliance process by providing a unified audit report across multiple platforms.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+      "tokens_in": 3075,
+      "tokens_out": 97
+    }
+  }
+}

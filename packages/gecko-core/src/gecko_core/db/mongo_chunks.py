@@ -46,7 +46,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-EMBED_DIM = 1536
+EMBED_DIM = 1024
 
 
 class _MongoUnavailable(RuntimeError):
@@ -318,7 +318,7 @@ async def put_chunk_cache_mongo(
     if coll is None:
         return
 
-    model = embed_model or "text-embedding-3-small"
+    model = embed_model or "voyage-3"
     now = datetime.now(UTC)
     operations: list[Any] = []
     from pymongo import UpdateOne

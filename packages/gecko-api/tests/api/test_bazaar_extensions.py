@@ -25,10 +25,13 @@ from fastapi.testclient import TestClient
 # Force stub mode BEFORE importing the app — settings are frozen at import time.
 os.environ.setdefault("X402_MODE", "stub")
 os.environ.setdefault("GECKO_WALLET_ADDRESS", "STUB_WALLET_ADDRESS_NOT_FOR_LIVE")
+# Pulse must be paywalled so it appears in _routes_config / /.well-known/x402.
+os.environ.setdefault("PULSE_CALL_PRICE", "$0.50")
 
 
 @pytest.fixture
 def client() -> Iterator[TestClient]:
+    os.environ["PULSE_CALL_PRICE"] = "$0.50"
     for mod in [m for m in sys.modules if m.startswith("gecko_api")]:
         sys.modules.pop(mod, None)
     from gecko_api.main import app

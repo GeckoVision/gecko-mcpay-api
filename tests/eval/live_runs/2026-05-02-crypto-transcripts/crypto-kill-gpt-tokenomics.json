@@ -1,0 +1,48 @@
+{
+  "idea_id": "crypto-kill-gpt-tokenomics",
+  "idea_text": "AI tokenomics designer: feeds in your project description and outputs a whitepaper plus token distribution chart, $49 one-time.",
+  "judge_prose": "TAM: 3\nWEDGE: 2\nV1_FEASIBILITY: 7\n\nVerdict: KILL \u2014 The market for new token launches is shrinking significantly, and the product lacks a competitive moat against free alternatives like ChatGPT and Claude.ai. The one-time $49 pricing model is unsustainable given the low LTV/CAC dynamics in a declining market.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+  "parsed_verdict": "kill",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 4.5,
+    "source_grounding": 5.5,
+    "verdict_justification": 5.0,
+    "cost_predictability": 4.0,
+    "verdict_correctness": 10.0
+  },
+  "expected_verdict": "kill",
+  "expected_verdict_v2": "KILL",
+  "actual_verdict": "kill",
+  "actual_verdict_v2": "PIVOT",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM Signal**: The target market for AI tokenomics design is shrinking, with new token launches down 64% YoY (CoinGecko listings 2025). This indicates a limited and declining customer base for a one-time purchase product like this.\n\n- **Comparable Analysis**: Two prior attempts to create one-time purchase LLM wrappers for crypto launch artifacts were evaluated and killed by Gecko due to market saturation and lack of differentiation. This suggests that the proposed product lacks a unique value proposition in a similar market.\n\n- **Competitive Landscape**: Free tools like ChatGPT and Claude.ai can generate equivalent whitepapers, indicating no competitive moat. This is supported by community discussions on r/cryptocurrency, where users highlight the availability of free alternatives, further eroding potential demand.\n\n- **Revenue Model Viability**: A one-time $49 SaaS model faces significant challenges with LTV/CAC ratios, as indicated by ProfitWell SaaS Benchmarks 2024. This pricing structure is unlikely to sustain a profitable business, especially in a declining market.\n\n- **Counterfactual Scenario**: If this product does not ship, the market will continue to rely on free AI tools for whitepaper generation, leading to no significant change in the current landscape. This suggests that the product does not address a pressing need or gap in the market.",
+      "tokens_in": 784,
+      "tokens_out": 271
+    },
+    "critic": {
+      "text": "**Risks:**\n\n1. **Market Saturation and Demand Decline:** The crypto market is experiencing a significant downturn in new token launches, with a reported 64% year-over-year decrease. This shrinking buyer pool directly impacts the viability of a one-time purchase product aimed at tokenomics design. The demand for such services is not only declining but may become obsolete as fewer projects seek to launch new tokens.\n\n2. **Lack of Competitive Moat:** The ability for free tools like ChatGPT and Claude.ai to generate whitepapers and token distribution charts undermines the value proposition of this product. Without a unique feature or service that differentiates it from these free alternatives, the product is unlikely to attract paying customers, especially in a market where cost is a significant factor.\n\n3. **Brutal LTV/CAC Dynamics:** A one-time payment of $49 creates a challenging customer acquisition cost (CAC) scenario, especially in a market where the average lifetime value (LTV) of a customer is low. This pricing model does not support sustainable growth or profitability, making it difficult to justify the investment in marketing and customer support.\n\nChange my mind by: Providing a specific user or company (with citation) that would commit to purchasing this service within 30 days of launch.",
+      "tokens_in": 784,
+      "tokens_out": 257
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1096,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "Given the feedback and analysis from the previous speakers, I propose the following structured approach for the project:\n\n### V1: Tokenomics Design Tool for Indie Projects\n**Target User Segment:** Indie crypto project founders looking for affordable and quick tokenomics solutions.\n\n**Payment Moment:** Users pay $49 for a generated tokenomics whitepaper and distribution chart.\n\n**Scope:** \n- The tool will allow users to input basic project details (name, purpose, token utility).\n- It will generate a simple whitepaper and a token distribution chart based on predefined templates.\n\n**Acceptance Criteria:**\n1. Users can input their project details and receive a downloadable whitepaper within 5 minutes.\n2. Users can view a generated token distribution chart that outlines token allocation (e.g., team, advisors, community).\n3. Users receive a confirmation email with their purchase receipt immediately after payment.\n4. Users can access a demo version of the tool that showcases the whitepaper and chart generation process without requiring payment.\n5. Users can provide feedback on the generated documents through a simple form, which will be collected for future iterations.\n\n### V2: Enhanced Features and Second User Segment\n- Introduce additional features for more complex tokenomics designs.\n- Target a second user segment, such as established projects looking to refine their tokenomics.\n\n### V3: Moat Development\n- Integrate with existing crypto platforms for seamless token launch processes.\n- Develop a community-driven feedback loop for continuous improvement and user-generated templates.\n\nGiven the constraints and the current market conditions, V1 is designed to be a minimal viable product that addresses a specific need without overextending resources.\n\nV1_FEASIBLE_IN_4_DAYS: yes",
+      "tokens_in": 1245,
+      "tokens_out": 339
+    },
+    "judge": {
+      "text": "TAM: 3\nWEDGE: 2\nV1_FEASIBILITY: 7\n\nVerdict: KILL \u2014 The market for new token launches is shrinking significantly, and the product lacks a competitive moat against free alternatives like ChatGPT and Claude.ai. The one-time $49 pricing model is unsustainable given the low LTV/CAC dynamics in a declining market.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+      "tokens_in": 2732,
+      "tokens_out": 89
+    }
+  }
+}

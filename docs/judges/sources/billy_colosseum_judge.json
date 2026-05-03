@@ -1,0 +1,30 @@
+{
+  "reviewer": "Billy (@twentyOne2x)",
+  "role": "Colosseum Winner (attn.markets) | DeFi/HFT/Flashbots background | Judge/Mentor",
+  "description": "Solicits Colosseum projects publicly and gives direct reply feedback. Quotes external advice (Dave Hsu) heavily.",
+  "main_solicitation_post": {
+    "post_id": "2044888917917208667",
+    "date": "2026-04-16",
+    "content": "@Solana x @Colosseum Frontier applicants…. you know the drill :)"
+  },
+  "key_feedback_replies": [
+    {
+      "project": "on-chain mortgages & ETFs",
+      "reply": "Hitting bit close to home… bullish on founders actively seeking feedback. Public list = /projects tab in Arena app."
+    },
+    {
+      "project": "token launch infra",
+      "reply": "Advice on pitch strategy: strong pitch + GitHub team page wins initial attention."
+    },
+    {
+      "project": "LinceFinance (EUR yields)",
+      "reply": "Would need market research… may be good enough to just add a swap… pls DM."
+    },
+    {
+      "project": "general founder question",
+      "reply": "You are a founder — you shouldn’t ask for permissions. Just ship / fire away here or in DMs."
+    }
+  ],
+  "external_advice_he_quotes": "Dave Hsu’s Notion doc on team/market/product/distribution + 'brag with context' (Alliance style).",
+  "overall_judging_style": "Builder-friendly insider. Rewards feedback-seeking, shipping, bragging with context, market research, and traction. Practical + encouraging tone."
+}

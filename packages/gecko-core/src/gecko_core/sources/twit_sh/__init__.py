@@ -57,9 +57,13 @@ _FIRES_FOR: frozenset[str] = frozenset({"crypto", "defi", "hackathon-team"})
 # is `/tweets/search?words=...`, not the previously-assumed
 # `/search/tweets?q=...`. Catalog updated to match production. Tests that
 # mock the legacy path are migrated alongside.
+#
+# 2026-05-04: live landing confirmed userTweets path is `/tweets/user`
+# (not `/users/tweets`). Response shape: {data: [...], meta: {next_token}}.
+# ~20 tweets/page, $0.01 USDC/request.
 DEFAULT_CATALOG: dict[str, dict[str, str]] = {
     "searchTweets": {"path": "/tweets/search", "method": "GET", "query_param": "words"},
-    "userTweets": {"path": "/users/tweets", "method": "GET", "query_param": "username"},
+    "userTweets": {"path": "/tweets/user", "method": "GET", "query_param": "username"},
 }
 
 # Per-session hard cap. The build plan budgets $0.05 worst case; we enforce
@@ -297,7 +301,7 @@ def _build_x402_client() -> httpx.AsyncClient | None:
         return None
 
     try:
-        from eth_account import Account  # type: ignore[import-not-found]
+        from eth_account import Account
         from x402 import x402Client
         from x402.http.clients.httpx import x402AsyncTransport
         from x402.mechanisms.evm.exact import ExactEvmScheme
@@ -541,6 +545,123 @@ class TwitshSource:
             cost_usd=spent,
             fired=True,
         )
+
+    async def fetch_user_tweets(
+        self,
+        username: str,
+        *,
+        max_calls: int = 5,
+    ) -> tuple[list[dict[str, Any]], float]:
+        """Operator-driven ingestion: fetch recent tweets for a single handle.
+
+        Hits the catalog ``userTweets`` endpoint
+        (``/users/tweets?username=<h>``) up to ``max_calls`` times. The
+        twit.sh ``userTweets`` surface returns up to ~10 tweets per call
+        and (per the Sprint 13 probe + S21-JUDGE-CORPUS-01 follow-up
+        probe) does NOT expose a documented pagination cursor — repeating
+        the same call can return the same window. We still allow
+        ``max_calls > 1`` because the live API occasionally rotates the
+        window when called minutes apart, and dedup happens at the
+        persistence layer (``tweet_id`` PK on the judge_corpus collection).
+
+        Bypasses ``SPEND_CAP_USD``: this is an explicit operator command,
+        not a session, so the per-session $0.05 cap does not apply.
+        ``max_calls`` is the hard ceiling. Spend math is local: each
+        successful call debits ``ASSUMED_PER_CALL_USD`` ($0.01).
+
+        Returns ``(tweets, spent_usd)``. On error returns whatever was
+        accumulated up to that point — partial success is intentional.
+        Stub mode: returns synthetic tweets with the handle baked in so
+        the smoke run completes without a wallet.
+        """
+        # Stub mode — synthesise tweets with the handle so callers can
+        # validate end-to-end without a wallet. Same mechanism as
+        # ``fetch``: deterministic shape, non-zero attributed spend.
+        if os.environ.get("X402_MODE", "stub").strip().lower() == "stub":
+            handle = username.lstrip("@").lower()
+            now = "2026-05-02T00:00:00Z"
+            synth = [
+                {
+                    "text": "Builders shipping on Solana right now should focus on UX, not L1 narratives. Saw too many decks last hackathon hide behind 'we use ZK'.",
+                    "author_handle": f"@{handle}",
+                    "url": f"https://x.com/{handle}/status/100000{i}",
+                    "engagement": {"likes": 50 - i * 4, "replies": 3, "reposts": 7},
+                    "created_at": now,
+                    "id_str": f"100000{i}",
+                }
+                for i in range(6)
+            ]
+            return synth, ASSUMED_PER_CALL_USD * min(max_calls, 1)
+
+        if self._http is None:
+            self._http = _build_x402_client()
+        if self._http is None:
+            return [], 0.0
+
+        spec = self._catalog.get("userTweets") or DEFAULT_CATALOG["userTweets"]
+        path = spec.get("path", "/tweets/user")
+        param = spec.get("query_param", "username")
+        clean_handle = username.lstrip("@")
+        # /tweets/user doesn't embed the author object — fill handle from arg.
+        fallback_handle = f"@{clean_handle}"
+
+        spent = 0.0
+        tweets: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        next_token: str | None = None
+
+        for _ in range(max(1, max_calls)):
+            params: dict[str, str] = {param: clean_handle}
+            if next_token:
+                params["next_token"] = next_token
+            try:
+                resp = await self._http.get(path, params=params)
+            except httpx.HTTPError as exc:
+                logger.warning("twitsh.user_tweets.http_error: %s", exc)
+                break
+            if resp.status_code >= 400:
+                logger.warning(
+                    "twitsh.user_tweets.bad_status: %s %s",
+                    resp.status_code,
+                    resp.text[:200],
+                )
+                break
+            try:
+                body = resp.json()
+            except json.JSONDecodeError:
+                logger.warning("twitsh.user_tweets.non_json")
+                break
+            spent += ASSUMED_PER_CALL_USD
+            raw_tweets = body.get("tweets") or body.get("data") or body.get("results") or []
+            if not isinstance(raw_tweets, list):
+                raw_tweets = []
+            # Advance the pagination cursor for the next loop iteration.
+            meta = body.get("meta") or {}
+            next_token = meta.get("next_token") if isinstance(meta, dict) else None
+            new_in_call = 0
+            for raw in raw_tweets:
+                if not isinstance(raw, dict):
+                    continue
+                norm = _normalize_tweet(raw)
+                if norm is None:
+                    continue
+                # /tweets/user returns author_id not an author object — backfill.
+                if not norm.get("author_handle"):
+                    norm["author_handle"] = fallback_handle
+                # Carry tweet_id through for dedup at persistence time.
+                tid = raw.get("id_str") or raw.get("id") or raw.get("tweet_id") or norm.get("url")
+                tid_s = str(tid) if tid is not None else ""
+                if not tid_s or tid_s in seen_ids:
+                    continue
+                seen_ids.add(tid_s)
+                norm["id_str"] = tid_s
+                tweets.append(norm)
+                new_in_call += 1
+            # Stop if no new tweets or no further pages.
+            if new_in_call == 0 or not next_token:
+                break
+
+        return tweets, spent
 
     async def aclose(self) -> None:
         if self._owns_http and self._http is not None:

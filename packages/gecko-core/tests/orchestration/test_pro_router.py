@@ -5,14 +5,14 @@ from __future__ import annotations
 import pytest
 
 
-def test_default_router_is_openai() -> None:
+def test_default_router_is_openrouter() -> None:
     from gecko_core.orchestration.pro.router import resolve_router
 
-    cfg = resolve_router({"OPENAI_API_KEY": "sk-test"})
-    assert cfg.router == "openai"
-    assert cfg.base_url == "https://api.openai.com/v1"
-    assert cfg.api_key == "sk-test"
-    assert cfg.extra_headers == {}
+    cfg = resolve_router({"OPENROUTER_API_KEY": "or-test"})
+    assert cfg.router == "openrouter"
+    assert cfg.base_url == "https://openrouter.ai/api/v1"
+    assert cfg.api_key == "or-test"
+    assert "HTTP-Referer" in cfg.extra_headers
 
 
 def test_openai_router_requires_openai_key() -> None:
@@ -81,7 +81,7 @@ def test_llm_config_for_model_includes_headers_for_openrouter() -> None:
 def test_llm_config_for_model_omits_headers_for_openai() -> None:
     from gecko_core.orchestration.pro.router import resolve_router
 
-    cfg = resolve_router({"OPENAI_API_KEY": "sk-x"})
+    cfg = resolve_router({"LLM_ROUTER": "openai", "OPENAI_API_KEY": "sk-x"})
     llm_config = cfg.llm_config_for_model("gpt-4o-mini")
     entry = llm_config["config_list"][0]
     assert "default_headers" not in entry
@@ -105,7 +105,7 @@ def test_llm_config_injects_price_for_openrouter_prefixed_model() -> None:
 def test_llm_config_injects_price_for_bare_openai_model() -> None:
     from gecko_core.orchestration.pro.router import resolve_router
 
-    cfg = resolve_router({"OPENAI_API_KEY": "sk-x"})
+    cfg = resolve_router({"LLM_ROUTER": "openai", "OPENAI_API_KEY": "sk-x"})
     llm_config = cfg.llm_config_for_model("gpt-4o")
     entry = llm_config["config_list"][0]
     assert entry["price"] == [0.0025, 0.01]
@@ -116,7 +116,7 @@ def test_llm_config_omits_price_for_unknown_model() -> None:
     built-in table or reports 0. Better than raising in router config."""
     from gecko_core.orchestration.pro.router import resolve_router
 
-    cfg = resolve_router({"OPENAI_API_KEY": "sk-x"})
+    cfg = resolve_router({"LLM_ROUTER": "openai", "OPENAI_API_KEY": "sk-x"})
     llm_config = cfg.llm_config_for_model("some-future-model-not-in-table")
     entry = llm_config["config_list"][0]
     assert "price" not in entry

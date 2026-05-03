@@ -1,0 +1,140 @@
+{
+  "session_id": "00000000-0000-0000-0000-000000000000",
+  "tier": "pro",
+  "business_plan": {
+    "problem": "LATAM gig platforms can't pay USD on-chain.",
+    "icp": "BR-based gig platforms with cross-border payouts.",
+    "solution": "Stablecoin payouts API on Solana with BR off-ramp.",
+    "market": "BR gig economy ~$3B GMV.",
+    "business_model": "0.5% per payout.",
+    "channels": "Direct sales + Solana ecosystem.",
+    "risks": ["BR regulator drift"],
+    "citations": []
+  },
+  "validation_report": {
+    "market_size_signal": "Reachable: ~50 BR gig platforms.",
+    "competitor_analysis": "Mercado Pago, Wise, Transfero.",
+    "demand_evidence": "iFood asked publicly for USD payouts.",
+    "risk_flags": ["regulatory"],
+    "citations": [],
+    "gap_classification": "Partial:integration",
+    "gap_summary": "Mercado Pago has BRL but no USD rails."
+  },
+  "prd": {
+    "v1_scope": ["Hosted payout console", "BR off-ramp via Transfero"],
+    "v2_scope": ["API surface"],
+    "v3_scope": ["MX/AR expansion"],
+    "acceptance_criteria": ["Settles in < 5s end-to-end"],
+    "non_functional": ["99.9% uptime"],
+    "success_metrics": ["100 payouts in first 30 days"],
+    "citations": []
+  },
+  "sources": [
+    {
+      "url": "https://example.com/mercadopago",
+      "type": "web",
+      "chunk_count": 4,
+      "indexed_at": "2026-05-02T00:00:00+00:00"
+    }
+  ],
+  "verdict": "GO",
+  "low_grounding": false,
+  "verdict_hash": "a4f10c2b9e3d1234567890abcdef0123456789abcdef0123456789abcdef0123",
+  "per_voice": {
+    "voices": [
+      {
+        "name": "analyst",
+        "position": "LATAM gig payouts is a real wedge - Mercado Pago skips USD rails.",
+        "tension": "Pushed back on API-first - gig platforms want a dashboard, not SDK.",
+        "recommendation": "Ship a hosted payout console first, expose API in V2.",
+        "status": "engaged"
+      },
+      {
+        "name": "critic",
+        "position": "Off-ramp to BRL is the real bottleneck; on-chain is the easy half.",
+        "tension": "Resisted shoehorning fraud-ML; called it premature optimisation.",
+        "recommendation": "Partner with one local off-ramp before building.",
+        "status": "engaged"
+      },
+      {
+        "name": "architect",
+        "position": "Architecturally clean - stateless API, idempotency keys, webhooks.",
+        "tension": "Worried about regulatory drift across BR/MX/AR.",
+        "recommendation": "Launch BR-only; gate other geos on local counsel sign-off.",
+        "status": "engaged"
+      },
+      {
+        "name": "scoper",
+        "position": "V1 fits in 4 days if scoped to one off-ramp partner.",
+        "tension": "Dissent on attribution: receipts must show platform, not Gecko.",
+        "recommendation": "White-label receipt page with platform brand, Gecko in fine print.",
+        "status": "engaged"
+      },
+      {
+        "name": "judge",
+        "position": "SHIP V1 to BR gig platforms with a single off-ramp partner.",
+        "tension": null,
+        "recommendation": "Ship V1.",
+        "status": "engaged"
+      }
+    ]
+  },
+  "transcript_summary": "The analyst argued LATAM gig payouts form a real wedge against Mercado Pago. The critic pushed back that the off-ramp is the bottleneck, not the rails. The judge concluded SHIP V1 with a single BR off-ramp partner. The scoper's dissent on attribution survived: payout receipts must brand the platform.",
+  "market_landscape": {
+    "competitors": [
+      {
+        "name": "Mercado Pago",
+        "what_they_do": "BRL payouts, no USD rails.",
+        "axis": "settlement_layer",
+        "why_we_are_not_them": "Mercado Pago settles in BRL through traditional banking rails; we settle USD on-chain with x402 receipts so platforms get instant programmable payouts.",
+        "flag": null
+      },
+      {
+        "name": "Wise",
+        "what_they_do": "Cross-border payouts for SMBs.",
+        "axis": "verdict_shape",
+        "why_we_are_not_them": "Wise ships generic cross-border SMB payouts; our wedge is a typed, hash-addressed payout API scoped to LATAM gig platforms.",
+        "flag": null
+      },
+      {
+        "name": "Transfero",
+        "what_they_do": "BR off-ramp, no payout API.",
+        "axis": "provider_mix",
+        "why_we_are_not_them": "Transfero is an off-ramp endpoint only; we orchestrate off-ramp + on-chain settlement + idempotent platform-side API in one mix.",
+        "flag": null
+      }
+    ],
+    "section_flag": null
+  },
+  "surviving_dissent": {
+    "dissent_status": "surviving",
+    "dissents": [
+      {
+        "voice": "scoper",
+        "verbatim": "If the payout receipt shows Gecko's brand, we eat the platform's user trust. Attribution must default to the platform; Gecko is fine print.",
+        "on_topic": "attribution"
+      }
+    ],
+    "rationale": "Position was never refuted; judge noted as open risk."
+  },
+  "next_steps_with_falsifiers": {
+    "steps": [
+      {
+        "action": "Sign LOI with Transfero for BR off-ramp partnership.",
+        "surfaced_by_voice": "critic",
+        "falsifier": {
+          "what_would_disprove_this": "No signed LOI with Transfero (named integration)",
+          "by_when": "2026-05-23"
+        }
+      },
+      {
+        "action": "Prototype hosted payout console with one design-partner gig platform.",
+        "surfaced_by_voice": "analyst",
+        "falsifier": {
+          "what_would_disprove_this": "Fewer than 1 BR gig platform commits as design partner",
+          "by_when": "within 14 days of V1 ship"
+        }
+      }
+    ]
+  }
+}

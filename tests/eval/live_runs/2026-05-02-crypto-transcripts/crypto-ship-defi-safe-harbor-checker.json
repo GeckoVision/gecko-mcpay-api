@@ -1,0 +1,48 @@
+{
+  "idea_id": "crypto-ship-defi-safe-harbor-checker",
+  "idea_text": "Compliance checker that maps a DeFi protocol's smart-contract surface against the SEC DeFi Safe Harbor 2.0 carve-outs and emits a human-readable report.",
+  "judge_prose": "TAM: 6\nWEDGE: 7\nV1_FEASIBILITY: 7\n\nVerdict: SHIP V1 to legal teams at DeFi protocols. The idea targets a specific pain point for legal teams dealing with DeFi compliance, leveraging the SEC DeFi Safe Harbor 2.0 carve-outs. The market signals from legal teams and the high cost of manual compliance checks indicate a strong demand for this tool. The V1 is feasible within a short timeframe and provides a clear value proposition by automating a complex and costly process.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+  "parsed_verdict": "ship",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 5.5,
+    "source_grounding": 5.0,
+    "verdict_justification": 6.5,
+    "cost_predictability": 4.0,
+    "verdict_correctness": 5.0
+  },
+  "expected_verdict": "ship",
+  "expected_verdict_v2": "BUILD",
+  "actual_verdict": "ship",
+  "actual_verdict_v2": "REFINE",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM**: The reachable TAM in year 1 is approximately $13.6M, calculated from ~340 active DeFi protocols with TVL >$10M, each potentially paying $40-80K for manual Safe Harbor mapping (DeFiLlama). This is a direct replacement for legal counsel services.\n\n- **Comparable**: Chainalysis Reactor and TRM Labs have successfully shipped compliance tools and reached 9-figure ARR by leveraging curated regulatory rule corpora, indicating a strong market for compliance solutions in the DeFi space.\n\n- **Counterfactual**: If this compliance checker is not shipped, DeFi protocols will continue to incur high legal costs (~$40-80K) for manual Safe Harbor mapping, which may lead to slower adoption of DeFi protocols due to regulatory uncertainty.\n\n- **Market Signal**: The public discussions from Cooley, Latham, and Fenwick's crypto teams highlight a clear demand for a mechanical Safe Harbor checker, indicating that legal teams are actively seeking solutions to streamline compliance processes.\n\n- **Precedent Weighting**: The lack of shipped comparables and the presence of unknowns in prior evaluations suggest a cautious approach; however, the strong market signals from legal teams indicate potential for success if the product can effectively address their needs.",
+      "tokens_in": 816,
+      "tokens_out": 262
+    },
+    "critic": {
+      "text": "**Analyst:**\nThe idea of a compliance checker for DeFi protocols against the SEC DeFi Safe Harbor 2.0 carve-outs is timely and relevant, given the increasing regulatory scrutiny in the crypto space. The potential market is significant, with a large number of active DeFi protocols and high costs associated with manual compliance checks. The interest from legal teams at reputable firms indicates a clear demand for such a tool. The analogy to successful compliance tools like Chainalysis Reactor suggests a viable business model.\n\n**Critic:**\n1. **Regulatory Risk**: The compliance checker could inadvertently misinterpret the SEC's guidelines or fail to keep up with evolving regulations, putting users at risk of non-compliance. If the tool provides incorrect assessments, it could expose the founder to legal liability, especially if users rely on it for compliance decisions.\n\n2. **Market Saturation**: While there is a need for compliance tools, the market may become saturated with similar offerings, especially if competitors emerge quickly. The precedent of the consumer-focused compliance tool being killed suggests that the market may not support multiple players unless there is a clear differentiation in value proposition.\n\n3. **User Adoption Risk**: The tool's success hinges on the willingness of DeFi protocols to adopt it. If the target users (legal teams) are not convinced of its accuracy or reliability, they may prefer traditional methods, leading to low adoption rates. The lack of named users willing to pay within 30 days raises concerns about immediate demand.\n\nChange my mind by: Providing a signed letter of intent from a legal team at a DeFi protocol willing to pay for the compliance checker within 30 days of launch.",
+      "tokens_in": 816,
+      "tokens_out": 335
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1197,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "**Architect:**\nTo build a compliance checker that maps a DeFi protocol's smart-contract surface against the SEC DeFi Safe Harbor 2.0 carve-outs, we need to focus on a minimal viable product (V1) that addresses the most critical user pain point. \n\n**V1 Scope:**\n- **Target User Segment**: Legal teams at DeFi protocols.\n- **Named Payment Moment**: When the compliance checker generates a human-readable report that confirms compliance with the SEC DeFi Safe Harbor 2.0 carve-outs.\n\n**V1 Features:**\n1. **Smart Contract Analysis**: The tool will analyze a given DeFi protocol's smart contracts to identify relevant features and functions.\n2. **Carve-Out Mapping**: It will map these features against the 11 carve-outs defined in the SEC DeFi Safe Harbor 2.0 proposal.\n3. **Human-Readable Report Generation**: The output will be a clear, concise report that indicates compliance status and highlights any areas of concern.\n\n**Technical Considerations:**\n- Use existing open-source tools for smart contract analysis to expedite development.\n- Ensure the mapping logic is accurate and aligns with the SEC's guidelines.\n- Focus on a clean UI for report generation that can be easily interpreted by legal teams.\n\n**V1 Acceptance Criteria:**\n1. Analyze a given DeFi protocol's smart contracts and identify at least 5 relevant features.\n2. Map these features against the SEC DeFi Safe Harbor 2.0 carve-outs and provide a compliance status for each carve-out.\n3. Generate a human-readable report that clearly indicates compliance status and highlights any non-compliance areas.\n4. Allow users to upload smart contract code and receive the report within 5 minutes.\n5. Ensure the report is downloadable in PDF format for easy sharing with legal teams.\n\nThis V1 is focused and achievable within the 4-day timeframe, addressing a specific need for legal teams in the DeFi space.\n\nV1_FEASIBLE_IN_4_DAYS: yes",
+      "tokens_in": 1346,
+      "tokens_out": 408
+    },
+    "judge": {
+      "text": "TAM: 6\nWEDGE: 7\nV1_FEASIBILITY: 7\n\nVerdict: SHIP V1 to legal teams at DeFi protocols. The idea targets a specific pain point for legal teams dealing with DeFi compliance, leveraging the SEC DeFi Safe Harbor 2.0 carve-outs. The market signals from legal teams and the high cost of manual compliance checks indicate a strong demand for this tool. The V1 is feasible within a short timeframe and provides a clear value proposition by automating a complex and costly process.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+      "tokens_in": 2902,
+      "tokens_out": 125
+    }
+  }
+}

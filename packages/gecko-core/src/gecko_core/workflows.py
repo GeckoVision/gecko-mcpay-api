@@ -100,6 +100,7 @@ async def research(
     session_id: UUID | None = None,
     tier_preset: str | None = None,
     journal: bool = True,
+    calibration: str | None = None,
 ) -> ResearchResult:
     """Run the full discover → approve → pay → index → generate workflow.
 
@@ -209,13 +210,72 @@ async def research(
     if dispatch_summary is not None:
         _emit(progress_callback, dispatch_summary)
 
+    # S21-CALIBRATION-01 — load the calibration corpus once per run when
+    # the caller opted in. We pull the entire dataset (42 chunks for the
+    # Colosseum set) — small enough to skip similarity-search ranking. The
+    # rendered block is prepended to every agent's system prompt by
+    # ``build_groupchat``; the corpus_id is stamped on the ResearchResult
+    # for the footer surface.
+    calibration_block: str | None = None
+    calibration_corpus_id: str | None = None
+    if calibration:
+        from gecko_core.judges import (
+            COLOSSEUM_DATASET,
+            WEB3_ACCELERATORS_DATASET,
+            load_calibration_chunks,
+            render_calibration_block,
+        )
+        from gecko_core.judges import (
+            calibration_corpus_id as _build_cal_id,
+        )
+
+        if calibration not in ("colosseum", "web3", "all"):
+            raise ValueError(
+                f"unknown calibration corpus {calibration!r}; supported: 'colosseum', 'web3', 'all'"
+            )
+        cal_rows: list[dict[str, Any]] = []
+        if calibration in ("colosseum", "web3", "all"):
+            # 'web3' loads colosseum + web3 (web3 builds *on top of* the
+            # core judge set per the dataset coordination memo);
+            # 'colosseum' loads colosseum only.
+            cal_rows.extend(await load_calibration_chunks(COLOSSEUM_DATASET))
+        if calibration in ("web3", "all"):
+            cal_rows.extend(await load_calibration_chunks(WEB3_ACCELERATORS_DATASET))
+        if not cal_rows:
+            logger.warning(
+                "calibration='%s' requested but corpus is empty — run "
+                "`bb judges ingest-colosseum` first.",
+                calibration,
+            )
+        else:
+            calibration_block = render_calibration_block(cal_rows)
+            calibration_corpus_id = _build_cal_id(cal_rows)
+            _emit(
+                progress_callback,
+                f"Calibration corpus loaded: {calibration_corpus_id}",
+            )
+
     # Step 6b — pro tier: layer the 5-agent debate on top of the basic result.
     # The basic pass produces the structured 3 docs (business plan, validation
     # report, PRD); pro adds the transcript + session summary. We reuse the
     # same RAG context the basic pass built so we don't re-query.
     if tier == "pro":
         _emit(progress_callback, "Running pro debate")
-        result = await _run_pro_debate(session_id, idea, result, store, tier_preset=tier_preset)
+        result = await _run_pro_debate(
+            session_id,
+            idea,
+            result,
+            store,
+            tier_preset=tier_preset,
+            calibration_block=calibration_block,
+        )
+
+    # Stamp the corpus identifier on the result regardless of tier — the
+    # footer surfaces it so basic-tier callers can also see they ran
+    # calibrated. The Block itself only matters for pro-tier (where the
+    # 5-voice debate consumes it); on basic-tier the value is informational.
+    if calibration_corpus_id is not None:
+        result = result.model_copy(update={"calibration_corpus": calibration_corpus_id})
 
     # S20-VERDICT-URL-IMPL-01 — stamp the deterministic verdict_hash AFTER
     # both ``provider_mix_flag`` and the pro debate (whose finaliser already
@@ -361,6 +421,7 @@ async def _run_pro_debate(
     store: SessionStore,
     *,
     tier_preset: str | None = None,
+    calibration_block: str | None = None,
 ) -> ResearchResult:
     """Run the 5-agent pro debate and merge its transcript into the result.
 
@@ -522,6 +583,10 @@ async def _run_pro_debate(
             # critic gets the distribution/GTM fragment when the idea + ICP
             # trip the B2B / 2-sided heuristic detector.
             icp=base_result.business_plan.icp,
+            # S21-CALIBRATION-01 — when the run is calibrated (e.g. against
+            # the Colosseum-judges corpus), prepend the named-judge lens to
+            # every agent's system message.
+            calibration_block=calibration_block,
         )
     except ImportError as exc:
         logger.warning("AG2 not installed; pro tier degraded to basic: %s", exc)
@@ -573,6 +638,63 @@ async def _run_pro_debate(
 
     provider_mix_flag = audit_provider_mix(final_citations)
 
+    # S21-CALIBRATION-CLASSIFY-01 — sentinel extraction from the judge's
+    # prose. No new LLM call: the judge prompt instructs the agent to
+    # emit `idea_classification: <label>` as the FIRST line of its
+    # output under any calibration regime, so we regex it the same way
+    # we extract gap_classification / INCOHERENT_PREMISE. Returns None
+    # when the sentinel is absent (legacy v5.5 transcripts, mock-mode
+    # runs that bypass the judge agent, or judge prose drift).
+    from gecko_core.orchestration.pro.coherence import (
+        extract_founder_posture,
+        extract_idea_classification,
+    )
+
+    idea_classification = extract_idea_classification(transcript.turns)
+    # S21-CALIBRATION-FOUNDER-POSTURE-01 — sibling sentinel for the
+    # founder lens. Same regex contract; the post-processor classification
+    # batch refines both fields when the judge drops the sentinels under
+    # prompt-load drift.
+    founder_posture = extract_founder_posture(transcript.turns)
+
+    # v5.5 demo post-processors — re-read the transcript to produce the
+    # structured readouts the renderer expects. Pure post-hoc, never
+    # changes the verdict (and excluded from verdict_hash).
+    per_voice = None
+    transcript_summary_text = None
+    market_landscape = None
+    surviving_dissent = None
+    next_steps_with_falsifiers = None
+    try:
+        from gecko_core.orchestration.pro.post_processors import run_post_processors
+
+        (
+            per_voice,
+            transcript_summary_text,
+            market_landscape,
+            surviving_dissent,
+            next_steps_with_falsifiers,
+            pp_meta,
+        ) = await run_post_processors(transcript, rag_context, idea)
+        if pp_meta.get("_dropped_step_count"):
+            logger.info(
+                "post-processor coherence dropped %d next-step(s)",
+                pp_meta["_dropped_step_count"],
+            )
+        # S21-CALIBRATION-FOUNDER-POSTURE-01 — fallback fill from the
+        # post-processor JSON. Sentinel-from-transcript wins when present
+        # (deterministic + free); the post-processor only fires when the
+        # regex extraction returned None. Two independent fields so a
+        # partial fallback (one label populated, the other not) is fine.
+        pp_idea = pp_meta.get("idea_classification")
+        pp_founder = pp_meta.get("founder_posture")
+        if idea_classification is None and isinstance(pp_idea, str):
+            idea_classification = pp_idea
+        if founder_posture is None and isinstance(pp_founder, str):
+            founder_posture = pp_founder
+    except Exception as exc:  # pragma: no cover — defense in depth
+        logger.warning("v5.5 post-processors failed: %s", exc)
+
     return base_result.model_copy(
         update={
             "tier": "pro",
@@ -581,6 +703,13 @@ async def _run_pro_debate(
             "verdict": final_verdict,
             "low_grounding": low_grounding,
             "provider_mix_flag": provider_mix_flag,
+            "per_voice": per_voice,
+            "transcript_summary": transcript_summary_text,
+            "market_landscape": market_landscape,
+            "surviving_dissent": surviving_dissent,
+            "next_steps_with_falsifiers": next_steps_with_falsifiers,
+            "idea_classification": idea_classification,
+            "founder_posture": founder_posture,
         }
     )
 

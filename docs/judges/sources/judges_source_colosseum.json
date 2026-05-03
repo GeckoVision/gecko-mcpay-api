@@ -1,0 +1,349 @@
+{
+  "event": "Arena Colosseum / Colosseum Hackathon (official judge list)",
+  "source": "https://x.com/i/lists/2046474386694369490/members",
+  "total_judges": 34,
+  "generated_at": "2026-05-03",
+  "note_for_super_agent": "All 34 judges now loaded. Use 'superteam_association' or 'region_superteam' for regional filtering. Most feedback is private/platform-based. Public drops noted where found. Core criteria still apply: traction/metrics, payment proof, 1-liner clarity, demo, moat, regulatory slide.",
+  "judges": [
+    {
+      "name": "Billy | attn.markets",
+      "username": "@twentyOne2x",
+      "affiliation": "BUILDING @attndotmarkets - CREDIT LINE AGAINST ONCHAIN REVENUES @COLOSSEUM WINNER (Undefined Track) prev: Flashbots research grantee, DeFi research, HFT",
+      "region_superteam": "Global / US",
+      "superteam_association": "None",
+      "profile_summary": "Former Colosseum winner + DeFi/HFT/Flashbots background. Strong on-chain revenue & credit primitives lens. Rewards real traction and proven DeFi mechanics.",
+      "feedback_posts": [],
+      "notes": "Insider perspective as past winner."
+    },
+    {
+      "name": "Prism",
+      "username": "@xprismis",
+      "affiliation": "Head of Product & BD @AxiomExchange | Member @SuperteamDE Vibecoding shit for fun",
+      "region_superteam": "Germany / Europe",
+      "superteam_association": "SuperteamDE",
+      "profile_summary": "Product & BD focused. Values strong UX, go-to-market, and fun/vibe execution in consumer or infra apps.",
+      "feedback_posts": [],
+      "notes": "SuperteamDE regional lens."
+    },
+    {
+      "name": "Rodion",
+      "username": "@spacesymmetry",
+      "affiliation": "Privacy freak, building @loyal_hq",
+      "region_superteam": "Global",
+      "superteam_association": "None",
+      "profile_summary": "Privacy infrastructure builder. Judges heavily for data privacy, security, and technical depth.",
+      "feedback_posts": [],
+      "notes": ""
+    },
+    {
+      "name": "w.sol",
+      "username": "@wdotsol",
+      "affiliation": "A W a day keeps the L's away. Prev @DriftProtocol",
+      "region_superteam": "Global",
+      "superteam_association": "None",
+      "profile_summary": "DeFi protocol veteran (Drift). Focuses on execution velocity and real trading/derivatives experience.",
+      "feedback_posts": [],
+      "notes": ""
+    },
+    {
+      "name": "max",
+      "username": "@mxmnci",
+      "affiliation": "arena engineer @colosseum",
+      "region_superteam": "Global",
+      "superteam_association": "None (internal Colosseum)",
+      "profile_summary": "Internal Arena engineer. Extremely technical; judges for code quality, Solana-native implementation, and hackathon feasibility.",
+      "feedback_posts": [],
+      "notes": "Strong technical judge."
+    },
+    {
+      "name": "Scott Lee",
+      "username": "@scottleesol",
+      "affiliation": "Head of Korea @SolanaFnDn | Korea Lead @SuperteamKorea | Based in 🇰🇷",
+      "region_superteam": "South Korea / Asia",
+      "superteam_association": "SuperteamKorea",
+      "profile_summary": "Korea ecosystem lead. Prioritizes regional adoption, Asia-specific use cases, and strong local traction.",
+      "feedback_posts": [],
+      "notes": "SuperteamKorea judge."
+    },
+    {
+      "name": "Arif",
+      "username": "@arifkazi_",
+      "affiliation": "head of growth @reflectmoney | judge @colosseum | nCMO @solana | @superteamin | prev. @sonicSVM | attending @solanaevents miami",
+      "region_superteam": "India / Global",
+      "superteam_association": "SuperteamIN",
+      "profile_summary": "Growth & Solana official roles. Judges for scalable growth, marketing traction, and ecosystem fit.",
+      "feedback_posts": [],
+      "notes": "Explicitly listed as Colosseum judge."
+    },
+    {
+      "name": "jacob",
+      "username": "@stablecoinjesus",
+      "affiliation": "creative director @reflectmoney",
+      "region_superteam": "India / Global",
+      "superteam_association": "None (with Arif)",
+      "profile_summary": "Creative/brand focus at ReflectMoney. Values consumer appeal, virality, and strong branding.",
+      "feedback_posts": [],
+      "notes": ""
+    },
+    {
+      "name": "Josip Volarević",
+      "username": "@JosipVolarevic2",
+      "affiliation": "Technical founder | @SuperteamBln consultant | Backed by Alliance | I've helped founders raise over $7M.",
+      "region_superteam": "Balkans / Europe",
+      "superteam_association": "SuperteamBln",
+      "profile_summary": "Fundraising + technical founder. Strong on capital-raising potential and founder execution.",
+      "feedback_posts": [],
+      "notes": "SuperteamBalkans."
+    },
+    {
+      "name": "Anh Tran",
+      "username": "@SaigonButcher",
+      "affiliation": "Helping Superteam founders succeed & growing the Solana ecosystem | @SuperteamBlack | superteamb lack.com",
+      "region_superteam": "Global / Black",
+      "superteam_association": "SuperteamBlack",
+      "profile_summary": "Superteam operator. Emphasizes builder success, community, and ecosystem growth.",
+      "feedback_posts": [],
+      "notes": ""
+    },
+    {
+      "name": "Infra | Raydium",
+      "username": "@0xINFRA",
+      "affiliation": "building @raydium",
+      "region_superteam": "Global",
+      "superteam_association": "None",
+      "profile_summary": "Raydium core team. DeFi/DEX expert — judges liquidity, trading primitives, and on-chain mechanics.",
+      "feedback_posts": [],
+      "notes": "DeFi infra heavyweight."
+    },
+    {
+      "name": "LTR",
+      "username": "@maybeltr",
+      "affiliation": "Professionally Curious Dog | Soli Deo Gloria | Investing @KosmosVC | Prev: @DelphiDigital",
+      "region_superteam": "Global",
+      "superteam_association": "None",
+      "profile_summary": "VC (KosmosVC, ex-Delphi). Investment lens — strong on token economics, category leadership, and upside.",
+      "feedback_posts": [],
+      "notes": ""
+    },
+    {
+      "name": "shek",
+      "username": "@shek_dev",
+      "affiliation": "Helping Solana Founders win @SuperteamBlack | Angel (Energy: @DeCharge, Privacy: @encipherio, AI Wisdom: @chompdotfy) | Dist Systems | Prev Founder @gumisfunn",
+      "region_superteam": "Global / Black",
+      "superteam_association": "SuperteamBlack",
+      "profile_summary": "Angel + dist systems expert. Values technical depth, privacy, AI, and real founder energy.",
+      "feedback_posts": [],
+      "notes": ""
+    },
+    {
+      "name": "rinko",
+      "username": "@mrinko",
+      "affiliation": "special effects @colosseum // living in the futarchy",
+      "region_superteam": "Global",
+      "superteam_association": "None (internal Colosseum)",
+      "profile_summary": "Internal Colosseum 'special effects'. Likely rewards creative, high-impact, or novel ideas.",
+      "feedback_posts": [],
+      "notes": ""
+    },
+    {
+      "name": "t◎ny p",
+      "username": "@tonyplasencia3",
+      "affiliation": "AI @moonpay | Prev. @uber @thumbtack, @griffaindotcom (acq. @moonpay)",
+      "region_superteam": "Global / US",
+      "superteam_association": "None",
+      "profile_summary": "AI + consumer product (Moonpay, Uber). Judges for practical AI integration, user adoption, and polished execution.",
+      "feedback_posts": [],
+      "notes": ""
+    },
+    {
+      "name": "Arihant",
+      "username": "@arihantbansal",
+      "affiliation": "accelerationist @arcium. alum @bitspilaniindia",
+      "region_superteam": "Global / India",
+      "superteam_association": "None",
+      "profile_summary": "Accelerationist at privacy infra (Arcium). Technical builder mindset — values speed and deep Solana integration.",
+      "feedback_posts": [],
+      "notes": ""
+    },
+    {
+      "name": "Phil Kwok | EasyA",
+      "username": "@kwok_phil",
+      "affiliation": "Co-founder @EasyA_App and @EasyA_Labs; Attorney (ex-Linklaters, Sullivan & Cromwell); Cambridge lecturer & ranked #1; OS Web3 contributor",
+      "region_superteam": "Global / UK",
+      "superteam_association": "None",
+      "profile_summary": "Legal + builder. Prioritizes compliance, clear execution, and real-world usability.",
+      "feedback_posts": [],
+      "notes": ""
+    },
+    {
+      "name": "milian",
+      "username": "@milianstx",
+      "affiliation": "Privacy GCR @Arcium",
+      "region_superteam": "Global",
+      "superteam_association": "None",
+      "profile_summary": "Privacy infrastructure expert. Judges for data privacy, security, and technical depth.",
+      "feedback_posts": [{"post_id": "2050702708378681787", "date": "2026-05-02", "summary": "Offered to review any pitch deck/blurb via DM"}],
+      "notes": "Publicly invites feedback."
+    },
+    {
+      "name": "Ram",
+      "username": "@RamXBT",
+      "affiliation": "co-founder @AviciMoney | ynwa @lfc",
+      "region_superteam": "UK",
+      "superteam_association": "None",
+      "profile_summary": "DeFi / money market builder. Focuses on product traction and real usage.",
+      "feedback_posts": [],
+      "notes": ""
+    },
+    {
+      "name": "Cap",
+      "username": "@CapinUK",
+      "affiliation": "building back britain, brick by brick with @SuperteamUK 🧱",
+      "region_superteam": "UK",
+      "superteam_association": "SuperteamUK",
+      "profile_summary": "SuperteamUK operator. Emphasizes community, execution, and UK/EU support.",
+      "feedback_posts": [{"post_id": "2049882798563954895", "date": "2026-04-30", "summary": "Thanked Colosseum builders"}, {"post_id": "2049850043440541929", "date": "2026-04-30", "summary": "Excited to roast founders"}],
+      "notes": ""
+    },
+    {
+      "name": "Adam",
+      "username": "@adamdelphantom",
+      "affiliation": "Maximizing Developer Gains @Phantom | Organizer @SteelCitySolana | Angel Investor",
+      "region_superteam": "US (Pittsburgh)",
+      "superteam_association": "None",
+      "profile_summary": "Wallet/devtools + angel. Prioritizes developer experience and investor-grade ideas.",
+      "feedback_posts": [],
+      "notes": ""
+    },
+    {
+      "name": "Harp",
+      "username": "@GarrettHarper_",
+      "affiliation": "Head of BD @SquadsLabs | prev. creator/host of @Lightspeedpodhq",
+      "region_superteam": "Global",
+      "superteam_association": "None",
+      "profile_summary": "BD & podcast background. Judges for go-to-market and partnerships.",
+      "feedback_posts": [],
+      "notes": ""
+    },
+    {
+      "name": "mattytay",
+      "username": "@mattytay",
+      "affiliation": "crypto investor @colosseum",
+      "region_superteam": "Global",
+      "superteam_association": "None",
+      "profile_summary": "Colosseum-native investor. Looks for VC-scale potential.",
+      "feedback_posts": [],
+      "notes": ""
+    },
+    {
+      "name": "Nate Levine",
+      "username": "@n8levine",
+      "affiliation": "cofounder @colosseum. prev. engineering @stripe. many strong opinions, loosely held",
+      "region_superteam": "Global",
+      "superteam_association": "None",
+      "profile_summary": "Colosseum leadership + Stripe ops. Extremely high bar on execution.",
+      "feedback_posts": [],
+      "notes": ""
+    },
+    {
+      "name": "toly 🇺🇸",
+      "username": "@toly",
+      "affiliation": "Co-Founder of Solana Labs. Award winning phone creator. NFA, don’t trust me, mostly technical gibberish. http://solanamobile.com",
+      "region_superteam": "US / Global",
+      "superteam_association": "None",
+      "profile_summary": "Solana co-founder. Deep technical + ecosystem visionary.",
+      "feedback_posts": [],
+      "notes": ""
+    },
+    {
+      "name": "Dom Kwok | EasyA",
+      "username": "@dom_kwok",
+      "affiliation": "Co-founder @EasyA_App & @EasyA_Labs; ex-Blackstone/Goldman; Wharton grad",
+      "region_superteam": "US",
+      "superteam_association": "None",
+      "profile_summary": "Finance background. Publicly vocal with encouraging pitch feedback; values clarity and energy.",
+      "feedback_posts": [{"post_id": "2050676851148767726", "date": "2026-05-02", "summary": "Absolutely amazing pitch"}, {"post_id": "2050398244166144497", "date": "2026-05-02", "summary": "Youngest pitcher changing the world"}],
+      "notes": "Most public feedback style."
+    },
+    {
+      "name": "Aditya",
+      "username": "@adityashetts",
+      "affiliation": "helping members win @superteam",
+      "region_superteam": "Global",
+      "superteam_association": "Superteam (Global)",
+      "profile_summary": "Superteam operator. Focuses on builder success and practical advice.",
+      "feedback_posts": [],
+      "notes": ""
+    },
+    {
+      "name": "Kuka",
+      "username": "@kukasolana",
+      "affiliation": "Godspeeding internet capital markets in Brazil | @SuperteamBR Lead 🇧🇷 | DeFi Maxi",
+      "region_superteam": "Brazil / LatAm",
+      "superteam_association": "SuperteamBR",
+      "profile_summary": "DeFi Maxi + SuperteamBR lead. Loves non-stop building and LatAm/DeFi adoption.",
+      "feedback_posts": [{"post_id": "2050305218143723566", "date": "2026-05-01", "summary": "Amazing! @usebido doing great non-stop building"}],
+      "notes": ""
+    },
+    {
+      "name": "clay",
+      "username": "@crabbylions",
+      "affiliation": "Co-Founder & GP @Colosseum 🏟",
+      "region_superteam": "Global",
+      "superteam_association": "None",
+      "profile_summary": "Colosseum co-founder. Deep accelerator insight.",
+      "feedback_posts": [],
+      "notes": ""
+    },
+    {
+      "name": "Stephen",
+      "username": "@meta_hess",
+      "affiliation": "founder @metaplex",
+      "region_superteam": "Global",
+      "superteam_association": "None",
+      "profile_summary": "Metaplex / NFT expert. Consumer apps + on-chain UX.",
+      "feedback_posts": [],
+      "notes": ""
+    },
+    {
+      "name": "Dan",
+      "username": "@danm_t",
+      "affiliation": "Just a builder @HeavyDutyBuild | @LaFamilia_so | Desde Maracay.",
+      "region_superteam": "Venezuela / LatAm",
+      "superteam_association": "None",
+      "profile_summary": "Hands-on LatAm builder. Values real shipping.",
+      "feedback_posts": [],
+      "notes": ""
+    },
+    {
+      "name": "Phil Jacobson",
+      "username": "@philjacobson",
+      "affiliation": "CBO @altitude",
+      "region_superteam": "Global",
+      "superteam_association": "None",
+      "profile_summary": "Infra expert. Technical robustness & scalability.",
+      "feedback_posts": [{"post_id": "2041197323506627058", "date": "2026-04-06", "summary": "Stoked to be judging the Frontier Hackathon"}],
+      "notes": ""
+    },
+    {
+      "name": "Lily Liu",
+      "username": "@calilyliu",
+      "affiliation": "president @solanafndn | board @anagramxyz @ledger @inside_r3",
+      "region_superteam": "Global",
+      "superteam_association": "None",
+      "profile_summary": "Solana Foundation President. Ecosystem impact & alignment.",
+      "feedback_posts": [{"post_id": "2043693727328165901", "date": "2026-04-13", "summary": "Congratulations to Huma (PayFi)"}],
+      "notes": ""
+    },
+    {
+      "name": "Jed",
+      "username": "@jed",
+      "affiliation": "Chief Strategy Officer @Anza_xyz. Prev GC @solanalabs, @joinrepublic.",
+      "region_superteam": "Global",
+      "superteam_association": "None",
+      "profile_summary": "Strategy/legal at Anza/Solana. Sustainable growth & regulatory clarity.",
+      "feedback_posts": [],
+      "notes": ""
+    }
+  ]
+}

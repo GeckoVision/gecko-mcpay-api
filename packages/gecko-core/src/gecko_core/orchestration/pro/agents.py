@@ -27,6 +27,7 @@ def _agent_specs(
     gap_classification: str | None = None,
     idea: str | None = None,
     icp: str | None = None,
+    calibration_block: str | None = None,
 ) -> tuple[tuple[str, str], ...]:
     """Resolve (agent_name, system_message) pairs in the canonical order.
 
@@ -48,9 +49,18 @@ def _agent_specs(
     prompts = load_prompts()
     fnp_fragment = feature_not_product_fragment_for(gap_classification)
     dist_fragment = distribution_critic_fragment_for(idea or "", icp or "")
+    # S21-CALIBRATION-01 — when a calibration block is provided, prepend it
+    # to EVERY agent's system prompt so each voice debates with the named-
+    # judge lens in scope. Prepend (not append) so the calibration is the
+    # first thing the model reads — the per-agent role + decision pipeline
+    # follows. The block is small (42 chunks ~3k tokens) so this fits well
+    # under the per-agent context budget.
+    cal_prefix = calibration_block.strip() if calibration_block else None
     out: list[tuple[str, str]] = []
     for name in REQUIRED_AGENTS:
         sys_msg = prompts[name]
+        if cal_prefix:
+            sys_msg = f"{cal_prefix}\n\n{sys_msg}"
         if name == "critic":
             # Stable order: feature-not-product, then distribution.
             if fnp_fragment is not None:
@@ -105,6 +115,7 @@ def build_groupchat(
     gap_classification: str | None = None,
     idea: str | None = None,
     icp: str | None = None,
+    calibration_block: str | None = None,
 ) -> GroupChatManager:
     """Construct the 5-agent GroupChat for the Pro debate.
 
@@ -135,7 +146,12 @@ def build_groupchat(
     # Typed as list[Any] so mypy doesn't complain about list invariance
     # between ConversableAgent and the Agent supertype GroupChat expects.
     agents: list[Any] = []
-    for name, sys_msg in _agent_specs(gap_classification=gap_classification, idea=idea, icp=icp):
+    for name, sys_msg in _agent_specs(
+        gap_classification=gap_classification,
+        idea=idea,
+        icp=icp,
+        calibration_block=calibration_block,
+    ):
         if name in m_matrix or name in t_matrix:
             agent_cfg = _override_agent_cfg(
                 llm_config,

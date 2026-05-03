@@ -5,7 +5,7 @@
 
 ---
 
-> **Wedge (S18):** Gecko produces grounded, adversarial verdicts on pre-ideas — a judgment you can buy, sell, or stake on.
+> **Positioning:** Gecko gives crypto builders a deep, multi-voice verdict on their idea — with the dissent and falsifiers attached — so they know what to do next. Complementary to frames.ag (settlement) and Bazaar (marketplace).
 
 ---
 

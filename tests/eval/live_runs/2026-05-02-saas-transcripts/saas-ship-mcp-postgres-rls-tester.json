@@ -1,0 +1,48 @@
+{
+  "idea_id": "saas-ship-mcp-postgres-rls-tester",
+  "idea_text": "MCP server that fuzzes Postgres Row-Level-Security policies: Claude asks 'can role X read rows for tenant Y?' and the server proves or breaks the policy.",
+  "judge_prose": "V1_FEASIBLE_IN_4_DAYS: yes\n\nThe MVP for the MCP server that fuzzes Postgres Row-Level-Security (RLS) policies is feasible within 4 days. The core functionality involves generating fuzzing queries to test RLS rules against specified roles, which can be implemented using a lightweight framework like Flask or Express. A simple web interface will allow users to input their RLS policies and roles, with the backend handling the fuzzing logic and database connections. Predefined RLS policies will be used for testing and validation, ensuring the tool's effectiveness without exposing sensitive data. Security measures will be in place to prevent data exposure during testing. This focused approach allows us to deliver a functional MVP that meets the immediate needs of our target users.",
+  "parsed_verdict": "unknown",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 4.5,
+    "source_grounding": 5.5,
+    "verdict_justification": 5.0,
+    "cost_predictability": 4.0,
+    "verdict_correctness": 0.0
+  },
+  "expected_verdict": "ship",
+  "expected_verdict_v2": "BUILD",
+  "actual_verdict": "unknown",
+  "actual_verdict_v2": "UNKNOWN",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM**: ~15,000 organizations using Supabase or Postgres with RLS, indicating a reachable TAM in year 1. Each organization could potentially pay $1,000-$5,000 annually for a robust security auditing tool, leading to a TAM of $15M-$75M (source: Supabase 2024 customer count).\n\n- **Comparable**: No recent shipped comparable exists for a dedicated RLS fuzzing tool. The closest is a narrow dev-test MCP server exposing Postgres-specific behavior, which is still in the unknown category and lacks market validation.\n\n- **Current Spend**: Organizations currently rely on manual testing for RLS, which is labor-intensive and error-prone. This creates a significant opportunity cost, as teams spend hours on manual audits instead of focusing on development. \n\n- **Counterfactual**: If this tool is not shipped, organizations will continue to face RLS misconfigurations, leading to potential data leaks. The industry signal from Supabase's retrospective highlights the urgency, as RLS bugs are the top cause of cross-tenant data leaks (source: Supabase incident retrospective 2024).\n\n- **Demand Signal**: Explicit requests from SaaS founders on twit.sh for a tool that \"Claude-fuzzes-my-RLS\" indicate a clear demand from the target audience, reinforcing the need for such a solution (source: twit_sh 2025).",
+      "tokens_in": 815,
+      "tokens_out": 288
+    },
+    "critic": {
+      "text": "**Analyst:**\nThe idea of creating an MCP server that fuzzes Postgres Row-Level-Security (RLS) policies addresses a critical need in the multi-tenant SaaS space, particularly given the high stakes of data leaks due to RLS misconfigurations. The demand signals from SaaS founders on Twitter indicate a clear interest in such a tool, and the lack of existing solutions in the market further emphasizes the opportunity. The context provided by Supabase's incident retrospective reinforces the urgency of this problem, as RLS bugs are a significant risk for organizations.\n\n**Critic:**\n1. **Legal and Compliance Risks:** If the tool inadvertently exposes sensitive data during its fuzzing process, it could put the founder in legal jeopardy, especially if it is used in a production environment without proper safeguards. This could lead to violations of data protection regulations (e.g., GDPR, CCPA) if personal data is mishandled.\n\n2. **Market Demand Validation:** While there are signals of interest from specific founders, there is no concrete evidence of a commitment to pay within 30 days. The demand from Twitter handles is anecdotal and does not constitute a binding commitment. A named user or company that would pay for this service is necessary to validate the market demand.\n\n3. **Technical Feasibility:** The complexity of accurately fuzzing RLS policies in a way that is both effective and safe is non-trivial. There is a risk that the tool may not perform as expected, leading to false positives or negatives in security assessments, which could undermine trust in the product.\n\nChange my mind by: Providing a signed letter of intent from a specific company (e.g., a SaaS company) that commits to purchasing the service within 30 days of launch.",
+      "tokens_in": 815,
+      "tokens_out": 355
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1242,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "**Architect:**\nTo build the MCP server that fuzzes Postgres Row-Level-Security (RLS) policies effectively within the 4-day timeframe, we need to focus on a minimal viable product (MVP) that addresses the core functionality required by our target user segment. Here's a proposed architecture:\n\n1. **Core Functionality**: The MVP should allow users to input their RLS policies and specify a role. The server will then generate a set of fuzzing queries to test the RLS rules against the specified role, returning whether the role can access the data or not.\n\n2. **User Interface**: A simple web interface where users can input their RLS policies and roles. The output should clearly indicate whether access is granted or denied, along with a brief explanation of the fuzzing process.\n\n3. **Backend Logic**: \n   - Use a lightweight framework (e.g., Flask or Express) to handle incoming requests.\n   - Implement the fuzzing logic to generate queries based on common RLS patterns and edge cases.\n   - Ensure that the server can connect to a Postgres database to execute the generated queries safely.\n\n4. **Testing and Validation**: Include a set of predefined RLS policies to demonstrate the tool's functionality during the demo. This will help validate the effectiveness of the fuzzing process without requiring users to input their own sensitive data.\n\n5. **Security Measures**: Implement safeguards to ensure that the tool does not expose sensitive data during testing. This includes running the tool in a controlled environment and ensuring that any data used for testing is anonymized.\n\nBy focusing on these key components, we can deliver a functional MVP that addresses the immediate needs of our target users while laying the groundwork for future iterations and enhancements.\n\nNow, let's define the acceptance criteria for V1.",
+      "tokens_in": 1391,
+      "tokens_out": 363
+    },
+    "judge": {
+      "text": "V1_FEASIBLE_IN_4_DAYS: yes\n\nThe MVP for the MCP server that fuzzes Postgres Row-Level-Security (RLS) policies is feasible within 4 days. The core functionality involves generating fuzzing queries to test RLS rules against specified roles, which can be implemented using a lightweight framework like Flask or Express. A simple web interface will allow users to input their RLS policies and roles, with the backend handling the fuzzing logic and database connections. Predefined RLS policies will be used for testing and validation, ensuring the tool's effectiveness without exposing sensitive data. Security measures will be in place to prevent data exposure during testing. This focused approach allows us to deliver a functional MVP that meets the immediate needs of our target users.",
+      "tokens_in": 2902,
+      "tokens_out": 154
+    }
+  }
+}

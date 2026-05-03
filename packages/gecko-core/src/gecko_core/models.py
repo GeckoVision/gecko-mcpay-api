@@ -224,6 +224,57 @@ Values:
 """
 
 
+IdeaClassification = Literal["greenfield", "iterative", "unclear"]
+"""S21-CALIBRATION-CLASSIFY-01 — first-pass classifier emitted by the
+judge agent under the ``--calibration colosseum`` regime.
+
+Values:
+  - ``greenfield``: a new product category with no incumbent. Evidence
+    requirement is experimental rigor + willingness to be wrong + a
+    novel mechanism.
+  - ``iterative``: an improvement to an existing category. Evidence
+    requirement is organic users, real feedback loops, category-specific
+    PMF metrics, and the absence of airdrop-farmer dependency.
+  - ``unclear``: classification is genuinely ambiguous (rare; the judge
+    is instructed to attempt a call before falling back).
+
+Distilled from the public-feedback corpus (``docs/judges/sources/``) into
+the calibration block — the framework attribution is in the corpus, not
+in the verdict surface. Excluded from ``verdict_hash._verdict_payload``
+because calibration prompts influence prose tone, not structural
+verdict shape; reruns under the same retrieval must reproduce the
+digest regardless of which classifier label the judge emitted.
+"""
+
+
+FounderPosture = Literal["high", "moderate", "unclear"]
+"""S21-CALIBRATION-FOUNDER-POSTURE-01 — parallel founder-lens classifier
+emitted by the post-processor batch under the calibration regime.
+
+Where ``IdeaClassification`` evaluates the IDEA (greenfield vs iterative
++ evidence demand), ``FounderPosture`` evaluates the FOUNDER's surfaced
+force-of-will: contrarian thinking, willingness to be wrong, evidence of
+shipping, openness to public pushback. Distilled from the second
+calibration corpus (web3 accelerators / Alliance DAO public threads) into
+the calibration block — same anti-naming rule: the framework attribution
+stays in the corpus, never in the voice output.
+
+Values:
+  - ``high``: the idea text or surfaced founder context shows contrarian
+    framing, prior shipping evidence, public solicitation of pushback,
+    or named time-to-pay urgency. Strong signal regardless of idea polish.
+  - ``moderate``: some founder signal is present but mixed (e.g. shipping
+    history without contrarian framing, or contrarian framing without
+    evidence of follow-through).
+  - ``unclear``: no founder context surfaced (the modal case for an idea
+    submitted as a single sentence). The Critic flags the gap rather than
+    inferring posture from the idea polish alone.
+
+Excluded from ``verdict_hash._verdict_payload`` for the same reason as
+``idea_classification`` — calibration tilt must not flap the digest.
+"""
+
+
 ProviderMixFlag = Literal[
     "balanced",
     "single_provider_dominates",
@@ -453,6 +504,143 @@ class PRD(BaseModel):
     success_metrics: list[str]
     citations: list[Citation]
 
+    @field_validator(
+        "v1_scope",
+        "v2_scope",
+        "v3_scope",
+        "acceptance_criteria",
+        "non_functional",
+        "success_metrics",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_str_to_list(cls, v: object) -> object:
+        if isinstance(v, str):
+            return [v] if v.strip() else []
+        return v
+
+
+# ---------------------------------------------------------------------------
+# v5.5 demo post-processor readouts (S20-DEMO-OUTPUT-01).
+#
+# Canonical VoiceName / VoiceStatus / DissentStatus Literals live in
+# ``gecko_core.orchestration.pro.voices`` per CLAUDE.md Pattern A.
+# These fields are POST-HOC readouts: they describe the debate, they don't
+# change the verdict. They are deliberately excluded from
+# ``verdict_hash._verdict_payload``.
+# ---------------------------------------------------------------------------
+
+from gecko_core.voices import (  # noqa: E402
+    DissentStatus,
+    VoiceName,
+    VoiceStatus,
+)
+
+
+class VoicePosition(BaseModel):
+    name: VoiceName
+    position: str | None
+    tension: str | None
+    recommendation: str | None
+    status: VoiceStatus
+
+
+class PerVoiceReadout(BaseModel):
+    voices: list[VoicePosition]
+
+
+CompetitorFlag = Literal["cannot_articulate_difference"]
+LandscapeSectionFlag = Literal["insufficient_competitors_in_chunks"]
+
+# v5.5 — closed list of differentiator axes the market_landscape post-
+# processor picks from. Decoupled from `why_we_are_not_them` (sentence)
+# so the model cannot collapse the prose field into the bare axis name
+# (the bug fixed in the 2026-05-02 dogfood smokes). The renderer only
+# surfaces the sentence in V1; `axis` stays for analytics.
+CompetitorAxis = Literal[
+    "verdict_shape",
+    "debate_vs_single_voice",
+    "judge_attribution",
+    "falsifier_layer",
+    "settlement_layer",
+    "contributor_reputation",
+    "provider_mix",
+    "surviving_dissent",
+]
+
+
+class Competitor(BaseModel):
+    name: str
+    what_they_do: str
+    axis: CompetitorAxis | None = None
+    why_we_are_not_them: str | None = None
+    flag: CompetitorFlag | None = None
+
+
+class MarketLandscape(BaseModel):
+    competitors: list[Competitor]
+    section_flag: LandscapeSectionFlag | None = None
+
+
+class Dissent(BaseModel):
+    voice: VoiceName
+    verbatim: str
+    on_topic: str
+
+
+class SurvivingDissent(BaseModel):
+    dissent_status: DissentStatus
+    dissents: list[Dissent] = Field(default_factory=list)
+    rationale: str = ""
+
+
+class Falsifier(BaseModel):
+    what_would_disprove_this: str
+    by_when: str
+
+
+class NextStep(BaseModel):
+    action: str
+    surfaced_by_voice: VoiceName
+    falsifier: Falsifier
+
+
+class NextStepsWithFalsifiers(BaseModel):
+    steps: list[NextStep] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# v5.5 `bb refine <hash>` output (S20-REFINE-IDEA-01).
+#
+# Produced by the `refine_idea` prompt in `_default_prompts_v5_5.json`. NOT
+# part of the verdict — refinement is a post-hoc editorial pass on a saved
+# verdict. Excluded from `verdict_hash._verdict_payload` for the same reason
+# the post-processor readouts are: refining the prose does not change what
+# the verdict said.
+#
+# `confidence` is bucketed (sharper / narrower / pivoted) per CLAUDE.md
+# conventions ("bucketed reputation/score bands, never raw floats public"):
+# even though this is not a public score, the same discipline of named
+# buckets > raw scalars makes the field meaningful at a glance.
+# ---------------------------------------------------------------------------
+
+RefinementConfidence = Literal["sharper", "narrower", "pivoted"]
+
+
+class DissentResolution(BaseModel):
+    dissent_quote: str
+    voice: VoiceName
+    resolution: str
+
+
+class RefinedIdea(BaseModel):
+    refined_statement: str
+    addresses_dissent: list[DissentResolution] = Field(default_factory=list)
+    new_falsifiers_now_harder: list[str] = Field(default_factory=list)
+    what_it_no_longer_claims: list[str] = Field(default_factory=list)
+    what_it_now_claims_instead: list[str] = Field(default_factory=list)
+    confidence: RefinementConfidence
+
 
 class ResearchResult(BaseModel):
     """Result of a full `research()` workflow."""
@@ -500,6 +688,43 @@ class ResearchResult(BaseModel):
     # persisted ``judge_transcripts`` row. Optional/None for legacy callers
     # and for results built by hand in tests; the workflow always stamps it.
     verdict_hash: str | None = None
+    # v5.5 demo post-processor readouts — pro tier only, populated AFTER
+    # verdict synthesis. Excluded from verdict_hash inputs so prompt drift
+    # in these prose surfaces doesn't flap the hash.
+    per_voice: PerVoiceReadout | None = None
+    transcript_summary: str | None = None
+    market_landscape: MarketLandscape | None = None
+    surviving_dissent: SurvivingDissent | None = None
+    next_steps_with_falsifiers: NextStepsWithFalsifiers | None = None
+    # S21-CALIBRATION-01 — opaque corpus identifier when the run was
+    # calibrated against an external judge corpus (e.g.
+    # ``"colosseum:34_judges:2026-05-03"``). Informational only —
+    # excluded from verdict-hash inputs because calibration prompts
+    # influence prose tone, not the structural verdict shape.
+    calibration_corpus: str | None = None
+    # S21-CALIBRATION-CLASSIFY-01 — judge's first-pass framing of the
+    # idea (greenfield / iterative / unclear) emitted under the
+    # ``--calibration colosseum`` regime. ``None`` when the run did not
+    # use a calibration corpus that requests classification, or when
+    # the judge prose did not include the sentinel line. Excluded from
+    # verdict-hash inputs (see ``verdict_hash._verdict_payload``) so
+    # the calibration tilt does not flap the digest.
+    idea_classification: IdeaClassification | None = None
+    # S21-CALIBRATION-FOUNDER-POSTURE-01 — parallel founder-lens classifier
+    # produced by the v5.5.2 post-processor batch (the regex sentinel is
+    # extracted first; the post-processor JSON call fills in when the
+    # judge prose drops it). ``None`` when the run did not use a calibration
+    # regime that requests founder evaluation, when no founder signal was
+    # present in the idea text (modal case → "unclear" still gets stamped
+    # if the post-processor saw the transcript at all; ``None`` only when
+    # the post-processor itself failed). Excluded from verdict-hash inputs
+    # — see the FounderPosture docstring above.
+    founder_posture: FounderPosture | None = None
+    # S21-REFINE-01 — populated by ``bb refine <hash>`` when the founder
+    # post-hoc refines this verdict's idea. One slot for V1.5
+    # (multiple refinements over time = V2). Excluded from verdict-hash
+    # inputs for the same reason as the post-processor readouts.
+    refinement: RefinedIdea | None = None
 
 
 class AskResult(BaseModel):

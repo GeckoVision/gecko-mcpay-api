@@ -140,9 +140,12 @@ def classify_exception(exc: BaseException) -> ErrorKind:
         return "embedding_null"
 
     # --- Vector dim drift (FM-2) ----------------------------------------
-    if "expected 1536 dimensions" in msg or ("dimension" in msg and "vector" in msg):
+    # Pattern matches any N so the check stays valid across provider switches.
+    import re as _re
+
+    if _re.search(r"expected \d+ dimensions", msg) or ("dimension" in msg and "vector" in msg):
         return "dim_mismatch"
-    if "vector(1536)" in msg and ("mismatch" in msg or "expected" in msg):
+    if _re.search(r"vector\(\d+\)", msg) and ("mismatch" in msg or "expected" in msg):
         return "dim_mismatch"
 
     # --- TOAST / payload-size limit -------------------------------------

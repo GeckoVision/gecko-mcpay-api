@@ -6,10 +6,9 @@
 [![x402](https://img.shields.io/badge/x402-stub%20%7C%20live%20%7C%20cdp-9945FF.svg)](https://x402.org/)
 [![Sprint 14](https://img.shields.io/badge/sprint-14%20in%20flight-success.svg)](docs/build-plan-sprint-14.md)
 
-> **The budget approver above x402.** Adversarial validation as a pre-spend gate.
-> Before an agent (or a founder) commits real money to building, Gecko returns a
-> signed verdict — **KILL / REFINE / BUILD** — backed by a five-voice advisor
-> debate, cited sources, and an on-chain receipt.
+> Gecko gives crypto builders a deep, multi-voice verdict on their idea — with
+> the dissent and falsifiers attached — so they know what to do next.
+> Complementary to frames.ag (settlement) and Bazaar (marketplace).
 
 This repository is the **Python backend**: `uv` workspace housing the SDK, the
 FastAPI service, the MCP server, and the `bb` / `gecko` CLI. The Next.js app

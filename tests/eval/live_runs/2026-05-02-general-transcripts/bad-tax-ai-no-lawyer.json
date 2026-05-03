@@ -1,0 +1,48 @@
+{
+  "idea_id": "bad-tax-ai-no-lawyer",
+  "idea_text": "TaxAI: a chatbot that answers individual US tax questions and files your 1040 \u2014 no human CPA in the loop.",
+  "judge_prose": "**TAM**: 1\n**WEDGE**: 2\n**V1_FEASIBILITY**: 3\n\nVerdict: KILL \u2014 The idea of TaxAI as a chatbot that answers individual US tax questions and files 1040s without a human CPA in the loop is not viable due to regulatory constraints. IRS regulations require a credentialed preparer to sign federal returns, and there is significant legal risk and liability without proper credentials. The lack of E&O insurance for an AI-only tax preparer further underscores the unfeasibility of this model.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+  "parsed_verdict": "kill",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 4.5,
+    "source_grounding": 6.5,
+    "verdict_justification": 5.0,
+    "cost_predictability": 3.5,
+    "verdict_correctness": 10.0
+  },
+  "expected_verdict": "kill",
+  "expected_verdict_v2": "KILL",
+  "actual_verdict": "kill",
+  "actual_verdict_v2": "PIVOT",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM**: The reachable TAM is effectively zero for a tax chatbot that files 1040s without a credentialed human, due to IRS regulations requiring a licensed preparer to sign federal returns (IRS Pub 947). This regulatory barrier indicates a saturated market with no viable entry point for an AI-only solution.\n\n- **Comparable**: DoNotPay's legal services product faced significant scrutiny and was paused due to unauthorized practice of law issues, paralleling the credentialing requirements in tax preparation. This indicates a high risk of regulatory pushback for any similar AI-driven tax filing service.\n\n- **Counterfactual**: If TaxAI does not ship, the user segment will continue to rely on existing solutions like TurboTax or human CPAs, which are already established and compliant with regulatory requirements. This suggests no significant disruption or demand for an uncredentialed AI solution.\n\n- **Precedent Verdict**: Gecko's prior evaluation of a consumer regulated-advice chatbot without a human in the loop resulted in a kill signal, indicating that similar ideas have been deemed unviable due to regulatory constraints.\n\n- **Market Signals**: Intuit's settlement over TurboTax's 'free file' case highlights the legal risks associated with providing tax advice without proper credentials, reinforcing the challenges TaxAI would face in the current regulatory landscape. \n\n- **Insurance Barrier**: No E&O insurance carrier is willing to underwrite an AI-only tax preparer as of 2025, indicating the perceived risk and lack of market confidence in such a model.",
+      "tokens_in": 805,
+      "tokens_out": 310
+    },
+    "critic": {
+      "text": "**Critic:**\n\n1. **Legal Jeopardy**: TaxAI operates in a heavily regulated space where the IRS mandates that only credentialed professionals (CPAs, EAs, or attorneys) can prepare and file tax returns. Launching a chatbot that files 1040s without a licensed preparer puts the founder at significant legal risk, potentially leading to hefty fines and penalties. This is a clear kill risk.\n\n2. **Liability and Insurance**: The fact that no E&O insurance carrier will underwrite an AI-only tax preparer indicates a fundamental flaw in the business model. Without insurance, the founder is exposed to unlimited liability for any errors made by the chatbot, which could lead to financial ruin. This is another kill risk.\n\n3. **Precedent of Regulatory Scrutiny**: The comparison to DoNotPay's legal services product, which was paused due to unauthorized practice of law concerns, highlights a clear precedent. Tax preparation is similarly regulated, and the scrutiny from state bars and regulatory bodies will likely extend to TaxAI. This is a strong kill risk.\n\nChange my mind by: providing a legal opinion from a tax attorney stating that TaxAI can operate without violating IRS regulations.",
+      "tokens_in": 805,
+      "tokens_out": 244
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1143,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "**Architect:**\n\n1. **Regulatory Compliance**: The fundamental challenge for TaxAI is navigating the regulatory landscape. Any viable version of this product must include a mechanism for ensuring compliance with IRS regulations, which currently require a licensed preparer to sign off on tax returns. This could involve integrating a credentialed professional into the workflow, which complicates the product's design and functionality.\n\n2. **User Experience**: If we were to pivot this idea, we could consider a version of TaxAI that acts as a tax assistant rather than a preparer. This could involve providing users with information, guidance, and reminders about tax deadlines and requirements while still directing them to a licensed professional for filing. This would ensure compliance while still offering value to users.\n\n3. **Technology Stack**: The technology stack would need to support a robust knowledge base of tax regulations, user interaction through a chatbot interface, and potentially a referral system to licensed preparers. This would require significant development time and resources, which may not fit within the 4-day constraint.\n\n4. **Market Validation**: Before any development, it would be prudent to conduct market research to validate whether users would be willing to pay for a service that does not file their taxes but provides guidance. This could help in understanding the actual demand and shaping the product accordingly.\n\nIn summary, while there may be a potential pivot for TaxAI, the current concept as it stands is not feasible due to regulatory constraints and the need for a licensed professional in the loop.",
+      "tokens_in": 1292,
+      "tokens_out": 303
+    },
+    "judge": {
+      "text": "**TAM**: 1\n**WEDGE**: 2\n**V1_FEASIBILITY**: 3\n\nVerdict: KILL \u2014 The idea of TaxAI as a chatbot that answers individual US tax questions and files 1040s without a human CPA in the loop is not viable due to regulatory constraints. IRS regulations require a credentialed preparer to sign federal returns, and there is significant legal risk and liability without proper credentials. The lack of E&O insurance for an AI-only tax preparer further underscores the unfeasibility of this model.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+      "tokens_in": 2743,
+      "tokens_out": 129
+    }
+  }
+}

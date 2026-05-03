@@ -1,0 +1,48 @@
+{
+  "idea_id": "bad-ai-resume-builder",
+  "idea_text": "AI resume builder: paste your LinkedIn, get a polished PDF. $19/mo.",
+  "judge_prose": "TAM: 3\nWEDGE: 3\nV1_FEASIBILITY: 3\n\nVerdict: KILL \u2014 Generic GPT-wrapper on saturated commodity vertical with no named ICP + named payment moment. The market is saturated with established competitors, and free alternatives like ChatGPT offer similar functionality, making it difficult to justify a $19/month subscription for individual job seekers.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+  "parsed_verdict": "kill",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 5.5,
+    "source_grounding": 6.0,
+    "verdict_justification": 6.5,
+    "cost_predictability": 4.0,
+    "verdict_correctness": 10.0
+  },
+  "expected_verdict": "kill",
+  "expected_verdict_v2": "KILL",
+  "actual_verdict": "kill",
+  "actual_verdict_v2": "PIVOT",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM**: The reachable TAM for an AI resume builder targeting individual job seekers is limited. Competitors like Teal (2M users) and others have established a saturated market with similar offerings. The one-time-use SaaS pattern indicates a high churn rate, with median customers leaving within 60 days post-job acquisition (ProfitWell SaaS Benchmarks 2024). \n\n- **Comparable**: Enhancv, a similar product, reached ~$8M ARR before plateauing, indicating a ceiling for individual-buyer resume products. This suggests that while there is initial interest, long-term growth may be constrained (source: G2 Resume Builders category page 2025).\n\n- **Counterfactual**: If this product does not ship, users will likely continue using free alternatives like ChatGPT, which can generate resumes in a single prompt, or established competitors that already dominate the market. This indicates a lack of urgency or necessity for a new entry.\n\n- **Customer Payment**: Current competitors charge between $10-$30 for similar services, with users often opting for one-time purchases rather than subscriptions. This pricing model further complicates the viability of a $19/month subscription.\n\n- **Precedent Verdict**: Gecko's prior evaluation of a similar one-shot career-document SaaS subscription resulted in a kill signal, indicating that the market for subscription-based resume builders targeting individual buyers is not favorable.",
+      "tokens_in": 768,
+      "tokens_out": 283
+    },
+    "critic": {
+      "text": "**Risks:**\n\n1. **Market Saturation**: The resume builder space is overcrowded with established players like Teal, Rezi, and Zety, all of whom have already captured significant market share. The presence of these competitors means that differentiating your product will be extremely challenging, leading to a high likelihood of customer acquisition costs that exceed lifetime value.\n\n2. **Churn Rate**: The one-time-use SaaS pattern indicates that customers typically churn within 60 days after securing a job. This means that even if you manage to acquire users, they are unlikely to stick around long enough to justify a $19/month subscription. The business model is fundamentally flawed if the primary value is realized in a one-off transaction.\n\n3. **Free Alternatives**: With tools like ChatGPT providing similar functionality for free, the value proposition of a paid service becomes questionable. Users are unlikely to pay for a service that can be replicated with a simple prompt, especially when they can access free resources that meet their needs.\n\nChange my mind by: Providing a specific user (company, role, persona, or builder handle) who would pay for this service within 30 days of V1 launch.",
+      "tokens_in": 768,
+      "tokens_out": 240
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1075,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "**V1: AI Resume Builder for Job Seekers**\n\n- **Target User Segment**: Individual job seekers looking to enhance their resumes.\n- **Payment Moment**: Users will pay $19 for a polished PDF resume generated from their LinkedIn profile.\n\n**Acceptance Criteria**:\n1. Users can paste their LinkedIn profile URL and receive a polished PDF resume within 5 minutes.\n2. Users can customize at least 3 sections of their resume (e.g., summary, experience, skills) before generating the PDF.\n3. Users receive an email confirmation with a download link for their PDF resume immediately after generation.\n4. Users can share their generated resume via a unique link for feedback from peers or mentors.\n5. Users can access a simple tutorial or guide on how to optimize their LinkedIn profile for better resume output.\n\nV1_FEASIBLE_IN_4_DAYS: no",
+      "tokens_in": 1224,
+      "tokens_out": 178
+    },
+    "judge": {
+      "text": "TAM: 3\nWEDGE: 3\nV1_FEASIBILITY: 3\n\nVerdict: KILL \u2014 Generic GPT-wrapper on saturated commodity vertical with no named ICP + named payment moment. The market is saturated with established competitors, and free alternatives like ChatGPT offer similar functionality, making it difficult to justify a $19/month subscription for individual job seekers.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+      "tokens_in": 2550,
+      "tokens_out": 88
+    }
+  }
+}

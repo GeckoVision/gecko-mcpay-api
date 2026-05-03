@@ -45,6 +45,7 @@ ProviderKind = Literal[
     "hn",
     "reddit",
     "gecko_precedent",
+    "judge_corpus",
 ]
 """Static type alias for the ``chunks.provider_kind`` /
 ``sources.provider_kind`` column. Every consumer imports from here."""

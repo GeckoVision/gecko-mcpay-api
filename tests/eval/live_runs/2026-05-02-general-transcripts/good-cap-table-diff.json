@@ -1,0 +1,48 @@
+{
+  "idea_id": "good-cap-table-diff",
+  "idea_text": "Carta-aware cap table diff tool: paste two SAFE term sheets, get a side-by-side dilution model with the founder/investor view toggleable.",
+  "judge_prose": "TAM: 4\nWEDGE: 7\nV1_FEASIBILITY: 7\n\nVerdict: SHIP V1 to founders actively fundraising. The tool addresses a specific pain point in comparing SAFE term sheets, with a clear payment moment when founders are evaluating investment terms. The community demand and the gap in Carta's current offerings suggest a viable niche, despite the modest initial TAM estimate.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+  "parsed_verdict": "ship",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 5.5,
+    "source_grounding": 4.5,
+    "verdict_justification": 6.5,
+    "cost_predictability": 4.0,
+    "verdict_correctness": 10.0
+  },
+  "expected_verdict": "ship",
+  "expected_verdict_v2": "REFINE",
+  "actual_verdict": "ship",
+  "actual_verdict_v2": "REFINE",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM Calculation**: With ~40k cap tables hosted on Carta and a significant pain point identified in the dilution math for SAFE term sheets, the reachable TAM in year 1 could be estimated at ~10% adoption, equating to 4,000 potential users. If each user pays ~$1,000 annually for the tool, that results in a reachable TAM of ~$4M. This is a conservative estimate based on the existing user base and the identified need (source: Carta product gaps survey 2024).\n\n- **Comparable Analysis**: Pulley, which focuses on option grants, successfully reached ~$25M ARR by providing a targeted solution that undercuts Carta. This indicates a viable market for specialized tools that address specific pain points in cap table management, suggesting that a side-by-side dilution diff tool could similarly gain traction (source: Pulley financial reports).\n\n- **Current Payment Landscape**: Founders currently rely on ad-hoc spreadsheets to compare SAFE term sheets, indicating a willingness to pay for a streamlined solution. The cost of manual calculations and potential errors in spreadsheets can lead to significant financial implications, suggesting that founders would likely pay for a tool that saves time and reduces risk (source: YC Demo Day data 2025).\n\n- **Counterfactual Impact**: If this tool is not developed, founders will continue using inefficient ad-hoc methods, leading to potential miscalculations in dilution and investment terms. This inefficiency could hinder fundraising efforts and lead to unfavorable terms, signaling a clear demand for a better solution.\n\n- **Community Demand**: The repeated mentions by influential figures like @paulg and @garrytan on Twitter about the need for a SAFE diff tool highlight a strong community demand. This indicates that there is not only a market need but also an engaged audience that is actively seeking a solution (source: twit_sh 2025-2026).",
+      "tokens_in": 826,
+      "tokens_out": 382
+    },
+    "critic": {
+      "text": "1. **Regulatory Risk**: If the tool inadvertently provides legal advice or miscalculates dilution impacts, it could expose the founder to legal liability. The tool must clearly state that it is for informational purposes only and not a substitute for professional advice. Without this clarity, it risks putting the founder in a precarious legal position.\n\n2. **Market Demand Risk**: While there are mentions of interest from notable figures like @paulg and @garrytan, there is no concrete evidence of a specific user or company that would pay for this tool within 30 days of launch. The lack of a named user willing to commit financially raises doubts about actual market demand.\n\n3. **Competition Risk**: The market for cap table management tools is competitive, with established players like Carta and emerging ones like Pulley. If the differentiation isn't strong enough, the tool may struggle to gain traction. The previous unknowns indicate that similar ideas have not successfully shipped, which raises concerns about the viability of this concept.\n\nChange my mind by: Providing a signed letter of intent from a specific startup founder (with a clear timeline) who commits to using the tool within 30 days of launch.",
+      "tokens_in": 826,
+      "tokens_out": 237
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1229,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "**V1: Side-by-Side SAFE Term Sheet Diff Tool for Founders**\n\n**Description**: Develop a web-based tool that allows founders to paste two SAFE term sheets and receive a side-by-side comparison of dilution impacts, with toggle options for founder and investor views. This tool specifically targets founders actively fundraising and looking to understand the implications of different SAFE terms.\n\n**Acceptance Criteria**:\n1. Allow users to paste two SAFE term sheets and generate a side-by-side comparison of dilution impacts within 5 seconds.\n2. Provide a toggle feature that switches between the founder view and investor view, reflecting the different dilution outcomes for each perspective.\n3. Display clear visual indicators (e.g., graphs or charts) that highlight the differences in dilution between the two term sheets.\n4. Include a \"Download Report\" button that generates a PDF summary of the comparison for users to keep or share with advisors.\n5. Ensure that the tool is accessible via a simple web interface that requires no sign-up or login to use.\n\n**V2**: Expand the tool to include support for additional user segments, such as investors who want to analyze term sheets from a funding perspective, and add collaborative features for multiple users to review and comment on the term sheets together.\n\n**V3**: Introduce integrations with existing cap table management software (e.g., Carta, Pulley) to pull in term sheets directly, enhance the tool with network effects by allowing users to share their comparisons publicly, and develop a paid tier with advanced features like historical analysis and benchmarking against industry standards.\n\nV1_FEASIBLE_IN_4_DAYS: yes",
+      "tokens_in": 1378,
+      "tokens_out": 324
+    },
+    "judge": {
+      "text": "TAM: 4\nWEDGE: 7\nV1_FEASIBILITY: 7\n\nVerdict: SHIP V1 to founders actively fundraising. The tool addresses a specific pain point in comparing SAFE term sheets, with a clear payment moment when founders are evaluating investment terms. The community demand and the gap in Carta's current offerings suggest a viable niche, despite the modest initial TAM estimate.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+      "tokens_in": 2850,
+      "tokens_out": 94
+    }
+  }
+}

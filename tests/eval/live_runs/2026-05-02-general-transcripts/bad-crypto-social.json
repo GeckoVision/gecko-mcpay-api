@@ -1,0 +1,48 @@
+{
+  "idea_id": "bad-crypto-social",
+  "idea_text": "A decentralized Twitter built on a new L1 chain, tokens reward posting and reposts.",
+  "judge_prose": "TAM: 3\nWEDGE: 2\nV1_FEASIBILITY: 7\n\nVerdict: KILL \u2014 The idea of a decentralized Twitter built on a new L1 chain with token rewards faces significant challenges. The market is saturated with established players like Farcaster and Lens Protocol, and historical precedents like Steemit and BitClout have shown that token-incentivized social platforms struggle to maintain engagement. Additionally, the sybil attack risk and the invisibility of the chain to end users further undermine the viability of this concept.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+  "parsed_verdict": "kill",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 7.5,
+    "source_grounding": 6.5,
+    "verdict_justification": 6.0,
+    "cost_predictability": 7.0,
+    "verdict_correctness": 10.0
+  },
+  "expected_verdict": "kill",
+  "expected_verdict_v2": "KILL",
+  "actual_verdict": "kill",
+  "actual_verdict_v2": "PIVOT",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM**: The reachable TAM for a decentralized Twitter on a new L1 chain is unclear; existing decentralized social platforms like Farcaster and Lens Protocol have established a first-mover advantage, making it difficult for new entrants to capture significant market share (source: a16z crypto Theses 2025). \n\n- **Recent Comparables**: Friend.tech, a token-incentivized social platform, peaked at $50M in monthly fees in August 2023 but rapidly declined to under $100k/month by mid-2024 as token incentives lost their appeal. This suggests a pattern of unsustainable engagement in token-rewarded social platforms (source: Messari).\n\n- **User Payment Dynamics**: Current users of decentralized social platforms are not paying directly; instead, they are incentivized through token rewards. However, the collapse of previous models like Steemit and BitClout indicates that users may not be willing to engage long-term without tangible benefits (source: Messari Steem postmortem).\n\n- **Counterfactual**: If this decentralized Twitter does not ship, the user segment likely continues using established platforms like Twitter or existing decentralized options without any significant shift, indicating a lack of urgent demand for this new offering.\n\n- **Gecko Precedent**: Two prior evaluations of similar concepts resulted in unknown outcomes, but previous evaluations highlighted sybil risk and the invisibility of the chain to the end user as critical issues, suggesting that these challenges remain pertinent (source: gecko_precedent). \n\n- **Market Saturation Signal**: The combination of failed token-incentivized models and the dominance of first-mover platforms indicates a saturated market with limited demand for new entrants, particularly those relying on similar incentive structures.",
+      "tokens_in": 792,
+      "tokens_out": 354
+    },
+    "critic": {
+      "text": "**Critic:**\n\n1. **Sybil Attack Risk**: The decentralized nature of the platform combined with token rewards creates a significant risk of sybil attacks, where malicious actors can create multiple accounts to manipulate engagement metrics and token distribution. This undermines the integrity of the platform and could lead to a loss of user trust.\n\n2. **Market Saturation**: The decentralized social media space is already crowded with established players like Farcaster and Lens Protocol, which have first-mover advantages. Entering this market with a new L1 chain does not provide a compelling differentiation, especially when the chain's benefits are invisible to users. This could lead to a lack of user acquisition and retention.\n\n3. **Historical Precedent of Failure**: The failures of Steemit and BitClout highlight a clear pattern: token-incentivized social platforms struggle to maintain engagement over time. The rapid decline in user activity and revenue for Friend.tech further reinforces this trend. Without a solid plan to sustain user engagement beyond initial token incentives, this project is likely to follow the same trajectory.\n\nChange my mind by: Presenting a specific user or company (with citation) that would commit to using this platform within 30 days of launch, demonstrating clear demand for a decentralized Twitter alternative.",
+      "tokens_in": 792,
+      "tokens_out": 256
+    },
+    "architect": {
+      "text": "**Architect:**\n\n- **Stack**: Stick with the V1 stack: Next.js 15 + Tailwind + Supabase (Postgres + auth + storage), deployed on Vercel. This stack provides a solid foundation for rapid development and deployment, ensuring a smooth user experience and efficient backend management.\n\n- **Auth Strategy**: Use Supabase's built-in authentication for user management. This allows for easy integration of email/password and social logins, ensuring a secure and streamlined onboarding process for users.\n\n- **External API**: The only external API that matters here is the Supabase API for managing user data, posts, and interactions. This keeps the architecture simple and focused on core functionalities.\n\n- **Deployment Target**: Vercel is the ideal deployment target due to its seamless integration with Next.js, enabling fast performance and automatic scaling as user engagement grows.\n\n- **Feature Cut Recommendation**: Cut the token reward system for posting and reposting. This feature is the primary source of risk and has historically led to unsustainable engagement. Removing it would allow the project to focus on building a strong user community without the pitfalls of token incentives, potentially saving development time and reducing complexity.",
+      "tokens_in": 1186,
+      "tokens_out": 239
+    },
+    "scoper": {
+      "text": "**V1: Decentralized Twitter for Content Creators**\n\nV1 focuses on creating a decentralized Twitter-like platform specifically for content creators who want to share their work without the constraints of traditional social media. The key payment moment will be when users can tip content creators directly for their posts, fostering a community of support and engagement.\n\n**Acceptance Criteria:**\n1. Users can create an account using email/password authentication via Supabase and log in successfully.\n2. Users can create, edit, and delete text-based posts that are visible to other users on the platform.\n3. Users can view a feed of posts from other users, sorted by most recent activity.\n4. Users can send tips to content creators using a simple in-app transaction mechanism, with a visible balance reflecting their available funds.\n5. Users can report inappropriate content, triggering a moderation workflow that flags posts for review.\n\nV1_FEASIBLE_IN_4_DAYS: yes",
+      "tokens_in": 1572,
+      "tokens_out": 188
+    },
+    "judge": {
+      "text": "TAM: 3\nWEDGE: 2\nV1_FEASIBILITY: 7\n\nVerdict: KILL \u2014 The idea of a decentralized Twitter built on a new L1 chain with token rewards faces significant challenges. The market is saturated with established players like Farcaster and Lens Protocol, and historical precedents like Steemit and BitClout have shown that token-incentivized social platforms struggle to maintain engagement. Additionally, the sybil attack risk and the invisibility of the chain to end users further undermine the viability of this concept.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+      "tokens_in": 2908,
+      "tokens_out": 124
+    }
+  }
+}

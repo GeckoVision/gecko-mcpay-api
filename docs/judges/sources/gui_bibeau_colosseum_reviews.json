@@ -1,0 +1,50 @@
+{
+  "reviewer": "GuiBibeau (@GuiBibeau)",
+  "role": "Products @solana (ex-Vercel, ex-MetaMask) | Colosseum landing-page reviewer (Season 2)",
+  "description": "Video-based, screen-share style reviews of Colosseum project homepages. Focuses heavily on UX clarity, trust signals, product messaging, technical depth, and builder polish.",
+  "total_videos_analyzed": 4,
+  "overall_judging_style": "Product-first, brutally honest but encouraging. Prioritizes: 1) Immediate clarity (who is this for?), 2) Trust & institutional signals, 3) Technical/demo depth (contracts, docs, GitHub), 4) Visual polish without overdone Web3 aesthetics, 5) Actionable next steps (waitlist, docs, faucet, API).",
+  "reviews": [
+    {
+      "post_id": "2049564624815853801",
+      "project": "h3x.social (@h3x_social)",
+      "date": "2026-04-29",
+      "video_duration": "~236s",
+      "key_feedback": "Strong creator-business-in-one-link concept but confusing (social network? Linktree? Super-app?). Loves mobile preview, revenue streams, on-chain analytics ($24.5K example), pricing tiers. Critiques: overdone network background graphic, unclear core value prop, too many features at once.",
+      "positive": ["Beautiful font/colors", "Mobile demo", "Revenue/analytics depth", "Waitlist CTA"],
+      "critiques": ["Product clarity is hard", "Remove overdone Web3 background", "Simplify messaging"],
+      "style_notes": "Emphasizes Web3-native creators but warns against limiting audience."
+    },
+    {
+      "post_id": "2049955030912942374",
+      "project": "Adler (@THEM2DT)",
+      "date": "2026-04-30",
+      "video_duration": "~204s",
+      "key_feedback": "Excellent UGC marketplace for creators/brands (on-chain reputation that follows you). Clear 4-step flow (Discover → Agree → Deliver → Rate). Loves Solana-secured payments and reputation scoreboard. Very clean and simple.",
+      "positive": ["Clear problem-solution fit", "Smart contract flow", "On-chain reputation mechanic", "Pre-launch waitlist"],
+      "critiques": ["None major — very positive overall"],
+      "style_notes": "Highlights simplicity and no-middleman value for creators/brands."
+    },
+    {
+      "post_id": "2049909363104415978",
+      "project": "FreedomUSD (@freedomusd)",
+      "date": "2026-04-30",
+      "video_duration": "~212s",
+      "key_feedback": "Strong stablecoin landing page selling trust/privacy/guardrails. Simple hero + clear benefits (earn by holding, zero-interest borrow, private when you want). Docs section is solid for institutions. Wants more: contract address, faucet, API exploration.",
+      "positive": ["Beautiful subtle branding (torch/Statue of Liberty)", "Trust signals for institutions", "Clear value props", "Privacy + guardrails emphasis"],
+      "critiques": ["Docs could go deeper (faucet, contract, API)", "Needs more hands-on exploration for coders"],
+      "style_notes": "Stables = selling trust. Targets compliance officers/fund managers."
+    },
+    {
+      "post_id": "2049594823930179907",
+      "project": "FlowBack (@flowbackdotfun)",
+      "date": "2026-04-29",
+      "video_duration": "~205s",
+      "key_feedback": "Clean MEV redistribution page (trader > bot). Strong tagline, sealed-bid auction mechanics, stats, comparison table. Good for traders. Minor nitpicks on broken links and missing README/GitHub depth.",
+      "positive": ["Crystal-clear tagline", "MEV explanation + stats", "Comparison table", "Waitlist + live metrics"],
+      "critiques": ["Broken 'Read searcher docs' link", "Could add technical paper/README", "Minor nav issues"],
+      "style_notes": "Appreciates technical depth and trader-focused messaging."
+    }
+  ],
+  "extracted_patterns_for_super_agent": "Gui judges landing pages on: clarity (who + what in <5s), trust signals (especially stables/RWA), visual polish without clichés, technical accessibility (docs/contracts/GitHub), and actionable CTAs. He rewards simplicity and builder polish; penalizes feature overload and vague Web3 aesthetics."
+}

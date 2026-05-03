@@ -1,0 +1,48 @@
+{
+  "idea_id": "crypto-ship-mcp-validator-monitor",
+  "idea_text": "MCP server for monitoring Solana validator commission changes, with Claude Code alerts when stake-weighted commission shifts >2% in 24h.",
+  "judge_prose": "TAM: 3\nWEDGE: 5\nV1_FEASIBILITY: 7\n\nVerdict: SHIP V1 to stake-pool operators. The idea targets a specific segment of Solana validators who have expressed a need for real-time commission monitoring. While the TAM is limited, the wedge is clear with a defined user segment and payment moment. The feasibility of building a minimal viable product in a short timeframe supports the decision to ship.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+  "parsed_verdict": "ship",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 5.5,
+    "source_grounding": 5.0,
+    "verdict_justification": 6.5,
+    "cost_predictability": 4.0,
+    "verdict_correctness": 5.0
+  },
+  "expected_verdict": "ship",
+  "expected_verdict_v2": "BUILD",
+  "actual_verdict": "ship",
+  "actual_verdict_v2": "REFINE",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM Calculation**: With ~1,800 active validators and ~$80B SOL staked, if we assume a conservative estimate of 10% of validators (180) would pay for a monitoring tool at $100/month, the reachable TAM in year 1 is ~$216K. This is a narrow segment of the broader validator tooling market, which remains largely unmonetized (source: Solana Beach validator stats Q4 2025).\n\n- **Comparable Analysis**: Stakewiz, an independent validator dashboard, has achieved steady weekly active usage without monetization, indicating a clear demand for commission and health tracking tools in the validator space. This suggests that there is a user base willing to engage with such tools, even if they are not currently paying for them (source: Stakewiz user data).\n\n- **Market Signals**: The absence of shipped comparables in the last 24 months, combined with the unknown status of prior evaluations, indicates a lack of validated solutions in this space. The previous attempt at a retail-facing validator score tool was killed, suggesting that consumer-facing products may struggle to find a market fit (source: Gecko precedent).\n\n- **User Needs**: Stake-pool operators at Marinade and Jito have publicly expressed the need for an \"always-on commission watcher,\" emphasizing a gap in the current market for tools that provide real-time alerts for commission changes (source: twit_sh @felix, @jito_labs 2025). This indicates a clear pain point that your proposed solution aims to address.\n\n- **Counterfactual**: If this MCP server does not ship, stake-pool operators will continue to rely on manual monitoring of commission changes, leading to potential missed opportunities for optimizing yields and reallocating stakes. This suggests that the user segment may experience inefficiencies and reduced returns without such a tool, highlighting the urgency for a solution.",
+      "tokens_in": 804,
+      "tokens_out": 380
+    },
+    "critic": {
+      "text": "**Analyst:**\nThe idea of an MCP server for monitoring Solana validator commission changes is intriguing, especially given the substantial amount of SOL staked and the direct impact commission changes have on LP yields. The demand signals from the public comments of stake-pool operators indicate a clear need for such a tool. However, the presence of free alternatives like Helius DAS and Solana RPC raises questions about the unique value proposition of this product. \n\n**Critic:**\n1. **Market Saturation Risk:** The existence of free tools like Helius DAS and Solana RPC that already provide similar functionalities poses a significant risk. If users can access commission deltas for free, why would they pay for your service? Without a compelling differentiator, this product risks being lost in a sea of similar offerings.\n\n2. **Regulatory Risk:** While the idea itself may not directly put the founder in legal jeopardy, the implications of monitoring and alerting on commission changes could attract scrutiny from regulatory bodies, especially if users start making financial decisions based on your alerts. This could lead to potential liability issues if users claim losses due to inaccurate alerts.\n\n3. **User Acquisition Risk:** While there are indications of interest from specific users (e.g., @felix and @jito_labs), there is no concrete evidence that any of these users would pay for the service within 30 days. The lack of a named user willing to commit financially is a critical gap that could hinder the product's viability.\n\nChange my mind by: Providing a signed commitment from a specific user (e.g., @felix or @jito_labs) to pay for the service within 30 days of launch.",
+      "tokens_in": 804,
+      "tokens_out": 339
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1307,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "**Architect:**\nTo address the concerns raised and ensure a successful V1 launch, we need to focus on a minimal yet effective feature set that directly addresses the pain points of our target user segment. Here\u2019s the proposed architecture for V1:\n\n1. **Core Functionality**: The MCP server will monitor commission changes for a selected validator and send alerts via Claude Code when stake-weighted commission shifts exceed 2% within a 24-hour period. This is the primary feature that will differentiate us from free alternatives.\n\n2. **User Interface**: A simple web dashboard where users can:\n   - Select their validator(s) to monitor.\n   - View current commission rates and historical changes.\n   - Set up alert preferences (e.g., notification methods).\n\n3. **Alert System**: Integration with Claude Code to send real-time alerts via preferred channels (e.g., email, SMS, or in-app notifications) when commission changes occur.\n\n4. **Data Source**: Utilize existing APIs from Helius DAS and Solana RPC to fetch real-time validator commission data, ensuring we leverage existing infrastructure and minimize development time.\n\n5. **Scalability Considerations**: While V1 will focus on a single user segment (stake-pool operators), the architecture should allow for easy scaling to include additional validators and user segments in V2.\n\nWith this architecture, we can ensure that V1 remains focused on delivering a specific solution to a clearly defined user segment while laying the groundwork for future enhancements.\n\n**Acceptance Criteria for V1:**\n1. Users can select a specific validator to monitor and view its current commission rate.\n2. Users receive a real-time alert via Claude Code when the stake-weighted commission changes by more than 2% within a 24-hour period.\n3. Users can access a historical view of commission changes for their selected validator over the past week.\n4. Users can set their preferred notification method (e.g., email or SMS) for receiving alerts.\n\nV1_FEASIBLE_IN_4_DAYS: yes",
+      "tokens_in": 1456,
+      "tokens_out": 409
+    },
+    "judge": {
+      "text": "TAM: 3\nWEDGE: 5\nV1_FEASIBILITY: 7\n\nVerdict: SHIP V1 to stake-pool operators. The idea targets a specific segment of Solana validators who have expressed a need for real-time commission monitoring. While the TAM is limited, the wedge is clear with a defined user segment and payment moment. The feasibility of building a minimal viable product in a short timeframe supports the decision to ship.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+      "tokens_in": 3013,
+      "tokens_out": 105
+    }
+  }
+}

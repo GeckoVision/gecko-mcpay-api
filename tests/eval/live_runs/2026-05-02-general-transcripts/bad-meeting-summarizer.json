@@ -1,0 +1,48 @@
+{
+  "idea_id": "bad-meeting-summarizer",
+  "idea_text": "Zoom plugin that summarizes meetings with AI and emails recap. $15/seat/mo.",
+  "judge_prose": "TAM: 2\nWEDGE: 3\nV1_FEASIBILITY: 3\n\nVerdict: KILL \u2014 The market for meeting summarization tools is saturated with free offerings from major platforms like Zoom and MS Teams, making it nearly impossible for a new entrant to justify a $15/seat/month pricing model. The lack of differentiation and the presence of strong incumbents offering similar features for free further diminish the potential for success.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+  "parsed_verdict": "kill",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 4.5,
+    "source_grounding": 6.0,
+    "verdict_justification": 6.5,
+    "cost_predictability": 3.5,
+    "verdict_correctness": 10.0
+  },
+  "expected_verdict": "kill",
+  "expected_verdict_v2": "KILL",
+  "actual_verdict": "kill",
+  "actual_verdict_v2": "PIVOT",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM Analysis**: The reachable TAM is effectively $0 due to the saturation of the meeting summarization feature across multiple platforms. Major players like Zoom, MS Teams, and Otter already provide these capabilities for free, making it challenging to justify a $15/seat/month pricing model. (Source: Zoom IR Q3 2024, G2 Meeting Intelligence category 2025)\n\n- **Comparable Products**: No recent shipped comparable exists that successfully monetizes a standalone meeting summarization tool. The closest competitors (Otter, Fireflies, etc.) are either freemium or bundled into larger platforms, which dilutes the potential for a new entrant to gain traction. (Source: G2 Meeting Intelligence category 2025)\n\n- **Customer Spending**: Current customers of meeting summarization tools are not paying for standalone solutions; they are utilizing bundled offerings within existing platforms. For instance, Otter has 3M users on a freemium model, indicating a strong preference for free solutions. (Source: G2 Meeting Intelligence category 2025)\n\n- **Counterfactual Impact**: If this plugin does not ship, users will continue to rely on existing free solutions from major platforms, which are already integrated into their workflows. This indicates a lack of urgency or necessity for a new paid solution in this space.\n\n- **Gecko Precedent**: Previous evaluations of similar ideas indicate a high likelihood of failure, with two prior ideas marked as unknown but leaning towards a kill signal due to the competitive landscape and lack of differentiation. (Source: gecko_precedent)",
+      "tokens_in": 782,
+      "tokens_out": 322
+    },
+    "critic": {
+      "text": "**Risks:**\n\n1. **Market Saturation and Incumbent Features**: The market for meeting summarization tools is already saturated with established players like Zoom AI Companion and Granola, which offer similar features for free or as part of a bundled service. This makes it extremely difficult for a new entrant to justify a $15/seat/month pricing model, especially when users can access comparable functionality at no cost.\n\n2. **User Acquisition and Retention**: Given the competitive landscape, acquiring users willing to pay for this service will be a significant challenge. The lack of a unique selling proposition or a compelling differentiation from existing solutions raises the risk of low adoption rates, leading to high churn and ultimately unsustainable revenue.\n\n3. **Regulatory and Compliance Risks**: Depending on the nature of the meetings being summarized, there may be legal implications regarding data privacy and compliance (e.g., GDPR, HIPAA). If the plugin inadvertently captures sensitive information without proper safeguards, it could expose the founder to legal jeopardy.\n\nChange my mind by: Providing a signed letter of intent from a specific company (e.g., a mid-sized enterprise) committing to purchase 100 seats within 30 days of launch.",
+      "tokens_in": 782,
+      "tokens_out": 242
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1130,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "**V1**: Develop a Zoom plugin that summarizes meetings and emails recaps specifically for small businesses with remote teams, targeting the payment moment when users subscribe for a monthly plan.\n\n**Acceptance Criteria**:\n1. Users can connect the plugin to their Zoom account and schedule automatic meeting summaries for at least one meeting type.\n2. Users receive an email recap within 30 minutes after the meeting ends, containing key points and action items.\n3. Users can customize the summary format (bullet points, paragraphs) through a simple settings interface.\n4. Users can access a dashboard that shows a history of past meeting summaries for up to 5 meetings.\n5. Users can provide feedback on the summary quality through a star rating system, with at least 50% of users rating the summaries within the first week.\n\nV1_FEASIBLE_IN_4_DAYS: no",
+      "tokens_in": 1279,
+      "tokens_out": 173
+    },
+    "judge": {
+      "text": "TAM: 2\nWEDGE: 3\nV1_FEASIBILITY: 3\n\nVerdict: KILL \u2014 The market for meeting summarization tools is saturated with free offerings from major platforms like Zoom and MS Teams, making it nearly impossible for a new entrant to justify a $15/seat/month pricing model. The lack of differentiation and the presence of strong incumbents offering similar features for free further diminish the potential for success.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+      "tokens_in": 2600,
+      "tokens_out": 102
+    }
+  }
+}

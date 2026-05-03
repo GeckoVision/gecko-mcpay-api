@@ -1,0 +1,48 @@
+{
+  "idea_id": "bad-ar-shopping-glasses",
+  "idea_text": "AR glasses app that overlays product reviews when you point at a shelf in a grocery store.",
+  "judge_prose": "TAM: 3\nWEDGE: 2\nV1_FEASIBILITY: 7\n\nVerdict: KILL \u2014 The idea is constrained by a limited AR headset install base and significant regulatory barriers from major retailers, making it unfeasible to reach a viable market in the near term.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+  "parsed_verdict": "kill",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 4.5,
+    "source_grounding": 5.5,
+    "verdict_justification": 4.0,
+    "cost_predictability": 4.0,
+    "verdict_correctness": 10.0
+  },
+  "expected_verdict": "kill",
+  "expected_verdict_v2": "KILL",
+  "actual_verdict": "kill",
+  "actual_verdict_v2": "PIVOT",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM**: Reachable TAM is severely limited by the current AR headset install base, with only ~480k Apple Vision Pro units expected by Q4 2025 (IDC AR/VR Quarterly Tracker). The lack of mass-market AR devices, as seen with Meta Quest, indicates a low initial user base for this app.\n\n- **Comparable**: Amazon's Fire Phone featured a product-recognition capability (Firefly) that was abandoned within 18 months due to similar constraints of retailer agreements and low consumer adoption. This signals a historical precedent of failure in this category.\n\n- **User Payment Dynamics**: Current grocery shoppers rely on mobile apps for product reviews, but they do not pay directly for this functionality. Instead, they use free apps like Yelp or Google Reviews, which indicates a lack of willingness to pay for an AR overlay without significant differentiation.\n\n- **Counterfactual**: If this AR glasses app does not ship, consumers will continue using existing mobile apps for product reviews without disruption. The absence of a compelling reason to switch suggests a weak demand signal.\n\n- **Precedent Verdicts**: Previous evaluations of similar AR concepts have resulted in kill signals due to dependencies on hardware adoption and complex retailer agreements, indicating a high risk of failure for this idea as well. \n\n- **Market Signals**: Major retailers like Walmart and Kroger explicitly prohibit in-store image capture without agreements, further complicating the feasibility of this app and reinforcing the barriers to entry identified in prior evaluations.",
+      "tokens_in": 787,
+      "tokens_out": 301
+    },
+    "critic": {
+      "text": "**Analyst:**\nThe idea of an AR glasses app that overlays product reviews in grocery stores is intriguing, but it faces significant hurdles. The primary challenges stem from hardware adoption rates and the regulatory landscape surrounding in-store data capture. With Apple Vision Pro's projected sales at 480k units and no mass-market AR headset from Meta, the user base is insufficient for a viable product launch. Additionally, major retailers like Walmart and Kroger have strict policies against in-store image capture without agreements, which could severely limit the app's functionality.\n\n**Critic:**\n1. **Hardware Adoption Risk:** The current AR headset market is not only nascent but also heavily reliant on a sub-1M-unit install base. This means that the potential user base is far too small to justify the development of a consumer-facing app. The precedent of the consumer AR app that was killed due to a similar install base issue is a clear warning sign.\n\n2. **Regulatory Compliance Risk:** The requirement for per-SKU agreements with retailers poses a significant barrier. Given that major grocery chains explicitly prohibit in-store image capture without these agreements, the app would likely face legal challenges or operational limitations. The precedent of the in-store retail AR overlay being killed for the same reason reinforces this risk.\n\n3. **Market Viability Risk:** The historical failures of similar AR products, such as Google Glass and Snap Spectacles, indicate a pattern of consumer disinterest and market rejection. The comparison to Amazon's Fire Phone, which failed despite Amazon's distribution power, suggests that even with a strong brand, the app may not find traction in a saturated market.\n\nChange my mind by: Providing a signed letter of intent from a major grocery chain (e.g., Walmart or Kroger) agreeing to allow in-store image capture for this app.",
+      "tokens_in": 787,
+      "tokens_out": 361
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1233,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "**Architect:**\nTo build a viable version of the AR glasses app, we need to focus on a minimal feature set that aligns with the constraints and risks identified. The architecture must prioritize user experience while navigating the limitations of hardware and regulatory compliance.\n\n1. **User Segment Focus:** We should target a specific user segment, such as tech-savvy grocery shoppers who are already using mobile apps for product reviews. This segment is more likely to adopt new technology if it enhances their shopping experience.\n\n2. **Core Functionality:** The V1 should focus on a simple overlay of product ratings and reviews when the user points their glasses at a product. This requires:\n   - A database of product reviews that can be accessed without real-time image capture.\n   - A way to manually input or select products to retrieve reviews, circumventing the need for in-store image capture agreements initially.\n\n3. **User Interaction:** The app should allow users to:\n   - Point at a product to see an overlay of its average rating and a summary of reviews.\n   - Click on the overlay to view more detailed reviews or ratings, potentially linking to an external app for full reviews.\n\n4. **Demo Capability:** The demo should showcase the overlay functionality using pre-loaded product images and reviews, allowing users to experience the core value proposition without needing real-time data capture.\n\n5. **Scalability Considerations:** Future versions could explore partnerships with retailers for data access or expand to include more user segments, but V1 must remain tightly focused on delivering a functional demo to validate the concept.\n\nThis approach keeps the development within the 4-day constraint while addressing the critical risks identified earlier.\n\nV1 Acceptance Criteria:\n- Display an overlay of product ratings when the user points at a product image in the demo.\n- Allow users to click on the overlay to view a summary of reviews.\n- Provide a mechanism for users to manually input product names or scan barcodes to retrieve reviews.\n- Ensure that the app can function without real-time image capture, using pre-loaded data instead.\n- Demonstrate the app's functionality in a controlled environment, such as a mock grocery shelf setup.\n\nV1_FEASIBLE_IN_4_DAYS: yes",
+      "tokens_in": 1382,
+      "tokens_out": 439
+    },
+    "judge": {
+      "text": "TAM: 3\nWEDGE: 2\nV1_FEASIBILITY: 7\n\nVerdict: KILL \u2014 The idea is constrained by a limited AR headset install base and significant regulatory barriers from major retailers, making it unfeasible to reach a viable market in the near term.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+      "tokens_in": 2969,
+      "tokens_out": 73
+    }
+  }
+}

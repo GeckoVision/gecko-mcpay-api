@@ -153,7 +153,7 @@ def check_llm_router(environ: dict[str, str] | None = None) -> list[CheckResult]
     runtime resolver. Never fails the doctor (purely informational).
     """
     env = environ if environ is not None else dict(os.environ)
-    raw = (env.get("LLM_ROUTER") or "openai").strip().lower()
+    raw = (env.get("LLM_ROUTER") or "openrouter").strip().lower()
     results: list[CheckResult] = [CheckResult(name="llm:router", ok=True, detail=raw, info=True)]
     try:
         from gecko_core.orchestration.pro.router import model_matrix
@@ -572,6 +572,81 @@ def check_voyage_api_key(environ: dict[str, str] | None = None) -> list[CheckRes
     return results
 
 
+def check_embed_provider(environ: dict[str, str] | None = None) -> list[CheckResult]:
+    """S22-VOYAGE-EMBED — verify embedding provider config is self-consistent.
+
+    EMBED_PROVIDER=voyage (default): VOYAGE_API_KEY must be set and have the
+    expected ``pa-`` prefix. OPENAI_API_KEY is surfaced as INFO (not required).
+
+    EMBED_PROVIDER=openai: OPENAI_API_KEY must be set (non-empty). VOYAGE_API_KEY
+    is surfaced as INFO.
+
+    Any other value is a hard FAIL — the embedder factory will raise at runtime.
+
+    Security: keys are never echoed. Voyage key shown as ``pa-...<last4>``;
+    OpenAI key shown as ``sk-...<last4>``.
+    """
+    env = environ if environ is not None else dict(os.environ)
+    results: list[CheckResult] = []
+    provider = (env.get("EMBED_PROVIDER") or "voyage").strip().lower()
+    model = env.get("EMBED_MODEL") or (
+        "voyage-3" if provider == "voyage" else "text-embedding-3-small"
+    )
+    results.append(
+        CheckResult(name="embed:provider", ok=True, detail=f"{provider} model={model}", info=True)
+    )
+
+    if provider == "voyage":
+        key = env.get("VOYAGE_API_KEY", "")
+        if not key:
+            results.append(
+                CheckResult(
+                    name="embed:voyage_api_key",
+                    ok=False,
+                    detail="EMBED_PROVIDER=voyage but VOYAGE_API_KEY is unset",
+                )
+            )
+            return results
+        if not key.startswith("pa-"):
+            results.append(
+                CheckResult(
+                    name="embed:voyage_api_key",
+                    ok=False,
+                    detail="VOYAGE_API_KEY does not have expected 'pa-' prefix",
+                )
+            )
+            return results
+        suffix = key[-4:] if len(key) >= 8 else "????"
+        results.append(
+            CheckResult(name="embed:voyage_api_key", ok=True, detail=f"prefix=pa-...{suffix}")
+        )
+
+    elif provider == "openai":
+        key = env.get("OPENAI_API_KEY", "")
+        if not key:
+            results.append(
+                CheckResult(
+                    name="embed:openai_api_key",
+                    ok=False,
+                    detail="EMBED_PROVIDER=openai but OPENAI_API_KEY is unset",
+                )
+            )
+            return results
+        suffix = key[-4:] if len(key) >= 8 else "????"
+        results.append(CheckResult(name="embed:openai_api_key", ok=True, detail=f"sk-...{suffix}"))
+
+    else:
+        results.append(
+            CheckResult(
+                name="embed:provider",
+                ok=False,
+                detail=f"unknown EMBED_PROVIDER={provider!r}; accepted: voyage, openai",
+            )
+        )
+
+    return results
+
+
 def run_doctor(
     *,
     environ: dict[str, str] | None = None,
@@ -591,6 +666,7 @@ def run_doctor(
     results.extend(check_llm_router(environ))
     results.append(check_clawrouter(environ))
     results.extend(check_chunk_store(environ))
+    results.extend(check_embed_provider(environ))
     results.extend(check_voyage_api_key(environ))
 
     # INFO checks never gate downstream probes.

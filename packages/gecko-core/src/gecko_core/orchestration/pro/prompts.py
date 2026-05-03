@@ -65,8 +65,23 @@ _BUNDLED_VERSIONS: dict[str, Path] = {
     "v5.2": _PROMPTS_DIR / "_default_prompts_v5_2.json",
     "v5.3": _PROMPTS_DIR / "_default_prompts_v5_3.json",
     "v5.4": _PROMPTS_DIR / "_default_prompts_v5_4.json",
+    "v5.5": _PROMPTS_DIR / "_default_prompts_v5_5.json",
 }
 _DEFAULT_VERSION = "v5.4"
+_POST_PROCESSOR_VERSION = "v5.5"
+REQUIRED_POST_PROCESSORS = (
+    "per_voice_extraction",
+    "transcript_summary",
+    "market_landscape",
+    "surviving_dissent",
+    "next_steps_with_falsifiers",
+    # S21-CALIBRATION-FOUNDER-POSTURE-01 — single JSON call that extracts
+    # both `idea_classification` and `founder_posture` from the transcript
+    # as a fallback for the in-prompt sentinels (which the judge drops
+    # under prompt-load drift). Keeps the calibration tilt observable in
+    # 5/5 runs without requiring the judge to remember Phase 0.
+    "classification_extraction",
+)
 _DEFAULT_PROMPTS_PATH = _BUNDLED_VERSIONS[_DEFAULT_VERSION]
 
 
@@ -296,13 +311,48 @@ def distribution_critic_fragment_for(idea: str, icp: str | None = "") -> str | N
     return None
 
 
+@lru_cache(maxsize=1)
+def load_post_processors() -> dict[str, str]:
+    """Load the v5.5 ``post_processors`` block — 5 prompts that run after the
+    GroupChat to produce the demo-output readouts.
+
+    Reads the bundled ``_default_prompts_v5_5.json`` directly (independent of
+    ``GECKO_PRO_PROMPTS_VERSION``) — post-processors evolve on their own
+    cadence and do not roll back with the in-debate prompt bundle. Validates
+    that every key in :data:`REQUIRED_POST_PROCESSORS` is present and non-empty.
+    """
+    path = _BUNDLED_VERSIONS[_POST_PROCESSOR_VERSION]
+    if not path.is_file():
+        raise PromptsConfigError(f"bundled post-processor prompts file is missing: {path}")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise PromptsConfigError(
+            f"post-processor prompts JSON at {path} is not valid JSON: {exc}"
+        ) from exc
+    block = data.get("post_processors")
+    if not isinstance(block, dict):
+        raise PromptsConfigError("v5.5 prompts JSON must have a top-level 'post_processors' object")
+    out: dict[str, str] = {}
+    for name in REQUIRED_POST_PROCESSORS:
+        val = block.get(name)
+        if not isinstance(val, str) or not val.strip():
+            raise PromptsConfigError(
+                f"post-processor prompts JSON is missing or empty for '{name}'"
+            )
+        out[name] = val.strip()
+    return out
+
+
 __all__ = [
     "DISTRIBUTION_CRITIC_FRAGMENT",
     "FEATURE_NOT_PRODUCT_FRAGMENT",
     "FEATURE_NOT_PRODUCT_GAP_TRIGGERS",
     "REQUIRED_AGENTS",
+    "REQUIRED_POST_PROCESSORS",
     "PromptsConfigError",
     "distribution_critic_fragment_for",
     "feature_not_product_fragment_for",
+    "load_post_processors",
     "load_prompts",
 ]

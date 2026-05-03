@@ -59,7 +59,7 @@ _SENSITIVE_HEADERS = {
     "x-cdp-api-key",
     "cookie",
     "x-payment",  # The signed payload — replay reconstructs this from the
-                  # cassette flow, not the recorded value.
+    # cassette flow, not the recorded value.
 }
 
 
@@ -104,7 +104,9 @@ class CassetteRecorder:
 
 async def record(*, facilitator: str, verdict_hash: str, output: Path) -> None:
     if not os.environ.get("GECKO_VERDICT_X402_LIVE"):
-        print("ERROR: GECKO_VERDICT_X402_LIVE=1 must be set to authorise live spend.", file=sys.stderr)
+        print(
+            "ERROR: GECKO_VERDICT_X402_LIVE=1 must be set to authorise live spend.", file=sys.stderr
+        )
         sys.exit(2)
     if os.environ.get("X402_MODE", "stub") == "stub":
         print("ERROR: X402_MODE must be 'live' (currently 'stub').", file=sys.stderr)
@@ -116,7 +118,10 @@ async def record(*, facilitator: str, verdict_hash: str, output: Path) -> None:
         )
         sys.exit(2)
     if len(verdict_hash) != 64:
-        print(f"ERROR: --verdict-hash must be 64 hex chars (got {len(verdict_hash)}).", file=sys.stderr)
+        print(
+            f"ERROR: --verdict-hash must be 64 hex chars (got {len(verdict_hash)}).",
+            file=sys.stderr,
+        )
         sys.exit(2)
 
     recorder = CassetteRecorder()
@@ -158,20 +163,23 @@ async def record(*, facilitator: str, verdict_hash: str, output: Path) -> None:
         httpx.AsyncClient = original_async_client  # type: ignore[misc]
 
     if not recorder.interactions:
-        print("WARN: no HTTP interactions captured. Settlement code may not have made calls.", file=sys.stderr)
+        print(
+            "WARN: no HTTP interactions captured. Settlement code may not have made calls.",
+            file=sys.stderr,
+        )
         sys.exit(3)
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps({"interactions": recorder.interactions}, indent=2, sort_keys=True)
-    )
+    output.write_text(json.dumps({"interactions": recorder.interactions}, indent=2, sort_keys=True))
     print(f"wrote {len(recorder.interactions)} interactions to {output}")
-    print(f"\nNext steps:")
+    print("\nNext steps:")
     print(f"  1. Inspect {output.name} for any unredacted sensitive data before committing.")
-    print(f"  2. git add {output} && git commit -m 'record verdict-settle cassette ({facilitator})'")
-    print(f"  3. unset GECKO_VERDICT_X402_LIVE")
-    print(f"  4. uv run pytest tests/payments/test_verdict_settle_contract.py -m live_x402_verdict")
-    print(f"  5. flip X402_VERDICT_SETTLE_LIVE=1 in production env to enable the paywall.")
+    print(
+        f"  2. git add {output} && git commit -m 'record verdict-settle cassette ({facilitator})'"
+    )
+    print("  3. unset GECKO_VERDICT_X402_LIVE")
+    print("  4. uv run pytest tests/payments/test_verdict_settle_contract.py -m live_x402_verdict")
+    print("  5. flip X402_VERDICT_SETTLE_LIVE=1 in production env to enable the paywall.")
 
 
 def _parse_args() -> argparse.Namespace:

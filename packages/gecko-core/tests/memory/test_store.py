@@ -51,7 +51,7 @@ class _FakeStore(MemoryStore):
         self.last_search_scope: MemoryScope | None = None
         self.last_inserted_embedding: list[float] | None = None
 
-    async def insert(  # type: ignore[override]
+    async def insert(
         self,
         *,
         scope: MemoryScope,
@@ -76,7 +76,7 @@ class _FakeStore(MemoryStore):
         )
         return new_id
 
-    async def list_by_scope(  # type: ignore[override]
+    async def list_by_scope(
         self,
         *,
         scope: MemoryScope,
@@ -103,7 +103,7 @@ class _FakeStore(MemoryStore):
         out.sort(key=lambda e: e.created_at, reverse=True)
         return out[:limit]
 
-    async def search(  # type: ignore[override]
+    async def search(
         self,
         *,
         scope: MemoryScope,
@@ -147,11 +147,11 @@ def fake_store() -> _FakeStore:
 
 @pytest.fixture
 def fake_embed(monkeypatch: pytest.MonkeyPatch) -> list[list[float]]:
-    """Patch the embedder so save/search produce a deterministic 1536-vec."""
+    """Patch the embedder so save/search produce a deterministic 1024-vec."""
     captured: list[list[float]] = []
 
     async def _fake_embed_text(text: str) -> list[float]:
-        vec = [0.001] * 1536
+        vec = [0.001] * 1024
         captured.append(vec)
         return vec
 
@@ -175,7 +175,7 @@ async def test_save_recall_search_round_trip(
     )
     assert isinstance(new_id, UUID)
     assert fake_store.last_inserted_embedding is not None
-    assert len(fake_store.last_inserted_embedding) == 1536
+    assert len(fake_store.last_inserted_embedding) == 1024
 
     entries = await recall(scope, store=fake_store)
     assert len(entries) == 1
@@ -222,11 +222,11 @@ async def test_scope_isolation(fake_store: _FakeStore, fake_embed: list[list[flo
     assert all(e.scope.id == "proj-A" for e, _ in matches_a)
 
 
-async def test_embedding_shape_is_1536(
+async def test_embedding_shape_is_1024(
     fake_store: _FakeStore, fake_embed: list[list[float]]
 ) -> None:
     scope = MemoryScope(type="session", id="sess-1")
     await save(scope, MemoryEntryType.verdict_received, {"idea": "x"}, store=fake_store)
     assert fake_store.last_inserted_embedding is not None
-    assert len(fake_store.last_inserted_embedding) == 1536
+    assert len(fake_store.last_inserted_embedding) == 1024
     assert all(isinstance(v, float) for v in fake_store.last_inserted_embedding)

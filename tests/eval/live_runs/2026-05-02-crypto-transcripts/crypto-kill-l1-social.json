@@ -1,0 +1,48 @@
+{
+  "idea_id": "crypto-kill-l1-social",
+  "idea_text": "Decentralized LinkedIn on a brand-new L1 chain, post-to-earn token model with anti-sybil via Worldcoin verify.",
+  "judge_prose": "TAM: 2\nWEDGE: 3\nV1_FEASIBILITY: 3\n\nVerdict: KILL \u2014 The idea lacks a clear, reachable market and a compelling wedge. The proposed decentralized LinkedIn on a new L1 chain faces significant onboarding friction and relies on a post-to-earn model that has historically failed. There is no named ICP or payment moment that indicates a viable path to early adoption or revenue.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+  "parsed_verdict": "kill",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 5.5,
+    "source_grounding": 7.0,
+    "verdict_justification": 6.0,
+    "cost_predictability": 3.5,
+    "verdict_correctness": 10.0
+  },
+  "expected_verdict": "kill",
+  "expected_verdict_v2": "KILL",
+  "actual_verdict": "kill",
+  "actual_verdict_v2": "PIVOT",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM**: No reachable TAM identified for a decentralized LinkedIn on a new L1 chain. The precedent evaluation shows a similar idea was killed due to sybil verification issues and onboarding friction, indicating a lack of demand for this model (gecko_precedent).\n\n- **Comparable**: No recent shipped comparable exists that successfully implemented a post-to-earn model in social networking. Historical attempts like Steemit and BitClout failed, as documented in the Messari graveyard report (Messari graveyard report 2024).\n\n- **Current Payment Dynamics**: Users currently pay for professional networking through traditional platforms like LinkedIn, which charges for premium subscriptions ($29.99/month) and recruitment services (averaging $500 per job posting). The proposed model would need to replace this value proposition, which is not evident (source: LinkedIn pricing page).\n\n- **Counterfactual**: If this decentralized LinkedIn does not ship, users will likely continue using established platforms like LinkedIn or emerging decentralized alternatives (Farcaster, Lens, Bluesky) without a significant shift in behavior, indicating low urgency for this concept.\n\n- **Onboarding Friction**: The new L1 chain's invisibility to consumers and the friction associated with chain choice are significant barriers, as highlighted in the Variant Fund study. This suggests that users are unlikely to adopt a platform that complicates their experience without clear benefits (Variant Fund consumer-crypto study 2025).",
+      "tokens_in": 804,
+      "tokens_out": 295
+    },
+    "critic": {
+      "text": "**Risks:**\n\n1. **Onboarding Friction:** Launching on a brand-new L1 chain introduces significant onboarding friction for users who are already accustomed to established platforms. The lack of a clear user benefit from the new chain will likely deter adoption, as seen in the precedent where a consumer social product's chain choice created friction without any user advantage. This risk is compounded by the fact that users may not see the value in switching from existing platforms like LinkedIn or even decentralized alternatives that are already gaining traction.\n\n2. **Token Model Viability:** The post-to-earn model has a poor track record, with previous attempts like Steemit and BitClout failing to sustain user engagement. The market has shown that users are not willing to engage in a tokenized model without a compelling reason, and the historical data suggests that this model is not only unsustainable but also leads to a rapid decline in user interest and platform viability.\n\n3. **Sybil Resistance Limitations:** While using Worldcoin for sybil resistance may seem like a strong approach, it relies on a technology that is still in its infancy and has faced skepticism regarding its effectiveness and user acceptance. If users are unwilling to undergo the verification process, the platform could struggle to maintain a healthy user base, leading to a lack of genuine engagement and a diluted network effect.\n\nChange my mind by: Providing a specific user (company, role, persona, or builder handle) who commits to using the platform and paying within 30 days of V1 launch.",
+      "tokens_in": 804,
+      "tokens_out": 305
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1188,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "**V1: Decentralized LinkedIn for Freelancers**\n\nV1 will focus on building a decentralized professional networking platform specifically for freelancers seeking job opportunities. The payment moment will be when freelancers receive tokens for posting their profiles and job listings, incentivizing them to engage with the platform.\n\n**Acceptance Criteria:**\n1. Enable freelancers to create and publish a profile that showcases their skills and experience, with at least 5 profile fields (name, skills, experience, portfolio link, and contact method).\n2. Allow freelancers to post job listings that can be viewed by other users, with a minimum of 3 job listings available for viewing on the platform.\n3. Implement a token reward system that automatically credits users with tokens upon successful posting of their profiles and job listings, with a clear display of earned tokens on their dashboard.\n4. Ensure that at least 10 unique users can sign up and interact with the platform within the first 24 hours of launch, demonstrating initial traction and engagement.\n\nV1_FEASIBLE_IN_4_DAYS: yes",
+      "tokens_in": 1337,
+      "tokens_out": 210
+    },
+    "judge": {
+      "text": "TAM: 2\nWEDGE: 3\nV1_FEASIBILITY: 3\n\nVerdict: KILL \u2014 The idea lacks a clear, reachable market and a compelling wedge. The proposed decentralized LinkedIn on a new L1 chain faces significant onboarding friction and relies on a post-to-earn model that has historically failed. There is no named ICP or payment moment that indicates a viable path to early adoption or revenue.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+      "tokens_in": 2695,
+      "tokens_out": 100
+    }
+  }
+}

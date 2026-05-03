@@ -34,6 +34,9 @@ class FakeStore:
         session_id: UUID,
         source_id: UUID,
         chunks: list[tuple[int, str, list[float]]],
+        *,
+        provider_kind: str = "web",
+        source_url: str | None = None,
     ) -> int:
         self.chunks.append((source_id, len(chunks)))
         return len(chunks)
@@ -53,7 +56,7 @@ def _candidate(url: str, type_: str = "web") -> SourceCandidate:
 @pytest.fixture
 def fake_embed() -> Any:
     async def _embed(texts: list[str], **_: Any) -> tuple[list[list[float]], int]:
-        return [[0.0] * 1536 for _ in texts], 0
+        return [[0.0] * 1024 for _ in texts], 0
 
     return _embed
 

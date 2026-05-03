@@ -1,0 +1,48 @@
+{
+  "idea_id": "good-faa-part107-checklist",
+  "idea_text": "Part 107 commercial drone operator pre-flight checklist app with airspace + NOTAM lookup, $5/flight pay-as-you-go.",
+  "judge_prose": "TAM: 6\nWEDGE: 7\nV1_FEASIBILITY: 8\n\nVerdict: SHIP V1 to commercial drone operators holding a Part 107 certificate. The app addresses a specific pain point related to pre-flight liability paperwork, which is a top complaint among drone pilots. The named ICP and payment moment are clear, and the V1 is feasible within a short timeframe. While there are free alternatives like B4UFLY, this app offers additional value through checklist generation and NOTAM acknowledgment, which are not covered by existing free solutions.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+  "parsed_verdict": "ship",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 5.5,
+    "source_grounding": 4.5,
+    "verdict_justification": 6.5,
+    "cost_predictability": 4.0,
+    "verdict_correctness": 5.0
+  },
+  "expected_verdict": "ship",
+  "expected_verdict_v2": "BUILD",
+  "actual_verdict": "ship",
+  "actual_verdict_v2": "REFINE",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM**: Targeting ~390k Part 107 remote pilot certificate holders, with a reachable TAM of ~$1.95M in year 1 if capturing 1% of users at $5/flight (assuming 1 flight per week). This is a conservative estimate; actual TAM could be higher if usage increases. \n\n- **Comparable**: Kittyhawk and Airdata, both SaaS platforms for FAA compliance, reached profitable scale, indicating a viable market for compliance tools with an ACV of $20-80/operator/month. This suggests that operators are willing to pay for compliance solutions, validating the need for a pre-flight checklist app.\n\n- **User Pain Point**: The #1 complaint among drone pilots is pre-flight liability paperwork, indicating a strong demand for a solution that simplifies this process (source: r/drones 2025 mod-curated FAQ). This pain point supports the need for a dedicated app.\n\n- **Counterfactual**: If this app is not shipped, drone operators will continue to rely on free solutions like B4UFLY, which do not address checklist generation or NOTAM acknowledgment, leaving a gap in liability management that could lead to compliance issues.\n\n- **Precedent Verdict**: No recent shipped comparables were found, but the unknowns indicate potential interest in compliance solutions. However, the lack of prior shipped products in this specific niche suggests a risk of market saturation or lack of demand, warranting caution in execution.",
+      "tokens_in": 796,
+      "tokens_out": 299
+    },
+    "critic": {
+      "text": "**Risks:**\n\n1. **Regulatory Compliance Risk**: The app must ensure that it complies with FAA regulations regarding pre-flight checklists and NOTAM acknowledgment. If it fails to meet these requirements, it could expose the founder to legal jeopardy, especially if the app is marketed as a compliance tool. This is a significant risk given the regulatory landscape surrounding drone operations.\n\n2. **Market Saturation Risk**: The presence of established competitors like B4UFLY, which is free and already addresses airspace checks, poses a threat. Users may not see enough value in a paid app that offers similar functionality, especially if they can access free alternatives. The app must clearly differentiate itself to justify the $5/flight fee.\n\n3. **Demand Validation Risk**: While there is a large number of Part 107 certificate holders, the evidence of immediate demand is lacking. There is no specific user or company cited that has committed to paying for this service within 30 days of launch. Without concrete evidence of demand, the app risks launching into a market that may not be ready to pay for this solution.\n\nChange my mind by: Providing a signed commitment from a specific drone operator or company (e.g., a known commercial drone service provider) willing to pay for the app within 30 days of launch.",
+      "tokens_in": 796,
+      "tokens_out": 265
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1144,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "**V1: Pre-flight Checklist App for Part 107 Drone Operators**\n\n**User Segment**: Commercial drone operators holding a Part 107 certificate.\n\n**Payment Moment**: $5 per flight for using the pre-flight checklist and NOTAM lookup feature.\n\n**Acceptance Criteria**:\n1. Users can generate a pre-flight checklist tailored to their specific drone model and flight conditions, resulting in a downloadable PDF checklist.\n2. Users can access real-time airspace information and NOTAMs relevant to their planned flight location, with a confirmation of acknowledgment stored in the app.\n3. Users can complete a pre-flight checklist and receive a liability acknowledgment confirmation, which can be exported or shared with stakeholders.\n4. Users can pay $5 per flight seamlessly through the app, with a transaction confirmation sent via email.\n\n**V1_FEASIBLE_IN_4_DAYS**: yes",
+      "tokens_in": 1293,
+      "tokens_out": 174
+    },
+    "judge": {
+      "text": "TAM: 6\nWEDGE: 7\nV1_FEASIBILITY: 8\n\nVerdict: SHIP V1 to commercial drone operators holding a Part 107 certificate. The app addresses a specific pain point related to pre-flight liability paperwork, which is a top complaint among drone pilots. The named ICP and payment moment are clear, and the V1 is feasible within a short timeframe. While there are free alternatives like B4UFLY, this app offers additional value through checklist generation and NOTAM acknowledgment, which are not covered by existing free solutions.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+      "tokens_in": 2615,
+      "tokens_out": 129
+    }
+  }
+}

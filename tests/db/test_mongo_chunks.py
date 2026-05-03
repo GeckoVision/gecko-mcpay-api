@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 from uuid import uuid4
 
 import pytest
@@ -44,7 +44,7 @@ class _FakeChunksCollection:
         if self.fatal_to_raise:
 
             class _BoomError(Exception):
-                details = {
+                details: ClassVar[dict[str, Any]] = {
                     "nInserted": 0,
                     "writeErrors": [{"code": 9999, "errmsg": "fatal"}],
                 }
@@ -53,7 +53,7 @@ class _FakeChunksCollection:
         if self.dup_keys_to_raise > 0:
 
             class _DupBulkWriteError(Exception):
-                details = {
+                details: ClassVar[dict[str, Any]] = {
                     "nInserted": len(docs) - self.dup_keys_to_raise,
                     "writeErrors": [{"code": 11000} for _ in range(self.dup_keys_to_raise)],
                 }
@@ -66,14 +66,16 @@ class _FakeChunksCollection:
     async def insert_one(self, doc: dict[str, Any]) -> None:
         self.docs.append(doc)
 
-    def find(
-        self, query: dict[str, Any], projection: dict[str, Any] | None = None
-    ) -> _FakeCursor:
+    def find(self, query: dict[str, Any], projection: dict[str, Any] | None = None) -> _FakeCursor:
         matches = [
             d
             for d in self.docs
             if all(
-                (d.get(k) in v.get("$in", []) if isinstance(v, dict) and "$in" in v else d.get(k) == v)
+                (
+                    d.get(k) in v.get("$in", [])
+                    if isinstance(v, dict) and "$in" in v
+                    else d.get(k) == v
+                )
                 for k, v in query.items()
             )
         ]
@@ -85,7 +87,11 @@ class _FakeChunksCollection:
             d
             for d in self.docs
             if not all(
-                (d.get(k) in v.get("$in", []) if isinstance(v, dict) and "$in" in v else d.get(k) == v)
+                (
+                    d.get(k) in v.get("$in", [])
+                    if isinstance(v, dict) and "$in" in v
+                    else d.get(k) == v
+                )
                 for k, v in query.items()
             )
         ]
@@ -186,9 +192,7 @@ class TestInsertChunksMongo:
             await mongo_chunks.insert_chunks_mongo(uuid4(), uuid4(), [(0, "ok", [0.1])])
 
     @pytest.mark.asyncio
-    async def test_unavailable_when_coll_is_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_unavailable_when_coll_is_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(mongo_chunks, "chunks_collection", lambda: None)
         with pytest.raises(mongo_chunks._MongoUnavailable):
             await mongo_chunks.insert_chunks_mongo(uuid4(), uuid4(), [(0, "ok", _embed())])
@@ -207,9 +211,7 @@ class TestInsertChunksMongo:
     async def test_real_error_reraises(self, fake_chunks_coll: _FakeChunksCollection) -> None:
         fake_chunks_coll.fatal_to_raise = True
         with pytest.raises(Exception):
-            await mongo_chunks.insert_chunks_mongo(
-                uuid4(), uuid4(), [(0, "a", _embed())]
-            )
+            await mongo_chunks.insert_chunks_mongo(uuid4(), uuid4(), [(0, "a", _embed())])
 
 
 # ---------------------------------------------------------------------------
@@ -257,9 +259,7 @@ class TestAuditMongo:
         )
 
     @pytest.mark.asyncio
-    async def test_audit_no_op_when_unconfigured(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_audit_no_op_when_unconfigured(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(mongo_chunks, "audit_collection", lambda: None)
         await mongo_chunks.insert_chunks_write_audit_mongo(
             session_id=uuid4(),
@@ -284,17 +284,13 @@ class TestCacheMongo:
         assert out == {}
 
     @pytest.mark.asyncio
-    async def test_get_unconfigured_returns_empty(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_get_unconfigured_returns_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(mongo_chunks, "cache_collection", lambda: None)
         out = await mongo_chunks.get_chunk_cache_mongo("h", [0, 1])
         assert out == {}
 
     @pytest.mark.asyncio
-    async def test_put_and_get_roundtrip(
-        self, fake_cache_coll: _FakeChunksCollection
-    ) -> None:
+    async def test_put_and_get_roundtrip(self, fake_cache_coll: _FakeChunksCollection) -> None:
         await mongo_chunks.put_chunk_cache_mongo(
             "hash-a",
             [(0, "t0", _embed(0.1)), (1, "t1", _embed(0.2))],
@@ -314,9 +310,7 @@ class TestCacheMongo:
         assert len(fake_cache_coll.docs) == 1
 
     @pytest.mark.asyncio
-    async def test_get_evicts_dim_mismatch(
-        self, fake_cache_coll: _FakeChunksCollection
-    ) -> None:
+    async def test_get_evicts_dim_mismatch(self, fake_cache_coll: _FakeChunksCollection) -> None:
         # Inject a poisoned row directly
         fake_cache_coll.docs.append(
             {"url_hash": "h", "chunk_index": 0, "embedding": [0.1, 0.2], "embed_model": "m"}
@@ -348,9 +342,7 @@ class TestSessionStoreDispatch:
 
         store = SessionStore.__new__(SessionStore)
         store._client = None  # type: ignore[attr-defined]
-        n = await store.insert_chunks(
-            uuid4(), uuid4(), [(0, "t", _embed())], provider_kind="web"
-        )
+        n = await store.insert_chunks(uuid4(), uuid4(), [(0, "t", _embed())], provider_kind="web")
         assert n == 1
         assert len(fake_chunks_coll.docs) == 1
         cs_mod.get_chunk_store.cache_clear()

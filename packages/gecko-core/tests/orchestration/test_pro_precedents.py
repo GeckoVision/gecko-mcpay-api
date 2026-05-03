@@ -165,9 +165,9 @@ async def test_run_pro_debate_retrieves_and_injects_precedents(
     monkeypatch.setattr("gecko_core.workflows.rag_query", _fake_rag_query, raising=False)
     monkeypatch.setattr("gecko_core.rag.query.rag_query", _fake_rag_query, raising=False)
 
-    # Stub the embedder — return a fixed 1536-dim vector.
+    # Stub the embedder — return a fixed 1024-dim vector.
     async def _fake_embed(texts: list[str], **_kw: object) -> tuple[list[list[float]], int]:
-        return [[0.0] * 1536 for _ in texts], 5
+        return [[0.0] * 1024 for _ in texts], 5
 
     monkeypatch.setattr("gecko_core.ingestion.embedder.embed", _fake_embed, raising=True)
 

@@ -105,6 +105,20 @@ declare -A PARAMS=(
   # mongo | filesystem | noop. Default is mongo when MONGODB_URI is set;
   # ECS Fargate has ephemeral disk so mongo is the only durable choice.
   [GECKO_TRANSCRIPT_STORE]="GECKO_TRANSCRIPT_STORE"
+
+  # S22-VOYAGE-EMBED — embedding provider config.
+  # EMBED_PROVIDER: voyage (default) | openai
+  # VOYAGE_API_KEY: required when EMBED_PROVIDER=voyage
+  # EMBED_MODEL: voyage-3 (default)
+  [EMBED_PROVIDER]="EMBED_PROVIDER"
+  [VOYAGE_API_KEY]="VOYAGE_API_KEY"
+  [EMBED_MODEL]="EMBED_MODEL"
+
+  # S18-MONGO-CUTOVER-01 — chunk store backend.
+  # GECKO_CHUNK_STORE: mongo | supabase (default supabase; set mongo in prod)
+  # MONGODB_CHUNK_DB: Atlas database for chunks (default gecko_rag)
+  [GECKO_CHUNK_STORE]="GECKO_CHUNK_STORE"
+  [MONGODB_CHUNK_DB]="MONGODB_CHUNK_DB"
 )
 
 echo "==> Region:     $REGION"
@@ -119,7 +133,7 @@ echo ""
 # as "unset" (it does — see gecko_core.orchestration.pro.router for
 # OPENROUTER_API_KEY handling).
 declare -A REQUIRED_AT_BOOT=(
-  [LLM_ROUTER]="openai"
+  [LLM_ROUTER]="openrouter"
   [OPENROUTER_API_KEY]="__unset__"
   [EVENTS_SECRET]="__dev_change_me__"
   # CDP creds: sentinel keeps ECS task spinning up before onboarding. Code
@@ -144,6 +158,15 @@ declare -A REQUIRED_AT_BOOT=(
   [MONGODB_URI]="__unset__"
   [MONGODB_DB]="gecko_cache"
   [GECKO_TRANSCRIPT_STORE]="mongo"
+  # S22 — voyage key must exist in SSM even before the real key is provisioned
+  # so the ECS task resolves its secrets: ValueFrom at boot without error.
+  [VOYAGE_API_KEY]="__unset__"
+  [EMBED_PROVIDER]="voyage"
+  [EMBED_MODEL]="voyage-3"
+  # S18 — chunk store defaults to mongo in prod; sentinel keeps boot clean
+  # before Atlas is wired up.
+  [GECKO_CHUNK_STORE]="mongo"
+  [MONGODB_CHUNK_DB]="gecko_rag"
 )
 
 SKIPPED=()

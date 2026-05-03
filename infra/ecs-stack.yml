@@ -555,6 +555,21 @@ Resources:
             # S12-HARDEN-05 — judge transcript store: mongo | filesystem | noop.
             - Name: GECKO_TRANSCRIPT_STORE
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/GECKO_TRANSCRIPT_STORE
+            # S22-VOYAGE-EMBED — embedding provider. VOYAGE_API_KEY is required
+            # when EMBED_PROVIDER=voyage (the default). Sentinel __unset__ keeps
+            # the task booting before the real key is provisioned; the embedder
+            # raises ValueError at first embed() call if the key is missing.
+            - Name: EMBED_PROVIDER
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/EMBED_PROVIDER
+            - Name: EMBED_MODEL
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/EMBED_MODEL
+            - Name: VOYAGE_API_KEY
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/VOYAGE_API_KEY
+            # S18-MONGO-CUTOVER-01 — chunk store backend and Atlas DB name.
+            - Name: GECKO_CHUNK_STORE
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/GECKO_CHUNK_STORE
+            - Name: MONGODB_CHUNK_DB
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/MONGODB_CHUNK_DB
           LogConfiguration:
             LogDriver: awslogs
             Options:

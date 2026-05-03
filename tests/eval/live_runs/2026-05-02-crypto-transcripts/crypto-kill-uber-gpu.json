@@ -1,0 +1,48 @@
+{
+  "idea_id": "crypto-kill-uber-gpu",
+  "idea_text": "Uber for spare GPUs: laptop owners rent idle 4090s to AI training jobs, settled in our new ERC-20 token.",
+  "judge_prose": "V1_FEASIBLE_IN_4_DAYS: no\n\nThe proposed idea of creating an \"Uber for spare GPUs\" faces significant challenges, particularly due to the technical limitations of consumer GPUs for AI training workloads and the saturated market of decentralized GPU networks. The introduction of a new ERC-20 token adds unnecessary complexity and friction, further hindering adoption. The analyst and critic have highlighted these issues, and the architect's attempt to pivot towards inference tasks and simplify payment mechanisms does not sufficiently address the core problems. The V1 is not feasible within 4 days due to the need for significant technical adjustments and market validation.\n\nTAM: 2\nWEDGE: 3\nV1_FEASIBILITY: 3\n\nVerdict: KILL \u2014 The idea is fundamentally flawed due to technical limitations and market saturation, with no clear path to a viable V1.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+  "parsed_verdict": "kill",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 5.5,
+    "source_grounding": 6.5,
+    "verdict_justification": 6.0,
+    "cost_predictability": 4.0,
+    "verdict_correctness": 10.0
+  },
+  "expected_verdict": "kill",
+  "expected_verdict_v2": "KILL",
+  "actual_verdict": "kill",
+  "actual_verdict_v2": "PIVOT",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM Analysis**: The reachable TAM is effectively zero in year 1. The consumer 4090s are primarily used for inference rather than training due to latency issues, as noted in io.net's 2024 retro. Therefore, the target market for training jobs on consumer GPUs is not viable (source: io.net 2024).\n\n- **Comparable Analysis**: No recent shipped comparable exists that successfully targets the consumer GPU rental market for AI training. The two unknowns from Gecko's prior evaluations indicate a strong likelihood of failure, especially given the specific limitations of consumer GPUs (Gecko precedent).\n\n- **Customer Payment Dynamics**: Current GPU rental services like Akash and Render target professional-grade GPUs, with a combined offering of ~400k GPUs. These services charge users based on performance and reliability, while consumer GPUs lack the necessary infrastructure for competitive pricing (source: Messari decentralized compute Q4 2025).\n\n- **Counterfactual Impact**: If this service does not ship, the user segment (AI developers needing GPU power) will continue to rely on established platforms like AWS or dedicated GPU rental services, which already meet their latency and performance requirements. This indicates a lack of urgency for a consumer-based solution.\n\n- **Market Saturation Signal**: The existence of multiple established players in the decentralized GPU space, along with the acknowledgment that consumer GPUs are primarily used for inference, suggests a saturated market with limited demand for a new offering (source: Messari decentralized compute Q4 2025). \n\n- **Settlement Friction**: Introducing a new ERC-20 token adds unnecessary complexity and friction compared to existing USDC payment rails, which could deter potential users from adopting the service (source: Variant Fund crypto-payments 2025).",
+      "tokens_in": 790,
+      "tokens_out": 354
+    },
+    "critic": {
+      "text": "**Analyst:**\nThe idea of creating a marketplace for renting idle GPUs from laptop owners to AI training jobs is intriguing but faces significant challenges. The primary concern is the technical limitations of consumer GPUs, particularly the lack of NVLink/InfiniBand, which is crucial for low-latency communication between GPUs. This limitation makes them unsuitable for training workloads that require high-speed interconnects. Additionally, the introduction of a new ERC-20 token for transactions adds unnecessary complexity and friction compared to established payment methods like USDC. The existing decentralized compute networks already saturate the market, making it difficult for a new entrant to gain traction.\n\n**Critic:**\n1. **Technical Viability Risk:** The reliance on consumer GPUs for AI training is fundamentally flawed due to their inability to meet the latency requirements for effective training workloads. This is not just a minor hurdle; it fundamentally undermines the core value proposition of the service. If the hardware can't deliver, the service is dead on arrival.\n\n2. **Market Saturation Risk:** The decentralized GPU market is already crowded with established players like Akash and Render, which have a significant head start and a proven track record. Entering this space without a clear differentiation or unique value proposition is a recipe for failure.\n\n3. **Token Friction Risk:** Introducing a new ERC-20 token complicates the user experience and may deter potential users who prefer the simplicity of using established currencies like USDC. This added friction could significantly hinder adoption and usage.\n\nChange my mind by: Providing a specific user (company, role, persona, or builder handle) who would commit to using this service within 30 days of launch, demonstrating clear demand despite the outlined risks.",
+      "tokens_in": 790,
+      "tokens_out": 342
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1270,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "**Architect:**\nTo address the concerns raised by the analyst and critic, we need to focus on a more viable approach that aligns with the current market dynamics and technical limitations. Here\u2019s a proposed framework for a potential V1:\n\n1. **Target a Specific User Segment**: Instead of targeting AI training jobs broadly, we could narrow our focus to a specific segment of users who might benefit from GPU inference tasks. For instance, targeting indie game developers or hobbyist AI researchers who require occasional GPU power for inference rather than training could be more feasible.\n\n2. **Simplify Payment Mechanisms**: Rather than introducing a new ERC-20 token, we could leverage existing payment systems like USDC or even fiat options to streamline the user experience. This would reduce friction and make the service more appealing to users who are already accustomed to using established payment methods.\n\n3. **Focus on Observable Outcomes**: The V1 should aim to deliver a minimal viable product that allows users to rent out their idle GPUs for specific tasks (like inference) and receive payment through a straightforward mechanism. This would provide a clear value proposition without overextending into the complexities of training workloads.\n\n4. **Build a Simple UI/UX**: The platform should have a user-friendly interface that allows GPU owners to list their devices easily and users to request GPU power for specific tasks. This will ensure that the service is accessible and easy to use for both parties.\n\n5. **Pilot Program**: Launch a pilot program targeting a small group of indie developers or hobbyists to validate the concept before scaling up. This will allow us to gather feedback and iterate on the product without significant upfront investment.\n\nBy focusing on these elements, we can create a more realistic and achievable V1 that addresses the immediate needs of a specific user segment while avoiding the pitfalls identified in the earlier evaluations. \n\nNow, we need to define concrete acceptance criteria for this V1.",
+      "tokens_in": 1419,
+      "tokens_out": 384
+    },
+    "judge": {
+      "text": "V1_FEASIBLE_IN_4_DAYS: no\n\nThe proposed idea of creating an \"Uber for spare GPUs\" faces significant challenges, particularly due to the technical limitations of consumer GPUs for AI training workloads and the saturated market of decentralized GPU networks. The introduction of a new ERC-20 token adds unnecessary complexity and friction, further hindering adoption. The analyst and critic have highlighted these issues, and the architect's attempt to pivot towards inference tasks and simplify payment mechanisms does not sufficiently address the core problems. The V1 is not feasible within 4 days due to the need for significant technical adjustments and market validation.\n\nTAM: 2\nWEDGE: 3\nV1_FEASIBILITY: 3\n\nVerdict: KILL \u2014 The idea is fundamentally flawed due to technical limitations and market saturation, with no clear path to a viable V1.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+      "tokens_in": 2951,
+      "tokens_out": 186
+    }
+  }
+}

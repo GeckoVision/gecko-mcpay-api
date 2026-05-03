@@ -1,0 +1,48 @@
+{
+  "idea_id": "saas-ship-grant-budget-nih-r01",
+  "idea_text": "Grant-budget rewriter for federal R01 NIH applications: parses PI narrative + R01 PHS-398 template, outputs a compliant budget justification DOCX.",
+  "judge_prose": "TAM: 6\nWEDGE: 7\nV1_FEASIBILITY: 7\n\nVerdict: SHIP V1 to research administrators in academic institutions. The tool addresses a specific pain point in the grant application process by automating the conversion of narrative to budget justification, which is currently a manual and time-consuming task. The willingness to pay has been validated, and the tool can be feasibly developed in a short timeframe. While there are risks related to compliance and market saturation, the unmet need in the narrative-to-budget conversion process presents a clear opportunity.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+  "parsed_verdict": "ship",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 5.5,
+    "source_grounding": 6.0,
+    "verdict_justification": 7.0,
+    "cost_predictability": 4.0,
+    "verdict_correctness": 5.0
+  },
+  "expected_verdict": "ship",
+  "expected_verdict_v2": "BUILD",
+  "actual_verdict": "ship",
+  "actual_verdict_v2": "REFINE",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM**: ~50,000 R01 applications annually; if each takes 6-12 hours for budget justification, and research admins are willing to pay $150-300 per grant, the reachable TAM in year 1 is between $7.5M and $15M. This is based on the NIH RePORTER data and NCURA survey findings.\n\n- **Comparable**: Cayuse and InfoEd have shipped adjacent solutions and reached >$50M ARR. They highlight the demand for workflow tools in grant management, indicating a strong market for solutions that fill gaps in existing processes, particularly the narrative-to-budget conversion.\n\n- **Counterfactual**: If this tool does not ship, research admins will continue to spend 6-12 hours manually rewriting budget justifications, leading to inefficiencies and potential errors in grant submissions. This suggests a significant pain point that remains unaddressed.\n\n- **Precedent Evaluation**: There are no shipped comparables specifically addressing the narrative-to-budget DOCX generation, but the failure of the generic AI grant-writer chatbot indicates that niche solutions with clear value propositions are necessary to succeed in this market.\n\n- **Willingness to Pay**: The validated price point of $150-300 per grant aligns with the time savings and efficiency gains this tool would provide, suggesting a viable business model if the product effectively addresses the identified gap.",
+      "tokens_in": 790,
+      "tokens_out": 281
+    },
+    "critic": {
+      "text": "**Risks:**\n\n1. **Regulatory Compliance Risk**: The tool must ensure that it adheres to the latest NIH guidelines and PHS-398 form requirements. If it outputs a budget justification that is non-compliant, it could lead to grant rejections, putting users at risk of losing funding and damaging their reputations. This is a significant risk, as the NIH updates its forms annually, and failure to keep up could result in legal or financial repercussions for users.\n\n2. **Market Saturation Risk**: The market for grant-writing tools is becoming increasingly crowded, especially with established players like Cayuse and InfoEd already dominating adjacent workflows. If the tool does not offer a significantly differentiated value proposition, it risks being overshadowed by these incumbents, leading to poor adoption rates.\n\n3. **Demand Validation Risk**: While there is a stated willingness to pay, the evidence lacks a specific user commitment. Without a named user or organization that has expressed intent to pay within 30 days of launch, the demand remains speculative. This could lead to a misalignment between development efforts and actual market needs.\n\nChange my mind by: Providing a signed letter of intent from a specific research administrator at a recognized institution who commits to using the tool within 30 days of launch.",
+      "tokens_in": 790,
+      "tokens_out": 257
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1112,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "**V1**: Develop a grant-budget rewriter tool that parses the Principal Investigator's (PI) narrative and the R01 PHS-398 template, outputting a compliant budget justification in DOCX format specifically for research administrators in academic institutions.\n\n**Acceptance Criteria**:\n1. Parse the PI narrative and extract relevant budgetary information, outputting it into a structured format that aligns with the PHS-398 template.\n2. Generate a compliant budget justification DOCX file that meets NIH requirements, validated against the latest PHS-398 guidelines.\n3. Allow users to upload their narrative and PHS-398 template, with the system providing feedback on the parsing process and any errors encountered.\n4. Ensure that the generated DOCX file can be opened and edited in Microsoft Word without formatting issues, confirming compatibility.\n5. Provide a demo version that allows users to test the parsing and output functionality with a sample narrative and template, ensuring a clear demonstration of value.\n\n**V2**: Expand the tool to support a second user segment, such as independent researchers or small research teams, and include collaborative features that allow multiple users to work on the budget justification simultaneously.\n\n**V3**: Introduce integrations with existing grant management systems (like Cayuse and InfoEd), implement network effects by allowing users to share successful budget justifications, and explore a paid tier that offers advanced features such as historical data analysis and compliance tracking.\n\nV1_FEASIBLE_IN_4_DAYS: yes",
+      "tokens_in": 1261,
+      "tokens_out": 297
+    },
+    "judge": {
+      "text": "TAM: 6\nWEDGE: 7\nV1_FEASIBILITY: 7\n\nVerdict: SHIP V1 to research administrators in academic institutions. The tool addresses a specific pain point in the grant application process by automating the conversion of narrative to budget justification, which is currently a manual and time-consuming task. The willingness to pay has been validated, and the tool can be feasibly developed in a short timeframe. While there are risks related to compliance and market saturation, the unmet need in the narrative-to-budget conversion process presents a clear opportunity.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+      "tokens_in": 2706,
+      "tokens_out": 128
+    }
+  }
+}

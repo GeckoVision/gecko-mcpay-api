@@ -1,0 +1,48 @@
+{
+  "idea_id": "good-grant-budget-rewriter",
+  "idea_text": "A web app that takes a research grant narrative + the funder's budget template (NSF, NIH, EU Horizon) and produces a compliant budget justification draft.",
+  "judge_prose": "TAM: 6\nWEDGE: 7\nV1_FEASIBILITY: 7\n\nVerdict: SHIP V1 to research administrators. The idea targets a specific pain point in the grant application process, with a clear willingness to pay from the target segment. The complexity of compliance is a challenge, but the potential to save significant time for research admins provides a strong wedge. The V1 is feasible within 4 days, focusing on automating the budget justification draft for NIH grants initially.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+  "parsed_verdict": "ship",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 5.5,
+    "source_grounding": 6.0,
+    "verdict_justification": 6.5,
+    "cost_predictability": 4.0,
+    "verdict_correctness": 5.0
+  },
+  "expected_verdict": "ship",
+  "expected_verdict_v2": "BUILD",
+  "actual_verdict": "ship",
+  "actual_verdict_v2": "REFINE",
+  "agent_turns": {
+    "analyst": {
+      "text": "- Reachable TAM in year 1: ~80k NIH grant applications annually, with research admins willing to pay $150-300 per grant for an automated rewriter. This translates to a potential market of ~$12M - $24M in the first year (source: NCURA 2024 panel).\n\n- No recent shipped comparable exists for a tool specifically addressing the narrative-to-budget gap in grant applications. The closest comparables, Cayuse and InfoEd, focus on adjacent workflows and have achieved >$50M ARR, indicating a strong market for solutions in this space but not directly validating the proposed idea (source: internal knowledge).\n\n- The current manual budget justification process is a significant bottleneck, taking 6-12 hours per submission. If this web app does not ship, research admins will continue to face delays and inefficiencies, reinforcing the need for a solution (source: NCURA Sponsored Projects Office Survey 2024).\n\n- The annual updates to budget forms (NIH PHS-398 and SF-424) create a compliance challenge that an automated tool could address, suggesting a timely need for a compliant budget justification draft generator (source: NIH grants.gov change log 2024-2025).\n\n- The failure of a generic AI grant-writer chatbot for individual academics (killed due to low demand) signals that a more specialized tool targeting research admins may have a better chance of success, provided it addresses specific pain points in budget justification (source: gecko_precedent).",
+      "tokens_in": 813,
+      "tokens_out": 302
+    },
+    "critic": {
+      "text": "### Analyst\n\nThe idea of a web app that automates the creation of compliant budget justification drafts for research grants is promising, especially given the bottleneck identified in the sponsored projects office. The willingness to pay reported by research admins indicates a clear demand, and the existing market for adjacent tools like Cayuse and InfoEd suggests a viable business model. However, the complexity of the grant application process and the variability in requirements across different funding bodies could pose significant challenges.\n\n### Critic\n\n1. **Regulatory Compliance Risk**: The app must ensure that it adheres to the specific guidelines and requirements of each funding body (NIH, NSF, EU Horizon). Any misalignment could lead to grant rejections or legal issues for users. This is a serious risk that could put the founder in jeopardy if the app inadvertently provides non-compliant drafts.\n\n2. **Market Saturation Risk**: While there are adjacent tools, the market for grant-writing assistance is crowded. The previous attempt at a generic AI grant-writer chatbot was killed, indicating that a more tailored solution is necessary. If this app does not significantly differentiate itself from existing solutions, it may struggle to gain traction.\n\n3. **User Adoption Risk**: The app relies on research admins adopting a new tool to replace a time-consuming manual process. If the transition is not seamless or if the app does not deliver significant time savings, users may be reluctant to pay for it. The success hinges on proving that it can genuinely reduce the time spent on budget justification drafts.\n\nChange my mind by: Providing a signed letter of intent from a specific research admin at a university (e.g., @research_admin_handle) committing to use the app and pay within 30 days of launch.",
+      "tokens_in": 813,
+      "tokens_out": 348
+    },
+    "architect": {
+      "text": "### Analyst\n\nThe idea of a web app that automates the creation of compliant budget justification drafts for research grants is promising, especially given the bottleneck identified in the sponsored projects office. The willingness to pay reported by research admins indicates a clear demand, and the existing market for adjacent tools like Cayuse and InfoEd suggests a viable business model. However, the complexity of the grant application process and the variability in requirements across different funding bodies could pose significant challenges.\n\n### Critic\n\n1. **Regulatory Compliance Risk**: The app must ensure that it adheres to the specific guidelines and requirements of each funding body (NIH, NSF, EU Horizon). Any misalignment could lead to grant rejections or legal issues for users. This is a serious risk that could put the founder in jeopardy if the app inadvertently provides non-compliant drafts.\n\n2. **Market Saturation Risk**: While there are adjacent tools, the market for grant-writing assistance is crowded. The previous attempt at a generic AI grant-writer chatbot was killed, indicating that a more tailored solution is necessary. If this app does not significantly differentiate itself from existing solutions, it may struggle to gain traction.\n\n3. **User Adoption Risk**: The app relies on research admins adopting a new tool to replace a time-consuming manual process. If the transition is not seamless or if the app does not deliver significant time savings, users may be reluctant to pay for it. The success hinges on proving that it can genuinely reduce the time spent on budget justification drafts.\n\nChange my mind by: Providing a signed letter of intent from a specific research admin at a university (e.g., @research_admin_handle) committing to use the app and pay within 30 days of launch.",
+      "tokens_in": 1247,
+      "tokens_out": 348
+    },
+    "scoper": {
+      "text": "### Analyst\n\nThe idea of a web app that automates the creation of compliant budget justification drafts for research grants is promising, especially given the bottleneck identified in the sponsored projects office. The willingness to pay reported by research admins indicates a clear demand, and the existing market for adjacent tools like Cayuse and InfoEd suggests a viable business model. However, the complexity of the grant application process and the variability in requirements across different funding bodies could pose significant challenges.\n\n### Critic\n\n1. **Regulatory Compliance Risk**: The app must ensure that it adheres to the specific guidelines and requirements of each funding body (NIH, NSF, EU Horizon). Any misalignment could lead to grant rejections or legal issues for users. This is a serious risk that could put the founder in jeopardy if the app inadvertently provides non-compliant drafts.\n\n2. **Market Saturation Risk**: While there are adjacent tools, the market for grant-writing assistance is crowded. The previous attempt at a generic AI grant-writer chatbot was killed, indicating that a more tailored solution is necessary. If this app does not significantly differentiate itself from existing solutions, it may struggle to gain traction.\n\n3. **User Adoption Risk**: The app relies on research admins adopting a new tool to replace a time-consuming manual process. If the transition is not seamless or if the app does not deliver significant time savings, users may be reluctant to pay for it. The success hinges on proving that it can genuinely reduce the time spent on budget justification drafts.\n\nChange my mind by: Providing a signed letter of intent from a specific research admin at a university (e.g., @research_admin_handle) committing to use the app and pay within 30 days of launch.",
+      "tokens_in": 1742,
+      "tokens_out": 348
+    },
+    "judge": {
+      "text": "TAM: 6\nWEDGE: 7\nV1_FEASIBILITY: 7\n\nVerdict: SHIP V1 to research administrators. The idea targets a specific pain point in the grant application process, with a clear willingness to pay from the target segment. The complexity of compliance is a challenge, but the potential to save significant time for research admins provides a strong wedge. The V1 is feasible within 4 days, focusing on automating the budget justification draft for NIH grants initially.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+      "tokens_in": 3238,
+      "tokens_out": 115
+    }
+  }
+}

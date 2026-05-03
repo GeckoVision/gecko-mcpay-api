@@ -2,8 +2,8 @@
 
 Three routers are supported (selected via `LLM_ROUTER` env):
 
-- ``openai``      — direct api.openai.com (production default)
-- ``openrouter``  — https://openrouter.ai/api/v1 (multi-provider passthrough)
+- ``openrouter``  — https://openrouter.ai/api/v1 (production default, multi-provider)
+- ``openai``      — direct api.openai.com
 - ``clawrouter``  — local x402-paid proxy on http://localhost:8402/v1
 
 The same agent can run on different model strings depending on the router —
@@ -148,7 +148,7 @@ def resolve_router(
             for the selected router is not set.
     """
     env = environ if environ is not None else dict(os.environ)
-    router = (env.get("LLM_ROUTER") or "openai").strip().lower()
+    router = (env.get("LLM_ROUTER") or "openrouter").strip().lower()
     tier = Tier(tier_preset) if not isinstance(tier_preset, Tier) else tier_preset
     if router not in _VALID_ROUTERS:
         raise ValueError(

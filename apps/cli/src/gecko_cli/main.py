@@ -19,14 +19,17 @@ from gecko_core._logging import install as install_redaction
 from gecko_cli.commands.advise import advise_cmd
 from gecko_cli.commands.ask import ask_cmd
 from gecko_cli.commands.classify import classify_cmd
+from gecko_cli.commands.competitors_landscape import competitors_landscape_cmd
 from gecko_cli.commands.doctor import doctor_cmd
 from gecko_cli.commands.earnings import earnings_cmd
+from gecko_cli.commands.judges import judges_cmd
 from gecko_cli.commands.memory import memory_cmd
 from gecko_cli.commands.plan import plan_cmd
 from gecko_cli.commands.precedents import precedents_cmd
 from gecko_cli.commands.pricing import pricing_cmd
 from gecko_cli.commands.project import project_cmd
 from gecko_cli.commands.pulse import pulse_cmd
+from gecko_cli.commands.refine import refine_cmd
 from gecko_cli.commands.research import research_cmd
 from gecko_cli.commands.resume import resume_cmd
 from gecko_cli.commands.route import route_cmd
@@ -130,6 +133,9 @@ cli.add_command(sprint_review_cmd)
 cli.add_command(doctor_cmd)
 cli.add_command(earnings_cmd)
 cli.add_command(wallet_cmd)
+cli.add_command(judges_cmd)
+cli.add_command(refine_cmd)
+cli.add_command(competitors_landscape_cmd)
 
 
 # Back-compat alias — older docs reference `main`.

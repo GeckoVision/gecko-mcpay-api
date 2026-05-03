@@ -109,7 +109,7 @@ def test_classify_embedding_null_explicit_message() -> None:
 
 
 def test_classify_dim_mismatch() -> None:
-    exc = _HttpExc("expected 1536 dimensions, got 768")
+    exc = _HttpExc("expected 1024 dimensions, got 768")
     assert classify_exception(exc) == "dim_mismatch"
 
 
@@ -144,7 +144,7 @@ def test_classify_chunk_validation_empty_text() -> None:
 def test_classify_chunk_validation_dim_mismatch() -> None:
     """S16-INGEST-02 — pre-flight rejected a wrong-dim embedding (e.g.
     poisoned cache after a model swap). The audit row points at FM-2."""
-    exc = ChunkValidationError("chunk_index=0 dim 768 != 1536", kind="dim_mismatch")
+    exc = ChunkValidationError("chunk_index=0 dim 768 != 1024", kind="dim_mismatch")
     assert classify_exception(exc) == "dim_mismatch"
 
 

@@ -138,7 +138,12 @@ def test_empty_network_value_defaults_to_devnet() -> None:
 
 def test_registry_keys_match_friendly_names() -> None:
     """Catch refactors that drop a network without updating the alias."""
-    assert set(NETWORKS.keys()) == {"solana-devnet", "solana-mainnet"}
+    assert set(NETWORKS.keys()) == {
+        "solana-devnet",
+        "solana-mainnet",
+        "base-mainnet",
+        "base-sepolia",
+    }
 
 
 # ---------------------------------------------------------------------------

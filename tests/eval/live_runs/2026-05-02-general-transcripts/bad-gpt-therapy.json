@@ -1,0 +1,48 @@
+{
+  "idea_id": "bad-gpt-therapy",
+  "idea_text": "AI therapist chatbot \u2014 $40/mo, replaces traditional CBT for mild anxiety.",
+  "judge_prose": "TAM: 2\nWEDGE: 3\nV1_FEASIBILITY: 4\n\nVerdict: KILL \u2014 AI-therapy with no licensed professional in loop and significant regulatory barriers.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+  "parsed_verdict": "kill",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 4.5,
+    "source_grounding": 6.5,
+    "verdict_justification": 5.5,
+    "cost_predictability": 3.5,
+    "verdict_correctness": 10.0
+  },
+  "expected_verdict": "kill",
+  "expected_verdict_v2": "KILL",
+  "actual_verdict": "kill",
+  "actual_verdict_v2": "PIVOT",
+  "agent_turns": {
+    "analyst": {
+      "text": "- REACHABLE TAM: The market for AI therapy chatbots targeting mild anxiety is constrained by regulatory hurdles. The FDA's guidance classifies these chatbots as Class II SaMD requiring 510(k) clearance, limiting immediate market entry to FDA-cleared solutions like Woebot, which is the only surviving operator post-2024 regulatory tightening (FDA-2024-D-3417, Mobihealth 2025 review). Without clearance, the reachable TAM is effectively zero in year 1.\n\n- COMPARABLES: No recent shipped comparable exists that directly replaces traditional CBT with an AI chatbot for mild anxiety. The only relevant player, Woebot, operates under strict regulatory compliance and clinician oversight, indicating that consumer-direct models are not viable at this time (Mobihealth 2025 review).\n\n- CUSTOMER PAYMENTS: Current consumers pay for traditional CBT sessions, which range from $100 to $250 per hour, depending on location and therapist experience. The proposed $40/month subscription model would need to demonstrate significant efficacy and safety to attract users away from established therapy options.\n\n- COUNTERFACTUAL: If this AI therapist chatbot does not ship, the user segment will likely continue utilizing traditional therapy or existing FDA-cleared solutions like Woebot. The demand for mental health support remains high, but without a viable alternative, users will stick with proven methods, indicating a lack of urgency for this specific product.\n\n- REGULATORY RISKS: The ongoing lawsuits against character.ai over teen suicide linked to chatbot interactions highlight significant reputational and legal risks for AI therapy products. The American Psychological Association's 2025 ethics guidance further complicates the landscape, warning against unlicensed AI therapy products, which could deter potential users and investors (NYT 2024-12-12, APA 2025 guidance).",
+      "tokens_in": 787,
+      "tokens_out": 365
+    },
+    "critic": {
+      "text": "1. **Regulatory Risk**: The FDA's classification of CBT-replacement chatbots as Class II SaMD requiring 510(k) clearance poses a significant barrier to entry. Without this clearance, the founder risks legal jeopardy and potential lawsuits, especially given the ongoing class action against Character.ai related to chatbot interactions. This is a clear kill risk.\n\n2. **Liability Risk**: The pending class action lawsuit against Character.ai highlights the potential for severe legal repercussions if the chatbot causes harm or fails to provide adequate support. This risk is compounded by the APA's guidance cautioning against consumer-direct AI therapy products without licensed oversight. The founder could face substantial financial and reputational damage.\n\n3. **Market Viability Risk**: The lack of successful precedents in the consumer-direct mental health chatbot space raises doubts about market demand. With Woebot being the only surviving operator post-regulatory tightening, it suggests that the market may not support additional entrants without a unique value proposition or regulatory compliance.\n\nChange my mind by: Providing a specific user (company, role, persona, or builder handle) who would pay for this service within 30 days of V1 launch, demonstrating clear demand.",
+      "tokens_in": 787,
+      "tokens_out": 239
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1175,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "1. **User Segment Definition**: Identify a specific user segment that would benefit from the AI therapist chatbot. For V1, we should focus on individuals aged 18-30 experiencing mild anxiety, who are tech-savvy and prefer digital solutions over traditional therapy. This segment is likely to be more open to using AI-driven solutions.\n\n2. **Payment Moment**: The payment moment for this segment would be at the point of subscription sign-up, where users commit to a $40/month fee for access to the chatbot. This creates a clear and immediate revenue opportunity upon successful onboarding.\n\n3. **Minimum Viable Features**: For V1, the chatbot should include basic CBT techniques, such as guided breathing exercises, mood tracking, and journaling prompts. These features should be designed to provide immediate relief for mild anxiety without requiring extensive regulatory compliance.\n\n4. **User Experience**: The chatbot should offer a simple, user-friendly interface that allows users to interact with it easily. It should provide immediate responses and feedback, ensuring that users feel supported and engaged.\n\n5. **Compliance Considerations**: While we cannot fully address regulatory compliance in V1, we should ensure that the chatbot does not make any medical claims or suggest it can replace licensed therapy. This will help mitigate some legal risks while still providing value to users.\n\nBy focusing on this specific user segment and payment moment, we can create a clear path to validation while minimizing regulatory risks.",
+      "tokens_in": 1324,
+      "tokens_out": 289
+    },
+    "judge": {
+      "text": "TAM: 2\nWEDGE: 3\nV1_FEASIBILITY: 4\n\nVerdict: KILL \u2014 AI-therapy with no licensed professional in loop and significant regulatory barriers.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+      "tokens_in": 2761,
+      "tokens_out": 53
+    }
+  }
+}

@@ -21,7 +21,7 @@ from gecko_core.ingestion.types import ProviderChunk
 
 
 class _FakeStore:
-    EMBED_DIM = 1536
+    EMBED_DIM = 1024
 
     def __init__(self) -> None:
         self.insert_source_calls: list[dict[str, Any]] = []
@@ -65,6 +65,7 @@ class _FakeStore:
         chunks: list[tuple[int, str, list[float]]],
         *,
         provider_kind: str = "web",
+        source_url: str | None = None,
     ) -> int:
         self.insert_chunks_calls.append(
             {

@@ -61,12 +61,12 @@ async def test_write_precedent_writes_row_with_correct_shape(
 
     monkeypatch.setattr(flywheel, "summarize_idea_for_flywheel", fake_summarize)
 
-    # Mock embedder — return a fixed 1536-dim vector.
+    # Mock embedder — return a fixed 1024-dim vector.
     async def fake_embed(texts: list[str], **kwargs: Any) -> tuple[list[list[float]], int]:
         assert len(texts) == 1
         # Embed the SUMMARY, never the raw idea.
         assert texts[0] == "Solana validator monitoring tool with slashing alerts"
-        return [[0.1] * 1536], 7
+        return [[0.1] * 1024], 7
 
     monkeypatch.setattr(flywheel, "embed", fake_embed)
 
@@ -104,7 +104,7 @@ async def test_write_precedent_writes_row_with_correct_shape(
     assert captured["category_tags"] == ["crypto", "devtools"]  # sorted
     # Comparables extracted from the judge text — Helius is in the allowlist.
     assert any("Helius" in c for c in captured["key_comparables"])
-    assert len(captured["embedding"]) == 1536
+    assert len(captured["embedding"]) == 1024
     # idea_hash is sha256 — opaque but deterministic.
     assert isinstance(captured["idea_hash"], str)
     assert len(captured["idea_hash"]) == 64
@@ -140,7 +140,7 @@ async def test_write_precedent_swallows_store_errors(monkeypatch: pytest.MonkeyP
         return "category summary"
 
     async def fake_embed(texts: list[str], **kwargs: Any) -> tuple[list[list[float]], int]:
-        return [[0.0] * 1536], 1
+        return [[0.0] * 1024], 1
 
     monkeypatch.setattr(flywheel, "classify_idea", fake_classify)
     monkeypatch.setattr(flywheel, "summarize_idea_for_flywheel", fake_summarize)

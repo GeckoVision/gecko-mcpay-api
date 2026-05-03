@@ -396,4 +396,49 @@ def capture(
     return None
 
 
-__all__ = ["TranscriptStore", "capture", "is_capture_enabled"]
+def load_by_verdict_hash(short_or_full_hash: str) -> dict[str, Any] | None:
+    """Look up the most-recent ``judge_transcripts`` doc by verdict hash.
+
+    Accepts either a 12-hex short hash, a 64-hex full sha256, or a
+    ``verdict@<...>`` token. Returns the raw Mongo document (caller
+    decides what to project) or ``None`` when no match is found / Mongo
+    is not configured. Identical content-addressed verdicts can land
+    under the same hash across reruns; this helper returns the most
+    recent by ``created_at`` to mirror the behaviour of the public
+    ``/v1/verdict/{hash}`` route.
+    """
+    raw = (short_or_full_hash or "").strip()
+    if raw.startswith("verdict@"):
+        raw = raw[len("verdict@") :]
+    if not raw:
+        return None
+    try:
+        int(raw, 16)
+    except ValueError:
+        return None
+
+    coll = _mongo_collection_unsafe()
+    if coll is None:
+        return None
+
+    if len(raw) == 64:
+        cursor = coll.find({"verdict_hash": raw}).sort("created_at", -1).limit(1)
+    elif len(raw) == 12:
+        # Short-hash prefix match. Mongo doesn't have a native prefix
+        # operator on strings; regex anchored at the start with an
+        # escaped-but-hex-only payload is safe (we just int(raw, 16)d it).
+        cursor = coll.find({"verdict_hash": {"$regex": f"^{raw}"}}).sort("created_at", -1).limit(1)
+    else:
+        return None
+
+    for doc in cursor:
+        return dict(doc)
+    return None
+
+
+__all__ = [
+    "TranscriptStore",
+    "capture",
+    "is_capture_enabled",
+    "load_by_verdict_hash",
+]

@@ -40,7 +40,7 @@ class _FakeUsage:
 
 
 class _FakeResp:
-    def __init__(self, n: int, dim: int = 1536) -> None:
+    def __init__(self, n: int, dim: int = 1024) -> None:
         self.data = [type("E", (), {"embedding": [0.0] * dim})() for _ in range(n)]
         self.usage = _FakeUsage(n * 7)
 

@@ -17,6 +17,9 @@ from gecko_cli.render import (
     render_ask_result as _render_ask_result,
 )
 from gecko_cli.render import (
+    render_research_demo as _render_research_demo,
+)
+from gecko_cli.render import (
     render_research_result as _render_research_result,
 )
 from gecko_cli.render import (
@@ -30,8 +33,20 @@ _progress_context: Any = None
 HAS_PROGRESS = False
 
 
-def render_research_result(console: Console, result: Any) -> None:
-    _render_research_result(result, console)
+def render_research_result(console: Console, result: Any, idea: str | None = None) -> None:
+    has_demo_fields = any(
+        getattr(result, f, None) is not None
+        for f in (
+            "per_voice",
+            "transcript_summary",
+            "market_landscape",
+            "next_steps_with_falsifiers",
+        )
+    )
+    if has_demo_fields and idea is not None:
+        _render_research_demo(result, idea, console)
+    else:
+        _render_research_result(result, console)
 
 
 def render_ask_result(console: Console, result: Any) -> None:

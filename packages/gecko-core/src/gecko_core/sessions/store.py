@@ -602,7 +602,7 @@ class SessionStore:
     # S16-INGEST-02 — embedding dim is a single source of truth. If we
     # ever migrate to a different model + dim, this constant moves AND
     # the matching pgvector column type moves in lockstep via a migration.
-    EMBED_DIM = 1536
+    EMBED_DIM = 1024
 
     # S17-INGEST-SHED-01 — outermost batch size, then halved on retryable
     # errors (`toast_limit` / `supabase_5xx`). Lowered from 500 to 16 after

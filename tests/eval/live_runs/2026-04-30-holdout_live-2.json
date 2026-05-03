@@ -1,0 +1,187 @@
+{
+  "date": "2026-04-30",
+  "git_sha": "b48b86d",
+  "mode": "live",
+  "reruns": 1,
+  "suite": "holdout_live",
+  "aggregate": {
+    "kill_rate": 0.9,
+    "verdict_accuracy": 0.6,
+    "median_score": 6.0,
+    "median_weighted_score": 6.458,
+    "median_cost_usd": 0.0014,
+    "n": 10
+  },
+  "ideas": [
+    {
+      "id": "holdout-good-comp-band-diff",
+      "expected_verdict": "ship",
+      "actual_verdict": "ship",
+      "scores": {
+        "agent_voice": 4.5,
+        "source_grounding": 3.0,
+        "verdict_justification": 6.5,
+        "cost_predictability": 4.0,
+        "verdict_correctness": 10.0
+      },
+      "wall_seconds": 24.313,
+      "tokens_total": 6629,
+      "cost_usd": 0.0014,
+      "v1_sources_cost_usd": 0,
+      "idea_id": "holdout-good-comp-band-diff"
+    },
+    {
+      "id": "holdout-good-twilio-webhook-replay",
+      "expected_verdict": "ship",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 4.5,
+        "source_grounding": 2.5,
+        "verdict_justification": 7.0,
+        "cost_predictability": 3.5,
+        "verdict_correctness": 0.0
+      },
+      "wall_seconds": 23.559,
+      "tokens_total": 6323,
+      "cost_usd": 0.0012,
+      "v1_sources_cost_usd": 0,
+      "idea_id": "holdout-good-twilio-webhook-replay"
+    },
+    {
+      "id": "holdout-good-ame-intake",
+      "expected_verdict": "ship",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 5.5,
+        "source_grounding": 3.5,
+        "verdict_justification": 7.5,
+        "cost_predictability": 4.0,
+        "verdict_correctness": 0.0
+      },
+      "wall_seconds": 21.175,
+      "tokens_total": 6853,
+      "cost_usd": 0.0014,
+      "v1_sources_cost_usd": 0,
+      "idea_id": "holdout-good-ame-intake"
+    },
+    {
+      "id": "holdout-good-mcp-clickhouse-explainer",
+      "expected_verdict": "ship",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 8.5,
+        "source_grounding": 4.5,
+        "verdict_justification": 7.5,
+        "cost_predictability": 7.0,
+        "verdict_correctness": 0.0
+      },
+      "wall_seconds": 22.278,
+      "tokens_total": 7224,
+      "cost_usd": 0.0015,
+      "v1_sources_cost_usd": 0,
+      "idea_id": "holdout-good-mcp-clickhouse-explainer"
+    },
+    {
+      "id": "holdout-good-hhs-rfp-budget",
+      "expected_verdict": "ship",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 4.5,
+        "source_grounding": 3.5,
+        "verdict_justification": 6.5,
+        "cost_predictability": 3.0,
+        "verdict_correctness": 0.0
+      },
+      "wall_seconds": 21.643,
+      "tokens_total": 6772,
+      "cost_usd": 0.0014,
+      "v1_sources_cost_usd": 0,
+      "idea_id": "holdout-good-hhs-rfp-budget"
+    },
+    {
+      "id": "holdout-bad-childcare-swap",
+      "expected_verdict": "kill",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 4.5,
+        "source_grounding": 5.0,
+        "verdict_justification": 6.5,
+        "cost_predictability": 3.5,
+        "verdict_correctness": 10.0
+      },
+      "wall_seconds": 19.354,
+      "tokens_total": 6487,
+      "cost_usd": 0.0013,
+      "v1_sources_cost_usd": 0,
+      "idea_id": "holdout-bad-childcare-swap"
+    },
+    {
+      "id": "holdout-bad-sales-action-extractor",
+      "expected_verdict": "kill",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 8.5,
+        "source_grounding": 5.5,
+        "verdict_justification": 7.5,
+        "cost_predictability": 7.0,
+        "verdict_correctness": 10.0
+      },
+      "wall_seconds": 27.826,
+      "tokens_total": 7810,
+      "cost_usd": 0.0017,
+      "v1_sources_cost_usd": 0,
+      "idea_id": "holdout-bad-sales-action-extractor"
+    },
+    {
+      "id": "holdout-bad-ai-marriage-counselor",
+      "expected_verdict": "kill",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 7.5,
+        "source_grounding": 4.5,
+        "verdict_justification": 7.0,
+        "cost_predictability": 6.5,
+        "verdict_correctness": 10.0
+      },
+      "wall_seconds": 23.541,
+      "tokens_total": 7147,
+      "cost_usd": 0.0015,
+      "v1_sources_cost_usd": 0,
+      "idea_id": "holdout-bad-ai-marriage-counselor"
+    },
+    {
+      "id": "holdout-bad-fitness-loyalty-chain",
+      "expected_verdict": "kill",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 8.0,
+        "source_grounding": 5.5,
+        "verdict_justification": 7.5,
+        "cost_predictability": 6.5,
+        "verdict_correctness": 10.0
+      },
+      "wall_seconds": 29.609,
+      "tokens_total": 9178,
+      "cost_usd": 0.0019,
+      "v1_sources_cost_usd": 0,
+      "idea_id": "holdout-bad-fitness-loyalty-chain"
+    },
+    {
+      "id": "holdout-bad-ai-estate-planner",
+      "expected_verdict": "kill",
+      "actual_verdict": "kill",
+      "scores": {
+        "agent_voice": 8.5,
+        "source_grounding": 5.5,
+        "verdict_justification": 7.5,
+        "cost_predictability": 6.5,
+        "verdict_correctness": 10.0
+      },
+      "wall_seconds": 29.078,
+      "tokens_total": 7575,
+      "cost_usd": 0.0016,
+      "v1_sources_cost_usd": 0,
+      "idea_id": "holdout-bad-ai-estate-planner"
+    }
+  ]
+}

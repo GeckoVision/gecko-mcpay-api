@@ -1,0 +1,48 @@
+{
+  "idea_id": "crypto-ship-cap-table-echo",
+  "idea_text": "Cap-table diff CLI for SAFE-funded startups raising on Echo: parses term sheets and produces dilution + on-chain settlement preview for the lead.",
+  "judge_prose": "TAM: 7\nWEDGE: 8\nV1_FEASIBILITY: 8\n\nVerdict: SHIP V1 to lead investors on Echo. The idea targets a specific segment of lead investors involved in crypto-native fundraising on Echo, with a clear payment moment as they currently rely on inefficient spreadsheet methods. The demand is validated by public requests from notable figures and the regulatory context adds urgency for a compliant solution. The V1 is feasible within 4 days, focusing on parsing term sheets and providing dilution and settlement previews.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+  "parsed_verdict": "ship",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 5.5,
+    "source_grounding": 5.0,
+    "verdict_justification": 6.5,
+    "cost_predictability": 4.0,
+    "verdict_correctness": 10.0
+  },
+  "expected_verdict": "ship",
+  "expected_verdict_v2": "REFINE",
+  "actual_verdict": "ship",
+  "actual_verdict_v2": "REFINE",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM**: The reachable TAM in year 1 is approximately 1,200 startups raising on Echo quarterly, with each startup processing an average of $100K per round. This results in a potential market of ~$120M per quarter or ~$480M annually. This is based on Echo processing ~$120M of SAFE-equivalents per quarter (source: Echo investor update Q4 2025).\n\n- **Comparable**: No recent shipped comparable exists for a CLI tool specifically targeting SAFE-funded startups. The closest precedent is a narrow doc-class CLI for crypto-native fundraising leads, which was evaluated but not shipped (source: gecko_precedent).\n\n- **Current Payment Dynamics**: Lead investors currently manage dilution calculations using ad-hoc spreadsheet diffs, which are time-intensive. This indicates a willingness to pay for a streamlined solution. The cost of manual calculations can exceed $400/hr for investor teams, suggesting a potential price point for the CLI tool.\n\n- **Counterfactual**: If this tool is not shipped, lead investors will continue using inefficient spreadsheet methods, potentially leading to errors and longer fundraising cycles. This inefficiency signals a clear demand for a solution that automates and simplifies the process.\n\n- **Community Demand**: There is explicit demand from multiple Echo leads on Twitter for an on-chain SAFE-diff tool, indicating that potential users are actively seeking this solution (source: twit_sh 2025).\n\n- **Regulatory Context**: The active regulatory boundary is Reg D 506(c) verification on-chain, which adds urgency for a compliant solution that can streamline the fundraising process for startups (source: Cooley GO crypto-fundraising guide 2025).",
+      "tokens_in": 791,
+      "tokens_out": 341
+    },
+    "critic": {
+      "text": "**Named Risks:**\n\n1. **Regulatory Compliance Risk**: The tool must navigate the complexities of Reg D 506(c) verification. If it inadvertently facilitates non-compliance or misinterpretation of regulations, it could expose the founder to legal jeopardy. This is particularly critical given the evolving landscape of crypto regulations.\n\n2. **Market Demand Validation**: While there are public requests from notable figures like @balajis and @cdixon, the evidence lacks specificity. We need a named user who is ready to pay within 30 days. Without this, the demand remains speculative, and the risk of building a product that no one will buy is high.\n\n3. **Technical Feasibility**: Parsing term sheets and producing accurate dilution and settlement previews is a complex task. If the CLI fails to deliver accurate or timely results, it could undermine trust and lead to significant user dissatisfaction, especially in a high-stakes fundraising environment.\n\nChange my mind by: Providing a signed commitment from a specific lead investor on Echo who will pay for the tool within 30 days of launch.",
+      "tokens_in": 791,
+      "tokens_out": 218
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1134,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "**V1: Cap-table Diff CLI for SAFE-Funded Startups**\n\n**Description**: Build a command-line interface (CLI) tool that parses term sheets for SAFE-funded startups raising on Echo. The tool will produce a dilution preview and an on-chain settlement overview specifically for lead investors.\n\n**Acceptance Criteria**:\n1. Parse a provided SAFE term sheet and extract key terms (valuation cap, discount rate, etc.) to display in a structured format.\n2. Calculate and display the dilution percentage for the lead investor based on the parsed term sheet data.\n3. Generate an on-chain settlement preview that outlines the expected token distribution post-funding round.\n4. Allow the user to input multiple term sheets and compare the dilution effects side-by-side.\n5. Provide a demo that showcases the tool's functionality using a sample SAFE term sheet and demonstrates the output for dilution and settlement preview.\n\n**V2**: Expand the CLI to support multiple user segments, including individual investors and startup founders, and add a collaborative interface for real-time sharing of term sheet comparisons.\n\n**V3**: Introduce integrations with existing fundraising platforms, enable network effects through user-generated templates, and develop a paid tier for advanced features such as historical data analysis and regulatory compliance checks.\n\nV1_FEASIBLE_IN_4_DAYS: yes",
+      "tokens_in": 1283,
+      "tokens_out": 262
+    },
+    "judge": {
+      "text": "TAM: 7\nWEDGE: 8\nV1_FEASIBILITY: 8\n\nVerdict: SHIP V1 to lead investors on Echo. The idea targets a specific segment of lead investors involved in crypto-native fundraising on Echo, with a clear payment moment as they currently rely on inefficient spreadsheet methods. The demand is validated by public requests from notable figures and the regulatory context adds urgency for a compliant solution. The V1 is feasible within 4 days, focusing on parsing term sheets and providing dilution and settlement previews.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+      "tokens_in": 2693,
+      "tokens_out": 121
+    }
+  }
+}

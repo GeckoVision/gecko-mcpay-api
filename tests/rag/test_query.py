@@ -117,7 +117,7 @@ async def test_rag_query_returns_chunks(monkeypatch: pytest.MonkeyPatch) -> None
     fake_store._client = _FakeClient(fake_resp)
 
     async def _fake_embed(texts: list[str]) -> tuple[list[list[float]], int]:
-        return [[0.1] * 1536], 0
+        return [[0.1] * 1024], 0
 
     monkeypatch.setattr(q, "embed", _fake_embed)
 
@@ -268,7 +268,7 @@ async def test_rag_query_uses_hybrid_rpc_by_default(
     fake_store._client = _FakeClientRouted(router)
 
     async def _fake_embed(texts: list[str]) -> tuple[list[list[float]], int]:
-        return [[0.1] * 1536], 0
+        return [[0.1] * 1024], 0
 
     monkeypatch.setattr(q, "embed", _fake_embed)
 
@@ -298,7 +298,7 @@ async def test_rag_query_hybrid_falls_back_when_rpc_errors(
     fake_store._client = _FakeClientRouted(router)
 
     async def _fake_embed(texts: list[str]) -> tuple[list[list[float]], int]:
-        return [[0.1] * 1536], 0
+        return [[0.1] * 1024], 0
 
     monkeypatch.setattr(q, "embed", _fake_embed)
 
@@ -330,7 +330,7 @@ async def test_rag_query_preserves_provider_chunks_in_topk(
     fake_store._client = _FakeClientRouted(router)
 
     async def _fake_embed(texts: list[str]) -> tuple[list[list[float]], int]:
-        return [[0.1] * 1536], 0
+        return [[0.1] * 1024], 0
 
     monkeypatch.setattr(q, "embed", _fake_embed)
 
@@ -356,7 +356,7 @@ async def test_rag_query_per_kind_quota_env_override(
     fake_store._client = _FakeClientRouted(router)
 
     async def _fake_embed(texts: list[str]) -> tuple[list[list[float]], int]:
-        return [[0.1] * 1536], 0
+        return [[0.1] * 1024], 0
 
     monkeypatch.setattr(q, "embed", _fake_embed)
 

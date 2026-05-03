@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from uuid import UUID, uuid4
 
 import pytest
-from gecko_core.sessions import ChunkMatch, SessionRecord, SessionStore
+from gecko_core.sessions import SessionRecord, SessionStore
 
 
 def _make_response(data: list[dict[str, Any]]) -> MagicMock:
@@ -235,48 +235,63 @@ async def test_list_sources_returns_source_info() -> None:
 
 
 @pytest.mark.asyncio
-async def test_match_chunks_windowed_calls_rpc_with_correct_params() -> None:
-    """S13-PHASE-02 — match_chunks_windowed dispatches to the windowed RPC."""
+async def test_match_chunks_windowed_mongo_dispatches_vectorsearch() -> None:
+    """match_chunks_windowed_mongo issues a $vectorSearch pipeline with the
+    correct project_id filter and returns rows shaped like the Supabase RPC."""
+    from gecko_core.db.mongo_reads import match_chunks_windowed_mongo
+
     project_id = uuid4()
     chunk_id = uuid4()
     source_id = uuid4()
     captured = datetime.now(UTC)
 
-    fake = FakeClient()
-    rpc_q = FakeQuery(
-        _make_response(
-            [
-                {
-                    "id": str(chunk_id),
-                    "source_id": str(source_id),
-                    "source_url": "https://example.com/x",
-                    "chunk_index": 0,
-                    "text": "hello",
-                    "captured_at": captured.isoformat(),
-                    "similarity": 0.91,
-                }
-            ]
-        )
-    )
-    fake.queries["rpc:match_chunks_windowed"] = rpc_q
+    result_doc = {
+        "_id": chunk_id,
+        "source_id": str(source_id),
+        "source_url": "https://example.com/x",
+        "chunk_index": 0,
+        "text": "hello",
+        "captured_at": captured,
+        "provider_kind": "web",
+        "score": 0.91,
+    }
 
-    store = SessionStore(client=fake)  # type: ignore[arg-type]
-    rows = await store.match_chunks_windowed(
-        query_embedding=[0.0] * 1536,
-        window_days=14,
-        project_id=project_id,
-        match_count=5,
-    )
+    class _AsyncAggCursor:
+        def __init__(self, docs: list[dict[str, Any]]) -> None:
+            self._docs = list(docs)
+
+        def __aiter__(self) -> _AsyncAggCursor:
+            return self
+
+        async def __anext__(self) -> dict[str, Any]:
+            if not self._docs:
+                raise StopAsyncIteration
+            return self._docs.pop(0)
+
+    captured_pipeline: list[list[dict[str, Any]]] = []
+
+    fake_coll = MagicMock()
+
+    def _aggregate(pipeline: list[dict[str, Any]]) -> _AsyncAggCursor:
+        captured_pipeline.append(pipeline)
+        return _AsyncAggCursor([result_doc])
+
+    fake_coll.aggregate = _aggregate
+
+    with patch("gecko_core.db.mongo_reads.chunks_collection", return_value=fake_coll):
+        rows = await match_chunks_windowed_mongo(
+            query_embedding=[0.0] * 1024,
+            window_days=14,
+            project_id=project_id,
+            match_count=5,
+        )
 
     assert len(rows) == 1
-    assert isinstance(rows[0], ChunkMatch)
-    assert rows[0].similarity == 0.91
+    assert rows[0]["similarity"] == pytest.approx(0.91)
+    assert rows[0]["text"] == "hello"
 
-    # RPC was called with the right name + the project_id stringified.
-    rpc_call = rpc_q.calls[0]
-    assert rpc_call[0] == "rpc"
-    assert rpc_call[1][0] == "match_chunks_windowed"
-    params = rpc_call[1][1]
-    assert params["window_days"] == 14
-    assert params["p_project_id"] == str(project_id)
-    assert params["match_count"] == 5
+    # The pipeline must contain a $vectorSearch stage with project_id filter.
+    assert captured_pipeline, "aggregate() was never called"
+    pipeline = captured_pipeline[0]
+    vs_stage = pipeline[0]["$vectorSearch"]
+    assert vs_stage["filter"]["project_id"] == str(project_id)

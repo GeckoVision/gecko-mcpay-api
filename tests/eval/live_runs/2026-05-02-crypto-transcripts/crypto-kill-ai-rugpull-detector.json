@@ -1,0 +1,48 @@
+{
+  "idea_id": "crypto-kill-ai-rugpull-detector",
+  "idea_text": "AI-powered rug-pull detector Chrome extension that scans any token contract and shows a risk score, $9/mo.",
+  "judge_prose": "TAM: 2\nWEDGE: 3\nV1_FEASIBILITY: 3\n\nVerdict: KILL \u2014 The market is saturated with free alternatives, and the proposed $9/month subscription model is unlikely to attract users who can access similar services at no cost. The high churn rate for similar products further diminishes the viability of this idea.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+  "parsed_verdict": "kill",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 5.5,
+    "source_grounding": 5.0,
+    "verdict_justification": 6.0,
+    "cost_predictability": 4.0,
+    "verdict_correctness": 10.0
+  },
+  "expected_verdict": "kill",
+  "expected_verdict_v2": "KILL",
+  "actual_verdict": "kill",
+  "actual_verdict_v2": "PIVOT",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM**: The reachable TAM for this Chrome extension is effectively zero in year 1. The market is saturated with free alternatives like GoPlus (12M MAU), De.Fi Security Score, and Honeypot.is, which provide similar risk assessment features without cost (source: each project's docs 2025). \n\n- **Comparable**: No recent shipped comparable exists that successfully monetizes a similar product. Previous attempts at retail-priced security-score SaaS have been killed due to competition from free on-chain heuristic tools (source: gecko_precedent).\n\n- **Customer Payment Dynamics**: Users currently rely on free tools for rug-pull detection, which means they are not paying for this service. The proposed $9/month price point faces significant resistance, especially given the high churn rate of 41% for similar crypto SaaS products (source: ProfitWell crypto SaaS benchmark 2024).\n\n- **Counterfactual**: If this extension does not ship, users will continue using existing free tools without any disruption. There is no compelling reason for users to switch or pay for a service that offers no unique value proposition (source: Trail of Bits 'rug detection' analysis 2024).\n\n- **Market Trends**: Leading wallets are integrating scam detection features at no cost, further diminishing the potential user base for a standalone extension. This trend indicates a shift towards bundled services that undermine the viability of separate paid offerings (source: industry signal). \n\n- **Verdict**: Given the saturated market, lack of recent successful comparables, and the presence of free alternatives, the idea is unlikely to gain traction and should be considered for rejection.",
+      "tokens_in": 783,
+      "tokens_out": 335
+    },
+    "critic": {
+      "text": "**Risks:**\n\n1. **Market Saturation and Commoditization**: The market for rug-pull detection tools is already saturated with free alternatives like GoPlus, De.Fi Security Score, and Honeypot.is. These tools provide similar functionality without any cost, making it nearly impossible for a $9/month subscription to gain traction. Users are unlikely to pay for a service that they can access for free, leading to a high likelihood of churn and low user acquisition.\n\n2. **Absorption by Incumbents**: Major wallet providers are integrating scam detection features directly into their platforms, effectively eliminating the need for a standalone Chrome extension. This trend indicates that the market for independent rug-pull detection tools is shrinking, as users will prefer the convenience of built-in features over additional extensions.\n\n3. **High Churn Rate**: The median churn rate of 41% for retail-priced crypto SaaS indicates that even if you manage to acquire users, retaining them will be a significant challenge. This churn rate suggests that the product lacks sufficient differentiation or value to keep users engaged long-term, which is critical for a subscription-based model.\n\nChange my mind by: Providing a specific user (company, role, persona, or builder handle) who would pay for this service within 30 days of V1 launch.",
+      "tokens_in": 783,
+      "tokens_out": 265
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1167,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "**V1: AI-Powered Rug-Pull Detector Chrome Extension**\n\n**User Segment**: Solo crypto investors looking for risk assessment on new token contracts.\n\n**Payment Moment**: Users pay $9/month after scanning and receiving a risk score for a token contract.\n\n**Acceptance Criteria**:\n1. Users can install the Chrome extension and successfully scan a token contract, receiving a risk score within 5 seconds.\n2. Users can view a detailed breakdown of the risk score, including at least three specific risk factors that contribute to the score.\n3. Users can access a help section that provides clear explanations of what the risk score means and how to interpret the results.\n4. Users can initiate a subscription process directly within the extension after receiving the risk score, with a clear call-to-action button that leads to payment.\n\nV1_FEASIBLE_IN_4_DAYS: no",
+      "tokens_in": 1316,
+      "tokens_out": 175
+    },
+    "judge": {
+      "text": "TAM: 2\nWEDGE: 3\nV1_FEASIBILITY: 3\n\nVerdict: KILL \u2014 The market is saturated with free alternatives, and the proposed $9/month subscription model is unlikely to attract users who can access similar services at no cost. The high churn rate for similar products further diminishes the viability of this idea.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+      "tokens_in": 2639,
+      "tokens_out": 85
+    }
+  }
+}

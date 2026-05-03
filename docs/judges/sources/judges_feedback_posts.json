@@ -1,0 +1,100 @@
+{
+  "event": "Arena Colosseum / Colosseum Hackathon – Public Feedback Interactions",
+  "source": "https://x.com/i/lists/2046474386694369490/members + live X search",
+  "total_judges_with_public_feedback": 2,
+  "note_for_super_agent": "These are the highest-signal public examples. Use them to model judge evaluation style (traction, PMF evidence, user feedback loops, etc.). Most other judges (Dom, Kuka, Cap, etc.) give lighter praise or facilitate sessions but rarely reply publicly to individual projects.",
+  "judges_with_public_feedback": [
+    {
+      "name": "Billy | attn.markets",
+      "username": "@twentyOne2x",
+      "superteam_association": "None (Colosseum winner himself)",
+      "main_solicitation_post": {
+        "post_id": "2044888917917208667",
+        "date": "2026-04-16",
+        "content": "@Solana x @Colosseum Frontier applicants…. you know the drill :)",
+        "quoted_vc_advice": true,
+        "link": "https://x.com/twentyOne2x/status/2044888917917208667",
+        "replies": 5,
+        "purpose": "Direct call-to-action for Colosseum applicants to engage + share feedback"
+      },
+      "key_feedback_interactions": [
+        {
+          "reply_to": "@gmblor (on-chain mortgages & ETFs)",
+          "post_id": "2044900417688265156",
+          "content": "hitting bit close to home... im bullish on founders actively seeking feedback like @muse_jp_sol... re public list of participants: /projects tab of the Colosseum Arena app",
+          "style": "Positive + specific project shoutout + practical resource sharing"
+        },
+        {
+          "reply_to": "@basedbidx (token launch infra)",
+          "content": "Advice on pitch strategy (strong pitch + GitHub team page wins initial attention)",
+          "style": "Practical pitch advice"
+        },
+        {
+          "reply_to": "@jorge_rl02 (LinceFinance – EUR yields)",
+          "post_id": "2044899514750840981",
+          "content": "Would need some market research... may be good enough to just add a swap... pls dm",
+          "style": "Technical/market feedback + invites deeper DM conversation"
+        },
+        {
+          "reply_to": "@macofweb3",
+          "post_id": "2044893047012331803",
+          "content": "ser you are a founder you shouldnt ask for permissions just do fire away here or in dms 😎",
+          "style": "Encouraging + direct solicitation of ideas"
+        }
+      ],
+      "overall_style": "Builder-friendly Colosseum insider. Bullish on founders who seek feedback aggressively. Focuses on submission strategy, bragging with context, and real traction."
+    },
+    {
+      "name": "Adam",
+      "username": "@adamdelphantom",
+      "superteam_association": "None (Phantom + SteelCitySolana organizer)",
+      "main_solicitation_post": {
+        "post_id": "2047305639555219688",
+        "date": "2026-04-23",
+        "content": "The way I think about @colosseum projects is that there’s essentially 2 kinds imo — greenfield innovation products vs iterative innovation products. Dependent on which one you’re building I personally want to see different evidence of progress to PMF",
+        "link": "https://x.com/adamdelphantom/status/2047305639555219688",
+        "replies": 17,
+        "purpose": "Explicit framework for how he evaluates Colosseum projects + invites replies"
+      },
+      "key_feedback_interactions": [
+        {
+          "reply_to": "@AdrianBrz_ (ride.markets – conviction markets)",
+          "post_id": "2047415507918127568",
+          "content": "Personally id say this is pretty greenfield!",
+          "style": "Clear categorization"
+        },
+        {
+          "reply_to": "@TheLazySol (epicentral_ – onchain options)",
+          "post_id": "2047323323361628191",
+          "content": "Good q. The reality is this is a spectrum... onchain options are kind of in the middle. Ultimately you need a good amount of organic users to give you a feedback loop and liquidity... lookout for airdrop farmers...",
+          "style": "Nuanced PMF/liquidity/feedback-loop advice + acknowledges their build"
+        },
+        {
+          "reply_to": "@KLOUT_Market (stock market for creators)",
+          "post_id": "2047324069398216723",
+          "content": "A quick glance at your bio makes me think you’re more on the iterative side. The good news is that you target a specific user “creators”. You just need to go to where those potential users hang out online and test your value prop...",
+          "style": "User-acquisition + iteration advice"
+        }
+      ],
+      "overall_style": "Framework-driven (greenfield vs iterative). Heavy emphasis on evidence of PMF, user feedback loops, organic traction vs airdrop farming, and category-specific progress metrics."
+    }
+  ],
+  "other_judges_with_light_public_activity": [
+    {
+      "name": "Dom Kwok | EasyA",
+      "username": "@dom_kwok",
+      "activity": "Frequent public pitch praise ('absolutely amazing pitch', 'awesome pitch!', shark-tank style encouragement). Not Colosseum-specific in latest posts but consistent encouraging tone."
+    },
+    {
+      "name": "Kuka",
+      "username": "@kukasolana",
+      "activity": "Direct praise for builders/projects (@usebido, @DefundsFinance) + SuperteamBR Colosseum events. Focus: non-stop shipping + DeFi."
+    },
+    {
+      "name": "Cap",
+      "username": "@CapinUK",
+      "activity": "Facilitates SuperteamUK Colosseum sessions ('roast the founders', 'tap into judge knowledge')."
+    }
+  ],
+  "recommendation_for_super_agent": "For simulation: Feed Billy’s thread when evaluating submission strategy / feedback-seeking founders. Feed Adam’s thread when scoring greenfield vs iterative PMF evidence. Cross-reference with the general Colosseum criteria (traction first, demo, competitive moat, etc.). Public replies are the best proxy for how they think out loud."
+}

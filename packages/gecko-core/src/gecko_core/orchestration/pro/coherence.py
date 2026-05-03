@@ -62,7 +62,112 @@ def count_incoherent_premise_flags(turns: Iterable[AgentTurn]) -> int:
     return len(flagged)
 
 
+# Sentinel: ``NO_SURVIVING_DISSENT: yes``. Emitted by the v5.5
+# surviving_dissent post-processor when no dissent survived the debate.
+# Eval-harness facing — the renderer ignores it.
+_NO_SURVIVING_DISSENT_PATTERN = re.compile(
+    r"\bNO_SURVIVING_DISSENT\s*:\s*yes\b",
+    re.IGNORECASE,
+)
+
+
+def count_no_surviving_dissent_flags(
+    turns: Iterable[AgentTurn] | list[dict[str, object]],
+) -> int:
+    """Count NO_SURVIVING_DISSENT: yes sentinel emissions across turns.
+
+    Sibling to ``count_incoherent_premise_flags``. Accepts either a list
+    of ``AgentTurn`` (production) or a list of plain dicts (eval harness
+    replay path) — duck-typed on a ``content`` key/attribute.
+    """
+    count = 0
+    for turn in turns:
+        raw = turn.get("content", "") if isinstance(turn, dict) else getattr(turn, "content", "")
+        content = raw if isinstance(raw, str) else ""
+        if _NO_SURVIVING_DISSENT_PATTERN.search(content):
+            count += 1
+    return count
+
+
+# Sentinel: ``idea_classification: <greenfield|iterative|unclear>``.
+# Emitted by the judge as the FIRST line of its synthesis when the
+# v5.5.1 named-rubric calibration upgrade is active. Sibling to
+# the gap_classification / Final verdict / INCOHERENT_PREMISE sentinels:
+# regex extraction from judge prose, no extra LLM call. Case-insensitive
+# match because prompt drift across versions tends to flip casing.
+_IDEA_CLASSIFICATION_PATTERN = re.compile(
+    r"\bidea_classification\s*:\s*(greenfield|iterative|unclear)\b",
+    re.IGNORECASE,
+)
+
+_IDEA_CLASSIFICATION_VALUES: frozenset[str] = frozenset({"greenfield", "iterative", "unclear"})
+
+
+def extract_idea_classification(
+    turns: Iterable[AgentTurn] | list[dict[str, object]],
+) -> str | None:
+    """Return the judge's idea_classification label, or None if absent.
+
+    Scans turns in order and returns the FIRST match — the judge prompt
+    instructs the agent to emit the sentinel as its very first output
+    line, so any later mention (e.g. a critic quoting the judge) loses
+    to the original. Caller normalises None to leave
+    ``ResearchResult.idea_classification`` unset.
+
+    Accepts the production AgentTurn shape and the eval-harness replay
+    dict shape, mirroring ``count_no_surviving_dissent_flags``.
+    """
+    for turn in turns:
+        raw = turn.get("content", "") if isinstance(turn, dict) else getattr(turn, "content", "")
+        content = raw if isinstance(raw, str) else ""
+        match = _IDEA_CLASSIFICATION_PATTERN.search(content)
+        if match:
+            label = match.group(1).lower()
+            if label in _IDEA_CLASSIFICATION_VALUES:
+                return label
+    return None
+
+
+# Sentinel: ``founder_posture: <high|moderate|unclear>``.
+# Emitted by the judge as a sibling line to ``idea_classification`` when
+# the v5.5.2 calibration upgrade is active (Alliance-style founder lens).
+# The judge prompt asks for it; the post-processor batch extracts it again
+# as a fallback so a missed sentinel does not silently null the field.
+# Same regex shape as ``idea_classification`` for parity.
+_FOUNDER_POSTURE_PATTERN = re.compile(
+    r"\bfounder_posture\s*:\s*(high|moderate|unclear)\b",
+    re.IGNORECASE,
+)
+
+_FOUNDER_POSTURE_VALUES: frozenset[str] = frozenset({"high", "moderate", "unclear"})
+
+
+def extract_founder_posture(
+    turns: Iterable[AgentTurn] | list[dict[str, object]],
+) -> str | None:
+    """Return the judge's founder_posture label, or None if absent.
+
+    Sibling to :func:`extract_idea_classification`. First-match wins so
+    a critic later quoting the judge can't override the original. Caller
+    normalises None to leave ``ResearchResult.founder_posture`` unset
+    (the post-processor JSON path then has a chance to fill it in).
+    Accepts AgentTurn (production) and dict (eval-replay) shapes.
+    """
+    for turn in turns:
+        raw = turn.get("content", "") if isinstance(turn, dict) else getattr(turn, "content", "")
+        content = raw if isinstance(raw, str) else ""
+        match = _FOUNDER_POSTURE_PATTERN.search(content)
+        if match:
+            label = match.group(1).lower()
+            if label in _FOUNDER_POSTURE_VALUES:
+                return label
+    return None
+
+
 __all__ = [
     "count_incoherent_premise_flags",
+    "count_no_surviving_dissent_flags",
+    "extract_founder_posture",
+    "extract_idea_classification",
     "turn_flags_incoherent_premise",
 ]

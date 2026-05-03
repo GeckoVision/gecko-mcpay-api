@@ -40,6 +40,9 @@ class _AuditingFakeStore:
         session_id: UUID,
         source_id: UUID,
         chunks: list[tuple[int, str, list[float]]],
+        *,
+        provider_kind: str = "web",
+        source_url: str | None = None,
     ) -> int:
         if self._raise_exc is not None:
             raise self._raise_exc
@@ -62,7 +65,7 @@ def _candidate(url: str = "https://example.com/post") -> SourceCandidate:
 
 
 async def _fake_embed(texts: list[str], **_: Any) -> tuple[list[list[float]], int]:
-    return [[0.0] * 1536 for _ in texts], 0
+    return [[0.0] * 1024 for _ in texts], 0
 
 
 async def _fake_web(url: str, **_: Any) -> tuple[str, float]:

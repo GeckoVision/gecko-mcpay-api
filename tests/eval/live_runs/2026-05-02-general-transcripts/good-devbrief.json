@@ -1,0 +1,48 @@
+{
+  "idea_id": "good-devbrief",
+  "idea_text": "Devbrief \u2014 a CLI that takes a GitHub repo URL and produces a recruiter-ready one-page HTML profile from commits, languages, and contribution graph.",
+  "judge_prose": "TAM: 7\nWEDGE: 6\nV1_FEASIBILITY: 8\n\nVerdict: SHIP V1 to technical recruiters. The idea targets a specific pain point for recruiters who spend significant time parsing GitHub profiles. The structured one-page summary offers a clear value proposition, and the willingness to pay is evidenced by the success of similar products like ResumeCard. The named ICP and payment moment are clear, and the V1 is feasible within a short timeframe.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+  "parsed_verdict": "ship",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 5.5,
+    "source_grounding": 5.0,
+    "verdict_justification": 6.5,
+    "cost_predictability": 4.0,
+    "verdict_correctness": 5.0
+  },
+  "expected_verdict": "ship",
+  "expected_verdict_v2": "BUILD",
+  "actual_verdict": "ship",
+  "actual_verdict_v2": "REFINE",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM**: ~67% of technical recruiters (from Hired State of Recruiting 2024) prefer a structured one-page summary, indicating a potential market of ~200,000 recruiters in the US alone (assuming 300,000 total tech recruiters). If each recruiter engages with 10 candidates per month, that\u2019s a reachable TAM of ~2M profiles annually, assuming $30 per profile (similar to ResumeCard pricing).\n\n- **Comparable**: ResumeCard, acquired by Hired in 2023, demonstrates a successful model for structured developer profiles, indicating a willingness to pay. This suggests that a similar product could achieve profitability and market traction.\n\n- **Current Payment Dynamics**: Recruiters currently spend 8 minutes per GitHub profile screen, indicating they value efficiency. If they are willing to pay $30 per profile for a structured summary, that translates to a potential $6M/month market if 200,000 recruiters each purchase one profile per month.\n\n- **Counterfactual**: If Devbrief does not ship, recruiters will continue to spend significant time manually parsing GitHub profiles, leading to inefficiencies and potentially missing out on qualified candidates. This indicates a clear demand for a solution that streamlines the process.\n\n- **Gecko Precedent**: The prior evaluation of a generic AI resume product (sim=0.55) suggests that while there is interest in automated resume generation, the lack of specificity to developer profiles may have contributed to its lower viability. This indicates that a focused solution like Devbrief may have a sharper wedge in the market.",
+      "tokens_in": 800,
+      "tokens_out": 319
+    },
+    "critic": {
+      "text": "**Risks:**\n\n1. **Market Saturation**: The idea of generating structured profiles from GitHub data is not unique. Given the existence of similar tools and the potential for commoditization, Devbrief risks being lost in a sea of generic solutions. The precedent of the \"Generic AI resume product for software-engineer job seekers\" that was killed indicates that the market may not support another similar offering, especially if it lacks a unique value proposition.\n\n2. **User Acquisition**: While there is evidence of interest from builders on Twitter, the lack of a specific named user or company willing to pay within 30 days raises concerns about actual demand. The evidence provided is anecdotal and does not guarantee that these builders will convert into paying customers. Without a clear path to user acquisition, the project may struggle to gain traction.\n\n3. **Technical Viability**: While the GitHub API provides access to the necessary data, the challenge lies in effectively transforming that data into a recruiter-ready format. If the CLI fails to deliver a polished, professional output, it could damage the credibility of the product and deter potential users. The risk of under-delivering on user expectations is significant, especially in a competitive market.\n\nChange my mind by: Providing a specific company or individual (with citation) who has committed to paying for the product within 30 days of launch.",
+      "tokens_in": 800,
+      "tokens_out": 274
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1177,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "**V1: Devbrief - Recruiter-Ready Profile Generator**\n\n**User Segment**: Technical recruiters looking for structured summaries of GitHub profiles.\n\n**Payment Moment**: Recruiters pay $30 for a one-page HTML profile generated from a GitHub repo URL.\n\n**Acceptance Criteria**:\n1. Generate a one-page HTML profile from a provided GitHub repo URL that includes the user's top 3 programming languages based on commit history.\n2. Display a contribution graph that visualizes the user's commit activity over the last year.\n3. Include a summary section that highlights the user's key contributions and projects based on commit messages.\n4. Ensure the HTML profile is formatted in a recruiter-friendly layout that is easy to read and visually appealing.\n5. Allow users to download the generated HTML profile directly from the CLI after inputting the GitHub repo URL.\n\nV1_FEASIBLE_IN_4_DAYS: yes",
+      "tokens_in": 1326,
+      "tokens_out": 182
+    },
+    "judge": {
+      "text": "TAM: 7\nWEDGE: 6\nV1_FEASIBILITY: 8\n\nVerdict: SHIP V1 to technical recruiters. The idea targets a specific pain point for recruiters who spend significant time parsing GitHub profiles. The structured one-page summary offers a clear value proposition, and the willingness to pay is evidenced by the success of similar products like ResumeCard. The named ICP and payment moment are clear, and the V1 is feasible within a short timeframe.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+      "tokens_in": 2656,
+      "tokens_out": 111
+    }
+  }
+}

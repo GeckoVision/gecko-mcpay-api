@@ -87,6 +87,20 @@ async def _interactive_approval(candidates: list[SourceCandidate]) -> bool:
     ),
 )
 @click.option(
+    "--calibration",
+    "calibration",
+    type=click.Choice(["none", "colosseum", "web3", "all"]),
+    default="none",
+    show_default=True,
+    help=(
+        "Calibrate the verdict against an external judge corpus. "
+        "'colosseum' loads the 34 Colosseum judges. 'web3' loads "
+        "Colosseum + 10 web3 accelerator programs (Adam's PMF + "
+        "Qiao's founder-traits frameworks). 'all' = everything. "
+        "Run `bb judges ingest-colosseum` first."
+    ),
+)
+@click.option(
     "--degraded",
     is_flag=True,
     default=False,
@@ -107,6 +121,7 @@ def research_cmd(
     publish: bool,
     publish_price: str | None,
     publish_as: str | None,
+    calibration: str,
     degraded: bool,
 ) -> None:
     """Discover, index, generate. The main workflow."""
@@ -157,10 +172,11 @@ def research_cmd(
                     approval_callback=None if auto_approve else _interactive_approval,
                     progress_callback=_progress,
                     tier_preset=tier_preset,
+                    calibration=None if calibration == "none" else calibration,
                 )
             )
 
-    render_research_result(console, result)
+    render_research_result(console, result, idea=idea)
     # S18-VERDICT-HASH-01 — deterministic hash printed in CLI footer.
     # Same idea + same retrieved citations + same verdict → same hash,
     # regardless of which storage backend (Supabase or Mongo) served it.

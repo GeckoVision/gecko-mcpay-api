@@ -1,15 +1,15 @@
 # Builder Bootstrap Platform — PRD
 
-**Version:** 1.2
+**Version:** 1.3
 **Date:** May 2, 2026
 **Author:** Ernani Britto
 **Status:** Active — V1 shipped, S18 cutover in flight
 
 ---
 
-## Wedge
+## Positioning / What Gecko Is
 
-> **Gecko produces grounded, adversarial verdicts on pre-ideas — a judgment you can buy, sell, or stake on.**
+> **Gecko gives crypto builders a deep, multi-voice verdict on their idea — with the dissent and falsifiers attached — so they know what to do next. Complementary to frames.ag (settlement) and Bazaar (marketplace).**
 
 This is the one sentence. It appears verbatim in `docs/product-story.md`, `app.geckovision.tech/skill.md` (sister repo `gecko-mcpay-skills`), and the CLI splash. Drift between them is a S18-WEDGE-CLAIM-01 regression — fix at the source, not by re-paraphrasing.
 

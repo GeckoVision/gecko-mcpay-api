@@ -128,7 +128,7 @@ class TestMatchChunksMongo:
         _seed_chunk(fake_coll, session_id=sid, chunk_id="b", score=0.7)
         _seed_chunk(fake_coll, session_id=sid, chunk_id="c", score=0.5)
         rows = await mongo_reads.match_chunks_mongo(
-            session_id=sid, query_embedding=[0.0] * 1536, match_count=2
+            session_id=sid, query_embedding=[0.0] * 1024, match_count=2
         )
         assert [r["text"] for r in rows] == ["text-a", "text-b"]
         assert rows[0]["similarity"] == pytest.approx(0.9)
@@ -140,7 +140,7 @@ class TestMatchChunksMongo:
         _seed_chunk(fake_coll, session_id=sid_a, chunk_id="a", score=0.9)
         _seed_chunk(fake_coll, session_id=sid_b, chunk_id="b", score=0.99)
         rows = await mongo_reads.match_chunks_mongo(
-            session_id=sid_a, query_embedding=[0.0] * 1536, match_count=10
+            session_id=sid_a, query_embedding=[0.0] * 1024, match_count=10
         )
         assert [r["text"] for r in rows] == ["text-a"]
 
@@ -148,7 +148,7 @@ class TestMatchChunksMongo:
     async def test_unconfigured_returns_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(mongo_reads, "chunks_collection", lambda: None)
         rows = await mongo_reads.match_chunks_mongo(
-            session_id=uuid4(), query_embedding=[0.0] * 1536
+            session_id=uuid4(), query_embedding=[0.0] * 1024
         )
         assert rows == []
 
@@ -179,7 +179,7 @@ class TestMatchChunksWindowedMongo:
             project_id=proj_b,
         )
         rows = await mongo_reads.match_chunks_windowed_mongo(
-            query_embedding=[0.0] * 1536,
+            query_embedding=[0.0] * 1024,
             window_days=None,
             project_id=proj_a,
             match_count=10,
@@ -193,7 +193,7 @@ class TestMatchChunksWindowedMongo:
         sid = uuid4()
         _seed_chunk(fake_coll, session_id=sid, chunk_id="a", score=0.9)
         rows = await mongo_reads.match_chunks_windowed_mongo(
-            query_embedding=[0.0] * 1536,
+            query_embedding=[0.0] * 1024,
             window_days=0,
             project_id=None,
             match_count=10,
@@ -235,7 +235,7 @@ class TestMatchChunksWindowedMongo:
             }
         )
         rows = await mongo_reads.match_chunks_windowed_mongo(
-            query_embedding=[0.0] * 1536,
+            query_embedding=[0.0] * 1024,
             window_days=7,
             project_id=None,
             match_count=10,
@@ -287,7 +287,7 @@ class TestMatchChunksHybridMongo:
 
         rows = await mongo_reads.match_chunks_hybrid_mongo(
             session_id=sid,
-            query_embedding=[0.0] * 1536,
+            query_embedding=[0.0] * 1024,
             match_count=10,
             per_kind_quota=2,
         )
@@ -323,7 +323,7 @@ class TestMatchChunksHybridMongo:
         )
         rows = await mongo_reads.match_chunks_hybrid_mongo(
             session_id=sid,
-            query_embedding=[0.0] * 1536,
+            query_embedding=[0.0] * 1024,
             match_count=8,
             per_kind_quota=2,
         )
@@ -350,7 +350,7 @@ class TestMatchChunksHybridMongo:
         )
         rows = await mongo_reads.match_chunks_hybrid_mongo(
             session_id=sid,
-            query_embedding=[0.0] * 1536,
+            query_embedding=[0.0] * 1024,
             match_count=8,
             per_kind_quota=2,
         )
@@ -371,7 +371,7 @@ class TestMatchChunksHybridMongo:
                 )
         rows = await mongo_reads.match_chunks_hybrid_mongo(
             session_id=sid,
-            query_embedding=[0.0] * 1536,
+            query_embedding=[0.0] * 1024,
             match_count=8,
             per_kind_quota=2,
         )
@@ -391,7 +391,7 @@ class TestMatchChunksHybridMongo:
             )
         rows = await mongo_reads.match_chunks_hybrid_mongo(
             session_id=sid,
-            query_embedding=[0.0] * 1536,
+            query_embedding=[0.0] * 1024,
             match_count=4,
             per_kind_quota=1,
         )
@@ -402,7 +402,7 @@ class TestMatchChunksHybridMongo:
     async def test_empty_pool(self, fake_coll: _FakeChunksColl) -> None:
         rows = await mongo_reads.match_chunks_hybrid_mongo(
             session_id=uuid4(),
-            query_embedding=[0.0] * 1536,
+            query_embedding=[0.0] * 1024,
             match_count=8,
             per_kind_quota=2,
         )
@@ -428,7 +428,7 @@ class TestRagQueryDispatch:
 
         # Stub the embedder so we don't hit OpenAI
         async def _fake_embed(texts: list[str]) -> tuple[list[list[float]], int]:
-            return [[0.0] * 1536 for _ in texts], 0
+            return [[0.0] * 1024 for _ in texts], 0
 
         from gecko_core.rag import query as query_mod
 

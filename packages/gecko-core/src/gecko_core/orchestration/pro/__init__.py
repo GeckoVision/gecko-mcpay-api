@@ -198,6 +198,7 @@ async def generate(
     tier_preset: str | None = None,
     gap_classification: str | None = None,
     icp: str | None = None,
+    calibration_block: str | None = None,
 ) -> DebateTranscript:
     """Run the 5-agent debate.
 
@@ -251,6 +252,11 @@ async def generate(
     if icp is not None:
         bg_kwargs["idea"] = idea
         bg_kwargs["icp"] = icp
+    # S21-CALIBRATION-01 — opt-in: only forward the calibration block when the
+    # caller asked for it (`bb research --calibration colosseum`). Same
+    # narrow-signature back-compat pattern as gap_classification + icp.
+    if calibration_block is not None:
+        bg_kwargs["calibration_block"] = calibration_block
     manager = build_groupchat(llm_config, **bg_kwargs) if bg_kwargs else build_groupchat(llm_config)
     chat = manager.groupchat
     agents_by_name = {a.name: a for a in chat.agents}

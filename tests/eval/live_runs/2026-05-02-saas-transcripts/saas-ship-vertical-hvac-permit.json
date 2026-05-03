@@ -1,0 +1,48 @@
+{
+  "idea_id": "saas-ship-vertical-hvac-permit",
+  "idea_text": "Vertical SaaS for residential HVAC contractors: auto-fills city building-permit PDFs from job estimates and submits via local-portal scrapers.",
+  "judge_prose": "TAM: 8\nWEDGE: 6\nV1_FEASIBILITY: 7\n\nVerdict: SHIP V1 to residential HVAC contractors. The idea targets a specific pain point for HVAC contractors, namely the time-consuming process of filling out city-specific building permits. The named ICP is clear, and the payment moment is defined when contractors generate and download a permit PDF. The V1 is feasible within 4 days by focusing on auto-filling PDFs rather than full automation, which mitigates regulatory risks and allows for quick validation of demand.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+  "parsed_verdict": "ship",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 8.5,
+    "source_grounding": 6.0,
+    "verdict_justification": 7.5,
+    "cost_predictability": 7.5,
+    "verdict_correctness": 10.0
+  },
+  "expected_verdict": "ship",
+  "expected_verdict_v2": "REFINE",
+  "actual_verdict": "ship",
+  "actual_verdict_v2": "REFINE",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM**: Targeting ~120k residential HVAC contractors with an estimated $3-5K ACV for permit automation services, leading to a reachable TAM of ~$360M-$600M in year 1. This is based on the pain point of 4-8 hours spent on permit paperwork per job, indicating a strong demand for time-saving solutions (ACCA HVAC contractor survey 2024).\n\n- **Comparable**: PermitFlow, which raised $31M Series A in 2024, is focused on general contractor permit automation, indicating investor confidence in the market for permit-related SaaS solutions. This suggests a viable market for HVAC-specific automation, though it remains to be seen how HVAC contractors will respond to a more niche offering.\n\n- **Counterfactual**: If this solution is not shipped, HVAC contractors will continue to spend 4-8 hours per job on permit paperwork, leading to inefficiencies and potential loss of revenue. This administrative burden may drive contractors to seek alternative solutions, but without a specific product, they may remain underserved.\n\n- **Market Need**: Current solutions like ServiceTitan and Housecall Pro do not address the city-specific permit requirements, leaving a gap in the market. Contractors are likely paying for inefficient manual processes or piecemeal solutions, which reinforces the need for a dedicated vertical SaaS product.\n\n- **Precedent Signal**: The lack of shipped comparables in this specific niche (HVAC permit automation) suggests a potential gap in the market, but the unknowns from Gecko's evaluation indicate that there is still room for innovation. The previous consumer-direct AI permit writer for DIY homeowners was killed, highlighting the challenges in the permit automation space, but this vertical-specific approach could differentiate the offering.",
+      "tokens_in": 805,
+      "tokens_out": 354
+    },
+    "critic": {
+      "text": "**Critic:**\n\n1. **Regulatory Risk**: The idea of auto-filling and submitting building-permit PDFs could put the founder in legal jeopardy if the software does not comply with local regulations or if it misrepresents information. Each municipality has its own rules, and any errors could lead to fines or legal action against the contractor or the software provider. This is a clear \"kill\" risk unless the V1 includes a robust compliance verification feature that ensures all submissions meet local requirements.\n\n2. **Market Demand Evidence**: While the HVAC contractor market is sizable, the evidence of demand is weak. You need a specific user who would pay within 30 days of V1. For instance, if you can name a specific HVAC contractor or company that has expressed a willingness to pay for this solution, it would strengthen the case. Without this, the demand remains speculative.\n\n3. **Technical Feasibility**: The idea hinges on the ability to scrape local permit portals, which may have varying levels of accessibility and could change frequently. If the scraping fails or if the portals implement anti-scraping measures, the product could become unusable. This technical risk needs to be addressed with a clear plan for maintaining and updating the scraping capabilities.\n\nChange my mind by: Naming a specific HVAC contractor (with a citation) who has committed to paying for this solution within 30 days of V1 launch.",
+      "tokens_in": 805,
+      "tokens_out": 284
+    },
+    "architect": {
+      "text": "**Architect:**\n\n- **Stack Choice**: Use Next.js 15 + Tailwind + Supabase (Postgres + auth + storage), deployed on Vercel. This stack is optimal for rapid development and deployment, allowing for a responsive front-end and a robust back-end with built-in authentication and database capabilities.\n\n- **Auth Strategy**: Implement Supabase Auth for user authentication, allowing HVAC contractors to securely log in and manage their permit submissions. This will streamline the onboarding process and ensure that sensitive data is handled securely.\n\n- **External API**: The primary external API will be the local permit portals for scraping. A clear plan must be established for how to handle the variability of these portals, including a fallback mechanism if a portal changes or becomes inaccessible.\n\n- **Feature Cut Recommendation**: Consider cutting the feature for auto-submission of permits in the initial V1. Instead, focus on auto-filling the PDFs and providing contractors with a downloadable version they can submit manually. This reduces the complexity and regulatory risk associated with automated submissions, allowing for a quicker launch and validation of the core value proposition.\n\n- **Justification for Feature Cut**: By focusing on the auto-fill functionality first, you can validate the demand and usability of the product without the legal complications of automated submissions, which could delay the timeline significantly. This allows for a more manageable scope within the 4-day timeframe.",
+      "tokens_in": 1227,
+      "tokens_out": 279
+    },
+    "scoper": {
+      "text": "**V1:**\n\n- **Core Functionality**: Develop a web application that auto-fills city building-permit PDFs based on job estimates provided by HVAC contractors. The application will allow users to input job details, select the appropriate permit form for their city, and generate a completed PDF ready for submission.\n\n- **User Segment**: Target residential HVAC contractors in a specific city (e.g., Los Angeles) who frequently deal with building permits.\n\n- **Payment Moment**: The first payment moment will occur when a contractor successfully generates and downloads a permit PDF, with a clear pricing structure based on the number of permits processed.\n\n**Acceptance Criteria:**\n1. Allow users to input job details (e.g., job type, address) and generate a filled permit PDF for their city.\n2. Enable users to select from a list of available permit forms specific to their city, ensuring relevance and accuracy.\n3. Provide a downloadable PDF that contractors can save and submit manually, with all fields correctly filled based on the input data.\n4. Display a confirmation message after the PDF is generated, indicating readiness for download.\n5. Collect user feedback on the auto-fill accuracy and ease of use through a simple feedback form after the PDF download.\n\n**V1_FEASIBLE_IN_4_DAYS: yes**",
+      "tokens_in": 1653,
+      "tokens_out": 261
+    },
+    "judge": {
+      "text": "TAM: 8\nWEDGE: 6\nV1_FEASIBILITY: 7\n\nVerdict: SHIP V1 to residential HVAC contractors. The idea targets a specific pain point for HVAC contractors, namely the time-consuming process of filling out city-specific building permits. The named ICP is clear, and the payment moment is defined when contractors generate and download a permit PDF. The V1 is feasible within 4 days by focusing on auto-filling PDFs rather than full automation, which mitigates regulatory risks and allows for quick validation of demand.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+      "tokens_in": 3062,
+      "tokens_out": 125
+    }
+  }
+}

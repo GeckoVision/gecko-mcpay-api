@@ -1,0 +1,26 @@
+{
+  "reviewer": "Adam (@adamdelphantom)",
+  "role": "Maximizing Developer Gains @Phantom | SteelCitySolana Organizer | Colosseum Mentor/Angel",
+  "description": "Public framework-driven judge. Solicited Colosseum projects and gave detailed reply feedback.",
+  "main_solicitation_post": {
+    "post_id": "2047305639555219688",
+    "date": "2026-04-23",
+    "content": "The way I think about @colosseum projects is that there’s essentially 2 kinds imo — greenfield innovation products vs iterative innovation products..."
+  },
+  "core_framework": "Greenfield (new market, cult members, quality > quantity) vs Iterative (obvious value prop, high-volume customer closes, organic users + feedback loop > airdrop farmers). Evidence of PMF must match category.",
+  "key_replies_and_insights": [
+    {
+      "project": "ride.markets (conviction markets)",
+      "reply": "Personally id say this is pretty greenfield!"
+    },
+    {
+      "project": "epicentral_ (onchain options)",
+      "reply": "Spectrum, not binary. Onchain options in the middle. Need organic users + feedback loop + liquidity. Watch for airdrop farmers. Prove compelling vs perps."
+    },
+    {
+      "project": "KLOUT_Market (stock market for creators)",
+      "reply": "Iterative side. Target specific user 'creators'. Go where they hang out, test value prop, iterate despite rejection."
+    }
+  ],
+  "overall_judging_style": "Framework-first (greenfield/iterative), heavy emphasis on PMF evidence type, organic traction, user feedback loops, and category-specific metrics. Builder-friendly but rigorous on signals vs noise."
+}

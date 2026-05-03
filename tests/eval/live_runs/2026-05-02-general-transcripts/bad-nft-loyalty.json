@@ -1,0 +1,48 @@
+{
+  "idea_id": "bad-nft-loyalty",
+  "idea_text": "Coffee shop loyalty cards as NFTs on Solana \u2014 collect 10 stamps, free latte.",
+  "judge_prose": "TAM: 2\n\nWEDGE: 3\n\nV1_FEASIBILITY: 4\n\nVerdict: KILL \u2014 The idea faces significant barriers including high user drop-off rates for wallet creation, lack of consumer engagement as evidenced by the failure of Starbucks Odyssey, and strong competition from established loyalty programs like Square and Toast that offer frictionless solutions at no marginal cost. The market does not show a clear demand for NFT-based loyalty programs in the coffee shop sector.\n\ngap_classification: Full\n\nFinal verdict: PIVOT",
+  "parsed_verdict": "kill",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 5.5,
+    "source_grounding": 6.5,
+    "verdict_justification": 7.0,
+    "cost_predictability": 3.5,
+    "verdict_correctness": 10.0
+  },
+  "expected_verdict": "kill",
+  "expected_verdict_v2": "KILL",
+  "actual_verdict": "kill",
+  "actual_verdict_v2": "PIVOT",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM**: The reachable TAM for coffee shop loyalty NFTs is severely limited by the 73% drop-off rate in wallet creation at POS (Solana Mobile retail UX study 2024). This suggests that even if 100 coffee shops adopt the program, only 27 customers would successfully engage, drastically reducing potential active users.\n\n- **Comparable**: Starbucks Odyssey, a notable NFT loyalty program, launched in 2022 but was shut down in March 2024 due to low engagement (Decrypt 2024-03-14). This indicates a lack of market appetite for NFT-based loyalty solutions in the coffee shop sector.\n\n- **Current Spend**: Square and Toast already serve over 300,000 SMBs with loyalty programs at no marginal cost (Square 10-K 2024). Coffee shops currently rely on these established systems, making it difficult for a new NFT-based solution to compete without clear added value.\n\n- **Counterfactual**: If this NFT loyalty card concept does not ship, coffee shops will continue using existing loyalty programs like Square and Toast, which have proven engagement and no wallet friction, indicating that the market will not miss this offering.\n\n- **Gecko Precedent**: Two prior ideas related to on-chain consumer loyalty were evaluated and marked as unknown, but the similarity to this concept raises concerns about viability. The lack of successful precedents suggests a high risk of failure for this NFT loyalty card idea.",
+      "tokens_in": 784,
+      "tokens_out": 291
+    },
+    "critic": {
+      "text": "**Analyst:**\n\nThe idea of implementing coffee shop loyalty cards as NFTs on Solana presents an interesting intersection of blockchain technology and consumer loyalty programs. However, the landscape is littered with challenges, particularly around user engagement and the technical barriers associated with NFT wallets. The failure of Starbucks Odyssey and the high drop-off rates in wallet creation indicate a significant uphill battle for adoption. Additionally, established players like Square and Toast already dominate the loyalty space with low-cost solutions that do not require the same level of consumer commitment. \n\n**Critic:**\n\n1. **User Engagement Risk:** The failure of Starbucks Odyssey highlights a critical risk: consumers are not engaging with NFT-based loyalty programs. If a major brand like Starbucks couldn't sustain interest, what makes this idea viable for smaller coffee shops? The evidence suggests that the novelty of NFTs does not translate to sustained consumer behavior.\n\n2. **Technical Friction Risk:** The median 73% drop-off rate in wallet creation at the point of sale is a staggering barrier. This indicates that the majority of potential users will not even complete the initial step to participate in the loyalty program. If the onboarding process is this cumbersome, the entire concept collapses before it even starts.\n\n3. **Competitive Landscape Risk:** With established loyalty programs like Square Loyalty and Toast Rewards already serving hundreds of thousands of SMBs at no marginal cost, entering this market with a complex NFT solution is a recipe for failure. The existing solutions are simple, effective, and do not require consumers to navigate the complexities of blockchain technology.\n\nChange my mind by: Providing a specific coffee shop (name and location) that has committed to using this NFT loyalty program and is willing to pay for it within 30 days of launch.",
+      "tokens_in": 784,
+      "tokens_out": 344
+    },
+    "architect": {
+      "text": "**Analyst:**\n\nThe coffee shop loyalty card as NFTs on Solana presents an intriguing concept, but the evidence suggests significant obstacles to its success. The failure of Starbucks Odyssey and the high drop-off rates in wallet creation indicate that consumer engagement with NFT loyalty programs is low. Established players like Square and Toast already dominate the loyalty space with low-cost, frictionless solutions, making it difficult for a new NFT-based solution to compete. Additionally, the lack of successful precedents raises concerns about the viability of this idea.\n\n**Critic:**\n\n1. **User Engagement Risk:** The failure of Starbucks Odyssey highlights a critical risk: consumers are not engaging with NFT-based loyalty programs. If a major brand like Starbucks couldn't sustain interest, what makes this idea viable for smaller coffee shops? The evidence suggests that the novelty of NFTs does not translate to sustained consumer behavior.\n\n2. **Technical Friction Risk:** The median 73% drop-off rate in wallet creation at the point of sale is a staggering barrier. This indicates that the majority of potential users will not even complete the initial step to participate in the loyalty program. If the onboarding process is this cumbersome, the entire concept collapses before it even starts.\n\n3. **Competitive Landscape Risk:** With established loyalty programs like Square Loyalty and Toast Rewards already serving hundreds of thousands of SMBs at no marginal cost, entering this market with a complex NFT solution is a recipe for failure. The existing solutions are simple, effective, and do not require consumers to navigate the complexities of blockchain technology.\n\nChange my mind by: Providing a specific coffee shop (name and location) that has committed to using this NFT loyalty program and is willing to pay for it within 30 days of launch.",
+      "tokens_in": 1203,
+      "tokens_out": 343
+    },
+    "scoper": {
+      "text": "**Analyst:**\n\nThe coffee shop loyalty card as NFTs on Solana presents an intriguing concept, but the evidence suggests significant obstacles to its success. The failure of Starbucks Odyssey and the high drop-off rates in wallet creation indicate that consumer engagement with NFT loyalty programs is low. Established players like Square and Toast already dominate the loyalty space with low-cost, frictionless solutions, making it difficult for a new NFT-based solution to compete. Additionally, the lack of successful precedents raises concerns about the viability of this idea.\n\n**Critic:**\n\n1. **User Engagement Risk:** The failure of Starbucks Odyssey highlights a critical risk: consumers are not engaging with NFT-based loyalty programs. If a major brand like Starbucks couldn't sustain interest, what makes this idea viable for smaller coffee shops? The evidence suggests that the novelty of NFTs does not translate to sustained consumer behavior.\n\n2. **Technical Friction Risk:** The median 73% drop-off rate in wallet creation at the point of sale is a staggering barrier. This indicates that the majority of potential users will not even complete the initial step to participate in the loyalty program. If the onboarding process is this cumbersome, the entire concept collapses before it even starts.\n\n3. **Competitive Landscape Risk:** With established loyalty programs like Square Loyalty and Toast Rewards already serving hundreds of thousands of SMBs at no marginal cost, entering this market with a complex NFT solution is a recipe for failure. The existing solutions are simple, effective, and do not require consumers to navigate the complexities of blockchain technology.\n\nChange my mind by: Providing a specific coffee shop (name and location) that has committed to using this NFT loyalty program and is willing to pay for it within 30 days of launch.",
+      "tokens_in": 1693,
+      "tokens_out": 343
+    },
+    "judge": {
+      "text": "TAM: 2\n\nWEDGE: 3\n\nV1_FEASIBILITY: 4\n\nVerdict: KILL \u2014 The idea faces significant barriers including high user drop-off rates for wallet creation, lack of consumer engagement as evidenced by the failure of Starbucks Odyssey, and strong competition from established loyalty programs like Square and Toast that offer frictionless solutions at no marginal cost. The market does not show a clear demand for NFT-based loyalty programs in the coffee shop sector.\n\ngap_classification: Full\n\nFinal verdict: PIVOT",
+      "tokens_in": 3184,
+      "tokens_out": 107
+    }
+  }
+}

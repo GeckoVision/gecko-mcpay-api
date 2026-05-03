@@ -46,13 +46,16 @@ class GlueStore:
         session_id: UUID,
         source_id: UUID,
         chunks: list[tuple[int, str, list[float]]],
+        *,
+        provider_kind: str = "web",
+        source_url: str | None = None,
     ) -> int:
         # Sanity-check the row shape so a future schema drift is caught here
         # rather than at the live Supabase boundary.
         for idx, text, vec in chunks:
             assert isinstance(idx, int)
             assert isinstance(text, str) and text.strip()
-            assert isinstance(vec, list) and len(vec) == 1536
+            assert isinstance(vec, list) and len(vec) == 1024
         self.chunk_rows.append((source_id, len(chunks), len(chunks[0][2])))
         return len(chunks)
 
@@ -84,7 +87,7 @@ def fake_embed() -> Any:
         assert texts, "embedder called with empty list — should be short-circuited"
         for t in texts:
             assert t and t.strip(), "embedder must never receive whitespace-only input"
-        return [[0.01] * 1536 for _ in texts], 42 * len(texts)
+        return [[0.01] * 1024 for _ in texts], 42 * len(texts)
 
     return _embed
 
@@ -170,7 +173,7 @@ async def test_second_ingest_same_url_skips_embedder() -> None:
     async def counting_embed(texts: list[str], **_: Any) -> tuple[list[list[float]], int]:
         nonlocal embed_calls
         embed_calls += 1
-        return [[0.02] * 1536 for _ in texts], 11 * len(texts)
+        return [[0.02] * 1024 for _ in texts], 11 * len(texts)
 
     with (
         patch.object(pipeline.web_extractor, "extract", side_effect=fake_web),
@@ -196,7 +199,7 @@ async def test_partial_cache_hit_only_embeds_missing() -> None:
     uhash = pipeline.url_hash(str(candidate.url))
 
     # Pre-seed cache for chunk_index=0 only.
-    store.cache[(uhash, 0)] = ("seeded text", [0.99] * 1536)
+    store.cache[(uhash, 0)] = ("seeded text", [0.99] * 1024)
 
     async def fake_web(url: str, **_: Any) -> tuple[str, float]:
         # Big enough that the chunker yields >=2 pieces (512-token cap).
@@ -206,7 +209,7 @@ async def test_partial_cache_hit_only_embeds_missing() -> None:
 
     async def counting_embed(texts: list[str], **_: Any) -> tuple[list[list[float]], int]:
         embedded_inputs.append(list(texts))
-        return [[0.03] * 1536 for _ in texts], len(texts)
+        return [[0.03] * 1024 for _ in texts], len(texts)
 
     with (
         patch.object(pipeline.web_extractor, "extract", side_effect=fake_web),

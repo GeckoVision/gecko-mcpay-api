@@ -73,6 +73,7 @@ def test_canonical_provider_kinds_value() -> None:
         "hn",
         "reddit",
         "gecko_precedent",
+        "judge_corpus",
     )
 
 

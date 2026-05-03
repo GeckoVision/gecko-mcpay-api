@@ -1,0 +1,48 @@
+{
+  "idea_id": "good-clinical-trial-screener",
+  "idea_text": "B2B tool for oncology trial coordinators: parses physician referral letters into trial-eligibility checklists keyed to ClinicalTrials.gov criteria.",
+  "judge_prose": "TAM: 8\nWEDGE: 7\nV1_FEASIBILITY: 8\n\nVerdict: SHIP V1 to oncology trial coordinators. The tool addresses a clear inefficiency in the trial eligibility screening process, with a specific focus on parsing unstructured referral letters into structured checklists. The named ICP and the use of ClinicalTrials.gov criteria provide a sharp wedge, and the feasibility of developing a V1 in 4 days supports a quick market entry. The presence of competitors like Deep 6 AI validates the market demand, while the lack of parsing capabilities in dominant software solutions like Forte and Veeva CTMS highlights a gap that this tool can fill.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+  "parsed_verdict": "ship",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 5.5,
+    "source_grounding": 6.5,
+    "verdict_justification": 7.0,
+    "cost_predictability": 4.0,
+    "verdict_correctness": 5.0
+  },
+  "expected_verdict": "ship",
+  "expected_verdict_v2": "BUILD",
+  "actual_verdict": "ship",
+  "actual_verdict_v2": "REFINE",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM**: ~6,200 active US oncology trials with coordinators screening 30-80 referral letters weekly. If we assume an average of 50 letters per week per trial, that results in ~16M letters annually. At ~25 minutes per letter, this equates to ~6.7M hours of labor annually. If we value coordinator labor at ~$50/hr, this represents a reachable TAM of ~$335M in labor savings for oncology trial coordinators in year 1.\n\n- **Comparable**: Deep 6 AI, which raised $34M in Series B funding in 2024, is a direct competitor selling NLP-based eligibility screening tools to academic medical centers. Their success indicates a validated market for this type of solution, suggesting a strong demand for tools that streamline eligibility screening processes.\n\n- **Current Spend**: Trial coordinators currently rely on manual processes to generate eligibility checklists, which takes significant time and resources. The existing software solutions (Forte, Veeva CTMS) do not address the parsing of unstructured referral letters, indicating a gap in the market that your tool could fill.\n\n- **Counterfactual**: If this tool is not shipped, oncology trial coordinators will continue to spend excessive time on manual eligibility checks, leading to inefficiencies and potential delays in trial enrollment. This inefficiency could hinder trial timelines and patient access to trials, creating a strong incentive for coordinators to seek out a solution.\n\n- **Precedent Weighting**: No shipped comparables have been identified in the Gecko precedent, but the existence of two unknowns suggests that the market is still exploring solutions in this space. The lack of killed ideas indicates potential for validation, but also highlights the need for differentiation from existing unknowns.",
+      "tokens_in": 787,
+      "tokens_out": 357
+    },
+    "critic": {
+      "text": "**Risks:**\n\n1. **Regulatory Compliance Risk**: The tool may inadvertently lead to misinterpretation of clinical eligibility criteria, which could expose the founder to legal liability if trial coordinators rely on it for decision-making. Without a clear regulatory framework or guidance on the use of AI in clinical trial eligibility, this could be a significant risk.\n\n2. **Market Demand Validation**: While there is a clear workflow inefficiency, the evidence of demand is weak. The tool needs a specific user commitment to pay within 30 days. Without a named user, such as a trial coordinator from a specific institution (e.g., @OncologyTrialCoord), the risk of insufficient market demand remains high.\n\n3. **Competitive Landscape**: The presence of established players like Forte and Veeva CTMS, which dominate the trial coordinator software market, poses a risk. If they decide to integrate similar parsing capabilities, the startup could struggle to gain traction. The lack of differentiation in the product offering could lead to a race to the bottom on pricing.\n\nChange my mind by: Providing a signed letter of intent from a specific oncology trial coordinator (e.g., @OncologyTrialCoord) committing to purchase the tool within 30 days of launch.",
+      "tokens_in": 787,
+      "tokens_out": 250
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1178,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "**V1**: Develop a B2B tool that parses physician referral letters into trial-eligibility checklists based on ClinicalTrials.gov criteria, specifically targeting oncology trial coordinators. The first user segment will be academic medical center coordinators who handle a high volume of referrals.\n\n**Acceptance Criteria**:\n1. Parse a physician referral letter and generate a trial-eligibility checklist in under 2 minutes, demonstrating a reduction in time spent on this task.\n2. Allow users to input a referral letter in a text format and receive a structured checklist output that aligns with ClinicalTrials.gov eligibility criteria.\n3. Enable users to save and export the generated eligibility checklist in a common format (e.g., PDF or CSV) for easy sharing with trial teams.\n4. Provide a demo version that allows at least 5 trial coordinators to test the tool and provide feedback within the first week of launch.\n5. Ensure that the tool can handle at least 80% of referral letters from the target user segment without errors in parsing or checklist generation.\n\nV1_FEASIBLE_IN_4_DAYS: yes",
+      "tokens_in": 1327,
+      "tokens_out": 221
+    },
+    "judge": {
+      "text": "TAM: 8\nWEDGE: 7\nV1_FEASIBILITY: 8\n\nVerdict: SHIP V1 to oncology trial coordinators. The tool addresses a clear inefficiency in the trial eligibility screening process, with a specific focus on parsing unstructured referral letters into structured checklists. The named ICP and the use of ClinicalTrials.gov criteria provide a sharp wedge, and the feasibility of developing a V1 in 4 days supports a quick market entry. The presence of competitors like Deep 6 AI validates the market demand, while the lack of parsing capabilities in dominant software solutions like Forte and Veeva CTMS highlights a gap that this tool can fill.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+      "tokens_in": 2696,
+      "tokens_out": 151
+    }
+  }
+}

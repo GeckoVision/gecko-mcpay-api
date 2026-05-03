@@ -33,6 +33,11 @@ class _FakeSupabase:
         raise RuntimeError(f"unexpected rpc: {fn}")
 
 
+# Sentinel key present in all "happy path" run_doctor tests.
+# EMBED_PROVIDER defaults to voyage so VOYAGE_API_KEY must be set for exit_code 0.
+_VOYAGE_KEY = "pa-test-key-ok-1234"
+
+
 def test_doctor_fails_when_all_env_missing() -> None:
     exit_code, report = run_doctor(environ={}, supabase_client=None)
     assert exit_code == 1
@@ -53,7 +58,7 @@ def test_doctor_redacts_secrets_in_report() -> None:
 
 
 def test_doctor_x402_default_stub_is_ok() -> None:
-    env = {var: "x" for var in REQUIRED_ENV_VARS}
+    env = {var: "x" for var in REQUIRED_ENV_VARS} | {"VOYAGE_API_KEY": _VOYAGE_KEY}
     manifest = {
         "extensions": list(REQUIRED_EXTENSIONS),
         "tables": list(REQUIRED_TABLES),
@@ -73,7 +78,7 @@ def test_doctor_x402_invalid_value_fails() -> None:
 
 
 def test_doctor_passes_with_full_env_and_migrations() -> None:
-    env = {var: "x" for var in REQUIRED_ENV_VARS} | {"X402_MODE": "stub"}
+    env = {var: "x" for var in REQUIRED_ENV_VARS} | {"X402_MODE": "stub", "VOYAGE_API_KEY": _VOYAGE_KEY}
     manifest = {
         "extensions": list(REQUIRED_EXTENSIONS),
         "tables": list(REQUIRED_TABLES),
@@ -87,7 +92,7 @@ def test_doctor_passes_with_full_env_and_migrations() -> None:
 
 
 def test_doctor_fails_when_migrations_missing() -> None:
-    env = {var: "x" for var in REQUIRED_ENV_VARS} | {"X402_MODE": "stub"}
+    env = {var: "x" for var in REQUIRED_ENV_VARS} | {"X402_MODE": "stub", "VOYAGE_API_KEY": _VOYAGE_KEY}
     manifest: dict[str, list[str]] = {"extensions": [], "tables": [], "functions": []}
     exit_code, report = run_doctor(environ=env, supabase_client=_FakeSupabase(manifest))
     assert exit_code == 1
@@ -186,6 +191,81 @@ def test_voyage_check_passes_with_key() -> None:
     # Only the prefix sentinel + last-4 suffix may surface.
     assert "pa-..." in report
     assert secret[-4:] in report  # last 4 chars are the only slice we expose
+
+
+def test_embed_provider_voyage_default_no_key() -> None:
+    """S22-VOYAGE-EMBED — EMBED_PROVIDER=voyage (default) with no key → FAIL."""
+    from gecko_mcp.doctor import check_embed_provider
+
+    rows = check_embed_provider(environ={})
+    names = {r.name for r in rows}
+    assert "embed:provider" in names
+    assert "embed:voyage_api_key" in names
+    fail_row = next(r for r in rows if r.name == "embed:voyage_api_key")
+    assert fail_row.ok is False
+    assert "VOYAGE_API_KEY" in fail_row.detail
+
+
+def test_embed_provider_voyage_with_key() -> None:
+    """EMBED_PROVIDER=voyage + valid key → PASS, secret never in output."""
+    from gecko_mcp.doctor import check_embed_provider
+
+    secret = "pa-test-secret-do-not-log"
+    rows = check_embed_provider(environ={"EMBED_PROVIDER": "voyage", "VOYAGE_API_KEY": secret})
+    fail_rows = [r for r in rows if not r.ok]
+    assert not fail_rows, fail_rows
+    key_row = next(r for r in rows if r.name == "embed:voyage_api_key")
+    assert key_row.ok is True
+    assert secret not in key_row.detail
+    assert "pa-..." in key_row.detail
+    assert secret[-4:] in key_row.detail
+
+
+def test_embed_provider_openai_no_key() -> None:
+    """EMBED_PROVIDER=openai with no OPENAI_API_KEY → FAIL."""
+    from gecko_mcp.doctor import check_embed_provider
+
+    rows = check_embed_provider(environ={"EMBED_PROVIDER": "openai"})
+    fail_row = next((r for r in rows if not r.ok), None)
+    assert fail_row is not None
+    assert "OPENAI_API_KEY" in fail_row.detail
+
+
+def test_embed_provider_openai_with_key() -> None:
+    """EMBED_PROVIDER=openai + OPENAI_API_KEY set → PASS."""
+    from gecko_mcp.doctor import check_embed_provider
+
+    rows = check_embed_provider(
+        environ={"EMBED_PROVIDER": "openai", "OPENAI_API_KEY": "sk-test-key-1234"}
+    )
+    fail_rows = [r for r in rows if not r.ok]
+    assert not fail_rows, fail_rows
+
+
+def test_embed_provider_unknown_fails() -> None:
+    """Unrecognised EMBED_PROVIDER → FAIL with helpful message."""
+    from gecko_mcp.doctor import check_embed_provider
+
+    rows = check_embed_provider(environ={"EMBED_PROVIDER": "cohere"})
+    fail_rows = [r for r in rows if not r.ok]
+    assert fail_rows
+    assert "cohere" in fail_rows[0].detail
+
+
+def test_embed_provider_in_run_doctor_fails_without_voyage_key() -> None:
+    """run_doctor exit_code=1 when EMBED_PROVIDER=voyage and VOYAGE_API_KEY missing."""
+    env = {var: "x" for var in REQUIRED_ENV_VARS} | {
+        "X402_MODE": "stub",
+        "EMBED_PROVIDER": "voyage",
+    }
+    manifest = {
+        "extensions": list(REQUIRED_EXTENSIONS),
+        "tables": list(REQUIRED_TABLES),
+        "functions": list(REQUIRED_FUNCTIONS),
+    }
+    exit_code, report = run_doctor(environ=env, supabase_client=_FakeSupabase(manifest))
+    assert exit_code == 1, report
+    assert "embed:voyage_api_key" in report
 
 
 def test_doctor_cli_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:

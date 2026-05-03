@@ -36,6 +36,7 @@ def client() -> Iterator[TestClient]:
     os.environ.pop("RESEARCH_BASIC_PRICE", None)
     os.environ.pop("RESEARCH_PRO_PRICE", None)
     os.environ.pop("ROUTE_CALL_PRICE", None)
+    os.environ["X402_NETWORK"] = "solana-devnet"
     for mod in [m for m in sys.modules if m.startswith("gecko_api")]:
         sys.modules.pop(mod, None)
 

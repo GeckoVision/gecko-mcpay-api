@@ -1,0 +1,129 @@
+# GECKO Market Research Deliverables
+
+## Overview
+
+This folder contains the complete market research synthesis for GECKO (geckovision.tech), conducted via **parallel deep research across 8 market dimensions**. The research validates GECKO's positioning as an AI founder review board + spec-driven development tool with x402 micropayments.
+
+---
+
+## Files Included
+
+### Primary Deliverables
+
+1. **gecko_market_thesis_final.md** (44 KB, 461 lines)
+   - The polished, final market thesis document
+   - Includes executive summary, all 8 research dimensions, competitive tables, raw evidence, and cross-dimensional synthesis
+   - Ready to use as foundation for landing page, investor pitch, or GTM strategy
+   - Format: GitHub-flavored Markdown with professional structure
+
+2. **gecko_market_thesis_final.pdf** (251 KB)
+   - PDF export of the final thesis for presentations, printing, or sharing
+   - Fully formatted with tables and structure preserved
+
+### Raw Research Data
+
+3. **gecko_market_research_raw.json** (50 KB)
+   - Complete structured output from the 8-way parallel research run
+   - Schema: `{ results: [ { input, output: { dimension_title, key_market_signals, top_pain_points, market_gaps, competitive_landscape, positioning_opportunity, raw_evidence }, error } ] }`
+   - Use this for data analysis, filtering, or re-synthesis
+
+4. **gecko_market_research_raw.csv** (48 KB)
+   - Flattened tabular export of the same research data
+   - Columns: Subject, Dimension Title, Key Market Signals, Top Developer/Founder Pain Points, Market Gaps, Competitive Landscape Notes, Positioning Opportunity for GECKO, Raw Evidence / Quotes, Error
+   - Use for spreadsheet review or copy/paste workflows
+
+---
+
+## The 8 Research Dimensions
+
+1. **Developer Frustration with AI Coding Tools** — Pain points with Claude Code, Cursor, Copilot; quality degradation, cost opacity, lack of pre-build judgment
+2. **Spec-Driven Development and PRD Tooling Market** — Landscape of Kiro, Intent, BMAD; gap for adversarial validation before code
+3. **x402 Protocol & HTTP Micropayments for AI Agents** — frames.ag, Solana settlement, autonomous agent spending, budget governance gap
+4. **Market Validation Tools and Founder Research Pain Points** — 90% startup failure rate, validation tools gap, Validator AI landscape
+5. **Agentic Development Workflows and Multi-Agent Orchestration** — Pydantic AI, VoltAgent, Claude Managed Agents; production readiness, cost overruns
+6. **Subscription Fatigue and Pay-Per-Use Pricing Models** — $200/mo Claude Code = $1,428/mo at API rates; demand for granular pricing
+7. **Competitive Landscape for AI-Powered Product Planning** — ChatPRD, Linear AI, Aha!; gap for single-prompt ICP + PRD + business plan
+8. **Non-Developer Founders and Technical Co-Founder Replacement** — 1.2M developer shortage, 94% failure rate for non-technical founders, AI-native dev services
+
+---
+
+## Key Findings
+
+### The Three Crises
+
+The research identifies a **convergence of three simultaneous crises** that GECKO sits at the intersection of:
+
+1. **Execution Crisis** — AI coding tools are fast but not accurate; developers 19% slower on average with unstructured prompts
+2. **Validation Crisis** — 90% of startups fail due to product-market mismatch; no structured pre-build validation tool exists
+3. **Economics Crisis** — Subscription model is misaligned with developer usage patterns; strong demand for pay-per-use
+
+### The Competitive Moat
+
+No existing tool occupies GECKO's intersection:
+
+| Layer | Owner | Gap |
+|---|---|---|
+| Code execution | Claude Code, Cursor, Copilot | Pre-build judgment |
+| Spec writing | Kiro, Intent, BMAD | Adversarial market validation |
+| Idea validation | Validator AI, generic LLMs | Structured output, repo-native artifacts |
+| Payment rails | frames.ag, x402 Foundation | Intelligence layer governing *what* to spend on |
+| Product planning | ChatPRD, Linear AI, Aha! | Single-prompt ICP + PRD + business plan |
+
+### The One-Liner
+
+> **Stop building things nobody wants. Paste your idea — get a build/kill verdict and a fundable PRD. Pay per run. No subscription.**
+
+---
+
+## ICP in Sharp Focus
+
+**Primary ICP:** Technical founders and senior engineers already paying for Claude Code or Cursor who can build fast but fear building the wrong thing. Willing to pay $9–49 per validation run for shareable, repo-native artifacts.
+
+**Secondary ICP:** Non-technical founders who understand their market but cannot bridge the gap to technical execution. Need a structured artifact (PRD + business plan + ICP + competitive landscape) to hand to a developer or AI agent.
+
+---
+
+## How to Use This Research
+
+### For Landing Page / Positioning
+- Use the **Executive Summary** and **Cross-Dimensional Synthesis** sections from the final thesis
+- Reference the **one-liner** and **ICP in Sharp Focus** sections
+- Pull competitive tables and raw evidence quotes as needed
+
+### For Investor Pitch
+- Lead with the **Three Crises** convergence
+- Show the **Competitive Moat** table to demonstrate market gap
+- Use raw evidence quotes to ground claims in real developer signals
+- Reference specific market size signals (e.g., 75.41M x402 transactions, 90% startup failure rate)
+
+### For Product Development
+- Use the **Market Gaps** sections from each dimension to prioritize features
+- Reference the **Top Pain Points** to validate product decisions
+- Use the **Competitive Landscape** tables to identify feature differentiation
+
+### For GTM Strategy
+- Identify which dimension(s) resonate most with your target segment
+- Use the **Positioning Opportunity** sections to craft messaging
+- Reference the **Raw Evidence** quotes in social media, blog posts, or customer conversations
+
+---
+
+## Research Methodology
+
+- **Parallel Processing:** 8 independent research subtasks executed in parallel
+- **Sources:** Reddit (r/ClaudeCode, r/cursor, r/ArtificialIntelligence), dev.to, Medium, Pragmatic Engineer, AI Engineering Report, LeadDev, Augment Code, Vellum, faun.pub, the-ai-corner.com, Canny Blog, Codeburst, and founder-provided demand signals
+- **Time Period:** Focused on 2024–2026 signals (current and recent)
+- **Depth:** Each dimension includes market signals, pain points, gaps, competitive landscape, positioning opportunity, and raw evidence with citations
+
+---
+
+## Next Steps
+
+1. **Share with frames.ag team** — Use the x402 + spec-driven loop insights for your workshop (April 30, 14:00 BRT)
+2. **Refine ICP messaging** — Test the primary and secondary ICP positioning with early users
+3. **Build competitive differentiation** — Use the competitive tables to identify feature priorities
+4. **Prepare investor materials** — Extract key findings and quotes for pitch deck or memo
+
+---
+
+*Research conducted April 2026 using parallel deep research methodology. All findings grounded in real developer and founder signals from public sources and community discussions.*

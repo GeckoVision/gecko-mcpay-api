@@ -130,15 +130,15 @@ def test_at_least_one_cassette_present_when_collected() -> None:
         )
 
     pytest.fail(
-            "verdict-settle cassette absent. The verdict paywall "
-            "live-mode toggle (X402_VERDICT_SETTLE_LIVE=1) is gated on "
-            "this Pattern C contract test going green against a recorded "
-            "cassette of the real facilitator's /verify AND /settle "
-            "endpoints. Sprint 12 CDP shipped a green /verify and broke "
-            "at /settle — that exact trap is what this gate prevents. "
-            f"Record with {LIVE_ENV}=1 + a funded buyer wallet, then "
-            f"commit either {CDP_CASSETTE.name} or {FRAMES_CASSETTE.name}."
-        )
+        "verdict-settle cassette absent. The verdict paywall "
+        "live-mode toggle (X402_VERDICT_SETTLE_LIVE=1) is gated on "
+        "this Pattern C contract test going green against a recorded "
+        "cassette of the real facilitator's /verify AND /settle "
+        "endpoints. Sprint 12 CDP shipped a green /verify and broke "
+        "at /settle — that exact trap is what this gate prevents. "
+        f"Record with {LIVE_ENV}=1 + a funded buyer wallet, then "
+        f"commit either {CDP_CASSETTE.name} or {FRAMES_CASSETTE.name}."
+    )
 
 
 # ---------------------------------------------------------------------------

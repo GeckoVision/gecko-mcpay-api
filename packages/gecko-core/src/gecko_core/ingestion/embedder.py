@@ -1,9 +1,12 @@
-"""OpenAI embeddings, batched.
+"""Embeddings dispatch: OpenAI and Voyage AI paths.
 
-`text-embedding-3-small` → 1536-dim vectors. Batches at 100 inputs per call,
-which is well under the OpenAI 2048-input limit and keeps individual call
-latency bounded.
+Default provider is Voyage AI `voyage-3` (1024-dim vectors), controlled by
+`EMBED_PROVIDER=voyage` / `EMBED_MODEL=voyage-3` in settings.  The legacy
+OpenAI `text-embedding-3-small` path (1536-dim) remains fully functional and
+is selected when `EMBED_PROVIDER=openai` or when an explicit `client=` is
+passed.
 
+--- OpenAI path ---
 Concurrency + retry (V11-01): a *module-level* semaphore caps in-flight
 embedding requests at 8 across the whole process — protects us from
 `text-embedding-3-small` TPM (1M tokens/min) when an idea fans out into
@@ -26,6 +29,12 @@ S16-INGEST-03 (FM-3 fix from docs/diagnostics/2026-05-01-chunk-write-failures.md
     which matches the ticket's intent.
 
 All other openai errors propagate immediately so genuine bugs aren't masked.
+
+--- Voyage AI path ---
+Simple manual retry loop (3 attempts, full-jitter exponential backoff) on
+any exception with status_code/status 429 or on unknown errors. No semaphore
+— Voyage AI's published rate limits are generous for our batch sizes.
+`_ShedState` is OpenAI-only.
 """
 
 from __future__ import annotations
@@ -64,13 +73,14 @@ _MAX_ATTEMPTS = 5
 # ticket spec.
 _RATE_LIMIT_SHED_THRESHOLD = 2
 
-# OpenAI list price for text-embedding-3-small as of 2026-04. Cheap enough
-# that we don't worry about a few cents of drift; surfaced on the per-session
-# economics view so dashboards reflect real, not stub, spend.
+# Published list prices per 1M tokens (2026-04).
+# Surfaced on the per-session economics view so dashboards reflect real spend.
 _EMBED_RATES_USD_PER_1M: dict[str, float] = {
     "text-embedding-3-small": 0.02,
     "text-embedding-3-large": 0.13,
     "text-embedding-ada-002": 0.10,
+    "voyage-3": 0.06,  # Voyage published list price per 1M tokens
+    "voyage-3-large": 0.12,
 }
 
 
@@ -210,6 +220,50 @@ async def _create_with_retry(
     raise last_exc
 
 
+async def _embed_voyage(
+    texts: list[str],
+    *,
+    api_key: str,
+    model: str = "voyage-3",
+    input_type: str | None = None,
+    batch_size: int = EMBED_BATCH_SIZE,
+) -> tuple[list[list[float]], int]:
+    """Voyage AI embed path. Batches at batch_size, manual retry on 429.
+
+    Uses a lazy import so tests can inject a fake module via sys.modules
+    without importing the real voyageai package.
+    """
+    import voyageai  # lazy — allows sys.modules injection in tests
+
+    client = voyageai.AsyncClient(api_key=api_key)  # type: ignore[attr-defined]
+    results: list[list[float]] = []
+    total_tokens = 0
+
+    for batch in _chunked(texts, batch_size):
+        for attempt in range(1, 4):
+            try:
+                resp = await client.embed(texts=batch, model=model, input_type=input_type)
+                results.extend(list(resp.embeddings))  # type: ignore[arg-type]
+                total_tokens += resp.total_tokens
+                break
+            except Exception as exc:
+                status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+                if attempt < 3 and status in (429, None):
+                    backoff = _full_jitter_backoff(attempt)
+                    logger.info(
+                        "voyage embed retry %d/3 (sleep %.2fs)",
+                        attempt,
+                        backoff,
+                        extra={"attempt": attempt, "error": str(exc)},
+                    )
+                    await asyncio.sleep(backoff)
+                else:
+                    raise
+
+    await asyncio.sleep(0)  # yield to event loop, mirrors OpenAI path
+    return results, total_tokens
+
+
 async def embed(
     texts: list[str],
     *,
@@ -221,20 +275,49 @@ async def embed(
 
     Returns (vectors, total_tokens). The token count is the sum across all
     batches and lets callers attribute cost to a session.
+
+    Provider dispatch:
+    - When an explicit `client` is supplied, the OpenAI path is used
+      unconditionally (backwards-compat for tests and bring-your-own-client
+      callers).
+    - Otherwise, `EMBED_PROVIDER` from settings controls dispatch.
+      `voyage` → `_embed_voyage()`; `openai` → OpenAI embeddings.create path.
     """
     if not texts:
         return [], 0
 
-    # Only resolve settings when we actually need them — passing both `client`
-    # and `model` (the unit-test path, and the future bring-your-own-client
-    # path) must not require OPENAI_API_KEY in the env.
+    settings = None
+    provider = "openai"  # default — overridden below if settings resolved
+
     if client is None or model is None:
         settings = get_ingestion_settings()
-        api = client or AsyncOpenAI(api_key=settings.openai_api_key.get_secret_value())
+        provider = settings.embed_provider.lower()
         model_name = model or settings.embed_model
     else:
-        api = client
+        # Explicit client always means OpenAI path (backwards compat).
         model_name = model
+
+    if provider == "voyage":
+        assert settings is not None  # only set when client/model are None
+        key = settings.voyage_api_key
+        if key is None:
+            raise ValueError("VOYAGE_API_KEY must be set when EMBED_PROVIDER=voyage")
+        return await _embed_voyage(
+            texts,
+            api_key=key.get_secret_value(),
+            model=model_name,
+            batch_size=batch_size,
+        )
+
+    # OpenAI path — requires openai_api_key when settings are resolved
+    if settings is not None:
+        if settings.openai_api_key is None:
+            raise ValueError("OPENAI_API_KEY must be set when EMBED_PROVIDER=openai")
+        api = client or AsyncOpenAI(api_key=settings.openai_api_key.get_secret_value())
+    else:
+        # Explicit-client path: api_key already baked into the provided client.
+        assert client is not None  # invariant: client is None only when settings path taken
+        api = client
 
     batches = list(_chunked(texts, batch_size))
     # Sequential at the call-site — protects rate limits and keeps cost

@@ -13,9 +13,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class IngestionSettings(BaseSettings):
-    openai_api_key: SecretStr = Field(..., alias="OPENAI_API_KEY")
+    openai_api_key: SecretStr | None = Field(default=None, alias="OPENAI_API_KEY")
     tavily_api_key: SecretStr = Field(..., alias="TAVILY_API_KEY")
-    embed_model: str = Field("text-embedding-3-small", alias="EMBED_MODEL")
+    embed_model: str = Field("voyage-3", alias="EMBED_MODEL")
+    embed_provider: str = Field("voyage", alias="EMBED_PROVIDER")
+    voyage_api_key: SecretStr | None = Field(default=None, alias="VOYAGE_API_KEY")
     deepgram_api_key: SecretStr | None = Field(default=None, alias="DEEPGRAM_API_KEY")
     deepgram_max_audio_minutes: int = Field(default=30, alias="DEEPGRAM_MAX_AUDIO_MIN")
 

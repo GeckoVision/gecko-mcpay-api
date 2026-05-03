@@ -1,0 +1,48 @@
+{
+  "idea_id": "bad-another-todo-app",
+  "idea_text": "A minimalist todo app with markdown support, end-to-end encrypted, for productivity power users.",
+  "judge_prose": "TAM: 3\nWEDGE: 3\nV1_FEASIBILITY: 7\n\nVerdict: KILL \u2014 The todo app market is oversaturated, and the proposed features (markdown support and end-to-end encryption) do not provide a compelling differentiation from existing solutions. The reachable market is limited, and there is no clear demand from a specific user segment willing to pay for this app.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+  "parsed_verdict": "kill",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 4.5,
+    "source_grounding": 5.0,
+    "verdict_justification": 5.5,
+    "cost_predictability": 3.5,
+    "verdict_correctness": 10.0
+  },
+  "expected_verdict": "kill",
+  "expected_verdict_v2": "KILL",
+  "actual_verdict": "kill",
+  "actual_verdict_v2": "PIVOT",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM Analysis**: The reachable B2C indie todo app SOM is <$2M ARR after 24 months (Cal Newport's 'Type A Productivity' newsletter, 2024). This suggests limited market potential for a new entrant in a saturated space dominated by established players like Todoist (10M+ users) and others.\n\n- **Comparable Products**: No recent shipped comparable exists that specifically targets the minimalist todo app with markdown support and end-to-end encryption. The closest precedents are two unknowns that were evaluated and marked for potential kill, indicating a lack of successful market entries in this niche.\n\n- **User Payment Behavior**: Existing productivity tools like Todoist charge $5/month for premium features, while others like Things have a one-time fee of $50. This indicates that users are willing to pay for enhanced features but are already well-served by existing solutions.\n\n- **Counterfactual Impact**: If this app does not ship, the segment continues using established tools that already meet their needs, such as Todoist and Obsidian Tasks. There is no clear indication that users are dissatisfied enough with current offerings to seek out a new solution.\n\n- **Market Signals**: There are no builders actively requesting another todo app in the upcoming years (twit.sh), and HN discussions show that posts about building todo apps receive minimal engagement (average 12 upvotes), signaling low community demand.\n\n- **Feature Saturation**: End-to-end encryption is a common feature in existing productivity apps (e.g., Standard Notes offers it for free), suggesting that it may not be a strong differentiator for attracting users to a new app.",
+      "tokens_in": 767,
+      "tokens_out": 334
+    },
+    "critic": {
+      "text": "**Analyst:**\n\nThe idea of a minimalist todo app with markdown support and end-to-end encryption targets a niche segment of productivity power users. However, the market is saturated with established players like Todoist and TickTick, which already offer robust features and large user bases. The unique selling proposition of markdown support and encryption may not be compelling enough to differentiate this app from existing solutions. Additionally, the evidence suggests that the reachable B2C indie todo market is limited, with a potential ARR of less than $2M after 24 months. \n\n**Critic:**\n\n1. **Market Saturation Risk:** The todo app market is oversaturated with established competitors. The presence of major players like Todoist and TickTick means that any new entrant must offer a significantly differentiated value proposition to attract users. Given that similar ideas have been killed, this app risks being just another face in the crowd.\n\n2. **Feature Redundancy Risk:** End-to-end encryption is increasingly becoming a standard feature rather than a unique selling point. Standard Notes offers this for free, which diminishes the perceived value of this app's encryption feature. Without a compelling reason for users to switch, the app may struggle to gain traction.\n\n3. **Demand Evidence Risk:** There is no specific named user or company that has expressed a need for another todo app. The lack of interest from builders and the absence of any compelling demand evidence suggest that the app may not find a viable market. The absence of named builders asking for 'another todo app' in 2025-2026 is particularly telling.\n\nChange my mind by: Providing a specific named user (company, role, persona, or builder handle) who would pay within 30 days of V1.",
+      "tokens_in": 767,
+      "tokens_out": 348
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1233,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "**Critic:**\n\nThe idea of a minimalist todo app with markdown support and end-to-end encryption targets a niche segment of productivity power users. However, the market is saturated with established players like Todoist and TickTick, which already offer robust features and large user bases. The unique selling proposition of markdown support and encryption may not be compelling enough to differentiate this app from existing solutions. Additionally, the evidence suggests that the reachable B2C indie todo market is limited, with a potential ARR of less than $2M after 24 months. \n\n**Architect:**\n\nTo create a viable V1 for this app, we need to focus on the absolute essentials that will resonate with a specific user segment. The goal is to build a minimalist todo app that provides markdown support and end-to-end encryption, targeting productivity power users who value privacy and simplicity. \n\n**V1 Scope:**\n- **User Segment:** Productivity power users who prioritize privacy and simplicity in task management.\n- **Payment Moment:** Users will be prompted to pay for premium features after a 14-day free trial.\n\n**V1 Features:**\n1. Basic todo list functionality (add, edit, delete tasks).\n2. Markdown support for task descriptions.\n3. End-to-end encryption for user data.\n4. User authentication (sign up and login).\n5. A simple and clean UI that emphasizes minimalism.\n\n**Acceptance Criteria:**\n1. Users can create, edit, and delete tasks in a todo list, with changes reflected in real-time.\n2. Users can format task descriptions using markdown syntax, with rendered output displayed correctly.\n3. Users can securely log in and log out, ensuring their data is encrypted and not accessible without authentication.\n4. Users can see a clear prompt to upgrade to premium features after the 14-day trial period ends.\n5. Users can access a demo showcasing the core features of the app.\n\nThis V1 is designed to be minimal yet functional, allowing us to validate the concept without overextending the scope.\n\nV1_FEASIBLE_IN_4_DAYS: yes",
+      "tokens_in": 1382,
+      "tokens_out": 416
+    },
+    "judge": {
+      "text": "TAM: 3\nWEDGE: 3\nV1_FEASIBILITY: 7\n\nVerdict: KILL \u2014 The todo app market is oversaturated, and the proposed features (markdown support and end-to-end encryption) do not provide a compelling differentiation from existing solutions. The reachable market is limited, and there is no clear demand from a specific user segment willing to pay for this app.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+      "tokens_in": 2946,
+      "tokens_out": 94
+    }
+  }
+}

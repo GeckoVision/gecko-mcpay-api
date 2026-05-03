@@ -29,11 +29,20 @@ from gecko_core.models import (
     AskResult,
     BusinessPlan,
     Citation,
+    Competitor,
+    Dissent,
+    MarketLandscape,
+    NextStep,
+    NextStepsWithFalsifiers,
+    PerVoiceReadout,
+    RefinedIdea,
     ResearchResult,
     SourceCandidate,
     SourceInfo,
+    SurvivingDissent,
     ValidationReport,
     Verdict,
+    VoicePosition,
 )
 from rich.box import ROUNDED
 from rich.console import Console, Group
@@ -343,6 +352,326 @@ def _doc_panel(title: str, body: Group, accent: str) -> Panel:
 
 
 # --- Public renderers ------------------------------------------------------
+
+
+# --- Demo output (v5.5) ----------------------------------------------------
+#
+# 7-section verdict-led layout per docs/design/2026-05-02-research-output-shape.md
+# (reconciled to the AI/ML spec naming and current Verdict enum
+# SHIP/REFINE/KILL — but our enum is GO/REFINE/PIVOT/KILL; spec mapped GO=green,
+# REFINE=yellow, KILL=bright_red, PIVOT inherits the legacy red).
+
+_DEMO_VERDICT_STYLES: dict[Verdict, str] = {
+    Verdict.GO: "bold reverse green",
+    Verdict.REFINE: "bold reverse yellow",
+    Verdict.PIVOT: "bold reverse red",
+    Verdict.KILL: "bold reverse bright_red",
+}
+
+_VOICE_DISPLAY_ORDER: tuple[str, ...] = (
+    "analyst",
+    "critic",
+    "architect",
+    "scoper",
+    "judge",
+)
+
+# Map AG2 internal voice ids -> human-readable display names. Forward-compat
+# with S21 program-judges: any name not in the map falls through unchanged
+# (e.g. an injected `kuka_market_superteam_br` renders as that string).
+_VOICE_DISPLAY_NAMES: dict[str, str] = {
+    "analyst": "Analyst",
+    "critic": "Critic",
+    "architect": "Architect",
+    "scoper": "Scoper",
+    "judge": "Judge",
+}
+
+
+def _voice_display(name: str) -> str:
+    return _VOICE_DISPLAY_NAMES.get(name, name)
+
+
+def _truncate_line(s: str, width: int) -> str:
+    s = s.replace("\n", " ").strip()
+    if len(s) <= width:
+        return s
+    return s[: max(0, width - 1)].rstrip() + "…"
+
+
+def _short_hash(result: ResearchResult) -> str:
+    h = result.verdict_hash or ""
+    return h[:12] if h else "unknown"
+
+
+def _demo_header(result: ResearchResult, idea: str) -> Panel:
+    style = _DEMO_VERDICT_STYLES.get(result.verdict, "bold reverse white")
+    label = Text(f" {result.verdict.value} ", style=style)
+    short = _short_hash(result)
+    hash_text = Text(f"verdict@{short}", style="dim cyan")
+    line1 = Text.assemble(label, "  ", hash_text)
+    classification = getattr(result, "idea_classification", None)
+    founder_posture = getattr(result, "founder_posture", None)
+    lines: list[Text] = [line1]
+    # S21-CALIBRATION-FOUNDER-POSTURE-01 — render both classifications on
+    # the same row when either is present. Founder posture is additive;
+    # the existing classification-only fixture path keeps rendering byte-
+    # identically when founder_posture is None.
+    if classification or founder_posture:
+        segments: list[tuple[str, str]] = []
+        if classification:
+            segments.append(("Classification: ", "dim"))
+            segments.append((classification, "bold"))
+        if classification and founder_posture:
+            segments.append(("  ·  ", "dim"))
+        if founder_posture:
+            segments.append(("Founder posture: ", "dim"))
+            segments.append((founder_posture, "bold"))
+        lines.append(Text.assemble(*segments))
+    lines.append(Text(f"Idea: {_truncate_line(idea, 76)}"))
+    body = Group(*lines)
+    return Panel(body, title="Gecko Verdict", border_style="cyan", width=80)
+
+
+def _voice_block(v: VoicePosition) -> Group:
+    name_line = Text.assemble(("▸ ", "bright_green"), (_voice_display(v.name), "bold cyan"))
+    if v.status == "silent":
+        body = Text("    (silent — no contribution this round)", style="dim italic")
+        return Group(name_line, body)
+    position = v.position or "(no position recorded)"
+    tension = v.tension or "(no pushback this round)"
+    recommend = v.recommendation or "(no recommendation)"
+    return Group(
+        name_line,
+        Text.assemble(("    Position:  ", "dim"), position),
+        Text.assemble(("    Tension:   ", "dim"), tension),
+        Text.assemble(("    Recommend: ", "dim"), recommend),
+    )
+
+
+def _voices_section(per_voice: PerVoiceReadout) -> Group:
+    by_name: dict[str, VoicePosition] = {v.name: v for v in per_voice.voices}
+    items: list[Group | Text | Padding] = [Text("▸ Voices", style="bold cyan"), Text("")]
+    for name in _VOICE_DISPLAY_ORDER:
+        v = by_name.get(name)
+        if v is None:
+            continue
+        items.append(Padding(_voice_block(v), (0, 0, 1, 2)))
+    return Group(*items)
+
+
+def _transcript_section(summary: str) -> Group:
+    return Group(
+        Text("▸ Transcript", style="bold cyan"),
+        Text(""),
+        Padding(Text(summary), (0, 0, 1, 2)),
+    )
+
+
+def _landscape_section(landscape: MarketLandscape) -> Group:
+    t = Table(show_header=True, header_style="bold cyan", border_style="dim", box=ROUNDED)
+    t.add_column("Competitor", width=16, overflow="fold")
+    t.add_column("Their thing", width=30, overflow="fold")
+    t.add_column("Why we're different", width=28, overflow="fold")
+    competitors: list[Competitor] = list(landscape.competitors[:5])
+    for comp in competitors:
+        if comp.flag == "cannot_articulate_difference" or comp.why_we_are_not_them is None:
+            wedge = Text("(cannot articulate difference)", style="dim italic")
+        else:
+            wedge = Text(comp.why_we_are_not_them)
+        t.add_row(comp.name, comp.what_they_do, wedge)
+    return Group(
+        Text("▸ Landscape", style="bold cyan"),
+        Text(""),
+        Padding(t, (0, 0, 1, 2)),
+    )
+
+
+_NO_DISSENT_TEXT = (
+    "No dissent survived this debate. Either consensus was real, or the\n"
+    "orchestration is collapsing voices — flag for ai-ml-engineer review."
+)
+
+
+def _dissent_block(d: Dissent) -> Group:
+    quote = Text(f'┃ "{d.verbatim}"', style="yellow")
+    attr = Text(f"┃    — {_voice_display(d.voice)}", style="dim")
+    return Group(quote, attr, Text(""))
+
+
+def _dissent_section(dissent: SurvivingDissent | None) -> Group:
+    header = Text.assemble(
+        ("▸ Surviving Dissent", "bold cyan"),
+        ("                                                          [!]", "yellow"),
+    )
+    if dissent is None or dissent.dissent_status == "no_surviving_dissent" or not dissent.dissents:
+        body = Text(_NO_DISSENT_TEXT, style="yellow")
+        return Group(header, Text(""), Padding(body, (0, 0, 1, 2)))
+    blocks: list[Group] = [_dissent_block(d) for d in dissent.dissents]
+    return Group(header, Text(""), Padding(Group(*blocks), (0, 0, 1, 2)))
+
+
+def _next_step_block(i: int, step: NextStep) -> Group:
+    return Group(
+        Text.assemble((f"  {i}. ", "bold"), step.action),
+        Text.assemble(("     Surfaced by: ", "dim"), _voice_display(step.surfaced_by_voice)),
+        Text.assemble(
+            ("     Falsifier:   ", "dim yellow"),
+            f"{step.falsifier.what_would_disprove_this} ({step.falsifier.by_when})",
+        ),
+    )
+
+
+def _next_steps_section(next_steps: NextStepsWithFalsifiers) -> Group:
+    items: list[Group | Text | Padding] = [Text("▸ Next Steps", style="bold cyan"), Text("")]
+    if not next_steps.steps:
+        items.append(
+            Padding(Text("(no next steps surfaced for this verdict)", style="dim"), (0, 0, 1, 2))
+        )
+        return Group(*items)
+    for i, step in enumerate(next_steps.steps[:5], start=1):
+        items.append(Padding(_next_step_block(i, step), (0, 0, 1, 0)))
+    return Group(*items)
+
+
+def _verdict_url_line(result: ResearchResult) -> str:
+    """PD-spec footer: name what's behind the paywall door.
+
+    Composes a single line of *real* counts from the post-processor
+    readouts (turns, surviving dissents, dated falsifiers) plus the fixed
+    $2.50 price and the verdict URL. Each clause is only included when the
+    underlying number is genuinely available — we never fabricate counts.
+    Falls back to the legacy ``Full transcript: x402://verdict/<hash>
+    (paywalled)`` line when no counts are reachable.
+    """
+    short = _short_hash(result)
+    clauses: list[str] = []
+
+    # Turn count: pull from the weakly-typed transcript dict if present.
+    turn_count: int | None = None
+    if isinstance(result.transcript, dict):
+        turns = result.transcript.get("turns")
+        if isinstance(turns, list):
+            turn_count = len(turns)
+    if turn_count:
+        clauses.append(f"{turn_count} turn{'s' if turn_count != 1 else ''}")
+
+    # Surviving dissents: only count when the status is "surviving" — a
+    # collapsed/empty list isn't a real count, it's the absence of one.
+    dissent_count: int | None = None
+    sd = result.surviving_dissent
+    if sd is not None and sd.dissent_status == "surviving":
+        dissent_count = len(sd.dissents)
+    if dissent_count:
+        clauses.append(f"{dissent_count} surviving dissent{'s' if dissent_count != 1 else ''}")
+
+    # Dated falsifiers: each NextStep carries one, so the count is the
+    # length of the steps list when present.
+    step_count: int | None = None
+    if result.next_steps_with_falsifiers is not None:
+        step_count = len(result.next_steps_with_falsifiers.steps)
+    if step_count:
+        clauses.append(f"{step_count} dated falsifier{'s' if step_count != 1 else ''}")
+
+    if not clauses:
+        return f"  Full transcript: x402://verdict/{short} (paywalled)"
+
+    body = " · ".join(["Full debate", *clauses, "$2.50"])
+    return f"  {body} — x402://verdict/{short}"
+
+
+def _calibration_footer_line(result: ResearchResult) -> Text | None:
+    """Render the calibration footer line when the run was calibrated.
+
+    Format mirrors the spec: ``Calibrated against 34 Colosseum judges
+    across 14 regions · 2026-05-03 corpus``. Returns ``None`` when the
+    result was not calibrated so the caller can skip the line cleanly.
+    """
+    cid = getattr(result, "calibration_corpus", None)
+    if not cid:
+        return None
+    # Identifier shapes:
+    #   colosseum:<N>_judges:<YYYY-MM-DD>                       (Colosseum only)
+    #   colosseum:<N>_judges:<M>_programs:<YYYY-MM-DD>          (+ web3 accelerators)
+    parts = cid.split(":")
+    if len(parts) >= 3 and parts[0] == "colosseum":
+        try:
+            n_judges = int(parts[1].split("_")[0])
+        except (ValueError, IndexError):
+            n_judges = 0
+
+        # Parse optional programs segment + trailing date.
+        n_programs = 0
+        date_part = parts[-1]
+        for seg in parts[2:-1]:
+            if seg.endswith("_programs"):
+                try:
+                    n_programs = int(seg.split("_")[0])
+                except (ValueError, IndexError):
+                    n_programs = 0
+
+        # Region count is hard-coded against the 2026-05-03 dataset (14
+        # superteam regions in the source file). The judge / program
+        # counts come from the loaded chunks, so adding new programs
+        # widens the footer automatically.
+        n_regions = 14
+        if n_judges > 0 and n_programs > 0:
+            return Text(
+                f"  Calibrated against {n_judges} Colosseum judges + "
+                f"{n_programs} web3 accelerator programs · {date_part} corpus",
+                style="dim",
+            )
+        if n_judges > 0:
+            return Text(
+                f"  Calibrated against {n_judges} Colosseum judges "
+                f"across {n_regions} regions · {date_part} corpus",
+                style="dim",
+            )
+    return Text(f"  Calibrated against {cid}", style="dim")
+
+
+def _footer_section(result: ResearchResult) -> Group:
+    short = _short_hash(result)
+    items: list[Text | Rule] = [
+        Rule(style="dim"),
+        Text(f"  {result.tier} · verdict@{short}", style="dim"),
+        Text(_verdict_url_line(result), style="dim"),
+    ]
+    cal_line = _calibration_footer_line(result)
+    if cal_line is not None:
+        items.append(cal_line)
+    items.append(
+        Text(
+            f"  Next: gecko_advise --hash {short}  to debate this verdict further.",
+            style="dim",
+        )
+    )
+    return Group(*items)
+
+
+def render_research_demo(
+    result: ResearchResult,
+    idea: str,
+    console: Console | None = None,
+) -> None:
+    """Render the v5.5 demo output: 7 sections, verdict-led.
+
+    Sections degrade gracefully when post-processor fields are None — except
+    Surviving Dissent, which always renders (with a self-incrimination line
+    when missing) per design spec §2.5.
+    """
+    c = _console(console)
+    c.print(_demo_header(result, idea))
+    if result.per_voice is not None:
+        c.print(_voices_section(result.per_voice))
+    if result.transcript_summary:
+        c.print(_transcript_section(result.transcript_summary))
+    if result.market_landscape is not None and result.market_landscape.competitors:
+        c.print(_landscape_section(result.market_landscape))
+    c.print(_dissent_section(result.surviving_dissent))
+    if result.next_steps_with_falsifiers is not None:
+        c.print(_next_steps_section(result.next_steps_with_falsifiers))
+    c.print(_footer_section(result))
 
 
 def render_research_result(result: ResearchResult, console: Console | None = None) -> None:
@@ -665,11 +994,119 @@ def render_pulse_result(result: object, console: Console | None = None) -> None:
     c.print(_doc_panel("Pulse", body, _PULSE_STYLE))
 
 
+# --- Refine -----------------------------------------------------------------
+
+
+def _render_refine(
+    refinement: RefinedIdea,
+    *,
+    short_hash: str,
+    console: Console | None = None,
+) -> None:
+    """Render a `bb refine <hash>` output panel.
+
+    Layout follows the spec:
+      - top panel: verdict@<hash> · refinement: <kind>
+      - body sections: addresses-dissent, now-claims, falsifiers
+      - footer: $1.00 V1.5 paywall + next CTA
+    """
+    c = _console(console)
+
+    # Top panel: identifier + refinement kind. Padded with the refined
+    # statement as the lead body so the founder sees the headline first.
+    header = Text.assemble(
+        ("verdict@", "dim"),
+        (short_hash, "bold"),
+        ("  ·  refinement: ", "dim"),
+        (refinement.confidence, "bold cyan"),
+    )
+    statement = Text.assemble(
+        ("Refined statement: ", "bold"),
+        Text(refinement.refined_statement, no_wrap=False),
+    )
+    c.print(
+        Panel(
+            Group(header, Text(""), statement),
+            title=Text("Idea Refinement", style="bold cyan"),
+            border_style="cyan",
+            box=ROUNDED,
+            padding=(1, 2),
+            expand=True,
+        )
+    )
+
+    # Section 1 — surviving dissent addressed.
+    if refinement.addresses_dissent:
+        c.print()
+        c.print(Text("▸ Addresses surviving dissent", style="bold cyan"))
+        c.print()
+        for d in refinement.addresses_dissent:
+            voice = _voice_display(d.voice)
+            quote = Text.assemble(
+                ("  ▸ ", "dim"),
+                (f"{voice}: ", "bold"),
+                (f'"{d.dissent_quote}"', "yellow"),
+            )
+            res = Text.assemble(
+                ("    Resolution: ", "dim"),
+                Text(d.resolution),
+            )
+            c.print(quote)
+            c.print(res)
+            c.print()
+
+    # Section 2 — now-claims (paired was → now).
+    pairs = list(
+        zip(
+            refinement.what_it_no_longer_claims,
+            refinement.what_it_now_claims_instead,
+            strict=False,
+        )
+    )
+    if pairs:
+        c.print(Text("▸ Now claims (was)", style="bold cyan"))
+        c.print()
+        for was, now in pairs:
+            line = Text.assemble(
+                ("  - was ", "dim"),
+                Text(was),
+                ("    →    now ", "dim"),
+                Text(now, style="bold"),
+            )
+            c.print(line)
+        c.print()
+
+    # Section 3 — falsifiers no longer easy.
+    if refinement.new_falsifiers_now_harder:
+        c.print(Text("▸ Falsifiers no longer easy", style="bold cyan"))
+        c.print()
+        for f in refinement.new_falsifiers_now_harder:
+            c.print(Text.assemble(("  - ", "dim"), Text(f)))
+        c.print()
+
+    # Footer.
+    c.print(Rule(style="dim"))
+    c.print(
+        Text(
+            f"  Refined from verdict@{short_hash}  ·  $1.00 per refinement (V1.5 paywall)",
+            style="dim",
+        )
+    )
+    c.print(
+        Text(
+            f"  Next: gecko_advise --hash {short_hash}  to debate this refinement.",
+            style="dim",
+        )
+    )
+
+
 __all__ = [
     "WorkflowProgress",
+    "_render_refine",
     "progress_context",
     "render_ask_result",
     "render_pulse_result",
+    "render_research_demo",
     "render_research_result",
     "render_source_candidates",
     "render_sources_table",

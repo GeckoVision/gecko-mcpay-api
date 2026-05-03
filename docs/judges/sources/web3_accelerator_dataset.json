@@ -1,0 +1,159 @@
+{
+  "dataset": "Web3 Accelerator Public Mentor Threads & VC-Style Opinions (2026)",
+  "total_programs": 10,
+  "generated_at": "2026-05-03",
+  "note_for_super_agent": "Public X threads are the best proxy for how mentors think/judge. Use these to simulate scoring (e.g., 'greenfield vs iterative' from Adam, 'founder traits' from Qiao). Most other programs rely on private 1:1s. Colosseum + Alliance have the richest public data.",
+  "programs": {
+    "Colosseum Arena / Frontier (Solana)": {
+      "chain": "Solana",
+      "description": "Largest Solana hackathon + accelerator. Judges evaluate pitches, demos, traction publicly via X threads.",
+      "public_threads_summary": "Highly active public feedback. Billy solicits projects and gives direct reply feedback. Adam shares explicit frameworks (greenfield vs iterative innovation) and replies with PMF advice.",
+      "key_mentors_with_threads": [
+        {
+          "name": "Billy | attn.markets",
+          "username": "@twentyOne2x",
+          "role": "Colosseum winner + judge/mentor",
+          "threads": [
+            {
+              "post_id": "2044888917917208667",
+              "date": "2026-04-16",
+              "content": "@Solana x @Colosseum Frontier applicants…. you know the drill :)",
+              "summary": "Direct call-to-action for Colosseum applicants to share projects + get feedback (quotes Dave Hsu's detailed Notion advice on team/market/product/distribution).",
+              "style": "Builder-friendly solicitation + practical pitch advice"
+            },
+            {
+              "post_id": "2044900417688265156",
+              "date": "2026-04-16",
+              "content": "hitting bit close to home... im bullish on founders actively seeking feedback like @muse_jp_sol... re public list of participants: /projects tab...",
+              "summary": "Praises feedback-seeking founders; shares Colosseum resources.",
+              "style": "Encouraging + resource-sharing"
+            },
+            {
+              "post_id": "2044899514750840981",
+              "date": "2026-04-16",
+              "content": "would need some market research on that. EUR/CHF denominated yields... may be good enough to just add a swap...",
+              "summary": "Specific technical/market feedback + DM invitation.",
+              "style": "Constructive critique + next-step guidance"
+            }
+          ],
+          "overall_opinion_lens": "Founders who seek feedback aggressively win; brag with context; ship MVPs; focus on real traction."
+        },
+        {
+          "name": "Adam",
+          "username": "@adamdelphantom",
+          "role": "Phantom devtools + SteelCitySolana organizer + Colosseum mentor",
+          "threads": [
+            {
+              "post_id": "2047305639555219688",
+              "date": "2026-04-23",
+              "content": "The way I think about @colosseum projects is that there’s essentially 2 kinds imo — greenfield innovation products vs iterative innovation products...",
+              "summary": "Full framework: greenfield needs cult members + evangelists; iterative needs high-volume customer closes + obvious value prop.",
+              "style": "Framework-driven PMF advice"
+            },
+            {
+              "post_id": "2047323323361628191",
+              "date": "2026-04-23",
+              "content": "Good q. The reality is this is a spectrum... onchain options are kind of in the middle. Ultimately you need a good amount of organic users to give you a feedback loop and liquidity...",
+              "summary": "Nuanced spectrum advice + warns against airdrop farmers.",
+              "style": "Practical user-feedback-loop focus"
+            }
+          ],
+          "overall_opinion_lens": "Differentiate greenfield vs iterative early. Evidence of PMF depends on category. Organic users > fake signals."
+        }
+      ]
+    },
+    "Alliance DAO (Multi-chain / Crypto)": {
+      "chain": "Multi-chain (strong Solana overlap)",
+      "description": "Top remote crypto accelerator + founder community. 9-week program with heavy mentorship.",
+      "public_threads_summary": "Qiao Wang (@QwQiao) is extremely vocal with YC-style founder advice, productivity insights, and investment criteria.",
+      "key_mentors_with_threads": [
+        {
+          "name": "Qiao Wang",
+          "username": "@QwQiao",
+          "role": "Founding Partner, Alliance DAO",
+          "threads": [
+            {
+              "post_id": "2016504400617861534",
+              "date": "2026-01-28",
+              "content": "didnt see this coming a year ago, but i went from spending 0% to >50% of my time coding... the software engineer of the future will be more of an architect and enabler, and less of a coder.",
+              "summary": "Major productivity shift due to AI tools (4x → 10x median in cohorts).",
+              "style": "Forward-looking founder tooling advice"
+            },
+            {
+              "post_id": "1998403127284826486",
+              "date": "2025-12-09",
+              "content": "in public markets u want to identify businesses with such wide moats that even idiots can run them. in private markets the trick is to find founders whose sheer force of will can turn avg ideas into winning businesses.",
+              "summary": "Founder willpower > idea quality in early-stage crypto.",
+              "style": "Classic VC founder-trait opinion"
+            },
+            {
+              "post_id": "2017230737439682926",
+              "date": "2026-01-30",
+              "content": "question i ask technical founders in every @alliance cohort: 'how much productivity boost have u experienced since chatgpt?' ... median in the current cohort is ~10x.",
+              "summary": "AI productivity step-function in recent cohorts.",
+              "style": "Data-driven founder productivity lens"
+            }
+          ],
+          "overall_opinion_lens": "Invest in 'autistic traits + childhood trauma' founders (contrarian thinking + drive). Force of will beats perfect ideas. Stay lean, solve small problems first, be brutally honest."
+        }
+      ]
+    },
+    "Solaris Accelerator (Solana)": {
+      "chain": "Solana",
+      "description": "Solana Foundation-backed for Mandarin-speaking founders.",
+      "public_threads_summary": "Limited public X threads; mostly private 1:1s and workshops.",
+      "key_mentors_with_threads": [],
+      "overall_opinion_lens": "Execution velocity, Solana composability, regional (Chinese/global) scaling. Overlaps with Colosseum judges (e.g. Lily Liu)."
+    },
+    "Solana Incubator (Solana Labs)": {
+      "chain": "Solana",
+      "description": "Selective in-person NYC incubator.",
+      "public_threads_summary": "Closed program — almost zero public mentor threads.",
+      "key_mentors_with_threads": [],
+      "overall_opinion_lens": "Deep Solana-native technical integration + strategic alignment."
+    },
+    "Stellar x CV Labs Accelerator": {
+      "chain": "Stellar",
+      "description": "12-week EMEA-focused (payments, RWAs, DeFi). New in 2026.",
+      "public_threads_summary": "Brand-new program — no public mentor feedback threads yet (mostly announcements).",
+      "key_mentors_with_threads": [],
+      "overall_opinion_lens": "Institutional-grade: real-world payments/RWA traction, regulatory readiness, cross-border scalability."
+    },
+    "a16z Crypto Startup School / CSX": {
+      "chain": "Multi-chain",
+      "description": "Intensive a16z crypto accelerator.",
+      "public_threads_summary": "a16z team posts high-level 'Big Ideas' and general founder advice; no granular public reply-style threads in recent data.",
+      "key_mentors_with_threads": [],
+      "overall_opinion_lens": "Ambitious product vision, category leadership, long-term crypto primitives."
+    },
+    "Binance Labs Accelerator": {
+      "chain": "Multi-chain",
+      "description": "Global scaling-focused accelerator.",
+      "public_threads_summary": "Limited public VC-style threads from mentors.",
+      "key_mentors_with_threads": [],
+      "overall_opinion_lens": "Liquidity, scalability, global/emerging-market adoption."
+    },
+    "Outlier Ventures Base Camp": {
+      "chain": "Multi-chain (DePIN/AI focus)",
+      "description": "12-week token-engineering + GTM accelerator.",
+      "public_threads_summary": "Thematic posts on DePIN/Post-Web, but few specific founder-trait threads.",
+      "key_mentors_with_threads": [],
+      "overall_opinion_lens": "Token design, verifiability, community + deep tech."
+    },
+    "Lightspeed Launch (Solana)": {
+      "chain": "Solana",
+      "description": "Hybrid accelerator/launchpad.",
+      "public_threads_summary": "Limited public threads; overlaps with Colosseum/Superteam style.",
+      "key_mentors_with_threads": [],
+      "overall_opinion_lens": "Product velocity + Solana-native execution."
+    },
+    "Encode x Solana / Superteam Regional Accelerators": {
+      "chain": "Solana",
+      "description": "Structured online + regional pre-accelerators.",
+      "public_threads_summary": "Superteam leads (Cap, Kuka, Aditya) post session recaps and encouragement.",
+      "key_mentors_with_threads": [],
+      "overall_opinion_lens": "Community execution, regional adoption, practical GTM + non-stop shipping."
+    }
+  },
+  "usage_for_super_agent": "Query by program → instantly get the mentor's exact public opinion style. Cross-reference Colosseum (practical PMF frameworks) with Alliance (founder personality traits) for richer simulations."
+}

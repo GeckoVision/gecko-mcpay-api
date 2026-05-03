@@ -1,0 +1,48 @@
+{
+  "idea_id": "saas-kill-ai-resume-builder",
+  "idea_text": "AI resume builder: paste your job target, get a polished PDF resume tailored to the JD, $19/mo.",
+  "judge_prose": "TAM: 3\nWEDGE: 2\nV1_FEASIBILITY: 3\n\nVerdict: KILL \u2014 Generic GPT-wrapper on saturated commodity vertical with no named ICP + named payment moment. The market is heavily saturated with established players and free alternatives, making it difficult to capture a significant user base willing to pay for this service.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+  "parsed_verdict": "kill",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 5.5,
+    "source_grounding": 5.0,
+    "verdict_justification": 6.5,
+    "cost_predictability": 3.5,
+    "verdict_correctness": 10.0
+  },
+  "expected_verdict": "kill",
+  "expected_verdict_v2": "KILL",
+  "actual_verdict": "kill",
+  "actual_verdict_v2": "PIVOT",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM**: The reachable TAM is likely minimal given the saturation from existing players like Teal, Rezi, and Zety, which dominate the market (G2 Resume Builders category 2025). The individual-buyer segment is already crowded, indicating a high risk of saturation.\n\n- **Comparable**: Enhancv reached ~$8M ARR before plateauing, indicating a strong empirical ceiling for individual-buyer resume products. This suggests that even if your product finds initial traction, it may struggle to scale beyond this point.\n\n- **Counterfactual**: If this AI resume builder does not ship, job seekers will likely continue to use free LLM alternatives like ChatGPT or Claude.ai, which can generate tailored resumes in one prompt, further diminishing the value proposition of a paid service.\n\n- **Pricing and Replacement**: The proposed $19/month subscription model competes against free tools and one-time-use SaaS patterns, which have a median churn of 60 days (ProfitWell SaaS Benchmarks 2024). This indicates that users may prefer free options or one-time purchases over a recurring subscription.\n\n- **Precedents**: No recent shipped comparables exist in the individual-buyer resume space, and prior evaluations indicate a significant risk of failure in this category. The previous unknowns suggest that the market has not seen successful individual-focused resume solutions against free alternatives.",
+      "tokens_in": 763,
+      "tokens_out": 279
+    },
+    "critic": {
+      "text": "1. **Market Saturation Risk**: The resume builder market is heavily saturated with established players like Teal, Rezi, and Zety, which already offer similar services. Competing against these established brands, especially with a subscription model, is unlikely to attract enough users to sustain growth. The presence of free alternatives like ChatGPT and Claude.ai further dilutes the potential user base willing to pay for a service that can be replicated in a single prompt.\n\n2. **Churn and Retention Risk**: The one-time-use SaaS pattern indicates a 60-day churn median, which suggests that users are unlikely to stay subscribed for long. This raises concerns about the viability of a $19/month subscription model, as users may only need a resume once or twice in their career. Without a compelling reason for users to maintain their subscription, revenue will likely be inconsistent and unsustainable.\n\n3. **Value Proposition Risk**: The idea lacks a clear differentiation from existing solutions. If the AI resume builder does not offer unique features or superior quality compared to free tools and established competitors, it will struggle to justify the subscription cost. The risk is that users will perceive it as redundant, leading to low conversion rates and high customer acquisition costs.\n\nChange my mind by: Providing a specific user (company, role, persona, or builder handle) who would pay for this service within 30 days of V1 launch.",
+      "tokens_in": 763,
+      "tokens_out": 283
+    },
+    "architect": {
+      "text": ":architect",
+      "tokens_in": 1109,
+      "tokens_out": 2
+    },
+    "scoper": {
+      "text": "**V1: AI Resume Builder for Job Seekers**\n\n**Target User Segment**: Job seekers applying for tech roles.\n\n**Payment Moment**: Users pay $19 for a polished PDF resume tailored to a specific job description.\n\n**Acceptance Criteria**:\n1. Users can paste a job description and receive a tailored resume in PDF format within 5 minutes.\n2. Users can download the generated resume without any errors or issues.\n3. Users receive an email confirmation with a link to their resume after the download.\n4. Users can provide feedback on the generated resume, indicating satisfaction or areas for improvement.\n5. Users can access a demo version that allows them to see a sample resume tailored to a job description before making a payment.\n\n**V1_FEASIBLE_IN_4_DAYS**: no",
+      "tokens_in": 1258,
+      "tokens_out": 161
+    },
+    "judge": {
+      "text": "TAM: 3\nWEDGE: 2\nV1_FEASIBILITY: 3\n\nVerdict: KILL \u2014 Generic GPT-wrapper on saturated commodity vertical with no named ICP + named payment moment. The market is heavily saturated with established players and free alternatives, making it difficult to capture a significant user base willing to pay for this service.\n\ngap_classification: Full\nFinal verdict: PIVOT",
+      "tokens_in": 2567,
+      "tokens_out": 83
+    }
+  }
+}

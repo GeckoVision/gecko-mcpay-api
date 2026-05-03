@@ -1,0 +1,48 @@
+{
+  "idea_id": "good-mcp-postgres-explainer",
+  "idea_text": "A Claude Code MCP server that ingests a Postgres schema and lets a developer ask 'what writes to this column?' answered with grep + pg_stat traces.",
+  "judge_prose": "TAM: 5\nWEDGE: 7\nV1_FEASIBILITY: 8\n\nVerdict: SHIP V1 to platform engineers at companies like Stripe and Notion. The idea targets a specific pain point experienced by developers working with Postgres databases, offering a clear value proposition by automating a time-consuming manual process. The named ICP and the specific integration with Postgres schema and `pg_stat` traces provide a sharp wedge. The feasibility of building the MVP in 4 days is confirmed, making this a viable project to pursue.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+  "parsed_verdict": "ship",
+  "gap_classification": null,
+  "gap_summary": null,
+  "advisor_voices": null,
+  "advisor_consensus": null,
+  "rubric_score": {
+    "agent_voice": 7.5,
+    "source_grounding": 6.0,
+    "verdict_justification": 7.0,
+    "cost_predictability": 7.5,
+    "verdict_correctness": 5.0
+  },
+  "expected_verdict": "ship",
+  "expected_verdict_v2": "BUILD",
+  "actual_verdict": "ship",
+  "actual_verdict_v2": "REFINE",
+  "agent_turns": {
+    "analyst": {
+      "text": "- **TAM**: Targeting ~180,000 developers who regularly interact with Postgres databases in the US, with a reachable TAM of approximately $3-5M in the first year, assuming a $20/month subscription model and capturing 1-2% of this market. This is based on the prevalence of Postgres usage and the pain points identified by platform engineers (source: twit_sh @joeythelantern, @leeerob 2025).\n\n- **Comparable**: The Anthropic MCP launched in November 2024, with over 180 MCP servers published in the first six months, indicating strong demand for specialized MCP solutions (source: anthropic.com/mcp registry). This suggests a growing market for niche database tools.\n\n- **Current Pain Point**: Developers currently spend 20-40 minutes per query using pg_stat_statements and grep to trace column writes, indicating a significant inefficiency that your product could address (source: Crunchy Data DBA blog 2024). \n\n- **Counterfactual**: If this MCP server is not shipped, developers will continue to rely on manual processes, leading to wasted time and potential errors in database management. This inefficiency could drive them to seek alternative solutions, such as hiring additional DBAs or using less effective tools.\n\n- **Gecko Precedent**: There are no prior shipped comparables or killed ideas directly related to this specific MCP server concept, but the previous evaluation of a generic GPT-wrapper SQL chatbot indicates a need for more specialized solutions (source: gecko_precedent). \n\n- **Market Validation**: The traction of Supabase MCP install counts supports the idea that there is a demand for agentic database introspection tools, which aligns with the proposed functionality of your server.",
+      "tokens_in": 820,
+      "tokens_out": 359
+    },
+    "critic": {
+      "text": "**Risks:**\n\n1. **Regulatory Compliance Risk**: If the tool inadvertently exposes sensitive data or allows unauthorized access to database schemas, it could put developers and their organizations at legal risk, especially in regulated industries. Without clear guidelines on data handling and user permissions, this could lead to significant liabilities.\n\n2. **Market Saturation Risk**: The MCP server landscape is rapidly evolving, with over 180 servers already published. If the product does not offer a distinct advantage over existing solutions, it may struggle to gain traction. The similarity to the KILLED generic GPT-wrapper SQL chatbot suggests that without a unique value proposition, this idea could face a similar fate.\n\n3. **User Adoption Risk**: While there are identified pain points, the evidence of demand is still anecdotal. The lack of a specific user or company that has committed to paying for this solution within 30 days raises concerns about whether the product will find a willing market. The reliance on manual workflows does not guarantee that users will switch to a new tool without clear, demonstrable benefits.\n\nChange my mind by: Providing a signed commitment from a specific company (e.g., Stripe or Notion) that they will pay for this solution within 30 days of launch.",
+      "tokens_in": 820,
+      "tokens_out": 250
+    },
+    "architect": {
+      "text": "**Architect's Stack Recommendation:**\n\n1. **Framework**: Use **Next.js 15** for building the frontend, leveraging its server-side rendering capabilities for optimal performance and SEO.\n\n2. **Styling**: Implement **Tailwind CSS** for rapid UI development and consistent design across the application.\n\n3. **Backend**: Utilize **Supabase** for the backend, which includes Postgres for the database, built-in authentication, and storage solutions. This choice aligns with the need for a robust and scalable database solution that can handle complex queries efficiently.\n\n4. **Auth Strategy**: Implement **Supabase Auth** for user authentication, providing a seamless and secure user experience while managing access to the database.\n\n5. **Deployment**: Deploy the application on **Vercel**, which is optimized for Next.js applications and offers easy scaling and performance benefits.\n\n**Justification for Default Stack**: This stack is opinionated and well-integrated, allowing for rapid development and deployment within the 4-day timeline. It leverages existing tools that are proven to work well together, minimizing the risk of technical debt or integration issues.\n\n**Feature Cut Recommendation**: If the Scoper cannot fit V1 into 4 days, consider cutting the **real-time collaboration feature** that allows multiple users to query the database simultaneously. This feature could cost an additional 2-3 days of development time and is not essential for the initial MVP; the core functionality of tracing column writes can still be validated without it.",
+      "tokens_in": 1213,
+      "tokens_out": 302
+    },
+    "scoper": {
+      "text": "**V1: Claude Code MCP Server for Postgres Column Tracing**\n\nV1 is a Claude Code MCP server that allows developers to ingest a Postgres schema and query \"what writes to this column?\" with results derived from `grep` and `pg_stat` traces. This version targets platform engineers at companies like Stripe and Notion, who face the recurring DBA pain of understanding data flows in their databases.\n\n**Acceptance Criteria:**\n1. Ingest a Postgres schema and display it in a user-friendly format within the MCP server.\n2. Allow users to input a specific column name and return a list of all queries that write to that column, sourced from `pg_stat` traces.\n3. Provide a clear error message if the column does not exist in the schema or if there are no writes recorded for that column.\n4. Enable users to export the results of their queries in a CSV format for further analysis.\n5. Ensure that the server can handle at least 10 concurrent queries without performance degradation.\n\nV1_FEASIBLE_IN_4_DAYS: yes",
+      "tokens_in": 1662,
+      "tokens_out": 215
+    },
+    "judge": {
+      "text": "TAM: 5\nWEDGE: 7\nV1_FEASIBILITY: 8\n\nVerdict: SHIP V1 to platform engineers at companies like Stripe and Notion. The idea targets a specific pain point experienced by developers working with Postgres databases, offering a clear value proposition by automating a time-consuming manual process. The named ICP and the specific integration with Postgres schema and `pg_stat` traces provide a sharp wedge. The feasibility of building the MVP in 4 days is confirmed, making this a viable project to pursue.\n\ngap_classification: Partial:segment\nFinal verdict: REFINE",
+      "tokens_in": 3025,
+      "tokens_out": 125
+    }
+  }
+}
