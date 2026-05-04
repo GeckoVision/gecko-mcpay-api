@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Gecko Narrative Pitch — All Slides</title>
+<meta name="viewport" content="width=1920" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;700;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async></script>
+<style>
+  html, body { margin: 0; padding: 0; background: #000; }
+  .slide-wrapper {
+    width: 1920px;
+    height: 1080px;
+    position: relative;
+    overflow: hidden;
+    display: block;
+  }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+
+<div id="slide-01" class="slide-wrapper"></div>
+<div id="slide-02" class="slide-wrapper"></div>
+<div id="slide-03" class="slide-wrapper"></div>
+<div id="slide-04" class="slide-wrapper"></div>
+<div id="slide-05" class="slide-wrapper"></div>
+<div id="slide-06" class="slide-wrapper"></div>
+<div id="slide-07" class="slide-wrapper"></div>
+<div id="slide-08" class="slide-wrapper"></div>
+<div id="slide-09" class="slide-wrapper"></div>
+<div id="slide-10" class="slide-wrapper"></div>
+
+<script type="text/babel" src="components/common.jsx"></script>
+<script type="text/babel" src="components/narrative-slides.jsx"></script>
+<script type="text/babel">
+  ReactDOM.createRoot(document.getElementById('slide-01')).render(<N01Thesis />);
+  ReactDOM.createRoot(document.getElementById('slide-02')).render(<N02Caio />);
+  ReactDOM.createRoot(document.getElementById('slide-03')).render(<N03DarkRoom />);
+  ReactDOM.createRoot(document.getElementById('slide-04')).render(<N04Shift />);
+  ReactDOM.createRoot(document.getElementById('slide-05')).render(<N05Product />);
+  ReactDOM.createRoot(document.getElementById('slide-06')).render(<N06Evidence />);
+  ReactDOM.createRoot(document.getElementById('slide-07')).render(<N07WhyNow />);
+  ReactDOM.createRoot(document.getElementById('slide-08')).render(<N08Moat />);
+  ReactDOM.createRoot(document.getElementById('slide-09')).render(<N09Status />);
+  ReactDOM.createRoot(document.getElementById('slide-10')).render(<N10Ask />);
+</script>
+
+</body>
+</html>

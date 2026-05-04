@@ -72,6 +72,8 @@ def _row_from_doc(doc: dict[str, Any], score: float) -> dict[str, Any]:
         # range, so callers receive identical semantics.
         "similarity": float(score),
         "provider_kind": doc.get("provider_kind", "web"),
+        # S26-CITE-03 — per-chunk provider metadata (e.g. tweet_url).
+        "metadata": doc.get("metadata") or {},
     }
 
 
@@ -110,6 +112,7 @@ async def match_chunks_mongo(
                 "chunk_index": 1,
                 "text": 1,
                 "provider_kind": 1,
+                "metadata": 1,
                 "score": {"$meta": "vectorSearchScore"},
             }
         },
@@ -172,6 +175,7 @@ async def match_chunks_windowed_mongo(
                 "text": 1,
                 "captured_at": 1,
                 "provider_kind": 1,
+                "metadata": 1,
                 "score": {"$meta": "vectorSearchScore"},
             }
         },
@@ -236,6 +240,7 @@ async def match_chunks_hybrid_mongo(
                 "chunk_index": 1,
                 "text": 1,
                 "provider_kind": 1,
+                "metadata": 1,
                 "score": {"$meta": "vectorSearchScore"},
             }
         },

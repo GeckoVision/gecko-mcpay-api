@@ -1,12 +1,9 @@
-"""S17-VERDICT-01 — evidence-strength floor on derive_verdict.
+"""S17-VERDICT-01 / S26-VERDICT-FIDELITY-01 — evidence-strength floor on derive_verdict.
 
-The wedge of Gecko's wedge is grounded provenance: a verdict built on too
-few chunks or low-similarity chunks is the model bluffing. ``derive_verdict``
-honors a floor — when ``is_low_grounding(citations)`` fires, the verdict is
-forced to REFINE regardless of gap_classification or advisor consensus.
-
-These tests pin that contract so a future tuning pass can't accidentally
-let a confident PIVOT/GO ride on thin evidence.
+S17: grounding floor prevents thin evidence from producing inflated verdicts.
+S26: PIVOT (Full/False gap) must NOT be softened to REFINE by the floor —
+     if the problem doesn't exist, that signal is authoritative regardless of
+     evidence volume. The floor only applies to ambiguous partial-gap verdicts.
 """
 
 from __future__ import annotations
@@ -64,18 +61,21 @@ def test_is_low_grounding_false_when_thresholds_met() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_verdict_floors_to_refine_on_weak_signal() -> None:
-    """The headline test: 1 citation at sim 0.27 must NOT produce PIVOT.
+def test_verdict_pivot_survives_weak_grounding() -> None:
+    """S26-VERDICT-FIDELITY-01: PIVOT must survive low_grounding.
 
-    Mirrors the live regression that motivated S17-VERDICT-01: a Full /
-    False gap would otherwise map to PIVOT, but with thin grounding the
-    verdict floors to REFINE and the renderer surfaces low_grounding.
+    Full/False gap means the problem doesn't exist — that signal is
+    authoritative even when evidence is thin. Flooring to REFINE would
+    tell a founder to "refine" when they should "pivot", which is harmful.
+    The low_grounding flag is still set on the result for the renderer.
     """
     weak = [_cite(0.27)]
-    # Without the floor (citations=None), Full gap → PIVOT.
-    assert derive_verdict("Full") is Verdict.PIVOT
-    # With the floor engaged, Full gap → REFINE.
-    assert derive_verdict("Full", citations=weak) is Verdict.REFINE
+    assert is_low_grounding(weak), "precondition: weak citations are low-grounding"
+    # Full gap + thin evidence → PIVOT (S26 fix)
+    assert derive_verdict("Full", citations=weak) is Verdict.PIVOT
+    assert derive_verdict("False", citations=weak) is Verdict.PIVOT
+    # Partial gap + thin evidence → REFINE (floor still applies)
+    assert derive_verdict("Partial:segment", citations=weak) is Verdict.REFINE
 
 
 def test_verdict_floor_overrides_go_promotion() -> None:

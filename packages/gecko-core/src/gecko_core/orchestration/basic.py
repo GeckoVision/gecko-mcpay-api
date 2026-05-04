@@ -739,6 +739,29 @@ async def generate(
             explanation_retries_used,
         )
 
+    # S26-SOURCE-DIVERSITY-01 — stamp provenance.provider_kind on citations
+    # from the rag_query chunk lookup. The LLM emits source_url strings that
+    # match chunk source_urls (twitsh://, bazaar://, https://…); the
+    # Provenance default is "free" which makes every citation look like web.
+    # Stamping the real kind here lets audit_provider_mix detect diversity
+    # even after the citation is serialized (the audit uses Provenance before
+    # falling back to URI-scheme inference).
+    _chunk_kind_by_url: dict[str, str] = {c.source_url: c.provider_kind for c in chunks}
+    from gecko_core.models import Provenance as _Prov
+
+    def _stamp(citations_list: list[Citation]) -> list[Citation]:
+        out_list: list[Citation] = []
+        for cit in citations_list:
+            kind = _chunk_kind_by_url.get(str(cit.source_url))
+            if kind and kind != (cit.provenance.provider_kind if cit.provenance else "free"):
+                cit = cit.model_copy(update={"provenance": _Prov(provider_kind=kind)})
+            out_list.append(cit)
+        return out_list
+
+    out.business_plan.citations = _stamp(out.business_plan.citations)
+    out.validation_report.citations = _stamp(out.validation_report.citations)
+    out.prd.citations = _stamp(out.prd.citations)
+
     # S11-VERDICT-01 — stamp the single-token verdict derived from the
     # typed gap_classification. Basic tier has no advisor panel running,
     # so we pass advisor_consensus=None — `derive_verdict` treats that as

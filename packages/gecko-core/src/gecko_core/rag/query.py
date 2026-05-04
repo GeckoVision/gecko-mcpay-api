@@ -216,6 +216,12 @@ class RagChunk(BaseModel):
     # grounding still reads `similarity`, this is a side-channel for eval.
     rerank_score: float | None = None
 
+    # S26-CITE-03 — provider-level per-chunk metadata (e.g. tweet_url for
+    # twitsh). Defaults to {} so Supabase/Mongo rows that predate the field
+    # still validate. Consumers should prefer named keys over raw metadata
+    # access, but this field keeps the plumbing generic.
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
 
 async def rag_query(
     session_id: UUID,

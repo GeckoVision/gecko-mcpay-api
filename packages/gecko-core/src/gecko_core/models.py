@@ -440,10 +440,12 @@ def derive_verdict(
     # grounding is still incoherent; flooring to REFINE would mislead.
     if incoherence_flag_count >= COHERENCE_KILL_MIN_FLAGS:
         return Verdict.KILL
-    if citations is not None and is_low_grounding(citations):
-        return Verdict.REFINE
+    # PIVOT on a clear invalidation (Full/False gap) regardless of grounding —
+    # a sparse evidence set for a non-existent problem is still PIVOT.
     if gap in ("Full", "False"):
         return Verdict.PIVOT
+    if citations is not None and is_low_grounding(citations):
+        return Verdict.REFINE
     consensus = advisor_consensus if advisor_consensus is not None else 0.0
     if gap in ("Partial:pricing", "Partial:integration"):
         if consensus >= ADVISOR_CONSENSUS_BUILD_THRESHOLD:
