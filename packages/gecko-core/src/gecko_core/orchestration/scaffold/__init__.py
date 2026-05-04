@@ -34,6 +34,7 @@ from uuid import UUID
 from openai import AsyncOpenAI
 from pydantic import ValidationError
 
+from gecko_core.llm_helpers import build_response_format
 from gecko_core.orchestration.scaffold._prompt import load_system_prompt
 from gecko_core.orchestration.scaffold.models import (
     KillVerdictError,
@@ -171,13 +172,17 @@ async def _synthesize(
     Temperature 0.2 — we want deterministic-ish structure, but a tiny bit
     of variation is fine for the prose.
     """
+    # LLM-hygiene Commit D: scaffold pins gpt-4o (an OpenAI direct model)
+    # so strict-mode Structured Outputs is always available regardless of
+    # ``LLM_ROUTER``. Pass ``router="openai"`` for the predicate; the bare
+    # ``"gpt-4o"`` model id is OpenAI-shaped per ``supports_strict_outputs``.
     raw = await client.chat.completions.with_raw_response.create(
         model="gpt-4o",
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        response_format={"type": "json_object"},
+        response_format=cast(Any, build_response_format(ScaffoldDocs, "gpt-4o", "openai")),
         temperature=0.2,
         seed=42,
     )

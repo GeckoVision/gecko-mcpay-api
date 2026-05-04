@@ -19,6 +19,7 @@ import tiktoken
 from openai import AsyncOpenAI
 from pydantic import BaseModel, ValidationError
 
+from gecko_core.llm_helpers import build_response_format
 from gecko_core.models import (
     GAP_CLASSIFICATION_FALLBACK,
     PRD,
@@ -51,10 +52,18 @@ _enc = tiktoken.get_encoding("cl100k_base")
 _BASIC_RESEARCH_TIER = CatalogTier.balanced
 
 
-def _resolve_basic_research_model() -> str:
+def _resolve_basic_research_model() -> tuple[str, str]:
+    """Return ``(model_id, router_name)``.
+
+    Router name is needed at the call site so Commit D can decide whether
+    to opt into Structured Outputs strict mode (OpenAI direct only today;
+    OpenRouter non-OpenAI providers stay on json_object + the f67b211
+    Pydantic adapter safety net).
+    """
     cfg = resolve_llm_config(settings=get_orchestration_settings())
     router_name = cfg.source.split(":", 1)[1] if cfg.source.startswith("router:") else "openai"
-    return resolve_model_for_router(AgentRole.research_basic, _BASIC_RESEARCH_TIER, router_name)
+    model_id = resolve_model_for_router(AgentRole.research_basic, _BASIC_RESEARCH_TIER, router_name)
+    return model_id, router_name
 
 
 class OrchestrationError(Exception):
@@ -183,6 +192,7 @@ async def _call_llm(
     user: str,
     temperature: float,
     max_tokens: int | None = None,
+    response_format: dict[str, Any] | None = None,
 ) -> tuple[str, float]:
     """Run a chat completion and return (content, estimated_cost_usd).
 
@@ -193,7 +203,18 @@ async def _call_llm(
 
     Reproducibility: ``seed=42`` is forwarded for best-effort determinism
     on supporting providers. OpenRouter passes ``seed`` per-provider; not
-    all providers honor it (best-effort, not bit-identical across runs).
+    all providers honor it (best-effort, not bit-identical across runs;
+    Anthropic and Google silently ignore the kwarg).
+
+    LLM-hygiene Commit D: ``response_format`` defaults to ``json_object``
+    so the existing test surface and any caller that doesn't thread the
+    kwarg keeps the legacy behavior. Pass a strict-mode ``json_schema``
+    payload when the (model, router) supports it; the wrapper does not
+    decide that for you — the caller resolves it via
+    ``llm_helpers.build_response_format``. We stay on
+    ``with_raw_response.create`` rather than ``client.beta.chat.completions
+    .parse`` so the ClawRouter cost header (``x-clawrouter-cost-usd``) is
+    still readable; the Beta helper hides response headers.
     """
     create_kwargs: dict[str, Any] = {
         "model": model,
@@ -201,7 +222,9 @@ async def _call_llm(
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        "response_format": {"type": "json_object"},
+        "response_format": response_format
+        if response_format is not None
+        else {"type": "json_object"},
         "temperature": temperature,
         "seed": 42,
     }
@@ -416,13 +439,19 @@ async def generate(
     context = _truncate_to_token_budget(context, budget)
 
     user = _user_prompt(idea, context)
+    model_id, router_name = _resolve_basic_research_model()
+    # LLM-hygiene Commit D: opt into Structured Outputs strict mode for the
+    # OpenAI plane only; non-OpenAI OpenRouter providers (Kimi K2.6 default)
+    # stay on json_object + the f67b211 Pydantic adapters as the safety net.
+    research_response_format = build_response_format(_LLMOutput, model_id, router_name)
     raw, cost1 = await _call_llm(
         client=client,
-        model=_resolve_basic_research_model(),
+        model=model_id,
         system=_SYSTEM_PROMPT,
         user=user,
         temperature=orch.temperature,
         max_tokens=orch.max_tokens_research_basic,
+        response_format=research_response_format,
     )
     await store.add_cost(session_id, "llm", cost1)
 
@@ -440,11 +469,12 @@ async def generate(
         )
         raw2, cost2 = await _call_llm(
             client=client,
-            model=_resolve_basic_research_model(),
+            model=model_id,
             system=_SYSTEM_PROMPT,
             user=retry_user,
             temperature=orch.temperature,
             max_tokens=orch.max_tokens_research_basic,
+            response_format=research_response_format,
         )
         await store.add_cost(session_id, "llm", cost2)
         try:
@@ -462,11 +492,12 @@ async def generate(
         retry_user = user + _GAP_RETRY_SUFFIX
         raw_gap, cost_gap = await _call_llm(
             client=client,
-            model=_resolve_basic_research_model(),
+            model=model_id,
             system=_SYSTEM_PROMPT,
             user=retry_user,
             temperature=orch.temperature,
             max_tokens=orch.max_tokens_research_basic,
+            response_format=research_response_format,
         )
         await store.add_cost(session_id, "llm", cost_gap)
         try:

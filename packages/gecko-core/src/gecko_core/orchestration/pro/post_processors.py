@@ -21,6 +21,7 @@ from typing import Any, cast
 from openai import AsyncOpenAI
 from pydantic import BaseModel, ValidationError
 
+from gecko_core.llm_helpers import build_response_format
 from gecko_core.models import (
     MarketLandscape,
     NextStepsWithFalsifiers,
@@ -46,17 +47,20 @@ _POST_PROCESSOR_TIER = Tier.budget
 _POST_PROCESSOR_TEMPERATURE = 0.2
 
 
-def _resolve_post_processor_model() -> str:
-    """Resolve the post-processor model id through the catalog.
+def _resolve_post_processor_model() -> tuple[str, str]:
+    """Resolve the post-processor (model_id, router) through the catalog.
 
     Reads ``LLM_ROUTER`` from settings (router-driven path) so the OpenAI-only
-    fallback fires when the catalog pick is non-OpenAI.
+    fallback fires when the catalog pick is non-OpenAI. The router name is
+    returned alongside the model id so the call site can decide whether to
+    promote ``response_format`` to strict json_schema (Commit D).
     """
     cfg = resolve_llm_config(settings=get_orchestration_settings())
     # cfg.source is "router:<name>" or "legacy"; legacy plane = openai-shaped
     # endpoint, so treat it as openai for fallback purposes.
     router_name = cfg.source.split(":", 1)[1] if cfg.source.startswith("router:") else "openai"
-    return resolve_model_for_router(AgentRole.post_processor, _POST_PROCESSOR_TIER, router_name)
+    model_id = resolve_model_for_router(AgentRole.post_processor, _POST_PROCESSOR_TIER, router_name)
+    return model_id, router_name
 
 
 # Each section ships its own banner to keep the user prompt small but
@@ -82,16 +86,24 @@ async def _call_json(
     *,
     system: str,
     user: str,
+    model_cls: type[BaseModel] | None = None,
 ) -> dict[str, Any]:
     # LLM-hygiene Commit C: ``seed=42`` is best-effort determinism.
-    # OpenRouter forwards seed per-provider; not all providers honor it.
+    # OpenRouter forwards seed per-provider; not all providers honor it
+    # (Anthropic and Google silently ignore; OpenAI honours it).
+    # LLM-hygiene Commit D: when the (model, router) supports it, opt into
+    # OpenAI Structured Outputs strict mode keyed off ``model_cls``. Sites
+    # that pass ``model_cls=None`` (e.g. transcript_summary, classification
+    # extraction) stay on json_object since their output isn't a single
+    # canonical Pydantic model.
+    model_id, router_name = _resolve_post_processor_model()
     resp = await client.chat.completions.create(
-        model=_resolve_post_processor_model(),
+        model=model_id,
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        response_format={"type": "json_object"},
+        response_format=cast(Any, build_response_format(model_cls, model_id, router_name)),
         temperature=_POST_PROCESSOR_TEMPERATURE,
         seed=42,
         max_tokens=get_orchestration_settings().max_tokens_post_processor,
@@ -114,7 +126,7 @@ async def _run_section(
     section: str,
 ) -> BaseModel | None:
     try:
-        raw = await _call_json(client, system=system, user=user)
+        raw = await _call_json(client, system=system, user=user, model_cls=model_cls)
         return model_cls.model_validate(raw)
     except ValidationError as exc:
         logger.warning("post-processor %s validation failed: %s", section, exc)

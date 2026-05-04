@@ -19,12 +19,13 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 
+from gecko_core.llm_helpers import supports_strict_outputs
 from gecko_core.memory.embedder import embed_text, render_value_for_embedding
 from gecko_core.memory.models import MemoryEntry, MemoryEntryType, MemoryScope
 from gecko_core.memory.store import MemoryStore
@@ -75,18 +76,46 @@ async def _llm_judges_conflict(
     incoming_text: str,
     prior_text: str,
     model: str = "gpt-4o-mini",
+    router: str = "openai",
 ) -> tuple[bool, str]:
-    """Second-pass semantic conflict check. Returns (contradicts, reason)."""
+    """Second-pass semantic conflict check. Returns (contradicts, reason).
+
+    LLM-hygiene Commit D: when the (model, router) supports OpenAI
+    Structured Outputs strict mode, render the inline contradicts/reason
+    schema directly (no Pydantic class for a 2-field shape — flat
+    json_schema is shorter than declaring a model). Otherwise fall back
+    to ``json_object`` and rely on the existing ``json.loads`` + key
+    coercion below.
+    """
     user = (
         f"Prior priority:\n{prior_text}\n\nIncoming priority:\n{incoming_text}\n\nOutput JSON only."
     )
+    if supports_strict_outputs(model, router):
+        response_format: dict[str, Any] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "ContradictionVerdict",
+                "schema": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "contradicts": {"type": "boolean"},
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["contradicts", "reason"],
+                },
+                "strict": True,
+            },
+        }
+    else:
+        response_format = {"type": "json_object"}
     resp = await client.chat.completions.create(
         model=model,
         messages=[
             {"role": "system", "content": _LLM_SYSTEM},
             {"role": "user", "content": user},
         ],
-        response_format={"type": "json_object"},
+        response_format=cast(Any, response_format),
         temperature=0.0,
         seed=42,
     )

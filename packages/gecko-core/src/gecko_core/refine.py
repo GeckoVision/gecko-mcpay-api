@@ -19,11 +19,12 @@ from __future__ import annotations
 import json
 import logging
 from datetime import date
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from pydantic import ValidationError
 
+from gecko_core.llm_helpers import build_response_format
 from gecko_core.models import RefinedIdea, ResearchResult
 from gecko_core.orchestration.pro.post_processors import _build_client
 from gecko_core.orchestration.pro.prompts import _BUNDLED_VERSIONS
@@ -42,10 +43,11 @@ _REFINE_TIER = Tier.balanced
 _REFINE_TEMPERATURE = 0.2
 
 
-def _resolve_refine_model() -> str:
+def _resolve_refine_model() -> tuple[str, str]:
     cfg = resolve_llm_config(settings=get_orchestration_settings())
     router_name = cfg.source.split(":", 1)[1] if cfg.source.startswith("router:") else "openai"
-    return resolve_model_for_router(AgentRole.refiner, _REFINE_TIER, router_name)
+    model_id = resolve_model_for_router(AgentRole.refiner, _REFINE_TIER, router_name)
+    return model_id, router_name
 
 
 class RefineError(Exception):
@@ -115,14 +117,20 @@ async def refine_idea(
     user = _build_user_prompt(idea=idea, result=result, today=today or date.today().isoformat())
 
     client = _build_client()
+    model_id, router_name = _resolve_refine_model()
     try:
+        # LLM-hygiene Commit D: opt into Structured Outputs strict mode when
+        # the router/model supports it. Refiner default tier is balanced
+        # (Kimi K2.6 via OpenRouter) — that path stays on json_object and
+        # the f67b211 RefinedIdea coercers absorb drift. The OpenAI fallback
+        # path (LLM_ROUTER=openai, gpt-5-mini) gets strict mode.
         resp = await client.chat.completions.create(
-            model=_resolve_refine_model(),
+            model=model_id,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            response_format={"type": "json_object"},
+            response_format=cast(Any, build_response_format(RefinedIdea, model_id, router_name)),
             temperature=_REFINE_TEMPERATURE,
             seed=42,
             max_tokens=get_orchestration_settings().max_tokens_refiner,

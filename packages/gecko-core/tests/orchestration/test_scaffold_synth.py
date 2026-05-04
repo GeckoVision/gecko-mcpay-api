@@ -295,7 +295,15 @@ async def test_generate_scaffold_passes_named_entities_in_prompt(
     assert last is not None
     assert last["model"] == "gpt-4o"
     assert last["temperature"] == 0.2
-    assert last["response_format"] == {"type": "json_object"}
+    # LLM-hygiene Commit D — scaffold now uses Structured Outputs strict
+    # mode keyed off ScaffoldDocs (gpt-4o is OpenAI-direct so the predicate
+    # opts in). We assert the schema envelope shape rather than the inline
+    # body so prompt-side schema tweaks don't bounce this test.
+    rf = last["response_format"]
+    assert rf["type"] == "json_schema"
+    assert rf["json_schema"]["name"] == "ScaffoldDocs"
+    assert rf["json_schema"]["strict"] is True
+    assert rf["json_schema"]["schema"]["additionalProperties"] is False
     user_msg = next(m for m in last["messages"] if m["role"] == "user")
     user_text = user_msg["content"]
     # Named entities from the canned transcript must appear in the prompt.

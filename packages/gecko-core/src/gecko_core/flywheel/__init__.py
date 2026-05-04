@@ -31,6 +31,7 @@ from openai import AsyncOpenAI
 
 from gecko_core.classify import classify_idea
 from gecko_core.ingestion.embedder import embed
+from gecko_core.llm_helpers import supports_strict_outputs
 from gecko_core.orchestration.settings import get_orchestration_settings
 from gecko_core.sessions.store import SessionStore, Verdict
 
@@ -229,6 +230,27 @@ async def summarize_idea_for_flywheel(
     user_msg = (
         f"Categories detected: {', '.join(categories) if categories else 'general'}\nIdea: {idea}"
     )
+    # LLM-hygiene Commit D: opt into strict json_schema only when the
+    # configured ``chat_model`` is OpenAI-shaped (the predicate inspects the
+    # model id). The legacy plane points at api.openai.com / a ClawRouter
+    # shim against the same — treat that as OpenAI for the predicate's
+    # router argument; non-OpenAI provider prefixes still gate the result.
+    if supports_strict_outputs(orch.chat_model, "openai"):
+        flywheel_response_format: dict[str, Any] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "FlywheelIdeaSummary",
+                "schema": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {"idea_summary": {"type": "string"}},
+                    "required": ["idea_summary"],
+                },
+                "strict": True,
+            },
+        }
+    else:
+        flywheel_response_format = {"type": "json_object"}
     try:
         resp = await client.chat.completions.create(
             model=orch.chat_model,
@@ -236,7 +258,7 @@ async def summarize_idea_for_flywheel(
                 {"role": "system", "content": _SUMMARY_SYSTEM},
                 {"role": "user", "content": user_msg},
             ],
-            response_format={"type": "json_object"},
+            response_format=cast(Any, flywheel_response_format),
             temperature=0.4,
             seed=42,
         )

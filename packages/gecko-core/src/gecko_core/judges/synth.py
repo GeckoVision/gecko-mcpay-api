@@ -15,11 +15,12 @@ from __future__ import annotations
 import json
 import logging
 from datetime import date
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, Field, ValidationError
 
 from gecko_core.judges.corpus import JudgeTweet, load_corpus
+from gecko_core.llm_helpers import build_response_format
 from gecko_core.orchestration.pro.post_processors import _build_client
 from gecko_core.orchestration.pro.prompts import _BUNDLED_VERSIONS
 from gecko_core.orchestration.settings import (
@@ -39,10 +40,11 @@ _SYNTH_TEMPERATURE = 0.2
 _GENERATOR_TAG = "gecko `bb judges synth --handle <handle>` (v0.1.6)"
 
 
-def _resolve_synth_model() -> str:
+def _resolve_synth_model() -> tuple[str, str]:
     cfg = resolve_llm_config(settings=get_orchestration_settings())
     router_name = cfg.source.split(":", 1)[1] if cfg.source.startswith("router:") else "openai"
-    return resolve_model_for_router(AgentRole.judge_synth, _SYNTH_TIER, router_name)
+    model_id = resolve_model_for_router(AgentRole.judge_synth, _SYNTH_TIER, router_name)
+    return model_id, router_name
 
 
 class JudgeSynthEnvelope(BaseModel):
@@ -173,14 +175,21 @@ async def _call_judge_synth(
     )
 
     client = _build_client()
+    model_id, router_name = _resolve_synth_model()
     try:
+        # LLM-hygiene Commit D: judge_synth default is Claude Sonnet 4.6 via
+        # OpenRouter — that path stays on json_object (Anthropic strict-mode
+        # via OpenRouter is not yet contract-tested). LLM_ROUTER=openai
+        # falls back to the OpenAI ladder which DOES support strict mode.
         resp = await client.chat.completions.create(
-            model=_resolve_synth_model(),
+            model=model_id,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            response_format={"type": "json_object"},
+            response_format=cast(
+                Any, build_response_format(JudgeSynthEnvelope, model_id, router_name)
+            ),
             temperature=_SYNTH_TEMPERATURE,
             seed=42,
             max_tokens=get_orchestration_settings().max_tokens_judge_synth,
