@@ -4,7 +4,8 @@
 [![uv](https://img.shields.io/badge/uv-workspace-DE5FE9.svg)](https://docs.astral.sh/uv/)
 [![Claude Code](https://img.shields.io/badge/claude--code-MCP-D97757.svg)](https://docs.anthropic.com/claude/claude-code)
 [![x402](https://img.shields.io/badge/x402-stub%20%7C%20live%20%7C%20cdp-9945FF.svg)](https://x402.org/)
-[![Sprint 14](https://img.shields.io/badge/sprint-14%20in%20flight-success.svg)](docs/build-plan-sprint-14.md)
+[![gecko-mcp](https://img.shields.io/badge/gecko--mcp-0.2.1-success.svg)](https://pypi.org/project/gecko-mcp/)
+[![gecko-core](https://img.shields.io/badge/gecko--core-0.2.1-success.svg)](https://pypi.org/project/gecko-core/)
 
 > Gecko gives crypto builders a deep, multi-voice verdict on their idea — with
 > the dissent and falsifiers attached — so they know what to do next.
@@ -13,14 +14,8 @@
 This repository is the **Python backend**: `uv` workspace housing the SDK, the
 FastAPI service, the MCP server, and the `bb` / `gecko` CLI. The Next.js app
 lives in [**gecko-mcpay-app**](https://github.com/<owner>/gecko-mcpay-app).
-The public skill registry lives in
-[**gecko-mcpay-skills**](https://github.com/<owner>/gecko-mcpay-skills) and is
-served at [`app.geckovision.tech/skill.md`](https://app.geckovision.tech/skill.md).
 
-> **Status (Sprint 14, 2026-05-01):** V1 shipped. Verdict unification (S11),
-> CDP Bazaar listing (S12), DeFi vertical suite (S13), `gecko_pulse` v1 +
-> Paragraph + publish.new (S14) in flight. Profile-typed contributor arc
-> (S15-S17) seam-prep next sprint. See [`docs/`](docs/README.md) for the full map.
+> **Status (2026-05-04):** gecko-mcp 0.2.1 on PyPI. Plug-and-play for external users — no ClawRouter, no Node.js, no local env config. One command installs; Email+OTP wallet in under 30 seconds; `gecko_research` fires in under 5 minutes from zero. See [`docs/build-plan-sprint-mcp-plug-and-play.md`](docs/build-plan-sprint-mcp-plug-and-play.md).
 
 ---
 
@@ -32,20 +27,32 @@ Pick the one that matches how you'll use Gecko.
 
 Bootstraps the MCP server pointed at `https://api.geckovision.tech` and ships
 the `gecko_research` / `gecko_plan` / `gecko_pulse` tools straight into your
-Claude Code session. No local env, no Supabase keys.
+Claude Code session. No local env, no Supabase keys, no Node.js.
+
+**Five steps, under 5 minutes:**
 
 ```bash
+# 1. Install
 curl -fsSL https://app.geckovision.tech/install.sh | bash
+
+# 2. Wallet (Email + OTP, ~30 seconds)
+gecko-mcp wallet new
+
+# 3. Verify
+gecko-mcp doctor
+
+# 4. Fund — https://app.geckovision.tech/onramp
+#    ($5 USDC covers ~50 basic sessions)
+
+# 5. In Claude Code:
+#    Use gecko_research to validate: <your idea>
 ```
 
-Then in Claude Code:
+Or paste into Claude Code to let the agent walk you through it:
 
 ```
 Read https://app.geckovision.tech/skill.md and follow the instructions.
 ```
-
-Skills, agents, and installer scripts ship from
-[**gecko-mcpay-skills**](https://github.com/<owner>/gecko-mcpay-skills).
 
 ### B. `bb` CLI direct (developers, contributors, stub-mode demos)
 
@@ -139,7 +146,7 @@ transport — parse input, call core, format output. If you find logic in
 |---|---|
 | Language | Python 3.11+ |
 | Workspace | `uv` workspaces |
-| LLM routing | OpenAI / OpenRouter / ClawRouter via `LLM_ROUTER` (`.env.example`) |
+| LLM routing | OpenAI / OpenRouter via `LLM_ROUTER` (`.env.example`) — server-side only |
 | Embeddings | `text-embedding-3-small` |
 | Pro orchestration | AutoGen / AG2 5-agent GroupChat (CEO, CTO, PM, Staff, Designer + judge) |
 | Database | Supabase Postgres + pgvector |
