@@ -96,6 +96,8 @@ async def test_list_tools_exposes_three_tools() -> None:
         "gecko_resume",
         # Sprint 7 — Dogfood meta-tool
         "gecko_review",
+        # Sprint 23 — HTML report
+        "gecko_report",
     }
     by_name = {t.name: t for t in tools}
     assert by_name["gecko_research"].inputSchema["required"] == ["idea"]
