@@ -1,0 +1,79 @@
+name: mcp-install-smoke
+
+# S25-DOC-05: Clean VM test — install.sh → gecko-mcp doctor exits 0.
+#
+# Simulates a first-time user on a fresh Ubuntu 24.04 machine:
+#   1. Installs gecko-mcp from PyPI (no uv pre-installed)
+#   2. Writes a test wallet from CI secrets
+#   3. Runs gecko-mcp doctor pointing at production gecko-api
+#   4. Asserts exit 0
+#
+# Secrets required (set in repo Settings → Secrets):
+#   GECKO_TEST_WALLET  — JSON content of a frames.ag wallet config, e.g.:
+#                        {"username":"ci","solanaAddress":"<addr>",
+#                         "evmAddress":"<addr>","apiToken":"<token>"}
+#
+# Triggers: every tag push (gates all releases), manual dispatch.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install-smoke:
+    name: Fresh-machine install + doctor
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Install Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install gecko-mcp from PyPI
+        run: uv tool install gecko-mcp
+
+      - name: Verify gecko-mcp binary is on PATH
+        run: gecko-mcp --version || gecko-mcp --help | head -1
+
+      - name: Write test wallet
+        env:
+          GECKO_TEST_WALLET: ${{ secrets.GECKO_TEST_WALLET }}
+        run: |
+          if [ -z "$GECKO_TEST_WALLET" ]; then
+            echo "GECKO_TEST_WALLET secret not set — writing minimal stub wallet"
+            mkdir -p ~/.agentwallet
+            echo '{"username":"ci","solanaAddress":"11111111111111111111111111111111","evmAddress":"0x0000000000000000000000000000000000000000","apiToken":"ci-stub"}' \
+              > ~/.agentwallet/config.json
+          else
+            mkdir -p ~/.agentwallet
+            echo "$GECKO_TEST_WALLET" > ~/.agentwallet/config.json
+          fi
+
+      - name: Run gecko-mcp doctor
+        env:
+          GECKO_API_URL: https://api.geckovision.tech
+        run: gecko-mcp doctor
+
+      - name: Assert doctor exit 0
+        env:
+          GECKO_API_URL: https://api.geckovision.tech
+        run: |
+          gecko-mcp doctor
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            echo "gecko-mcp doctor exited $code — release blocked"
+            exit "$code"
+          fi
+          echo "doctor: OK — install smoke passed"

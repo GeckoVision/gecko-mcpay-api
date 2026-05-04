@@ -16,7 +16,9 @@ from gecko_mcp.doctor import (
     REQUIRED_FUNCTIONS,
     REQUIRED_TABLES,
     SERVER_SIDE_ENV_VARS,
+    CheckResult,
     _is_thin_client,
+    check_mcp_registered,
     run_doctor,
 )
 
@@ -155,13 +157,14 @@ def test_doctor_gecko_api_reachable_passes(monkeypatch: pytest.MonkeyPatch) -> N
     from gecko_mcp.doctor import check_gecko_api
 
     def _ok(*_args: object, **_kwargs: object) -> httpx.Response:
-        return httpx.Response(200, json={"status": "ok"})
+        return httpx.Response(200, json={"status": "ok", "payments": "stub"})
 
     monkeypatch.setattr("httpx.get", _ok)
     result = check_gecko_api(environ={"GECKO_API_URL": "http://localhost:8000"})
     assert result.ok is True
     assert result.info is False
     assert "reachable" in result.detail
+    assert "payments=stub" in result.detail
 
 
 def test_voyage_check_skipped_when_reranker_off() -> None:
@@ -442,3 +445,112 @@ def test_run_doctor_local_dev_still_shows_server_checks() -> None:
     # Server-side vars surface as INFO in local dev mode.
     for var in SERVER_SIDE_ENV_VARS:
         assert var in report, f"local dev mode must surface {var}"
+
+
+# ---------------------------------------------------------------------------
+# S25-DOC-01/02/04 — thin-client hardening
+# ---------------------------------------------------------------------------
+
+
+def _mock_healthy_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Patch httpx.get to return a healthy gecko-api response."""
+    import httpx
+
+    def _ok(*_a: object, **_kw: object) -> httpx.Response:
+        return httpx.Response(200, json={"status": "ok", "payments": "stub"})
+
+    monkeypatch.setattr("httpx.get", _ok)
+
+
+def test_thin_client_fails_without_wallet(monkeypatch: pytest.MonkeyPatch) -> None:
+    """S25-DOC-02: thin-client + no wallet → payments:wallet_required FAIL."""
+    _mock_healthy_api(monkeypatch)
+    # No wallet addresses returned by check_wallet.
+    monkeypatch.setattr("gecko_mcp.doctor.check_wallet", lambda: [])
+    # MCP registration check is advisory (INFO) — stub it to avoid subprocess.
+    monkeypatch.setattr(
+        "gecko_mcp.doctor.check_mcp_registered",
+        lambda: CheckResult(name="mcp:registered", ok=True, detail="test", info=True),
+    )
+    exit_code, report = run_doctor(
+        environ={"GECKO_API_URL": "https://api.geckovision.tech"},
+        supabase_client=None,
+    )
+    assert exit_code == 1, report
+    assert "wallet_required" in report
+    assert "gecko-mcp wallet new" in report
+
+
+def test_thin_client_passes_with_wallet(monkeypatch: pytest.MonkeyPatch) -> None:
+    """S25-DOC-02: thin-client + wallet present → passes."""
+    _mock_healthy_api(monkeypatch)
+    monkeypatch.setattr(
+        "gecko_mcp.doctor.check_wallet",
+        lambda: [
+            CheckResult(name="payments:provider", ok=True, detail="frames", info=True),
+            CheckResult(name="payments:solana", ok=True, detail="SomeAddr123", info=True),
+        ],
+    )
+    monkeypatch.setattr(
+        "gecko_mcp.doctor.check_mcp_registered",
+        lambda: CheckResult(name="mcp:registered", ok=True, detail="registered", info=False),
+    )
+    exit_code, report = run_doctor(
+        environ={"GECKO_API_URL": "https://api.geckovision.tech"},
+        supabase_client=None,
+    )
+    assert exit_code == 0, report
+    assert "doctor: OK" in report
+
+
+def test_thin_client_skips_server_side_checks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Thin-client mode must not surface server-side check names (SUPABASE_URL etc.)."""
+    _mock_healthy_api(monkeypatch)
+    monkeypatch.setattr(
+        "gecko_mcp.doctor.check_wallet",
+        lambda: [CheckResult(name="payments:solana", ok=True, detail="x", info=True)],
+    )
+    monkeypatch.setattr(
+        "gecko_mcp.doctor.check_mcp_registered",
+        lambda: CheckResult(name="mcp:registered", ok=True, detail="ok", info=True),
+    )
+    _, report = run_doctor(
+        environ={"GECKO_API_URL": "https://api.geckovision.tech"},
+        supabase_client=None,
+    )
+    # Server-side check names must NOT appear in a thin-client report.
+    for var in SERVER_SIDE_ENV_VARS:
+        assert var not in report, f"thin-client report must not contain {var}"
+
+
+def test_check_mcp_registered_claude_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    """S25-DOC-04: claude CLI absent → INFO (not FAIL)."""
+    monkeypatch.setattr("shutil.which", lambda _cmd: None)
+    result = check_mcp_registered()
+    assert result.ok is True
+    assert result.info is True
+    assert "claude" in result.detail.lower()
+
+
+def test_check_mcp_registered_gecko_listed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """S25-DOC-04: claude mcp list contains gecko → PASS."""
+    import shutil
+
+    monkeypatch.setattr("shutil.which", lambda cmd: "/usr/bin/claude" if cmd == "claude" else shutil.which(cmd))
+    monkeypatch.setattr("gecko_mcp.doctor._run_claude_mcp_list", lambda: "gecko  gecko-mcp serve\n")
+    result = check_mcp_registered()
+    assert result.ok is True
+    assert result.info is False
+    assert "registered" in result.detail
+
+
+def test_check_mcp_registered_gecko_not_listed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """S25-DOC-04: claude found but gecko not in list → INFO with hint."""
+    import shutil
+
+    monkeypatch.setattr("shutil.which", lambda cmd: "/usr/bin/claude" if cmd == "claude" else shutil.which(cmd))
+    monkeypatch.setattr("gecko_mcp.doctor._run_claude_mcp_list", lambda: "some-other-server\n")
+    result = check_mcp_registered()
+    assert result.ok is True
+    assert result.info is True
+    assert "claude mcp add gecko" in result.detail

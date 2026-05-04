@@ -340,42 +340,111 @@ def check_clawrouter(environ: dict[str, str] | None = None) -> CheckResult:
     )
 
 
-def check_gecko_api(environ: dict[str, str] | None = None) -> CheckResult:
-    """Probe `<GECKO_API_URL>/healthz`.
+_DEFAULT_GECKO_API_URL = "https://api.geckovision.tech"
 
-    - Unset: INFO (the MCP server falls back to the localhost default; that's
-      fine for dev but should be set explicitly in production).
-    - Set + reachable: PASS.
-    - Set + unreachable: FAIL — a configured API that doesn't answer means
-      every MCP tool call will error.
+
+def check_gecko_api(environ: dict[str, str] | None = None) -> CheckResult:
+    """Probe `<GECKO_API_URL>/healthz` (S25-DOC-01).
+
+    - Unset + thin client: probes the production default; FAIL if unreachable.
+    - Unset + local dev: INFO — local dev without GECKO_API_URL is expected.
+    - Set + reachable: PASS with healthz payload summary.
+    - Set + unreachable: FAIL.
     """
     import httpx
 
     env = environ if environ is not None else dict(os.environ)
-    raw = env.get("GECKO_API_URL")
+    raw = env.get("GECKO_API_URL", "").strip()
+    thin = _is_thin_client(env)
+
     if not raw:
-        return CheckResult(
-            name="env:GECKO_API_URL",
-            ok=True,
-            detail="unset, MCP will default to https://api.geckovision.tech",
-            info=True,
-        )
-    url = raw.rstrip("/") + "/healthz"
+        if not thin:
+            # Local dev: GECKO_API_URL unset is normal — just inform.
+            return CheckResult(
+                name="env:GECKO_API_URL",
+                ok=True,
+                detail=f"unset, MCP will default to {_DEFAULT_GECKO_API_URL}",
+                info=True,
+            )
+        # Thin client whose GECKO_API_URL is somehow unset — probe the default.
+        target = _DEFAULT_GECKO_API_URL
+        is_default = True
+    else:
+        target = raw
+        is_default = False
+
+    url = target.rstrip("/") + "/healthz"
     try:
         response = httpx.get(url, timeout=5.0)
     except Exception as exc:
         return CheckResult(
             name="gecko_api:healthz",
             ok=False,
-            detail=f"unreachable at {raw}: {exc.__class__.__name__}",
+            detail=f"gecko-api unreachable — check network ({target}: {exc.__class__.__name__})",
         )
     if response.status_code != 200:
         return CheckResult(
             name="gecko_api:healthz",
             ok=False,
-            detail=f"status {response.status_code} from {raw}",
+            detail=f"gecko-api returned status {response.status_code} from {target}",
         )
-    return CheckResult(name="gecko_api:healthz", ok=True, detail=f"reachable ({raw})")
+    try:
+        body = response.json()
+        detail = f"reachable ({target}) status={body.get('status', 'ok')} payments={body.get('payments', '?')}"
+    except Exception:
+        detail = f"reachable ({target})"
+    if is_default:
+        detail += " (default URL — set GECKO_API_URL to override)"
+    return CheckResult(name="gecko_api:healthz", ok=True, detail=detail)
+
+
+def _run_claude_mcp_list() -> str:
+    """Run `claude mcp list` and return stdout. Raises on failure."""
+    import subprocess
+
+    result = subprocess.run(
+        ["claude", "mcp", "list"],
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    return result.stdout
+
+
+def check_mcp_registered() -> CheckResult:
+    """Check whether gecko is registered with Claude Code (S25-DOC-04).
+
+    Runs `claude mcp list` and greps for 'gecko'. Returns:
+    - PASS: registered
+    - INFO: claude CLI not found (expected in non-Claude-Code environments)
+    - INFO: gecko not in list — actionable hint to register
+    """
+    import shutil
+
+    if not shutil.which("claude"):
+        return CheckResult(
+            name="mcp:registered",
+            ok=True,
+            detail="claude CLI not found — run `claude mcp add gecko -- gecko-mcp serve` after install",
+            info=True,
+        )
+    try:
+        stdout = _run_claude_mcp_list()
+    except Exception as exc:
+        return CheckResult(
+            name="mcp:registered",
+            ok=True,
+            detail=f"could not run `claude mcp list`: {exc.__class__.__name__}",
+            info=True,
+        )
+    if "gecko" in stdout.lower():
+        return CheckResult(name="mcp:registered", ok=True, detail="gecko registered with Claude Code")
+    return CheckResult(
+        name="mcp:registered",
+        ok=True,
+        detail="gecko not registered — run: claude mcp add gecko -- gecko-mcp serve",
+        info=True,
+    )
 
 
 def check_x402_mode(environ: dict[str, str] | None = None) -> CheckResult:
@@ -830,7 +899,25 @@ def run_doctor(
         results.extend(check_server_side_env(environ))
     results.append(check_x402_mode(environ))
     results.append(check_gecko_api(environ))
-    results.extend(check_wallet())
+    wallet_results = check_wallet()
+    results.extend(wallet_results)
+    if thin:
+        # S25-DOC-02: wallet is required in thin-client mode — x402 payments
+        # can't sign without it. Fail if no address was surfaced by check_wallet.
+        has_address = any(
+            r.name in ("payments:solana", "payments:address", "payments:evm")
+            for r in wallet_results
+        )
+        if not has_address:
+            results.append(
+                CheckResult(
+                    name="payments:wallet_required",
+                    ok=False,
+                    detail="No wallet configured — run: gecko-mcp wallet new",
+                )
+            )
+        # S25-DOC-04: verify gecko is registered with Claude Code.
+        results.append(check_mcp_registered())
     if not thin:
         results.extend(check_optional_env(environ))
         results.extend(check_llm_router(environ))
