@@ -389,6 +389,54 @@ _GAP_RETRY_SUFFIX = (
     "Return corrected JSON only."
 )
 
+# 2026-05-03 v0.1.10 — narrower retry suffix for the case where
+# gap_classification is fine but gap_explanation is missing/empty. We
+# tell the model exactly which field it forgot rather than re-prompting
+# the entire validation contract; matches the "model self-correction
+# prompt, not a fill-in" posture from the dogfood brief.
+_GAP_EXPLANATION_RETRY_SUFFIX = (
+    "\n\nYour previous response omitted validation_report.gap_explanation "
+    "(or returned it as an empty string / null). The field is REQUIRED and "
+    "MUST be a 2-3 sentence narrative that (a) restates which dimension is "
+    "partial in plain English, (b) cites at least one chunk via `[n]` markers "
+    "matching the Context block, and (c) names the concrete shipping "
+    "consequence for the founder. Without this field the response is invalid. "
+    "Keep gap_classification, gap_summary, business_plan, and prd identical "
+    "to your previous response. Return corrected JSON only."
+)
+
+# Maximum number of retries for the gap_explanation re-prompt path (separate
+# from the gap_classification retry, which already runs once). v0.1.10 caps at
+# 2 per the brief — beyond that we accept the model's non-compliance, mark
+# ``low_explanation=True`` on the result, and let the renderer surface
+# honestly. Bump only with eval-harness evidence.
+_GAP_EXPLANATION_MAX_RETRIES: int = 2
+
+# Cost-gate threshold: only retry the gap_explanation re-prompt when the
+# first call's cost was below this floor. Prevents 3x'ing the spend on an
+# expensive run for a prose-quality field. The basic-tier first call on
+# gpt-4o-mini lands ~$0.0015; on Kimi via OpenRouter ~$0.005-0.01; on
+# heavier providers we accept the missing field rather than burn budget.
+_GAP_EXPLANATION_RETRY_COST_FLOOR_USD: float = 0.05
+
+
+def _has_gap_explanation(report: ValidationReport) -> bool:
+    """True iff ``report.gap_explanation`` is a non-empty string after stripping.
+
+    The Pydantic field is ``str | None``; treat ``None`` and whitespace-only
+    strings the same — both surface as "the model didn't comply" to the
+    operator. Source-of-truth lives on the parsed model rather than the raw
+    JSON because the strict-mode path emits ``"gap_explanation": null``
+    exactly and the json_object fallback may emit ``""`` — both should
+    trigger the same retry/flag.
+    """
+    val = report.gap_explanation
+    if val is None:
+        return False
+    if not isinstance(val, str):
+        return False
+    return bool(val.strip())
+
 
 def _raw_gap_classification(raw: str) -> str | None:
     """Extract `validation_report.gap_classification` from the raw JSON string.
@@ -607,7 +655,89 @@ async def generate(
             else:
                 out = _enforce_gap_classification(out)
 
+    # 2026-05-03 v0.1.10 — bounded retry loop for the gap_explanation field.
+    # The strict-mode path on the OpenAI plane already makes the field
+    # PRESENT (it's listed in `required` of the schema produced by
+    # `pydantic_to_strict_schema`), but the model is still allowed to emit
+    # `null`. The OpenRouter plane (Kimi K2.6, deepseek, etc.) runs on
+    # `json_object` and can omit the field entirely. Either way: if we land
+    # here with empty/None gap_explanation, re-prompt with a strict
+    # self-correction suffix. Cap at `_GAP_EXPLANATION_MAX_RETRIES`; gate on
+    # cost so we don't 3x the spend on expensive providers. NO synthesis on
+    # exhaustion — `low_explanation` is set so the renderer surfaces the
+    # missing field honestly.
+    explanation_retries_used = 0
+    if not _has_gap_explanation(out.validation_report):
+        cost_so_far = cost1
+        while (
+            not _has_gap_explanation(out.validation_report)
+            and explanation_retries_used < _GAP_EXPLANATION_MAX_RETRIES
+        ):
+            if cost_so_far >= _GAP_EXPLANATION_RETRY_COST_FLOOR_USD:
+                logger.warning(
+                    "gap_explanation.retry.skipped reason=cost_floor "
+                    "cost_so_far=%.4f floor=%.4f — accepting missing field",
+                    cost_so_far,
+                    _GAP_EXPLANATION_RETRY_COST_FLOOR_USD,
+                )
+                break
+            explanation_retries_used += 1
+            logger.info(
+                "gap_explanation.retry attempt=%d/%d (model self-correction)",
+                explanation_retries_used,
+                _GAP_EXPLANATION_MAX_RETRIES,
+            )
+            retry_user_exp = user + _GAP_EXPLANATION_RETRY_SUFFIX
+            try:
+                raw_exp, cost_exp = await _call_llm(
+                    client=client,
+                    model=model_id,
+                    system=_SYSTEM_PROMPT,
+                    user=retry_user_exp,
+                    temperature=orch.temperature,
+                    max_tokens=orch.max_tokens_research_basic,
+                    response_format=research_response_format,
+                )
+            except OrchestrationError as exc:
+                # Empty content on the retry — accept and surface honestly.
+                logger.warning(
+                    "gap_explanation.retry.empty_content attempt=%d: %s",
+                    explanation_retries_used,
+                    exc,
+                )
+                break
+            await store.add_cost(session_id, "llm", cost_exp)
+            cost_so_far += cost_exp
+            try:
+                out_exp = _LLMOutput.model_validate_json(raw_exp)
+            except ValidationError as ve:
+                # Bad JSON on retry — keep the prior `out` (gap_classification
+                # is still valid from the earlier pass) and try again or
+                # exit the loop on next iteration.
+                logger.warning(
+                    "gap_explanation.retry.bad_json attempt=%d: %s",
+                    explanation_retries_used,
+                    ve,
+                )
+                continue
+            # Lift only the validation_report so plan / prd / citations
+            # don't drift between retries — same posture as the
+            # gap_classification retry above.
+            if _has_gap_explanation(out_exp.validation_report):
+                out.validation_report = out_exp.validation_report
+
     out = _validate_citations(out, allowed_urls, chunk_count=len(chunks))
+
+    # 2026-05-03 v0.1.10 — re-check after the validate_citations pass: an
+    # explanation that consisted solely of dangling [n] markers (now
+    # stripped) could become effectively empty. Surface honestly.
+    low_explanation = not _has_gap_explanation(out.validation_report)
+    if low_explanation:
+        logger.warning(
+            "low_explanation=True (gap_explanation missing/empty after %d retry attempts) "
+            "— surfacing as flag, not synthesizing fallback",
+            explanation_retries_used,
+        )
 
     # S11-VERDICT-01 — stamp the single-token verdict derived from the
     # typed gap_classification. Basic tier has no advisor panel running,
@@ -641,6 +771,7 @@ async def generate(
         sources=sources,
         verdict=verdict,
         low_grounding=low_grounding,
+        low_explanation=low_explanation,
         provider_mix_flag=provider_mix_flag,
     )
 

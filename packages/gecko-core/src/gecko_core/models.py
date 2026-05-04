@@ -734,6 +734,17 @@ class ResearchResult(BaseModel):
     # lets the renderer surface "low confidence — gather more sources"
     # instead of pretending certainty.
     low_grounding: bool = False
+    # 2026-05-03 v0.1.10 dogfood — True when ``validation_report.gap_explanation``
+    # is None or empty after the basic-tier synthesizer's bounded retry
+    # loop. Mirrors the ``low_grounding`` posture: we surface the model's
+    # non-compliance honestly rather than synthesise a fallback narrative
+    # from ``gap_summary`` / ``gap_classification``. Renderers / API
+    # consumers branch on this flag to display "the model did not produce
+    # an explanation; treat the verdict letter alone" instead of printing
+    # ``None``. Excluded from ``verdict_hash._verdict_payload`` — like
+    # ``gap_explanation`` itself, this is a prose-surface property of the
+    # specific run rather than the structural verdict shape.
+    low_explanation: bool = False
     # S20-PROVIDER-MIX-FLOOR-01 — informational audit of the provider_kind
     # mix in the citation set. Computed post-synthesis (see
     # ``gecko_core.orchestration.provider_mix_audit.audit_provider_mix``).

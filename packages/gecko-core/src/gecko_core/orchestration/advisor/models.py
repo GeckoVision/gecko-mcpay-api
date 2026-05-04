@@ -40,6 +40,12 @@ class AdvisorVoice(BaseModel):
     # S9-ADVISOR-01: structured failure mode for quality monitoring. ``None``
     # means the voice produced a compliant closing line (possibly on retry).
     # ``"no_closing_line"`` means both attempts failed regex extraction.
+    # 2026-05-03 v0.1.10 — ``"no_content"`` means the upstream returned an
+    # empty/missing ``message.content`` (provider intermittent — observed
+    # on ``deepseek/deepseek-v4-pro`` in production). Distinct from
+    # ``"no_closing_line"`` because it represents an upstream content gap
+    # rather than a prompt-compliance miss; not retried in v0.1.10 because
+    # provider intermittents need careful retry-budget logic.
     error_kind: str | None = None
 
 
@@ -53,6 +59,14 @@ class AdvisorPanel(BaseModel):
     # S9-ADVISOR-01: count of voices that failed closing-line extraction
     # after retry. Surface for dogfood / monitoring drift detection.
     voices_no_closing_line: int = 0
+    # 2026-05-03 v0.1.10 — sibling counter for the ``error_kind="no_content"``
+    # failure shape (provider returned empty/missing ``message.content``).
+    # Operators see at a glance "4/5 voices succeeded; 1 failed with
+    # no_content". Distinct from ``voices_no_closing_line`` because the two
+    # failure modes need different operator responses: closing-line misses
+    # are a prompt-compliance issue we should tighten; no_content misses are
+    # upstream provider intermittents we may want to retry.
+    voices_failed_no_content: int = 0
 
 
 class PulseDelta(BaseModel):

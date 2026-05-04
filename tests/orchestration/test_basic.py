@@ -57,6 +57,15 @@ def _valid_payload(url: str) -> dict[str, Any]:
             # so the tests don't trigger the gap-retry path.
             "gap_classification": "Partial:segment",
             "gap_summary": "competitor X covers a/b but not c.",
+            # v0.1.10 — basic.generate also retries when gap_explanation
+            # is missing/empty (separate retry from gap_classification).
+            # Supply a non-empty explanation so unrelated tests don't
+            # exhaust the mocked response queue with extra retries.
+            "gap_explanation": (
+                "The segment is the gap — competitor X focuses on enterprise "
+                "[1] and the SMB facet is unmet. Ship the SMB-first onboarding "
+                "before competing on dashboards."
+            ),
         },
         "prd": {
             "v1_scope": ["a"],

@@ -99,6 +99,15 @@ def _good_payload(*, gap: str = "Partial:segment", summary: str = "x") -> dict[s
             "citations": [],
             "gap_classification": gap,
             "gap_summary": summary,
+            # v0.1.10 — basic.generate retries on missing/empty
+            # gap_explanation; pin a non-empty value here so the
+            # taxonomy-focused tests don't flap from the explanation
+            # retry loop. Tests targeting the explanation retry live
+            # in test_basic_strict_gap_explanation.py.
+            "gap_explanation": (
+                "The gap is structural and the consequence for the founder is "
+                "to ship the wedge before the incumbent notices."
+            ),
         },
         "prd": {
             "v1_scope": ["a"],

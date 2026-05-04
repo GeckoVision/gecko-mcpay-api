@@ -260,6 +260,10 @@ async def generate_panel(
     total_cost = sum(v.cost_usd for v in voices if v.cost_usd is not None)
     # S9-ADVISOR-01: panel-level rollup for monitoring quality drift.
     voices_no_closing_line = sum(1 for v in voices if v.error_kind == "no_closing_line")
+    # 2026-05-03 v0.1.10: sibling counter for the "provider returned empty
+    # content" failure mode — distinct from no_closing_line so operators can
+    # tell prompt-compliance misses from upstream intermittents at a glance.
+    voices_failed_no_content = sum(1 for v in voices if v.error_kind == "no_content")
 
     panel = AdvisorPanel(
         session_id=str(sid),
@@ -267,6 +271,7 @@ async def generate_panel(
         total_cost_usd=float(total_cost),
         generated_at=datetime.now().astimezone(),
         voices_no_closing_line=voices_no_closing_line,
+        voices_failed_no_content=voices_failed_no_content,
     )
 
     # Auto-journal plan_advised (S5-MEM-04). Best-effort.

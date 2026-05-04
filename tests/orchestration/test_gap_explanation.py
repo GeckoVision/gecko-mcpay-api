@@ -197,8 +197,14 @@ async def test_gap_explanation_optional_for_legacy_payloads(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Legacy LLM responses (and existing cassettes) that omit gap_explanation
-    round-trip with the field as None — backwards compat with pre-2026-05-03
-    payloads. Pydantic must NOT raise on the missing field.
+    must still round-trip through Pydantic validation (the field is
+    ``str | None``). Note: as of v0.1.10 the basic-tier synthesizer
+    actively re-prompts when the field is missing; this test covers the
+    *Pydantic* compatibility surface, so we feed enough mock responses
+    to exhaust the bounded retry loop and assert ``low_explanation`` is
+    True at the end. The retry-and-flag wiring itself is exercised in
+    ``test_basic_strict_gap_explanation.py`` and
+    ``test_basic_low_explanation_flag.py``.
     """
     sid: UUID = uuid4()
     url = "https://example.com/a"
@@ -209,12 +215,17 @@ async def test_gap_explanation_optional_for_legacy_payloads(
     monkeypatch.setattr(basic_mod, "rag_query", _fake_rag)
 
     store = _store_with_sources([url])
-    client = _mk_openai_client([json.dumps(_payload(url, gap_explanation=None))])
+    # initial + 2 retries = 3 mock responses, all omitting the field.
+    payload_no_exp = json.dumps(_payload(url, gap_explanation=None))
+    client = _mk_openai_client([payload_no_exp, payload_no_exp, payload_no_exp])
 
     result = await basic_mod.generate(sid, "idea", store, openai_client=client)
 
-    # Field absent on the wire → None on the model. Renderer can detect
-    # and skip rather than printing "None".
+    # Pydantic accepted the missing field on every pass — backwards-compat
+    # with pre-2026-05-03 cassettes. The model surface stays valid.
     assert result.validation_report.gap_explanation is None
     # The structural verdict surface is unchanged for legacy payloads.
     assert result.validation_report.gap_classification == "Partial:UX"
+    # v0.1.10 — the synthesizer surfaces the missing field via the flag
+    # rather than synthesising a fallback narrative.
+    assert result.low_explanation is True

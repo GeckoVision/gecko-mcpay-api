@@ -170,6 +170,27 @@ def _gpt4o_estimate(prompt_tokens: int, completion_tokens: int) -> float:
     return (prompt_tokens * input_rate + completion_tokens * output_rate) / 1_000_000
 
 
+class VoiceContentMissingError(Exception):
+    """Raised when a voice's upstream response is missing the expected content.
+
+    2026-05-03 v0.1.10 dogfood — observed on production with
+    ``deepseek/deepseek-v4-pro`` returning a chat-completion response whose
+    ``choices[0].message.content`` was ``None``. The previous code did
+    ``resp.choices[0].message.content or ""`` (which would have absorbed
+    ``None`` cleanly) but the actual error surfaced as
+    ``'NoneType' object is not subscriptable``, indicating ``resp.choices``
+    itself was ``None`` or empty in some intermittent provider failure
+    mode. Either way the structural answer is the same: typed exception
+    surfaced via ``error_kind="no_content"`` with empty ``output_md``.
+
+    NOT a network exception — the HTTP call succeeded, the provider just
+    returned an empty body shape. Distinct from the catch-all
+    ``Exception`` path in ``run_voice`` (which handles connect timeouts /
+    rate-limits / etc.) so monitoring can separate "upstream is down"
+    from "upstream returned nothing".
+    """
+
+
 @dataclass(frozen=True)
 class _CallOutcome:
     """Internal: one LLM attempt's parsed result + accounting."""
@@ -193,6 +214,14 @@ async def _call_once(
     Network/upstream exceptions propagate to the caller — ``run_voice``
     catches them at the outer boundary so one bad voice doesn't sink the
     panel.
+
+    2026-05-03 v0.1.10: defensive parsing on the chat-completion shape.
+    deepseek-v4-pro was observed to intermittently return a response with
+    ``choices=None`` or ``choices=[]`` or ``message.content=None``; the
+    pre-existing ``... or ""`` only handled the third case. We now check
+    each step explicitly and raise :class:`VoiceContentMissingError`
+    rather than letting ``'NoneType' object is not subscriptable`` bubble
+    up as a stringified-traceback in the closing line.
     """
     raw = await client.chat.completions.with_raw_response.create(
         model=model_id,
@@ -203,7 +232,17 @@ async def _call_once(
         temperature=temperature,
     )
     resp = raw.parse()
-    content = resp.choices[0].message.content or ""
+    choices = getattr(resp, "choices", None)
+    if not choices:
+        raise VoiceContentMissingError(f"upstream returned no choices (model={model_id})")
+    first_choice = choices[0]
+    message = getattr(first_choice, "message", None)
+    if message is None:
+        raise VoiceContentMissingError(f"upstream choice has no message (model={model_id})")
+    content_raw = getattr(message, "content", None)
+    if content_raw is None or (isinstance(content_raw, str) and not content_raw.strip()):
+        raise VoiceContentMissingError(f"upstream returned empty content (model={model_id})")
+    content = content_raw
     prompt_tokens = int(getattr(resp.usage, "prompt_tokens", 0) or 0) if resp.usage else 0
     completion_tokens = int(getattr(resp.usage, "completion_tokens", 0) or 0) if resp.usage else 0
 
@@ -263,6 +302,31 @@ async def run_voice(
             user_prompt=user_prompt,
             temperature=0.4,
         )
+    except VoiceContentMissingError as exc:
+        # 2026-05-03 v0.1.10: provider returned no content — surface as
+        # structured ``error_kind="no_content"`` so the panel-level
+        # ``voices_failed_no_content`` counter increments and operators
+        # can distinguish provider intermittents from prompt-compliance
+        # misses. NOT retried in v0.1.10; deferred to v0.1.11.
+        logger.warning(
+            "advisor voice %s: no_content from upstream (model=%s, detail=%s)",
+            role.value,
+            model_entry.id,
+            exc,
+        )
+        return AdvisorVoice(
+            role=role,
+            model_used=model_entry.id,
+            output_md="",
+            closing_line=(
+                f"(voice {role.value} failed: model returned empty content "
+                "— likely provider intermittent)"
+            ),
+            tokens_in=0,
+            tokens_out=0,
+            cost_usd=None,
+            error_kind="no_content",
+        )
     except Exception as exc:  # pragma: no cover — defensive, network/upstream only
         logger.warning("advisor voice %s failed: %s", role.value, exc)
         return AdvisorVoice(
@@ -301,6 +365,31 @@ async def run_voice(
             system_prompt=retry_system_prompt,
             user_prompt=user_prompt,
             temperature=0.2,
+        )
+    except VoiceContentMissingError as exc:
+        # 2026-05-03 v0.1.10: retry attempt itself returned no content.
+        # First attempt did produce content (we got past the first
+        # _call_once), so we have ``first.content`` to keep — but the
+        # retry's structural failure is no_content. We surface
+        # ``error_kind="no_closing_line"`` here because the first attempt
+        # already missed the closing-line regex (that's why we retried);
+        # the retry failing for a different reason (provider hiccup)
+        # doesn't change the user-visible quality outcome.
+        logger.warning(
+            "advisor voice %s: retry no_content from upstream (model=%s, detail=%s)",
+            role.value,
+            model_entry.id,
+            exc,
+        )
+        return AdvisorVoice(
+            role=role,
+            model_used=model_entry.id,
+            output_md=first.content,
+            closing_line="(voice failed: no_closing_line after 2 attempts)",
+            tokens_in=first.prompt_tokens,
+            tokens_out=first.completion_tokens,
+            cost_usd=first.cost_usd,
+            error_kind="no_closing_line",
         )
     except Exception as exc:  # pragma: no cover — defensive, network/upstream only
         logger.warning("advisor voice %s retry failed: %s", role.value, exc)
@@ -355,4 +444,9 @@ async def run_voice(
     )
 
 
-__all__ = ["extract_closing_line", "match_closing_line", "run_voice"]
+__all__ = [
+    "VoiceContentMissingError",
+    "extract_closing_line",
+    "match_closing_line",
+    "run_voice",
+]
