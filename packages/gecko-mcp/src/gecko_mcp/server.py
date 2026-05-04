@@ -179,6 +179,14 @@ _PROJECT_ECONOMICS_DESCRIPTION = (
     "`session_id`-scoped economics — pass a project UUID."
 )
 
+_REPORT_DESCRIPTION = (
+    "Generate a formatted report (HTML or markdown) for a completed research "
+    "session. Reads the session's persisted state and renders verdict, sources, "
+    "validation, business plan, PRD, Q&A, and 5-voice panel into a single "
+    "shareable document. Returns {html: '<html...>'} for format=html or "
+    "{markdown: '...'} for format=markdown. Pays $0.05 via x402."
+)
+
 
 @server.list_tools()  # type: ignore[no-untyped-call,untyped-decorator]
 async def list_tools() -> list[Tool]:
@@ -585,6 +593,29 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="gecko_report",
+            description=_REPORT_DESCRIPTION,
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Session UUID returned by `gecko_research`.",
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["html", "markdown"],
+                        "default": "html",
+                        "description": (
+                            "'html' returns a self-contained HTML document. "
+                            "'markdown' returns plain markdown text."
+                        ),
+                    },
+                },
+                "required": ["session_id"],
+            },
+        ),
+        Tool(
             name="gecko_project_economics",
             description=_PROJECT_ECONOMICS_DESCRIPTION,
             inputSchema={
@@ -761,6 +792,16 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     if name == "gecko_project_economics":
         result = await client.get_project_economics(project_id=str(arguments["project_id"]))
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    if name == "gecko_report":
+        format_raw = arguments.get("format", "html")
+        if format_raw not in ("html", "markdown"):
+            raise ValueError(f"format must be 'html' or 'markdown', got {format_raw!r}")
+        result = await client.report(
+            session_id=str(arguments["session_id"]),
+            format=str(format_raw),
+        )
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
     raise ValueError(f"unknown tool: {name}")

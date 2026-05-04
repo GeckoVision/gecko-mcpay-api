@@ -798,6 +798,12 @@ class ResearchResult(BaseModel):
     # (multiple refinements over time = V2). Excluded from verdict-hash
     # inputs for the same reason as the post-processor readouts.
     refinement: RefinedIdea | None = None
+    # S23-REPORT-01 — persisted AdvisorPanel JSON, written by the /plan
+    # route after generate_panel() succeeds. Stored as a raw dict so
+    # models.py stays free of an orchestration import cycle (same posture
+    # as `transcript`). None when gecko_plan was not called for this
+    # session. Excluded from verdict_hash inputs.
+    advisor_panel: dict[str, object] | None = None
 
 
 class AskResult(BaseModel):

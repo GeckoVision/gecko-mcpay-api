@@ -150,6 +150,9 @@ class GeckoAPIClient:
             "/route/premium",
             "/route/upgrade",
             "/plan",
+            # S23-REPORT-01 — /report/{session_id} is paid; the path prefix
+            # check in _paid_post uses startswith so this sentinel is not used
+            # directly, but documenting the paid nature here for discoverability.
         }
     )
 
@@ -676,6 +679,33 @@ class GeckoAPIClient:
         if frames_username is not None:
             body["frames_username"] = frames_username
         return await self._paid_post("/plan", body)
+
+    async def report(
+        self,
+        session_id: str,
+        *,
+        format: str = "html",
+    ) -> dict[str, Any]:
+        """POST /report/{session_id} — paid report generation (S23-REPORT-01).
+
+        Pays via the same x402 / frames.ag plumbing as /plan at a flat
+        $0.05. Returns ``{"html": "<html...>"}`` for format=html or
+        ``{"markdown": "..."}`` for format=markdown.
+
+        The HTML response body is wrapped in a ``{"html": ...}`` envelope
+        so it round-trips cleanly through the MCP JSON transport.
+        """
+        result = await self._paid_post(
+            f"/report/{session_id}",
+            {"format": format},
+        )
+        # The API returns text/html directly for format=html; when the paid
+        # transport receives it the body is already parsed as a string inside
+        # the frames response envelope. Wrap in a consistent dict so the MCP
+        # caller always receives a JSON-safe object.
+        if isinstance(result, str):
+            return {"html": result}
+        return result
 
     async def ask(self, session_id: str, question: str) -> dict[str, Any]:
         """POST /sessions/{id}/ask — free follow-up against a paid session."""

@@ -439,6 +439,24 @@ def _build_routes(settings: Settings) -> dict[str, RouteConfig]:
         ],
         description="Classify an idea into categories with suggested sources and priority weights",
     )
+    # S23-REPORT-01 — gecko_report HTTP surface. Registered in both stub and
+    # live so Bazaar discovery sees it under either deploy. $0.05 flat.
+    routes["POST /report/:session_id"] = RouteConfig(
+        accepts=[
+            PaymentOption(
+                scheme="exact",
+                pay_to=pay_to,
+                price=settings.report_call_price,
+                network=chain_id,
+                extra=svm_extra,
+            ),
+        ],
+        description=(
+            "Generate a formatted report (HTML or markdown) for a completed "
+            "research session. Renders verdict, sources, validation, business "
+            "plan, PRD, and 5-voice panel into a single shareable document."
+        ),
+    )
     # S14-PULSE-01 — gecko_pulse v1 SKU at $0.50/call. Registered in BOTH
     # stub and live modes so Bazaar discovery sees it under either deploy.
     # In stub mode the middleware still issues 402 challenges; only the
@@ -517,6 +535,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     level = getattr(logging, level_name, logging.INFO)
     install_redaction(level=level)
     logger.info("gecko-api starting (X402_MODE=%s)", _settings.x402_mode)
+    # S23-FIX2 — TAVILY_API_KEY is optional in gecko-mcp but required here.
+    # Without it the first research call burns session + embedding work then
+    # crashes at the Tavily discovery step. Fail fast at startup.
+    if not os.environ.get("TAVILY_API_KEY"):
+        raise RuntimeError("TAVILY_API_KEY is required for gecko-api startup")
     if not _settings.is_privy_configured():
         logger.warning(
             "Privy unconfigured — per-project wallet provisioning disabled. "
@@ -2009,7 +2032,89 @@ async def plan_call(req: PlanRequest, request: Request) -> dict[str, Any]:
             except Exception:  # pragma: no cover — best-effort
                 logger.warning("plan: project spend increment failed")
 
+    # S23-REPORT-01 — persist the panel into result_json so gecko_report
+    # can reconstruct it without re-running generate_panel. Best-effort:
+    # a persistence failure must never break the user-visible response.
+    try:
+        from gecko_core.persistence import update_result_payload
+
+        existing = await store.get_result(sid)
+        if existing is not None:
+            existing["advisor_panel"] = panel.model_dump(mode="json")
+            await update_result_payload(sid, existing, store=store)
+    except Exception:  # pragma: no cover — best-effort
+        logger.warning("plan: could not persist advisor_panel for %s", sid)
+
     return panel.model_dump(mode="json")
+
+
+# S23-REPORT-01 — in-memory report cache keyed by verdict_hash. Idempotent
+# re-renders of the same session are free. Simple dict is sufficient for V1
+# (single process; bounded by the number of unique verdicts served).
+_REPORT_CACHE: dict[str, str] = {}
+
+
+@app.post("/report/{session_id}")
+async def get_report(
+    session_id: str,
+    request: Request,
+    format: str = "html",
+) -> Any:
+    """S23-REPORT-01 — generate a formatted report for a completed session.
+
+    x402-gated at $0.05. Cached by verdict_hash so idempotent re-renders
+    are free server-side. Returns text/html for format=html; JSON
+    ``{"markdown": "..."}`` for format=markdown.
+    """
+    from uuid import UUID as _UUID
+
+    from gecko_core.models import ResearchResult as _ResearchResult
+    from gecko_core.orchestration.advisor.models import AdvisorPanel as _AdvisorPanel
+    from gecko_core.reports.html import render_html_report, render_markdown_report
+    from starlette.responses import Response
+
+    try:
+        sid = _UUID(session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid session_id") from exc
+
+    # Touch payment payload (set by middleware on settled requests).
+    _ = getattr(request.state, "payment_payload", None)
+
+    store = SessionStore.from_env()
+    raw = await store.get_result(sid)
+    if raw is None:
+        raise HTTPException(status_code=404, detail="session not found or result not ready")
+
+    try:
+        result = _ResearchResult.model_validate(raw)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"result validation failed: {exc}") from exc
+
+    # Cache key: verdict_hash when present, else session_id + format.
+    cache_key = (result.verdict_hash or session_id) + f":{format}"
+    if cache_key in _REPORT_CACHE:
+        cached = _REPORT_CACHE[cache_key]
+        if format == "markdown":
+            return {"markdown": cached}
+        return Response(content=cached, media_type="text/html")
+
+    # Reconstruct the AdvisorPanel if one was persisted.
+    panel: _AdvisorPanel | None = None
+    if isinstance(raw.get("advisor_panel"), dict):
+        try:
+            panel = _AdvisorPanel.model_validate(raw["advisor_panel"])
+        except Exception:
+            logger.warning("report: advisor_panel validation failed for %s", session_id)
+
+    if format == "markdown":
+        md = render_markdown_report(result, plan=panel, asks=None)
+        _REPORT_CACHE[cache_key] = md
+        return {"markdown": md}
+
+    html_content = render_html_report(result, plan=panel, asks=None)
+    _REPORT_CACHE[cache_key] = html_content
+    return Response(content=html_content, media_type="text/html")
 
 
 @app.post("/scaffold")

@@ -109,6 +109,8 @@ class Settings(BaseModel):
     classify_call_price: str = "$0.10"
     # Free quota for /sessions/{id}/ask before the paid /ask route kicks in.
     ask_free_quota_per_session: int = 100
+    # S23-REPORT-01: report generation price. $0.05 flat.
+    report_call_price: str = "$0.05"
 
     # S5-API-03: tiered /route pricing. Sprint 4 shipped a single flat
     # $0.02 charge; Sprint 5 splits it into three paths so heavy callers
@@ -242,6 +244,7 @@ class Settings(BaseModel):
         advisor_voice_price = os.environ.get("ADVISOR_VOICE_PRICE", "$0.05")
         ask_call_price = os.environ.get("ASK_CALL_PRICE", "$0.01")
         classify_call_price = os.environ.get("CLASSIFY_CALL_PRICE", "$0.10")
+        report_call_price = os.environ.get("REPORT_CALL_PRICE", "$0.05")
         ask_free_quota_raw = os.environ.get("ASK_FREE_QUOTA_PER_SESSION", "100")
         try:
             ask_free_quota = int(ask_free_quota_raw)
@@ -288,6 +291,7 @@ class Settings(BaseModel):
             classify_call_price=classify_call_price,
             ask_free_quota_per_session=ask_free_quota,
             events_secret=events_secret,
+            report_call_price=report_call_price,
         )
 
 
