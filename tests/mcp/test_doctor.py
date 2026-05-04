@@ -15,6 +15,7 @@ from gecko_mcp.doctor import (
     REQUIRED_EXTENSIONS,
     REQUIRED_FUNCTIONS,
     REQUIRED_TABLES,
+    SERVER_SIDE_ENV_VARS,
     run_doctor,
 )
 
@@ -38,7 +39,21 @@ class _FakeSupabase:
 _VOYAGE_KEY = "pa-test-key-ok-1234"
 
 
-def test_doctor_fails_when_all_env_missing() -> None:
+def test_doctor_thin_client_passes_with_empty_env() -> None:
+    """Thin-client install: no server-side keys required — doctor must pass."""
+    exit_code, report = run_doctor(environ={}, supabase_client=None)
+    # Server-side keys (SUPABASE_URL etc.) surface as INFO, never FAIL.
+    assert exit_code == 0, report
+    assert "doctor: OK" in report
+    # Server-side vars are mentioned as INFO so the user is aware.
+    for var in SERVER_SIDE_ENV_VARS:
+        assert var in report, f"doctor must mention server-side var {var}"
+
+
+def test_doctor_fails_when_required_env_missing() -> None:
+    """If REQUIRED_ENV_VARS is non-empty, missing vars should fail the doctor."""
+    if not REQUIRED_ENV_VARS:
+        pytest.skip("REQUIRED_ENV_VARS is empty (thin-client model — no required keys)")
     exit_code, report = run_doctor(environ={}, supabase_client=None)
     assert exit_code == 1
     assert "doctor: FAIL" in report
@@ -47,7 +62,8 @@ def test_doctor_fails_when_all_env_missing() -> None:
 
 
 def test_doctor_redacts_secrets_in_report() -> None:
-    # Sanity: even on FAIL, no value of a present var should be echoed.
+    # Sanity: even when server-side vars are present, their values must not
+    # be echoed — only the var name surfaces.
     env = {
         "SUPABASE_URL": "https://x.supabase.co",
         # missing the rest
@@ -58,7 +74,9 @@ def test_doctor_redacts_secrets_in_report() -> None:
 
 
 def test_doctor_x402_default_stub_is_ok() -> None:
-    env = {var: "x" for var in REQUIRED_ENV_VARS} | {"VOYAGE_API_KEY": _VOYAGE_KEY}
+    # Include server-side creds so Supabase probes are exercised via the
+    # injected fake client.
+    env = {var: "x" for var in SERVER_SIDE_ENV_VARS} | {"VOYAGE_API_KEY": _VOYAGE_KEY}
     manifest = {
         "extensions": list(REQUIRED_EXTENSIONS),
         "tables": list(REQUIRED_TABLES),
@@ -71,14 +89,14 @@ def test_doctor_x402_default_stub_is_ok() -> None:
 
 
 def test_doctor_x402_invalid_value_fails() -> None:
-    env = {var: "x" for var in REQUIRED_ENV_VARS} | {"X402_MODE": "bogus"}
+    env = {var: "x" for var in SERVER_SIDE_ENV_VARS} | {"X402_MODE": "bogus"}
     exit_code, report = run_doctor(environ=env, supabase_client=_FakeSupabase({}))
     assert exit_code == 1
     assert "X402_MODE" in report
 
 
 def test_doctor_passes_with_full_env_and_migrations() -> None:
-    env = {var: "x" for var in REQUIRED_ENV_VARS} | {
+    env = {var: "x" for var in SERVER_SIDE_ENV_VARS} | {
         "X402_MODE": "stub",
         "VOYAGE_API_KEY": _VOYAGE_KEY,
     }
@@ -95,7 +113,7 @@ def test_doctor_passes_with_full_env_and_migrations() -> None:
 
 
 def test_doctor_fails_when_migrations_missing() -> None:
-    env = {var: "x" for var in REQUIRED_ENV_VARS} | {
+    env = {var: "x" for var in SERVER_SIDE_ENV_VARS} | {
         "X402_MODE": "stub",
         "VOYAGE_API_KEY": _VOYAGE_KEY,
     }
@@ -161,7 +179,7 @@ def test_voyage_check_skipped_when_reranker_off() -> None:
 
 def test_voyage_check_fails_when_key_missing() -> None:
     """GECKO_RERANKER=voyage with no VOYAGE_API_KEY → exit 1, names the var."""
-    env = {var: "x" for var in REQUIRED_ENV_VARS} | {
+    env = {var: "x" for var in SERVER_SIDE_ENV_VARS} | {
         "X402_MODE": "stub",
         "GECKO_RERANKER": "voyage",
     }
@@ -179,7 +197,7 @@ def test_voyage_check_fails_when_key_missing() -> None:
 def test_voyage_check_passes_with_key() -> None:
     """Both env vars set → ok=True row, secret never appears in rendered output."""
     secret = "pa-test-secret-value-do-not-log"
-    env = {var: "x" for var in REQUIRED_ENV_VARS} | {
+    env = {var: "x" for var in SERVER_SIDE_ENV_VARS} | {
         "X402_MODE": "stub",
         "GECKO_RERANKER": "voyage",
         "VOYAGE_API_KEY": secret,
@@ -199,11 +217,25 @@ def test_voyage_check_passes_with_key() -> None:
     assert secret[-4:] in report  # last 4 chars are the only slice we expose
 
 
-def test_embed_provider_voyage_default_no_key() -> None:
-    """S22-VOYAGE-EMBED — EMBED_PROVIDER=voyage (default) with no key → FAIL."""
+def test_embed_provider_voyage_default_no_key_thin_client() -> None:
+    """S22-VOYAGE-EMBED — thin-client install: no server keys → key check skipped (INFO)."""
     from gecko_mcp.doctor import check_embed_provider
 
+    # No server-side keys → thin-client mode → key validation skipped.
     rows = check_embed_provider(environ={})
+    names = {r.name for r in rows}
+    assert "embed:provider" in names
+    # Key check must be INFO (skipped), not FAIL.
+    fail_rows = [r for r in rows if not r.ok]
+    assert not fail_rows, f"thin-client mode must not fail embed checks: {fail_rows}"
+
+
+def test_embed_provider_voyage_default_no_key_server_stack() -> None:
+    """S22-VOYAGE-EMBED — server-stack install: EMBED_PROVIDER=voyage, no key → FAIL."""
+    from gecko_mcp.doctor import check_embed_provider
+
+    # SUPABASE_URL present signals server stack → key validation is enforced.
+    rows = check_embed_provider(environ={"SUPABASE_URL": "https://x.supabase.co"})
     names = {r.name for r in rows}
     assert "embed:provider" in names
     assert "embed:voyage_api_key" in names
@@ -213,11 +245,17 @@ def test_embed_provider_voyage_default_no_key() -> None:
 
 
 def test_embed_provider_voyage_with_key() -> None:
-    """EMBED_PROVIDER=voyage + valid key → PASS, secret never in output."""
+    """EMBED_PROVIDER=voyage + valid key on server stack → PASS, secret never in output."""
     from gecko_mcp.doctor import check_embed_provider
 
     secret = "pa-test-secret-do-not-log"
-    rows = check_embed_provider(environ={"EMBED_PROVIDER": "voyage", "VOYAGE_API_KEY": secret})
+    rows = check_embed_provider(
+        environ={
+            "EMBED_PROVIDER": "voyage",
+            "VOYAGE_API_KEY": secret,
+            "SUPABASE_URL": "https://x.supabase.co",  # server-stack signal
+        }
+    )
     fail_rows = [r for r in rows if not r.ok]
     assert not fail_rows, fail_rows
     key_row = next(r for r in rows if r.name == "embed:voyage_api_key")
@@ -228,31 +266,41 @@ def test_embed_provider_voyage_with_key() -> None:
 
 
 def test_embed_provider_openai_no_key() -> None:
-    """EMBED_PROVIDER=openai with no OPENAI_API_KEY → FAIL."""
+    """EMBED_PROVIDER=openai with no OPENAI_API_KEY → FAIL when server stack present."""
     from gecko_mcp.doctor import check_embed_provider
 
-    rows = check_embed_provider(environ={"EMBED_PROVIDER": "openai"})
+    # SUPABASE_URL signals server stack → key validation enforced.
+    rows = check_embed_provider(
+        environ={"EMBED_PROVIDER": "openai", "SUPABASE_URL": "https://x.supabase.co"}
+    )
     fail_row = next((r for r in rows if not r.ok), None)
     assert fail_row is not None
     assert "OPENAI_API_KEY" in fail_row.detail
 
 
 def test_embed_provider_openai_with_key() -> None:
-    """EMBED_PROVIDER=openai + OPENAI_API_KEY set → PASS."""
+    """EMBED_PROVIDER=openai + OPENAI_API_KEY set → PASS on server stack."""
     from gecko_mcp.doctor import check_embed_provider
 
     rows = check_embed_provider(
-        environ={"EMBED_PROVIDER": "openai", "OPENAI_API_KEY": "sk-test-key-1234"}
+        environ={
+            "EMBED_PROVIDER": "openai",
+            "OPENAI_API_KEY": "sk-test-key-1234",
+            "SUPABASE_URL": "https://x.supabase.co",  # server-stack signal
+        }
     )
     fail_rows = [r for r in rows if not r.ok]
     assert not fail_rows, fail_rows
 
 
 def test_embed_provider_unknown_fails() -> None:
-    """Unrecognised EMBED_PROVIDER → FAIL with helpful message."""
+    """Unrecognised EMBED_PROVIDER → FAIL with helpful message (server stack)."""
     from gecko_mcp.doctor import check_embed_provider
 
-    rows = check_embed_provider(environ={"EMBED_PROVIDER": "cohere"})
+    # Server-stack signal so the provider validation is enforced.
+    rows = check_embed_provider(
+        environ={"EMBED_PROVIDER": "cohere", "SUPABASE_URL": "https://x.supabase.co"}
+    )
     fail_rows = [r for r in rows if not r.ok]
     assert fail_rows
     assert "cohere" in fail_rows[0].detail
@@ -260,7 +308,8 @@ def test_embed_provider_unknown_fails() -> None:
 
 def test_embed_provider_in_run_doctor_fails_without_voyage_key() -> None:
     """run_doctor exit_code=1 when EMBED_PROVIDER=voyage and VOYAGE_API_KEY missing."""
-    env = {var: "x" for var in REQUIRED_ENV_VARS} | {
+    # Server-side creds present so Supabase probes run via injected fake.
+    env = {var: "x" for var in SERVER_SIDE_ENV_VARS} | {
         "X402_MODE": "stub",
         "EMBED_PROVIDER": "voyage",
     }
@@ -274,18 +323,39 @@ def test_embed_provider_in_run_doctor_fails_without_voyage_key() -> None:
     assert "embed:voyage_api_key" in report
 
 
-def test_doctor_cli_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
-    """End-to-end: invoking the Click command with no env returns non-zero."""
+def test_doctor_cli_passes_with_no_server_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    """End-to-end: thin-client with no server-side keys → exit 0 (doctor: OK).
+
+    This is the key regression guard: an external user who only has
+    GECKO_API_URL + X402_MODE must be able to run `gecko-mcp doctor` and see
+    green without supplying SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, or
+    TAVILY_API_KEY.
+    """
     from click.testing import CliRunner
     from gecko_mcp.cli import main
 
-    for var in REQUIRED_ENV_VARS:
+    # Clear all server-side keys so the test is a clean thin-client simulation.
+    for var in (
+        *SERVER_SIDE_ENV_VARS,
+        "X402_MODE",
+        "VOYAGE_API_KEY",
+        "EMBED_PROVIDER",
+        "GECKO_API_URL",
+        "GECKO_RERANKER",
+        # Force supabase chunk store so the test doesn't try to reach MongoDB Atlas.
+        # An external user won't have GECKO_CHUNK_STORE set at all — the default is
+        # supabase which returns a single INFO row without any network probe.
+        "GECKO_CHUNK_STORE",
+        "MONGODB_URI",
+    ):
         monkeypatch.delenv(var, raising=False)
-    monkeypatch.delenv("X402_MODE", raising=False)
     # Don't auto-load ~/.gecko/.env during the test.
     monkeypatch.setattr("gecko_mcp.cli._load_env", lambda _: None)
 
     runner = CliRunner()
     result = runner.invoke(main, ["doctor"], catch_exceptions=False)
-    assert result.exit_code == 1
-    assert "doctor: FAIL" in result.output
+    assert result.exit_code == 0, result.output
+    assert "doctor: OK" in result.output
+    # Server-side vars must be mentioned as INFO (not FAIL).
+    for var in SERVER_SIDE_ENV_VARS:
+        assert var in result.output

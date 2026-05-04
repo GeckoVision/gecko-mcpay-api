@@ -15,7 +15,17 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-REQUIRED_ENV_VARS: tuple[str, ...] = (
+# Thin-client installs (gecko-mcp pointing at a remote gecko-api) require
+# ZERO server-side keys.  REQUIRED_ENV_VARS is intentionally empty so that
+# `gecko-mcp doctor` passes for a user who only has GECKO_API_URL + payment
+# env vars in their .mcp.json.
+REQUIRED_ENV_VARS: tuple[str, ...] = ()
+
+# Keys that are ONLY needed when running the full server stack locally
+# (gecko-api / bb CLI with GECKO_API_URL unset or pointing at localhost).
+# Doctor surfaces these as INFO for remote installs so the user is aware of
+# what the server needs — but never fails their install because of them.
+SERVER_SIDE_ENV_VARS: tuple[str, ...] = (
     "SUPABASE_URL",
     "SUPABASE_SERVICE_ROLE_KEY",
     "TAVILY_API_KEY",
@@ -36,6 +46,12 @@ _OPTIONAL_HINTS: dict[str, str] = {
     "DEEPGRAM_API_KEY": "YouTube caption-fallback disabled",
     "OPENAI_API_KEY": "v2 fallback only; v3 routes through ClawRouter",
     "GECKO_LLM_ENDPOINT": "defaults to http://localhost:8402/v1 (ClawRouter)",
+}
+
+_SERVER_SIDE_HINTS: dict[str, str] = {
+    "SUPABASE_URL": "server-side only; not needed for remote gecko-api installs",
+    "SUPABASE_SERVICE_ROLE_KEY": "server-side only; not needed for remote gecko-api installs",
+    "TAVILY_API_KEY": "server-side only; not needed for remote gecko-api installs",
 }
 
 REQUIRED_TABLES: tuple[str, ...] = ("sessions", "sources", "chunks")
@@ -60,7 +76,11 @@ class _SupabaseLike(Protocol):
 
 
 def check_env(environ: dict[str, str] | None = None) -> list[CheckResult]:
-    """Verify every required env var is set (non-empty)."""
+    """Verify every required env var is set (non-empty).
+
+    REQUIRED_ENV_VARS is empty for thin-client installs — no server-side
+    keys are needed when gecko-mcp points at a remote gecko-api.
+    """
     env = environ if environ is not None else dict(os.environ)
     results: list[CheckResult] = []
     for var in REQUIRED_ENV_VARS:
@@ -70,6 +90,33 @@ def check_env(environ: dict[str, str] | None = None) -> list[CheckResult]:
                 name=f"env:{var}",
                 ok=present,
                 detail="set" if present else f"missing env var: {var}",
+            )
+        )
+    return results
+
+
+def check_server_side_env(environ: dict[str, str] | None = None) -> list[CheckResult]:
+    """Surface server-side env vars as INFO rows.
+
+    These keys (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, TAVILY_API_KEY) are
+    only required when running gecko-api / bb CLI locally.  For remote
+    thin-client installs they are irrelevant — we surface them as INFO so the
+    operator can see the state without the doctor failing their install.
+
+    When the vars ARE set (local-dev or server operator running doctor), we
+    promote them to PASS rows so the server-side operator gets green feedback.
+    """
+    env = environ if environ is not None else dict(os.environ)
+    results: list[CheckResult] = []
+    for var in SERVER_SIDE_ENV_VARS:
+        present = bool(env.get(var))
+        hint = _SERVER_SIDE_HINTS.get(var, "server-side only")
+        results.append(
+            CheckResult(
+                name=f"env:{var}",
+                ok=True,  # never fails the thin-client doctor
+                detail="set" if present else f"unset ({hint})",
+                info=not present,  # INFO only when absent; PASS when set
             )
         )
     return results
@@ -572,6 +619,16 @@ def check_voyage_api_key(environ: dict[str, str] | None = None) -> list[CheckRes
     return results
 
 
+def _is_server_stack(environ: dict[str, str]) -> bool:
+    """True when the operator has at least one server-side credential set.
+
+    Used by embed-provider and reranker checks to distinguish a thin-client
+    external install (no server keys → skip key validation) from a server
+    operator running doctor locally (server keys present → validate them).
+    """
+    return bool(environ.get("SUPABASE_URL")) or bool(environ.get("TAVILY_API_KEY"))
+
+
 def check_embed_provider(environ: dict[str, str] | None = None) -> list[CheckResult]:
     """S22-VOYAGE-EMBED — verify embedding provider config is self-consistent.
 
@@ -582,6 +639,10 @@ def check_embed_provider(environ: dict[str, str] | None = None) -> list[CheckRes
     is surfaced as INFO.
 
     Any other value is a hard FAIL — the embedder factory will raise at runtime.
+
+    Thin-client mode: when no server-side credentials are present (the install
+    is a remote gecko-api consumer), embed provider key validation is skipped
+    — embedding is done server-side and the keys are irrelevant here.
 
     Security: keys are never echoed. Voyage key shown as ``pa-...<last4>``;
     OpenAI key shown as ``sk-...<last4>``.
@@ -595,6 +656,19 @@ def check_embed_provider(environ: dict[str, str] | None = None) -> list[CheckRes
     results.append(
         CheckResult(name="embed:provider", ok=True, detail=f"{provider} model={model}", info=True)
     )
+
+    # Skip key validation for thin-client installs — embedding happens
+    # server-side so the provider key is never needed locally.
+    if not _is_server_stack(env):
+        results.append(
+            CheckResult(
+                name="embed:key_check",
+                ok=True,
+                detail="skipped (thin-client install; embedding is server-side)",
+                info=True,
+            )
+        )
+        return results
 
     if provider == "voyage":
         key = env.get("VOYAGE_API_KEY", "")
@@ -654,11 +728,23 @@ def run_doctor(
 ) -> tuple[int, str]:
     """Run every check. Returns (exit_code, rendered_report).
 
-    `supabase_client` is injectable for tests. If None and env is incomplete,
-    we skip Supabase probes (no point probing without credentials).
+    Thin-client mode (GECKO_API_URL points at a remote server): only x402 +
+    GECKO_API_URL + wallet checks are required; server-side keys surface as
+    INFO and never fail the doctor.
+
+    Local-dev / server-operator mode (GECKO_API_URL unset or localhost):
+    server-side env vars are surfaced as PASS/INFO and Supabase probes run
+    when credentials are present.
+
+    `supabase_client` is injectable for tests. If None and Supabase creds are
+    absent, Supabase probes are skipped.
     """
+    env = environ if environ is not None else dict(os.environ)
     results: list[CheckResult] = []
     results.extend(check_env(environ))
+    # Server-side keys: surface as PASS when set, INFO when absent.
+    # Never fail the thin-client doctor.
+    results.extend(check_server_side_env(environ))
     results.append(check_x402_mode(environ))
     results.append(check_gecko_api(environ))
     results.extend(check_optional_env(environ))
@@ -669,27 +755,32 @@ def run_doctor(
     results.extend(check_embed_provider(environ))
     results.extend(check_voyage_api_key(environ))
 
-    # INFO checks never gate downstream probes.
+    # Supabase probes only run when SUPABASE_URL + key are both present.
+    # For remote thin-client installs these will be absent — that is normal.
     env_ok = all(r.ok for r in results if not r.info)
-    if env_ok and supabase_client is not None:
-        results.extend(check_supabase(supabase_client))
-    elif env_ok:
-        # Build the default client lazily — avoids importing supabase in
-        # all-missing-env tests.
-        try:
-            from gecko_core.db import create_supabase_client
-
-            client = create_supabase_client()
-        except Exception as exc:
-            results.append(
-                CheckResult(
-                    name="supabase:client",
-                    ok=False,
-                    detail=f"could not build client: {_redact(str(exc))}",
-                )
-            )
+    supabase_creds_present = bool(env.get("SUPABASE_URL")) and bool(
+        env.get("SUPABASE_SERVICE_ROLE_KEY")
+    )
+    if env_ok and supabase_creds_present:
+        if supabase_client is not None:
+            results.extend(check_supabase(supabase_client))
         else:
-            results.extend(check_supabase(client))
+            # Build the default client lazily — avoids importing supabase in
+            # all-missing-env tests.
+            try:
+                from gecko_core.db import create_supabase_client
+
+                client = create_supabase_client()
+            except Exception as exc:
+                results.append(
+                    CheckResult(
+                        name="supabase:client",
+                        ok=False,
+                        detail=f"could not build client: {_redact(str(exc))}",
+                    )
+                )
+            else:
+                results.extend(check_supabase(client))
 
     # Only non-INFO failures break exit 0.
     exit_code = 0 if all(r.ok for r in results if not r.info) else 1

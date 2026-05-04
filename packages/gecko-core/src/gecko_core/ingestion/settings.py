@@ -14,7 +14,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class IngestionSettings(BaseSettings):
     openai_api_key: SecretStr | None = Field(default=None, alias="OPENAI_API_KEY")
-    tavily_api_key: SecretStr = Field(..., alias="TAVILY_API_KEY")
+    # Optional so gecko-mcp (thin HTTP client) can import gecko-core without
+    # TAVILY_API_KEY. Server-side callers (gecko-api, bb CLI) still validate
+    # at call time in discovery.py before invoking Tavily.
+    tavily_api_key: SecretStr | None = Field(default=None, alias="TAVILY_API_KEY")
     embed_model: str = Field("voyage-3", alias="EMBED_MODEL")
     embed_provider: str = Field("voyage", alias="EMBED_PROVIDER")
     voyage_api_key: SecretStr | None = Field(default=None, alias="VOYAGE_API_KEY")

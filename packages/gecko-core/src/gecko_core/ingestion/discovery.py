@@ -355,6 +355,8 @@ async def discover(
     # come up short on a research-style idea where 60% of hits get
     # blocked. Caps at 10 to keep the credit cost bounded.
     over_fetch = min(max_results * 2, 10)
+    if settings.tavily_api_key is None:
+        raise ValueError("TAVILY_API_KEY must be set on the server to run source discovery")
     raw = await asyncio.to_thread(
         _search_sync,
         settings.tavily_api_key.get_secret_value(),
