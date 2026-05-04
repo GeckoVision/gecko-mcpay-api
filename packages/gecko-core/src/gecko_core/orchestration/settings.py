@@ -49,6 +49,19 @@ class OrchestrationSettings(BaseSettings):
     # Sampling. Low for grounded, deterministic-ish output.
     temperature: float = Field(0.3, alias="ORCH_TEMPERATURE")
 
+    # LLM-hygiene Commit C — per-role output cap (max_tokens). Each role is
+    # tunable independently because the cost / risk tradeoff differs:
+    # research_basic emits a large structured envelope; ask is a short
+    # prose answer; advisor voices need headroom to avoid mid-sentence
+    # truncation. Override per-deploy via env (e.g. ``ORCH_MAX_TOKENS_AG2``).
+    max_tokens_research_basic: int = Field(6000, alias="ORCH_MAX_TOKENS_RESEARCH_BASIC")
+    max_tokens_post_processor: int = Field(2000, alias="ORCH_MAX_TOKENS_POST_PROCESSOR")
+    max_tokens_refiner: int = Field(4000, alias="ORCH_MAX_TOKENS_REFINER")
+    max_tokens_judge_synth: int = Field(4000, alias="ORCH_MAX_TOKENS_JUDGE_SYNTH")
+    max_tokens_ask: int = Field(1500, alias="ORCH_MAX_TOKENS_ASK")
+    max_tokens_ag2: int = Field(3000, alias="ORCH_MAX_TOKENS_AG2")
+    max_tokens_advisor: int = Field(4000, alias="ORCH_MAX_TOKENS_ADVISOR")
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

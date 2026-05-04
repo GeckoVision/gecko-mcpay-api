@@ -83,6 +83,8 @@ async def _call_json(
     system: str,
     user: str,
 ) -> dict[str, Any]:
+    # LLM-hygiene Commit C: ``seed=42`` is best-effort determinism.
+    # OpenRouter forwards seed per-provider; not all providers honor it.
     resp = await client.chat.completions.create(
         model=_resolve_post_processor_model(),
         messages=[
@@ -91,6 +93,8 @@ async def _call_json(
         ],
         response_format={"type": "json_object"},
         temperature=_POST_PROCESSOR_TEMPERATURE,
+        seed=42,
+        max_tokens=get_orchestration_settings().max_tokens_post_processor,
     )
     content = resp.choices[0].message.content
     if not content:

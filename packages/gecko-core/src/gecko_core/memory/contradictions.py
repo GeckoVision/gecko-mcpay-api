@@ -88,6 +88,7 @@ async def _llm_judges_conflict(
         ],
         response_format={"type": "json_object"},
         temperature=0.0,
+        seed=42,
     )
     content = resp.choices[0].message.content or "{}"
     try:

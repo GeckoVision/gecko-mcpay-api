@@ -238,6 +238,7 @@ async def summarize_idea_for_flywheel(
             ],
             response_format={"type": "json_object"},
             temperature=0.4,
+            seed=42,
         )
         raw = resp.choices[0].message.content or "{}"
         parsed = json.loads(raw)

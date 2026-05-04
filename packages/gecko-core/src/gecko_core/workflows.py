@@ -1223,6 +1223,9 @@ async def ask(
     )
     _ask_model = _resolve_model(_AgentRole.ask, _AskTier.budget, _ask_router)
 
+    # Plain-text answer with [n] citations — no response_format=json_object
+    # on purpose. ``seed=42`` for best-effort determinism (LLM-hygiene C1);
+    # ``max_tokens`` capped per role from OrchestrationSettings (C2).
     resp = await client.chat.completions.create(
         model=_ask_model,
         messages=[
@@ -1240,6 +1243,8 @@ async def ask(
             },
         ],
         temperature=orch.temperature,
+        seed=42,
+        max_tokens=orch.max_tokens_ask,
     )
     answer = resp.choices[0].message.content or ""
 

@@ -182,6 +182,7 @@ async def _call_llm(
     system: str,
     user: str,
     temperature: float,
+    max_tokens: int | None = None,
 ) -> tuple[str, float]:
     """Run a chat completion and return (content, estimated_cost_usd).
 
@@ -189,16 +190,24 @@ async def _call_llm(
     1. `x-clawrouter-cost-usd` response header (preferred — real spend).
     2. Token-based estimate from `usage` * `_MODEL_RATES_USD_PER_1M`.
     3. 0.0 (unknown model, no header) — surfaces as zero on the dashboard.
+
+    Reproducibility: ``seed=42`` is forwarded for best-effort determinism
+    on supporting providers. OpenRouter passes ``seed`` per-provider; not
+    all providers honor it (best-effort, not bit-identical across runs).
     """
-    raw = await client.chat.completions.with_raw_response.create(
-        model=model,
-        messages=[
+    create_kwargs: dict[str, Any] = {
+        "model": model,
+        "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        response_format={"type": "json_object"},
-        temperature=temperature,
-    )
+        "response_format": {"type": "json_object"},
+        "temperature": temperature,
+        "seed": 42,
+    }
+    if max_tokens is not None:
+        create_kwargs["max_tokens"] = max_tokens
+    raw = await client.chat.completions.with_raw_response.create(**create_kwargs)
     resp = raw.parse()
     content = resp.choices[0].message.content
     if not content:
@@ -413,6 +422,7 @@ async def generate(
         system=_SYSTEM_PROMPT,
         user=user,
         temperature=orch.temperature,
+        max_tokens=orch.max_tokens_research_basic,
     )
     await store.add_cost(session_id, "llm", cost1)
 
@@ -434,6 +444,7 @@ async def generate(
             system=_SYSTEM_PROMPT,
             user=retry_user,
             temperature=orch.temperature,
+            max_tokens=orch.max_tokens_research_basic,
         )
         await store.add_cost(session_id, "llm", cost2)
         try:
@@ -455,6 +466,7 @@ async def generate(
             system=_SYSTEM_PROMPT,
             user=retry_user,
             temperature=orch.temperature,
+            max_tokens=orch.max_tokens_research_basic,
         )
         await store.add_cost(session_id, "llm", cost_gap)
         try:

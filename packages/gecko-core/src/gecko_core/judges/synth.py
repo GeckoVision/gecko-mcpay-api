@@ -182,6 +182,8 @@ async def _call_judge_synth(
             ],
             response_format={"type": "json_object"},
             temperature=_SYNTH_TEMPERATURE,
+            seed=42,
+            max_tokens=get_orchestration_settings().max_tokens_judge_synth,
         )
     finally:
         await client.close()

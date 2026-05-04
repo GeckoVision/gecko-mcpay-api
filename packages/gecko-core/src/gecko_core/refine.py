@@ -124,6 +124,8 @@ async def refine_idea(
             ],
             response_format={"type": "json_object"},
             temperature=_REFINE_TEMPERATURE,
+            seed=42,
+            max_tokens=get_orchestration_settings().max_tokens_refiner,
         )
     except Exception as exc:  # OpenAI / network
         raise RefineError(f"refine_idea call failed: {exc}") from exc

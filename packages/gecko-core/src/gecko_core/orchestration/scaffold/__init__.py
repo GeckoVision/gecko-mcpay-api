@@ -179,6 +179,7 @@ async def _synthesize(
         ],
         response_format={"type": "json_object"},
         temperature=0.2,
+        seed=42,
     )
     resp = raw.parse()
     content = resp.choices[0].message.content
