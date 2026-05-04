@@ -94,17 +94,17 @@ hdr "4/4 Next steps"
 
 cat <<'EOF'
 
-  Set up your wallet (paste into Claude Code):
+  1. Connect your wallet (email OTP — no browser needed):
 
-      gecko-mcp wallet new
+         gecko-mcp wallet new
 
-  Verify everything is working:
+  2. Verify everything is working:
 
-      gecko-mcp doctor
+         gecko-mcp doctor
 
-  Run your first session (in Claude Code):
+  3. Run your first session (in Claude Code):
 
-      Use gecko_research to validate: a hotel guide for Brazil
+         Use gecko_research to validate: <your idea>
 
   Builder Bootstrap Platform · geckovision.tech · No API keys, just a wallet.
 EOF

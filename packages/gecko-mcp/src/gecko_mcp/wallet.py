@@ -159,13 +159,88 @@ def wallet() -> None:
     """
 
 
-@wallet.command()
-def new() -> None:
-    """Connect to frames.ag (delegates to frames.ag's skill).
+def _frames_connect(email: str) -> dict[str, Any]:
+    """Walk the frames.ag Email+OTP connect flow entirely in-process.
 
-    Setup is owned by frames.ag's skill. This command checks whether
-    `~/.agentwallet/config.json` already exists; if not, instructs the user
-    (or the agent driving this CLI) to run frames.ag's connect flow.
+    Steps:
+      1. POST /api/connect/start   → receive username, trigger OTP email
+      2. Prompt user for 6-digit OTP in the terminal
+      3. POST /api/connect/complete → receive apiToken, evmAddress, solanaAddress
+
+    Returns the credential dict ready to write to CONFIG_PATH.
+    Raises click.ClickException on any HTTP or validation error (message is
+    surfaced verbatim — we don't rephrase frames.ag errors).
+    """
+    with httpx.Client(base_url=FRAMES_BASE, timeout=DEFAULT_TIMEOUT) as http:
+        # Step 1: initiate OTP
+        try:
+            r = http.post("/connect/start", json={"email": email})
+            r.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise click.ClickException(
+                f"frames.ag /connect/start failed: {_frames_error_message(exc)}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise click.ClickException(f"frames.ag unreachable: {exc}") from exc
+
+        body = r.json()
+        username: str = body.get("username") or body.get("user", {}).get("username", "")
+        if not username:
+            raise click.ClickException(
+                f"frames.ag returned no username in /connect/start response: {body}"
+            )
+
+        click.echo(f"  Check your inbox for a 6-digit code sent to {email}")
+        otp = click.prompt("  Enter the 6-digit code", prompt_suffix=": ").strip()
+        if not otp or not otp.isdigit() or len(otp) != 6:
+            raise click.ClickException("OTP must be exactly 6 digits.")
+
+        # Step 2: verify OTP and receive credentials
+        try:
+            r2 = http.post(
+                "/connect/complete",
+                json={"username": username, "email": email, "otp": otp},
+            )
+            r2.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise click.ClickException(
+                f"frames.ag /connect/complete failed: {_frames_error_message(exc)}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise click.ClickException(f"frames.ag unreachable during OTP verify: {exc}") from exc
+
+        creds = r2.json()
+        api_token: str = creds.get("apiToken", "")
+        evm_address: str = creds.get("evmAddress", "")
+        solana_address: str = creds.get("solanaAddress", "")
+
+        if not api_token:
+            raise click.ClickException(
+                "frames.ag returned no apiToken in /connect/complete response"
+            )
+
+    return {
+        "username": username,
+        "solanaAddress": solana_address,
+        "evmAddress": evm_address,
+        "apiToken": api_token,
+    }
+
+
+def _write_frames_config(config: dict[str, Any]) -> None:
+    """Write credential dict to CONFIG_PATH with chmod 600."""
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.write_text(json.dumps(config, indent=2))
+    CONFIG_PATH.chmod(0o600)
+
+
+@wallet.command()
+@click.option("--email", default=None, help="Email address to register / connect with.")
+def new(email: str | None) -> None:
+    """Connect to frames.ag via Email+OTP — no browser required.
+
+    Sends a 6-digit OTP to your email, then writes credentials to
+    ~/.agentwallet/config.json (chmod 600). Completes in under 60 seconds.
     """
     if CONFIG_PATH.exists():
         try:
@@ -181,22 +256,39 @@ def new() -> None:
         click.echo(f"  evm address:     {config.get('evmAddress', '?')}")
         click.echo()
         click.echo(f"Fund at https://frames.ag/u/{config.get('username', '<username>')}")
+        click.echo("To reconnect with a different account, delete:")
+        click.echo(f"  {CONFIG_PATH}")
         return
 
-    click.secho("Not connected to frames.ag.", fg="yellow")
+    click.secho("Connecting to frames.ag AgentWallet...", fg="cyan")
     click.echo()
-    click.echo("Wallet provisioning is delegated to frames.ag's skill.")
-    click.echo("From your AI agent (Claude Code, Cursor, etc.), run:")
+
+    if email is None:
+        email = click.prompt("  Enter your email").strip()
+
+    if not email or "@" not in email:
+        click.secho("Invalid email address.", fg="red", err=True)
+        sys.exit(1)
+
+    try:
+        config = _frames_connect(email)
+    except click.ClickException as exc:
+        click.secho(str(exc.format_message()), fg="red", err=True)
+        sys.exit(1)
+
+    _write_frames_config(config)
+
+    username = config.get("username", "?")
+    solana_address = config.get("solanaAddress", "?")
+
     click.echo()
-    click.secho(
-        "    Read https://frames.ag/skill.md and follow the instructions to join AgentWallet.",
-        bold=True,
-    )
+    click.secho("Wallet ready", fg="green")
+    click.echo(f"  username:       @{username}")
+    click.echo(f"  solana address: {solana_address}")
     click.echo()
-    click.echo("After connection, frames.ag's skill caches credentials at:")
-    click.echo(f"    {CONFIG_PATH}")
+    click.echo(f"Fund at https://frames.ag/u/{username} or https://app.geckovision.tech/onramp")
     click.echo()
-    click.echo("Re-run `gecko-mcp wallet new` to verify, then `gecko-mcp wallet balance`.")
+    click.echo("Next: gecko-mcp doctor")
 
 
 @wallet.command()
@@ -366,10 +458,7 @@ def wallet_switch(provider: str) -> None:
         else:
             click.secho("Switched to frames.ag mode.", fg="green")
             click.echo(f"No frames.ag credentials at {CONFIG_PATH}. Set up with:")
-            click.secho(
-                "  Read https://frames.ag/skill.md and follow the instructions to join AgentWallet.",
-                bold=True,
-            )
+            click.secho("  gecko-mcp wallet new", bold=True)
 
     click.echo(f"Provider saved to {_GECKO_CONFIG_PATH}")
 

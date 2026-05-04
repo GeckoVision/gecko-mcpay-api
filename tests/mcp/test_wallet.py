@@ -226,3 +226,206 @@ def test_address_command_errors_when_no_wallet(tmp_wallet_path: Path) -> None:
     result = runner.invoke(wallet, ["address"])
     assert result.exit_code != 0
     assert "No wallet" in result.output
+
+
+# ---------------------------------------------------------------------------
+# frames.ag Email+OTP connect flow (S26-W3-02)
+# ---------------------------------------------------------------------------
+
+
+class _FakeResponse:
+    """Minimal httpx.Response stub for frames.ag API calls."""
+
+    def __init__(self, status_code: int, body: dict) -> None:
+        self._status_code = status_code
+        self._body = body
+
+    @property
+    def status_code(self) -> int:
+        return self._status_code
+
+    def raise_for_status(self) -> None:
+        if self._status_code >= 400:
+            import httpx
+
+            req = httpx.Request("POST", "https://frames.ag/api/connect/start")
+            resp = httpx.Response(self._status_code, json=self._body, request=req)
+            raise httpx.HTTPStatusError(f"HTTP {self._status_code}", request=req, response=resp)
+
+    def json(self) -> dict:
+        return self._body
+
+
+@pytest.fixture
+def tmp_config_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Redirect CONFIG_PATH to a tmp location so tests don't touch ~/.agentwallet."""
+    import gecko_mcp.wallet as wallet_mod
+
+    target = tmp_path / ".agentwallet" / "config.json"
+    monkeypatch.setattr(wallet_mod, "CONFIG_PATH", target)
+    return target
+
+
+def test_frames_connect_happy_path(tmp_config_path: Path) -> None:
+    """_frames_connect returns correct credential dict on successful OTP flow."""
+    import unittest.mock as mock
+
+    from gecko_mcp.wallet import _frames_connect
+
+    start = _FakeResponse(200, {"username": "alice"})
+    complete = _FakeResponse(
+        200,
+        {
+            "apiToken": "mf_test_token_abc123",
+            "solanaAddress": "SolAddr1234567890",
+            "evmAddress": "0xEvmAddr",
+        },
+    )
+
+    class _FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def post(self, path: str, **kwargs):
+            if "start" in path:
+                return start
+            if "complete" in path:
+                return complete
+            raise AssertionError(f"unexpected path: {path}")
+
+    with (
+        mock.patch("gecko_mcp.wallet.httpx.Client", return_value=_FakeClient()),
+        mock.patch("click.prompt", return_value="123456"),
+    ):
+        result = _frames_connect("user@example.com")
+
+    assert result["username"] == "alice"
+    assert result["apiToken"] == "mf_test_token_abc123"
+    assert result["solanaAddress"] == "SolAddr1234567890"
+    assert result["evmAddress"] == "0xEvmAddr"
+
+
+def test_frames_wallet_new_writes_config_and_prints_address(tmp_config_path: Path) -> None:
+    """wallet new runs OTP flow, writes config, prints address — no browser required."""
+    import unittest.mock as mock
+
+    from gecko_mcp.wallet import wallet
+
+    start = _FakeResponse(200, {"username": "alice"})
+    complete = _FakeResponse(
+        200,
+        {
+            "apiToken": "mf_test_token",
+            "solanaAddress": "SolAddr999",
+            "evmAddress": "0xEvm999",
+        },
+    )
+
+    class _FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def post(self, path: str, **kwargs):
+            return start if "start" in path else complete
+
+    runner = CliRunner()
+    with mock.patch("gecko_mcp.wallet.httpx.Client", return_value=_FakeClient()):
+        # Provide email via --email option; OTP via stdin prompt.
+        result = runner.invoke(wallet, ["new", "--email", "user@example.com"], input="123456\n")
+
+    assert result.exit_code == 0, result.output
+    assert "Wallet ready" in result.output
+    assert "@alice" in result.output
+    assert "SolAddr999" in result.output
+    # apiToken must NOT appear anywhere in output.
+    assert "mf_test_token" not in result.output
+
+    # Config must be written with chmod 600.
+    import stat
+
+    assert tmp_config_path.exists()
+    payload = json.loads(tmp_config_path.read_text())
+    assert payload["username"] == "alice"
+    assert payload["apiToken"] == "mf_test_token"
+    mode = stat.S_IMODE(tmp_config_path.stat().st_mode)
+    assert mode == 0o600, f"expected 0o600, got {oct(mode)}"
+
+
+def test_frames_wallet_new_already_connected_shows_info(tmp_config_path: Path) -> None:
+    """wallet new when config already exists prints summary and exits 0."""
+    import gecko_mcp.wallet as wallet_mod
+
+    config = {
+        "username": "bob",
+        "solanaAddress": "BobAddr",
+        "evmAddress": "0xBob",
+        "apiToken": "mf_existing",
+    }
+    tmp_config_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_config_path.write_text(json.dumps(config))
+
+    runner = CliRunner()
+    result = runner.invoke(wallet_mod.wallet, ["new"])
+    assert result.exit_code == 0, result.output
+    assert "Already connected" in result.output
+    assert "@bob" in result.output
+    assert "BobAddr" in result.output
+    # apiToken must not appear.
+    assert "mf_existing" not in result.output
+
+
+def test_frames_wallet_new_invalid_otp_rejected(tmp_config_path: Path) -> None:
+    """wallet new aborts cleanly when user enters a non-6-digit OTP."""
+    import unittest.mock as mock
+
+    from gecko_mcp.wallet import wallet
+
+    start = _FakeResponse(200, {"username": "alice"})
+
+    class _FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def post(self, path: str, **kwargs):
+            return start
+
+    runner = CliRunner()
+    with mock.patch("gecko_mcp.wallet.httpx.Client", return_value=_FakeClient()):
+        result = runner.invoke(wallet, ["new", "--email", "user@example.com"], input="abc\n")
+
+    assert result.exit_code != 0
+    assert "6 digit" in result.output.lower() or "6-digit" in result.output.lower()
+
+
+def test_frames_wallet_new_start_failure_propagated(tmp_config_path: Path) -> None:
+    """wallet new surfaces frames.ag error verbatim when /connect/start fails."""
+    import unittest.mock as mock
+
+    from gecko_mcp.wallet import wallet
+
+    start = _FakeResponse(429, {"code": "RATE_LIMITED", "message": "too many requests"})
+
+    class _FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def post(self, path: str, **kwargs):
+            return start
+
+    runner = CliRunner()
+    with mock.patch("gecko_mcp.wallet.httpx.Client", return_value=_FakeClient()):
+        result = runner.invoke(wallet, ["new", "--email", "user@example.com"])
+
+    assert result.exit_code != 0

@@ -43,38 +43,35 @@ uv tool install gecko-mcp
 
 ## Step 3 — Set up the agent wallet
 
-Two paths. **Ask the user which they prefer.** Default to "generate" if they don't have a Solana wallet yet.
-
-### Path A — Generate a new wallet (recommended for first-time users)
-
 ```bash
 gecko-mcp wallet new
-# Output:
-#   ✅ Created agent wallet
-#   📬 Public address: <ADDRESS>
-#   🔐 Keypair stored encrypted at ~/.gecko/wallet.json
+# Prompts:
+#   Enter your email: user@example.com
+#   Check your inbox — enter the 6-digit code: 123456
 #
-#   To fund this wallet:
-#     • Send USDC on Solana directly to <ADDRESS>, OR
-#     • Visit https://app.geckovision.tech/onramp to fund via PIX (Brazil)
-#       or credit card.
+# Output:
+#   Wallet ready
+#     username:       @alice
+#     solana address: Abc1...xyz
+#
+#   Fund at https://frames.ag/u/alice or https://app.geckovision.tech/onramp
 ```
 
-Tell the user clearly:
-- The wallet is stored locally on their machine, encrypted
-- It's a *separate* wallet from any other wallet they have — designed for agent spending only
-- They should fund it with a small amount first ($25 USDC is enough for a basic + a pro session)
+This runs entirely in the terminal — no browser required. frames.ag sends a 6-digit OTP to the email; entering it provisions a custodial Solana + EVM wallet and writes credentials to `~/.agentwallet/config.json` (chmod 600). Under 60 seconds.
 
-### Path B — Bring your own wallet (for users with existing Solflare)
+Tell the user:
+- No private keys are stored locally — frames.ag holds custody
+- Fund with a small amount first ($25 USDC covers a basic + a pro session)
+- To fund: send USDC on Solana to the printed address, or visit `https://app.geckovision.tech/onramp`
+
+**Power user — bring your own wallet:** if the user already has a Solana keypair, they can import it:
 
 ```bash
-gecko-mcp wallet import
-# Prompts for keypair path or seed phrase
+gecko-mcp wallet switch self
+gecko-mcp wallet import   # prompts for keypair file or base58 secret
 ```
 
-For Solflare users: they can export a keypair from Solflare → import it here. They keep using their main Solflare wallet; gecko-mcp just signs payment transactions on its behalf.
-
-⚠️ **Security note:** importing a seed phrase that controls significant funds is risky. Strongly recommend Path A unless the user has a wallet specifically for agent spending.
+This path stores the keypair encrypted at `~/.gecko/wallet.json`. Recommend only if the user has a wallet specifically for agent spending — never import a seed phrase that controls significant funds.
 
 ## Step 4 — Register the MCP server with Claude Code
 
@@ -113,7 +110,7 @@ Expected: x402 payment of $20 USDC fires automatically, documents return in ~60s
 ## Notes for Claude Code
 
 - **No API keys are ever requested from the user.** OpenAI, Tavily, Supabase keys live server-side at `gecko-api` — they're Gecko's responsibility, not the user's. If you find yourself about to ask for an API key, stop — that's wrong.
-- **The wallet is the only credential.** It's how the user pays, how the user is identified, and how sessions are scoped. There is no signup, no login, no email.
+- **The wallet is the only credential.** It's how the user pays, how the user is identified, and how sessions are scoped. Setup requires only an email for OTP — no passwords, no separate signup form.
 - **First-time users almost always need Step A (generate wallet) and an onramp.** Most people don't have a funded Solana USDC wallet handy. Send them to the onramp page calmly; it takes 30 seconds via PIX in Brazil.
 - **Never log the encrypted keypair file path or its contents.** `~/.gecko/wallet.json` is private.
 - After install, the user can browse other Gecko skills at `https://app.geckovision.tech/skills/`.
