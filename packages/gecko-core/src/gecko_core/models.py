@@ -484,6 +484,18 @@ class ValidationReport(BaseModel):
     # comparison. Surfaced in `bb research` output and the PRD. Kept short so
     # it renders on a single CLI line.
     gap_summary: str = ""
+    # 2026-05-03 dogfood — `gap_classification` alone is opaque (a viewer of
+    # `Partial:UX` cannot tell whether the wedge category is weak or the
+    # presentation is shallow). `gap_explanation` is the 2-3 sentence
+    # narrative that grounds the label in specific chunks via inline `[n]`
+    # markers and names the consequence for the founder. Optional for
+    # backwards compat with existing eval cassettes / serialized verdicts
+    # that pre-date the field; new runs populate it from the basic-tier
+    # synthesizer (pro tier inherits via the basic ValidationReport). The
+    # prose drifts run-to-run even when the structural decision is identical,
+    # so it is deliberately EXCLUDED from `verdict_hash._verdict_payload` —
+    # same posture as `pro_session_summary` and the post-processor readouts.
+    gap_explanation: str | None = None
 
     @field_validator("market_size_signal", "competitor_analysis", "demand_evidence", mode="before")
     @classmethod

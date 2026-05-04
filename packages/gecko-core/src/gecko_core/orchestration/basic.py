@@ -12,6 +12,7 @@ raises `OrchestrationError` rather than silently shipping a hallucination.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 from uuid import UUID
 
@@ -92,7 +93,8 @@ business_plan: {problem, icp, solution, market, business_model, channels,
   risks: list[str], citations: list[Citation]}
 validation_report: {market_size_signal, competitor_analysis, demand_evidence,
   risk_flags: list[str], citations: list[Citation],
-  gap_classification: <one of the gap labels below>, gap_summary: str}
+  gap_classification: <one of the gap labels below>, gap_summary: str,
+  gap_explanation: str}
 
 gap_classification (REQUIRED — a single discrete label, no prose, no
 synonyms) is exactly one of:
@@ -107,6 +109,27 @@ synonyms) is exactly one of:
 gap_summary is ONE sentence (≤ 140 chars) naming the closest competitor and
 the specific facet they miss. Example: "Stripe Radar covers fraud detection
 but not webhook replay debugging for payments engineers."
+
+gap_explanation (REQUIRED) is 2-3 sentences that ground the gap_classification
+label in the actual chunks. It MUST do all three of:
+  1. Name the dimension explicitly — restate WHICH facet is partial (UX,
+     segment, pricing, integration, geo). Don't make the reader decode
+     "Partial:UX"; say "the UX is the gap" in plain English.
+  2. Cite specific chunks via `[n]` markers — every concrete claim is
+     followed by `[1]`, `[2]`, etc., where `n` matches the bracket index
+     in the Context block (the same `[n]` your citations refer to).
+     Cite at least one chunk. Never invent a chunk index.
+  3. Name the CONSEQUENCE for the founder — what they would ship
+     differently if this gap were closed. One concrete shipping move,
+     not platitudes ("focus on UX" is too vague; "ship a one-click
+     replay debugger for Stripe webhooks before competing on dashboards"
+     is the bar).
+Example: "The UX is the gap, not the category — Stripe Radar covers fraud
+detection but its replay-debug flow assumes you already know which
+webhook fired [3]. A payments engineer triaging at 2am needs the
+opposite onramp [4]. Ship the replay-from-error path before competing
+on the dashboard." Keep to 3 sentences max so it fits on a single
+terminal screen.
 prd: {v1_scope, v2_scope, v3_scope, acceptance_criteria, non_functional,
   success_metrics: each list[str], citations: list[Citation]}
 
@@ -298,6 +321,48 @@ def _drop_unknown_citations(
     return out, dropped
 
 
+# Match `[N]` (1-3 digits) — narrow on purpose: we don't want to strip
+# things like `[ref-12]` or `[author 2024]` from prose. The basic prompt
+# instructs the model to use bare integer brackets, and the format_context
+# emits `[1]` `[2]` ... so the contract is bounded integers.
+_INLINE_CHUNK_REF_RE = re.compile(r"\[(\d{1,3})\]")
+
+
+def _filter_inline_chunk_refs(text: str | None, max_chunk_index: int) -> tuple[str | None, int]:
+    """Strip `[n]` markers in ``text`` whose ``n`` is outside ``1..max_chunk_index``.
+
+    `gap_explanation` (and any future inline-cited prose surface) is asked
+    to cite chunks via `[n]` markers matching the indices in the Context
+    block. This is the consistency guard requested by the 2026-05-03
+    dogfood follow-up: align inline `[n]` refs with the chunk list the
+    same way `_drop_unknown_citations` aligns Citation objects with the
+    indexed sources. Dangling `[99]` refs (where the model invented a
+    high index) get stripped; valid `[1]` `[2]` survive. Returns
+    ``(filtered_text, dropped_count)``. ``None`` text round-trips as
+    ``(None, 0)`` so the call site doesn't have to special-case it.
+    """
+    if not text:
+        return text, 0
+    if max_chunk_index < 1:
+        # No chunks were retrieved; any [n] is dangling. Strip them all.
+        new = _INLINE_CHUNK_REF_RE.sub("", text)
+        dropped = len(_INLINE_CHUNK_REF_RE.findall(text))
+        return new, dropped
+
+    dropped_count = 0
+
+    def _sub(match: re.Match[str]) -> str:
+        nonlocal dropped_count
+        n = int(match.group(1))
+        if 1 <= n <= max_chunk_index:
+            return match.group(0)
+        dropped_count += 1
+        return ""
+
+    new_text = _INLINE_CHUNK_REF_RE.sub(_sub, text)
+    return new_text, dropped_count
+
+
 _VALID_GAP_VALUES: frozenset[str] = frozenset(
     [
         "Full",
@@ -316,7 +381,11 @@ _GAP_RETRY_SUFFIX = (
     "EXACTLY one of: 'Full', 'Partial:segment', 'Partial:UX', 'Partial:geo', "
     "'Partial:pricing', 'Partial:integration', 'False'. No other strings, no "
     "prose, no nesting. Also include validation_report.gap_summary as a single "
-    "sentence ≤ 140 chars naming the closest competitor + the facet they miss. "
+    "sentence ≤ 140 chars naming the closest competitor + the facet they miss, "
+    "AND validation_report.gap_explanation as a 2-3 sentence narrative that "
+    "(a) restates which dimension is partial in plain English, (b) cites at "
+    "least one chunk via `[n]` markers matching the Context block, and "
+    "(c) names the concrete shipping consequence for the founder. "
     "Return corrected JSON only."
 )
 
@@ -381,13 +450,20 @@ def _enforce_gap_classification(out: _LLMOutput) -> _LLMOutput:
     return out
 
 
-def _validate_citations(out: _LLMOutput, allowed_urls: set[str]) -> _LLMOutput:
+def _validate_citations(
+    out: _LLMOutput, allowed_urls: set[str], *, chunk_count: int = 0
+) -> _LLMOutput:
     """Drop citations referencing URLs that didn't make it into the index.
 
     Replaces the pre-Sprint 8 hard-crash behavior. Logs each dropped
     citation at WARNING so the dogfood operator can see when an agent
     hallucinated past the failed-ingest list, but the session still
     completes with the surviving citations.
+
+    Also strips dangling inline `[n]` markers from ``gap_explanation``
+    whose ``n`` doesn't correspond to a real chunk index in the Context
+    block (2026-05-03 dogfood follow-up — same consistency posture as
+    URL filtering, applied to the prose surface).
     """
     out, dropped = _drop_unknown_citations(out, allowed_urls)
     for where, url in dropped:
@@ -396,6 +472,22 @@ def _validate_citations(out: _LLMOutput, allowed_urls: set[str]) -> _LLMOutput:
             "(source not in indexed set; degrading gracefully)",
             where,
             url,
+        )
+    # Inline [n] refs in gap_explanation must match real chunk indices.
+    # Dangling refs get stripped; readable prose survives.
+    cleaned_explanation, refs_dropped = _filter_inline_chunk_refs(
+        out.validation_report.gap_explanation, chunk_count
+    )
+    if refs_dropped:
+        logger.warning(
+            "gap_explanation.inline_ref.dropped count=%d "
+            "(out-of-range [n] markers stripped; chunk_count=%d)",
+            refs_dropped,
+            chunk_count,
+        )
+    if cleaned_explanation != out.validation_report.gap_explanation:
+        out.validation_report = out.validation_report.model_copy(
+            update={"gap_explanation": cleaned_explanation}
         )
     return out
 
@@ -515,7 +607,7 @@ async def generate(
             else:
                 out = _enforce_gap_classification(out)
 
-    out = _validate_citations(out, allowed_urls)
+    out = _validate_citations(out, allowed_urls, chunk_count=len(chunks))
 
     # S11-VERDICT-01 — stamp the single-token verdict derived from the
     # typed gap_classification. Basic tier has no advisor panel running,
