@@ -438,7 +438,9 @@ def check_mcp_registered() -> CheckResult:
             info=True,
         )
     if "gecko" in stdout.lower():
-        return CheckResult(name="mcp:registered", ok=True, detail="gecko registered with Claude Code")
+        return CheckResult(
+            name="mcp:registered", ok=True, detail="gecko registered with Claude Code"
+        )
     return CheckResult(
         name="mcp:registered",
         ok=True,

@@ -430,7 +430,7 @@ class GeckoAPIClient:
         budget_usd: float | None = None,
         estimated_cost_usd: float | None = None,
         poll_interval_s: float = 4.0,
-        poll_deadline_s: float = 300.0,
+        poll_deadline_s: float = 600.0,
         progress: Any | None = None,
         tier_preset: str | None = None,
     ) -> dict[str, Any]:
@@ -535,7 +535,7 @@ class GeckoAPIClient:
             events_url=events_url,
             events_token=events_token,
             progress=_on_progress,
-            timeout_s=300.0,
+            timeout_s=600.0,
             reconnect_once=True,
         )
 
@@ -627,7 +627,7 @@ class GeckoAPIClient:
         *,
         progress: Any | None = None,
         poll_interval_s: float = 4.0,
-        poll_deadline_s: float = 300.0,
+        poll_deadline_s: float = 600.0,
     ) -> dict[str, Any]:
         """Redeem a `retry_token` for a failed Pro session.
 
