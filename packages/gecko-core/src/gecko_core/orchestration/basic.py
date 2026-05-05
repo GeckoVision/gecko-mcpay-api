@@ -268,38 +268,50 @@ async def _call_llm(
             "provider": {"order": ["OpenAI"], "allow_fallbacks": False},
             "transforms": [],
         }
-    # Retry up to 2 times on empty content — OpenRouter-routed models
-    # occasionally return empty responses on cold-start or transient blips.
-    # Exception: finish_reason=length means the token budget was exhausted
-    # before any visible output (reasoning models consume budget on internal
-    # thinking tokens before emitting visible content). Retrying the same
-    # params would hit the same wall — raise immediately instead.
+    # S22-PROVIDER-PIN-01 + S22-DIAG-02 — Retry up to 2 times on empty content.
+    # On exhaustion, raise with FULL diagnostic detail (status, provider,
+    # finish_reason, tokens, gen_id, body sample) so the caller sees the actual
+    # cause without needing CloudWatch access. Production debugging via error
+    # messages > production debugging via log aggregation.
     _MAX_EMPTY_RETRIES = 2
+    last_diagnostics: dict[str, Any] = {}
     for _attempt in range(_MAX_EMPTY_RETRIES + 1):
         raw = await client.chat.completions.with_raw_response.create(**create_kwargs)
         resp = raw.parse()
         content = resp.choices[0].message.content
         finish_reason = resp.choices[0].finish_reason if resp.choices else None
-        # S22-PROVIDER-PIN-01 — log on every call so the next failure is
-        # diagnosable from a single line. provider header is set by OpenRouter;
-        # absent on direct OpenAI/ClawRouter calls.
-        provider_used = raw.headers.get("x-openrouter-provider") or "unknown"
+        provider_used = (
+            raw.headers.get("x-openrouter-provider")
+            or raw.headers.get("openrouter-provider")
+            or "unknown"
+        )
         prompt_tokens = resp.usage.prompt_tokens if resp.usage else None
         completion_tokens = resp.usage.completion_tokens if resp.usage else None
+        # Capture diagnostics on every attempt so we always have the latest
+        # state if we end up raising at the bottom of the loop.
+        last_diagnostics = {
+            "attempt": _attempt + 1,
+            "status": raw.status_code,
+            "model": resp.model or model,
+            "provider": provider_used,
+            "finish_reason": finish_reason,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "gen_id": resp.id,
+            "content_len": len(content) if content else 0,
+        }
         logger.info(
-            "llm.call model=%s provider=%s finish=%s prompt_tokens=%s completion_tokens=%s gen_id=%s",
+            "llm.call model=%s provider=%s finish=%s prompt_tokens=%s "
+            "completion_tokens=%s gen_id=%s content_len=%s",
             resp.model or model,
             provider_used,
             finish_reason,
             prompt_tokens,
             completion_tokens,
             resp.id,
+            last_diagnostics["content_len"],
         )
         if content:
-            # If finish_reason=length AND content is non-empty, the response is
-            # truncated mid-output. Retrying with the same max_tokens won't help.
-            # Raise immediately so the caller surfaces a clean error instead of
-            # tripping a downstream JSON parse failure.
             if finish_reason == "length":
                 logger.warning(
                     "llm.truncated finish_reason=length model=%s provider=%s "
@@ -309,8 +321,9 @@ async def _call_llm(
                     completion_tokens,
                 )
                 raise OrchestrationError(
-                    f"LLM output truncated (finish_reason=length, "
-                    f"completion_tokens={completion_tokens}, provider={provider_used})"
+                    f"LLM output truncated [finish_reason=length, "
+                    f"completion_tokens={completion_tokens}, provider={provider_used}, "
+                    f"gen_id={resp.id}]"
                 )
             break
         if finish_reason == "length":
@@ -320,12 +333,19 @@ async def _call_llm(
                 model,
             )
             raise OrchestrationError(
-                "LLM returned empty content (finish_reason=length — token budget exhausted)"
+                f"LLM returned empty content [finish_reason=length — token "
+                f"budget exhausted before visible output] {last_diagnostics}"
             )
         if _attempt < _MAX_EMPTY_RETRIES:
             await asyncio.sleep(2.0 * (_attempt + 1))
     else:
-        raise OrchestrationError("LLM returned empty content")
+        # Empty after all retries. Raise with full diagnostic context — the
+        # caller (and ultimately the error response) sees model, provider,
+        # finish_reason, tokens, and gen_id. No CloudWatch trip required.
+        raise OrchestrationError(
+            f"LLM returned empty content after {_MAX_EMPTY_RETRIES + 1} "
+            f"attempts {last_diagnostics}"
+        )
 
     cost_usd = 0.0
     header = raw.headers.get("x-clawrouter-cost-usd")
