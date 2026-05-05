@@ -1335,7 +1335,7 @@ requires-dist = [
 
 [[package]]
 name = "gecko-mcp"
-version = "0.2.4"
+version = "0.2.6"
 source = { editable = "packages/gecko-mcp" }
 dependencies = [
     { name = "click" },
