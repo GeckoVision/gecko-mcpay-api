@@ -92,7 +92,87 @@ async def test_voyage_live_green_when_embed_and_rerank_succeed(
     by_name = {r.name: r for r in rows}
     assert by_name["voyage:embed:live"].ok is True
     assert "dim=1024" in by_name["voyage:embed:live"].detail
+    # S20-RAG-04 — when EMBED_MODEL unset, default surfaces in the row.
+    assert "model=voyage-context-3" in by_name["voyage:embed:live"].detail
     assert by_name["voyage:rerank:live"].ok is True
+
+
+@pytest.mark.asyncio
+async def test_voyage_live_uses_configured_embed_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """S20-RAG-04 — doctor pings whatever EMBED_MODEL is configured.
+
+    Captures the kwargs the stub client receives so we can assert the
+    `model=` arg matches the env, not a hardcoded default.
+    """
+    captured: dict[str, Any] = {}
+
+    class _CapturingClient:
+        def __init__(self, *, api_key: str) -> None:
+            self.api_key = api_key
+
+        async def embed(self, **kwargs: Any) -> _StubEmbedResp:
+            captured.update(kwargs)
+            return _StubEmbedResp(1024, 1)
+
+        async def rerank(self, **_: Any) -> _StubRerankResp:
+            return _StubRerankResp(2)
+
+    class _FakeModule:
+        def AsyncClient(self, *, api_key: str) -> _CapturingClient:
+            return _CapturingClient(api_key=api_key)
+
+    monkeypatch.setitem(sys.modules, "voyageai", _FakeModule())
+    from gecko_mcp.doctor import check_voyage_live
+
+    rows = await check_voyage_live(
+        environ={
+            "VOYAGE_API_KEY": "pa-test",
+            "EMBED_PROVIDER": "voyage",
+            "EMBED_MODEL": "voyage-3",  # explicit legacy override
+            "GECKO_RERANKER": "none",
+        }
+    )
+    assert captured["model"] == "voyage-3"
+    by_name = {r.name: r for r in rows}
+    assert by_name["voyage:embed:live"].ok is True
+    assert "model=voyage-3" in by_name["voyage:embed:live"].detail
+
+
+@pytest.mark.asyncio
+async def test_voyage_live_red_on_model_not_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """S20-RAG-04 — 404 / 'model not found' surfaces a dedicated red row.
+
+    Operators get a specific signal to check their Voyage account/plan
+    rather than chasing generic network errors.
+    """
+
+    class _NotFound(Exception):
+        status_code = 404
+
+    _install_module(
+        monkeypatch,
+        embed_exc=_NotFound("model not found: voyage-context-3"),
+    )
+    from gecko_mcp.doctor import check_voyage_live
+
+    rows = await check_voyage_live(
+        environ={
+            "VOYAGE_API_KEY": "pa-test",
+            "EMBED_PROVIDER": "voyage",
+            "EMBED_MODEL": "voyage-context-3",
+            "GECKO_RERANKER": "none",
+        }
+    )
+    by_name = {r.name: r for r in rows}
+    assert by_name["voyage:embed:live"].ok is False
+    detail = by_name["voyage:embed:live"].detail
+    assert "model=voyage-context-3" in detail
+    assert "model not available" in detail
+    assert "check Voyage account" in detail
 
 
 @pytest.mark.asyncio

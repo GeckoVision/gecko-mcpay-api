@@ -255,6 +255,22 @@ async def insert_chunks_mongo(
         for idx, text, embedding in chunks
     ]
 
+    # S20-A7 — pioneer-cell signal. Mark the batch BEFORE the insert so
+    # the cell-density count reflects pre-call state (the chunks we're
+    # about to insert haven't landed yet). The decision is per-batch, not
+    # per-chunk: every doc here gets the same pioneer flag.
+    #
+    # Why structured-log over return-type churn: the existing `int` return
+    # contract is depended on by SessionStore and the ingestion pipeline.
+    # Surfacing pioneer_call via a `mongo.insert_chunks.pioneer` INFO log
+    # keeps the call signature stable; the future B3 dispatcher reads the
+    # signal from telemetry, not the return value. If we ever need it
+    # in-band, the cleanest follow-up is the optional `out` kwarg path.
+    from gecko_core.knowledge.pioneer import mark_pioneer_chunks
+
+    docs = await mark_pioneer_chunks(docs, vertical, category, collection=coll)
+    pioneer_call = bool(docs and docs[0].get("metadata", {}).get("pioneer"))
+
     try:
         result = await coll.insert_many(docs, ordered=False)
         inserted = len(result.inserted_ids)
@@ -294,6 +310,20 @@ async def insert_chunks_mongo(
             "category": category,
             "vertical": vertical,
             "source": source,
+        },
+    )
+    # S20-A7 — emit the pioneer_call signal as a structured INFO row so
+    # the upstream dispatcher (B3) can consume it via log telemetry
+    # without an API surface change here.
+    logger.info(
+        "mongo.insert_chunks.pioneer",
+        extra={
+            "session_id": str(session_id),
+            "source_id": str(source_id),
+            "vertical": vertical,
+            "category": category,
+            "pioneer_call": pioneer_call,
+            "n_marked": len(docs) if pioneer_call else 0,
         },
     )
     return inserted

@@ -21,6 +21,10 @@ import tiktoken
 from openai import AsyncOpenAI
 from pydantic import BaseModel, ValidationError
 
+from gecko_core.judges.confidence_prompt import (
+    CONFIDENCE_PROMPT_INSTRUCTION,
+    aggregate_confidence,
+)
 from gecko_core.judges.synth_citations import extract_citation_markers
 from gecko_core.llm_helpers import build_response_format
 from gecko_core.models import (
@@ -91,6 +95,11 @@ class _LLMOutput(BaseModel):
     # downstream in extract_citation_markers, where we can drop one bad
     # entry without failing the whole synth output.
     citations: list[Any] = []
+    # S20-C-CONFIDENCE-PROMPT-01 — synth-step confidence self-rating.
+    # Defaults preserve back-compat: legacy fixtures / models that don't
+    # emit confidence parse cleanly and document-level aggregate stays 0.0.
+    confidence: float = 0.0
+    rationale: str = ""
 
 
 _SYSTEM_PROMPT = """You are a startup research analyst. You will receive:
@@ -169,6 +178,13 @@ Rules:
 - Ground every concrete claim in the context. If the context is thin, say so
   in the relevant field rather than fabricating market data.
 - Output JSON only. No prose around the JSON. No markdown fences."""
+
+# S20-C-CONFIDENCE-PROMPT-01 — append the confidence self-rating
+# instruction. Kept as an out-of-band concat (not interpolated into the
+# string literal above) so the rubric stays readable and the
+# CONFIDENCE_PROMPT_INSTRUCTION constant can be smoke-tested independently
+# in tests/judges/test_confidence.py.
+_SYSTEM_PROMPT = _SYSTEM_PROMPT + "\n\n" + CONFIDENCE_PROMPT_INSTRUCTION
 
 
 def _format_context(chunks: list[RagChunk]) -> str:
@@ -867,6 +883,21 @@ async def generate(
         prose_surfaces=prose_surfaces,
     )
 
+    # S20-C-CONFIDENCE-PROMPT-01 — aggregate per-section confidences.
+    # Basic tier emits a single _LLMOutput per call (one section), so
+    # ``per_section_confidences`` is a one-element list today; the API is
+    # shaped for multi-section synths (pro tier, future v6 surfaces) where
+    # the document-level aggregate is the min across sections.
+    section_outputs: list[_LLMOutput] = [out]
+    per_section_confidences: list[float] = [s.confidence for s in section_outputs]
+    document_confidence = aggregate_confidence(per_section_confidences)
+    logger.info(
+        "synth.confidence document_confidence=%.3f per_section=%s rationale_len=%d",
+        document_confidence,
+        {"basic": out.confidence},
+        len(out.rationale),
+    )
+
     return ResearchResult(
         session_id=str(session_id),
         tier="basic",
@@ -880,6 +911,7 @@ async def generate(
         provider_mix_flag=provider_mix_flag,
         cited_doc_ids=cited_doc_ids,
         citation_markers=markers,
+        confidence=document_confidence,
     )
 
 

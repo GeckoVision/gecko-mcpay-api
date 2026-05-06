@@ -43,7 +43,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import (
     get_remote_address,  # noqa: F401  (legacy import retained for downstream imports)
 )
-from starlette.responses import JSONResponse, StreamingResponse
+from starlette.responses import JSONResponse, Response, StreamingResponse
 from x402 import x402ResourceServer
 from x402.http.facilitator_client_base import FacilitatorClient
 from x402.http.middleware.fastapi import PaymentMiddlewareASGI
@@ -975,6 +975,16 @@ app.include_router(internal_router)
 from gecko_api.routes.verdict import router as _verdict_router  # noqa: E402
 
 app.include_router(_verdict_router)
+
+
+# S20-B3 — single x402-gated dispatcher for the 12-skill manifest. Mounted
+# AFTER middleware so the route's own dispatcher (X402Dispatcher) is the
+# 402 gate, not the x402 PaymentMiddlewareASGI — the manifest skills are
+# discovered via /.well-known/agent-skills/index.json and follow the new
+# pay.sh-style accepts shape rather than the legacy /research route table.
+from gecko_api.skills_router import router as _skills_router  # noqa: E402
+
+app.include_router(_skills_router)
 
 
 # ---------------------------------------------------------------------------
@@ -2831,6 +2841,57 @@ async def well_known_x402() -> dict[str, Any]:
         "mode": _settings.x402_mode,
         "routes": catalog,
     }
+
+
+@app.get("/.well-known/agent-skills/index.json")
+@app.head("/.well-known/agent-skills/index.json")
+async def agent_skills_manifest(request: Request) -> Response:
+    """S20-B2 — agent-skills manifest (pay.sh v1.0 compatible).
+
+    Behind feature flag ``GECKO_MANIFEST_PUBLIC`` (default ``false``).
+    When the flag is unset/false, returns 503 + ``X-Gecko-Manifest-Status: draft``
+    so pay.sh's crawler can't pick up DRAFT copy. Flip the env to ``true``
+    once business-manager + product-designer sign off on the 12 description
+    strings (per memory ``project_output_layer_positioning``).
+    """
+    import hashlib
+
+    from fastapi.responses import JSONResponse
+    from gecko_core.skills.manifest import build_manifest
+
+    flag = os.environ.get("GECKO_MANIFEST_PUBLIC", "false").strip().lower()
+    if flag != "true":
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "manifest endpoint is in DRAFT mode awaiting copy review"},
+            headers={"X-Gecko-Manifest-Status": "draft"},
+        )
+
+    body_dict = build_manifest()
+    body_bytes = json.dumps(body_dict, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    if len(body_bytes) >= 64 * 1024:
+        # Defensive cap. Today's manifest is ~6 KB; this should never fire.
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "manifest exceeds 64 KB cap"},
+        )
+    etag = f'"{hashlib.sha256(body_bytes).hexdigest()[:16]}"'
+
+    if_none_match = request.headers.get("if-none-match")
+    if if_none_match and if_none_match == etag:
+        return Response(
+            status_code=304,
+            headers={"ETag": etag, "Cache-Control": "public, max-age=300"},
+        )
+
+    return Response(
+        content=body_bytes,
+        media_type="application/json",
+        headers={
+            "Cache-Control": "public, max-age=300",
+            "ETag": etag,
+        },
+    )
 
 
 def run() -> None:

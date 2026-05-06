@@ -97,6 +97,35 @@ class _FakeChunksCollection:
         ]
         self.deleted = before - len(self.docs)
 
+    async def count_documents(self, query: dict[str, Any]) -> int:
+        def _matches(d: dict[str, Any]) -> bool:
+            for k, v in query.items():
+                # naive dotted-path support for "metadata.deprecated"
+                if "." in k:
+                    parts = k.split(".")
+                    cur: Any = d
+                    for p in parts:
+                        if isinstance(cur, dict):
+                            cur = cur.get(p)
+                        else:
+                            cur = None
+                            break
+                    actual = cur
+                else:
+                    actual = d.get(k)
+                if isinstance(v, dict) and "$ne" in v:
+                    if actual == v["$ne"]:
+                        return False
+                elif isinstance(v, dict) and "$in" in v:
+                    if actual not in v["$in"]:
+                        return False
+                else:
+                    if actual != v:
+                        return False
+            return True
+
+        return sum(1 for d in self.docs if _matches(d))
+
     async def bulk_write(self, ops: list[Any], ordered: bool = True) -> None:
         for op in ops:
             doc = op._doc.get("$setOnInsert", {})
@@ -243,7 +272,10 @@ class TestInsertChunksCategorizedFields:
         meta = d["metadata"]
         assert meta["confidence"] == pytest.approx(0.87)
         assert meta["usage_count"] == 0
-        assert meta["pioneer"] is False
+        # S20-A7 — empty cell at insert time → batch is pioneer.
+        # The pioneer-false default seeded at metadata-build is flipped
+        # by mark_pioneer_chunks before bulk insert.
+        assert meta["pioneer"] is True
         assert "timestamp" in meta
 
     @pytest.mark.asyncio
@@ -315,6 +347,58 @@ class TestInsertChunksCategorizedFields:
                 source="web",
             )
         assert "invalid category" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# S20-A7 — pioneer-cell signal wired through insert_chunks_mongo
+# ---------------------------------------------------------------------------
+
+
+class TestInsertChunksPioneerSignal:
+    @pytest.mark.asyncio
+    async def test_sparse_cell_marks_chunks_pioneer_true(
+        self, fake_chunks_coll: _FakeChunksCollection
+    ) -> None:
+        # 0 prior chunks in the cell → batch is pioneer.
+        n = await mongo_chunks.insert_chunks_mongo(
+            uuid4(),
+            uuid4(),
+            [(0, "a", _embed(0.1)), (1, "b", _embed(0.2))],
+            category="business_financial",
+            vertical="neobank",
+            source="tavily",
+        )
+        assert n == 2
+        for d in fake_chunks_coll.docs:
+            assert d["metadata"]["pioneer"] is True
+
+    @pytest.mark.asyncio
+    async def test_dense_cell_leaves_chunks_pioneer_false(
+        self, fake_chunks_coll: _FakeChunksCollection
+    ) -> None:
+        # Pre-populate 10 prior chunks in the (neobank, business_financial)
+        # cell so the next insert sees a dense cell.
+        for i in range(10):
+            fake_chunks_coll.docs.append(
+                {
+                    "chunk_index": 1000 + i,
+                    "vertical": "neobank",
+                    "category": "business_financial",
+                    "metadata": {"pioneer": False},
+                }
+            )
+        n = await mongo_chunks.insert_chunks_mongo(
+            uuid4(),
+            uuid4(),
+            [(0, "a", _embed(0.1))],
+            category="business_financial",
+            vertical="neobank",
+            source="tavily",
+        )
+        assert n == 1
+        # The newly inserted doc is the LAST one in fake_chunks_coll.docs.
+        new_doc = fake_chunks_coll.docs[-1]
+        assert new_doc["metadata"]["pioneer"] is False
 
 
 def test_compound_index_constant_exported() -> None:

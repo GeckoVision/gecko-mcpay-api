@@ -851,6 +851,15 @@ class ResearchResult(BaseModel):
     # default; legacy renderers continue to read ``validation_report.citations``
     # for footnote rendering and are unaffected.
     citation_markers: list[CitationMarker] = Field(default_factory=list)
+    # S20-C-CONFIDENCE-PROMPT-01 — synth-step confidence self-rating, aggregated
+    # across per-section emits as the document-level minimum (a verdict is
+    # only as confident as its weakest section). Defaults to 0.0 so legacy
+    # rows / hand-built results round-trip cleanly. Excluded from
+    # ``verdict_hash._verdict_payload`` — confidence is a self-reported
+    # calibration signal that drifts run-to-run; structural verdict shape
+    # owns the digest. Powers the C5 confidence-gated enrichment loop
+    # (separate ticket).
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 class AskResult(BaseModel):

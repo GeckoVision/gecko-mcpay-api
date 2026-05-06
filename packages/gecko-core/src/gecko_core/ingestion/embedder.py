@@ -1,7 +1,10 @@
 """Embeddings dispatch: OpenAI and Voyage AI paths.
 
-Default provider is Voyage AI `voyage-3` (1024-dim vectors), controlled by
-`EMBED_PROVIDER=voyage` / `EMBED_MODEL=voyage-3` in settings.  The legacy
+Default provider is Voyage AI `voyage-context-3` (1024-dim vectors) — the
+RAG-optimal, context-aware embedding model that conditions each chunk vector
+on its full source document, controlled by `EMBED_PROVIDER=voyage` /
+`EMBED_MODEL=voyage-context-3` in settings.  Legacy `voyage-3` remains a
+valid override (same 1024 dim, no Atlas index changes needed).  The
 OpenAI `text-embedding-3-small` path (1536-dim) is selected when
 `EMBED_PROVIDER=openai` or when an explicit `client=` is passed.
 
@@ -84,6 +87,7 @@ _EMBED_RATES_USD_PER_1M: dict[str, float] = {
     "text-embedding-3-large": 0.13,
     "text-embedding-ada-002": 0.10,
     "voyage-3": 0.06,  # Voyage published list price per 1M tokens
+    "voyage-context-3": 0.06,  # context-aware (RAG-optimal); same 1024 dim
     "voyage-3-large": 0.12,
 }
 
@@ -228,7 +232,7 @@ async def _embed_voyage(
     texts: list[str],
     *,
     api_key: str,
-    model: str = "voyage-3",
+    model: str = "voyage-context-3",
     input_type: str | None = None,
     batch_size: int = EMBED_BATCH_SIZE,
 ) -> tuple[list[list[float]], int]:

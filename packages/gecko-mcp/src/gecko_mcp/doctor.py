@@ -753,6 +753,19 @@ def check_chunk_store(environ: dict[str, str] | None = None) -> list[CheckResult
                         detail=detail,
                     )
                 )
+
+        # S20-A7 — surface the pioneer-cell threshold so operators can see
+        # the configured behavior. INFO row, never fails the check.
+        from gecko_core.knowledge.pioneer import _effective_threshold
+
+        results.append(
+            CheckResult(
+                name="chunk_store:mongo:pioneer_threshold",
+                ok=True,
+                detail=str(_effective_threshold()),
+                info=True,
+            )
+        )
     except Exception as exc:
         results.append(
             CheckResult(
@@ -835,10 +848,13 @@ async def check_voyage_live(
     failures surface as red rows with redacted error strings (never echo
     the API key, even via the SDK exception's ``__str__``).
 
-    The embed ping uses ``voyage-3`` with one short string and asserts the
-    response shape is 1×1024 (matching ``MONGO_VECTOR_DIM_EXPECTED``); a
-    dim mismatch here means the Voyage account was downgraded to a
-    different model and would corrupt Atlas inserts.
+    The embed ping uses the configured ``EMBED_MODEL`` (default
+    ``voyage-context-3``) with one short string and asserts the response
+    shape is 1×1024 (matching ``MONGO_VECTOR_DIM_EXPECTED``); a dim
+    mismatch here means the Voyage account was downgraded to a different
+    model and would corrupt Atlas inserts. A 404 / "model not found"
+    surfaces as a dedicated red row so operators can tell account-level
+    model unavailability apart from network errors.
 
     Cost guard: ≤ ~10 embed tokens + ~5 rerank tokens per run. Negligible.
     """
@@ -846,6 +862,7 @@ async def check_voyage_live(
     results: list[CheckResult] = []
 
     embed_provider = (env.get("EMBED_PROVIDER") or "voyage").strip().lower()
+    embed_model = (env.get("EMBED_MODEL") or "voyage-context-3").strip()
     reranker = (env.get("GECKO_RERANKER") or "none").strip().lower()
     voyage_key = env.get("VOYAGE_API_KEY", "").strip()
 
@@ -871,7 +888,7 @@ async def check_voyage_live(
             resp: Any = await asyncio.wait_for(
                 client.embed(
                     texts=["doctor ping"],
-                    model="voyage-3",
+                    model=embed_model,
                     input_type="query",
                 ),
                 timeout=VOYAGE_LIVE_TIMEOUT_S,
@@ -884,7 +901,7 @@ async def check_voyage_live(
                     CheckResult(
                         name="voyage:embed:live",
                         ok=False,
-                        detail=f"expected 1 vector, got {len(embeddings)}",
+                        detail=f"expected 1 vector, got {len(embeddings)} model={embed_model}",
                     )
                 )
             elif len(embeddings[0]) != MONGO_VECTOR_DIM_EXPECTED:
@@ -892,7 +909,10 @@ async def check_voyage_live(
                     CheckResult(
                         name="voyage:embed:live",
                         ok=False,
-                        detail=(f"dim={len(embeddings[0])} expected={MONGO_VECTOR_DIM_EXPECTED}"),
+                        detail=(
+                            f"dim={len(embeddings[0])} expected={MONGO_VECTOR_DIM_EXPECTED} "
+                            f"model={embed_model}"
+                        ),
                     )
                 )
             else:
@@ -902,6 +922,7 @@ async def check_voyage_live(
                         ok=True,
                         detail=(
                             f"dim={MONGO_VECTOR_DIM_EXPECTED} "
+                            f"model={embed_model} "
                             f"tokens={getattr(resp, 'total_tokens', '?')}"
                         ),
                     )
@@ -911,17 +932,38 @@ async def check_voyage_live(
                 CheckResult(
                     name="voyage:embed:live",
                     ok=False,
-                    detail=f"timeout after {VOYAGE_LIVE_TIMEOUT_S}s",
+                    detail=f"timeout after {VOYAGE_LIVE_TIMEOUT_S}s model={embed_model}",
                 )
             )
         except Exception as exc:
-            results.append(
-                CheckResult(
-                    name="voyage:embed:live",
-                    ok=False,
-                    detail=_redact(str(exc)),
-                )
+            # Specific row when Voyage signals the model is not available
+            # to this account (404 / "model not found"). Distinguish from
+            # generic network / auth errors so operators know to check
+            # their Voyage plan instead of chasing connectivity.
+            exc_str = str(exc)
+            status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+            lowered = exc_str.lower()
+            is_model_unavailable = status == 404 or (
+                "model" in lowered and ("not found" in lowered or "not available" in lowered)
             )
+            if is_model_unavailable:
+                results.append(
+                    CheckResult(
+                        name="voyage:embed:live",
+                        ok=False,
+                        detail=(
+                            f"FAIL model={embed_model} (model not available — check Voyage account)"
+                        ),
+                    )
+                )
+            else:
+                results.append(
+                    CheckResult(
+                        name="voyage:embed:live",
+                        ok=False,
+                        detail=f"{_redact(exc_str)} model={embed_model}",
+                    )
+                )
 
     # --- rerank live ping ----------------------------------------------------
     if reranker == "voyage":
@@ -1025,7 +1067,7 @@ def check_embed_provider(environ: dict[str, str] | None = None) -> list[CheckRes
     results: list[CheckResult] = []
     provider = (env.get("EMBED_PROVIDER") or "voyage").strip().lower()
     model = env.get("EMBED_MODEL") or (
-        "voyage-3" if provider == "voyage" else "text-embedding-3-small"
+        "voyage-context-3" if provider == "voyage" else "text-embedding-3-small"
     )
     results.append(
         CheckResult(name="embed:provider", ok=True, detail=f"{provider} model={model}", info=True)
