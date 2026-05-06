@@ -24,6 +24,7 @@ from pydantic import BaseModel, ValidationError
 from gecko_core.llm_helpers import build_response_format
 from gecko_core.models import (
     MarketLandscape,
+    NextStep,
     NextStepsWithFalsifiers,
     PerVoiceReadout,
     SurvivingDissent,
@@ -159,6 +160,73 @@ async def _run_section(
         return None
 
 
+def _validate_next_steps_partial(raw: dict[str, Any]) -> NextStepsWithFalsifiers | None:
+    """FIX-03 — validate ``next_steps_with_falsifiers`` step-by-step.
+
+    The strict pydantic ``NextStepsWithFalsifiers.model_validate(raw)`` rejects
+    the entire payload when even one step has a malformed ``falsifier`` (e.g.
+    missing ``by_when`` or ``surfaced_by_voice`` not in the canonical voice
+    enum). That's the regression observed in dogfood
+    ``3d26b165-90ba-4e17-8e50-db483abf6932`` — the prior run on
+    ``6afd55d7`` returned 3 falsifiers and the current run returned ``None``.
+
+    Policy: validate each step independently; drop only the malformed ones;
+    propagate the partial list. Log ``pro.falsifiers.dropped`` WARN with the
+    drop count + the first error reason so the AI/ML lane can chase prompt
+    drift. Return ``None`` only when the input shape itself is wrong (no
+    ``steps`` key) or every step failed validation AND the payload was
+    non-empty (so an empty ``steps: []`` from the model still returns an
+    empty ``NextStepsWithFalsifiers`` — KILL verdicts legitimately ship
+    zero steps per the prompt).
+    """
+    steps_raw = raw.get("steps")
+    if not isinstance(steps_raw, list):
+        logger.warning(
+            "pro.falsifiers.dropped",
+            extra={
+                "event": "pro.falsifiers.dropped",
+                "reason": "missing_or_invalid_steps_field",
+                "dropped": 0,
+            },
+        )
+        return None
+
+    valid: list[NextStep] = []
+    first_error: str | None = None
+    dropped = 0
+    for entry in steps_raw:
+        if not isinstance(entry, dict):
+            dropped += 1
+            if first_error is None:
+                first_error = "step_not_object"
+            continue
+        try:
+            valid.append(NextStep.model_validate(entry))
+        except ValidationError as exc:
+            dropped += 1
+            if first_error is None:
+                first_error = str(exc).splitlines()[0][:200]
+
+    if dropped:
+        logger.warning(
+            "pro.falsifiers.dropped",
+            extra={
+                "event": "pro.falsifiers.dropped",
+                "reason": first_error or "validation_error",
+                "dropped": dropped,
+                "kept": len(valid),
+            },
+        )
+
+    # Empty result with no input drops is the legitimate KILL-verdict path
+    # (prompt allows 0 steps); empty result after dropping every input is
+    # a hard failure — return None so the renderer skips the section
+    # entirely rather than showing "0 steps" misleadingly.
+    if not valid and dropped:
+        return None
+    return NextStepsWithFalsifiers(steps=valid)
+
+
 def _coherence_drop_steps(
     per_voice: PerVoiceReadout | None,
     next_steps: NextStepsWithFalsifiers | None,
@@ -257,13 +325,26 @@ async def run_post_processors(
             model_cls=SurvivingDissent,
             section="surviving_dissent",
         )
-        steps_task = _run_section(
-            c,
-            system=prompts["next_steps_with_falsifiers"],
-            user=user,
-            model_cls=NextStepsWithFalsifiers,
-            section="next_steps_with_falsifiers",
-        )
+
+        async def _steps_task() -> NextStepsWithFalsifiers | None:
+            # FIX-03 — partial-tolerant validation. The strict
+            # ``model_cls=NextStepsWithFalsifiers`` path drops the entire
+            # payload when one step is malformed; we want the surviving
+            # steps to propagate so a single bad falsifier doesn't blank
+            # the whole section.
+            try:
+                raw = await _call_json(
+                    c,
+                    system=prompts["next_steps_with_falsifiers"],
+                    user=user,
+                    model_cls=NextStepsWithFalsifiers,
+                )
+            except Exception as exc:
+                logger.warning("post-processor next_steps_with_falsifiers call failed: %s", exc)
+                return None
+            return _validate_next_steps_partial(raw)
+
+        steps_task = _steps_task()
 
         async def _classification_task() -> tuple[str | None, str | None]:
             # S21-CALIBRATION-FOUNDER-POSTURE-01 — JSON-shaped fallback when
@@ -301,7 +382,8 @@ async def run_post_processors(
     summary = results[1]
     market_landscape = cast("MarketLandscape | None", results[2])
     surviving_dissent = cast("SurvivingDissent | None", results[3])
-    next_steps = cast("NextStepsWithFalsifiers | None", results[4])
+    # results[4] is already typed NextStepsWithFalsifiers | None (FIX-03 _steps_task).
+    next_steps = results[4]
     classification_pair = results[5]
     assert isinstance(classification_pair, tuple)  # narrow for mypy
     idea_classification_pp, founder_posture_pp = classification_pair

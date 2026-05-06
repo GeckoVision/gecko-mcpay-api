@@ -609,6 +609,14 @@ async def _run_pro_debate(
             summary = turn.content
             break
 
+    # FIX-02 — the judge model occasionally emits two complete scoring blocks
+    # in a single turn (separated by ``---`` or by a repeated ``Final verdict:``
+    # marker). Keep only the LAST block; the helper logs a WARN with count
+    # when dedup fires so we can track recurrence.
+    from gecko_core.orchestration.pro.judge_dedup import dedup_judge_summary
+
+    summary = dedup_judge_summary(summary)
+
     _ = Decimal  # silence unused-import; Decimal is used inside _on_event
     # S17-VERDICT-01 — the verdict is ALWAYS a function of the final
     # gap_classification + citations, never an independent LLM emission.

@@ -22,6 +22,8 @@ debugging stays deterministic.
 from __future__ import annotations
 
 import asyncio
+import logging
+import os
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -37,6 +39,8 @@ from gecko_core.orchestration.pro.transcript import (
     transcript_from_events,
 )
 from gecko_core.sessions.store import GeckoPrecedent
+
+_log = logging.getLogger(__name__)
 
 __all__ = [
     "AgentEvent",
@@ -63,9 +67,35 @@ _SERIAL_STAGE: tuple[str, ...] = ("architect", "scoper", "judge")
 # Per-voice wall-clock cap. A single hung voice cannot block the rest of
 # the debate; on timeout we emit a placeholder turn (voice failed:
 # timeout after Ns) so the transcript stays well-formed.
-# 60s: Kimi K2.6 / DeepSeek V3.2 via OpenRouter have 15-30s TTFT cold;
-# 15s was too tight for balanced/budget tiers.
-_VOICE_TIMEOUT_SECONDS: float = 60.0
+#
+# S20-FIX-01: bumped default from 60s -> 120s. DeepSeek V4 Pro on the
+# architect prompt legitimately exceeds 60s (>2k output tokens) on
+# pro/balanced; 60s was clipping the architect voice and dropping 1/5 of
+# the panel. Override via GECKO_PRO_VOICE_TIMEOUT_S env var.
+_PER_VOICE_TIMEOUT_DEFAULT_S: float = 120.0
+
+
+def _resolve_voice_timeout() -> float:
+    raw = os.environ.get("GECKO_PRO_VOICE_TIMEOUT_S")
+    if raw is None or raw == "":
+        return _PER_VOICE_TIMEOUT_DEFAULT_S
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        _log.warning(
+            "pro.voice_timeout invalid GECKO_PRO_VOICE_TIMEOUT_S=%r — "
+            "falling back to default %.0fs",
+            raw,
+            _PER_VOICE_TIMEOUT_DEFAULT_S,
+        )
+        return _PER_VOICE_TIMEOUT_DEFAULT_S
+
+
+_PER_VOICE_TIMEOUT_S: float = _resolve_voice_timeout()
+_log.info("pro.voice_timeout %.1fs", _PER_VOICE_TIMEOUT_S)
+
+# Back-compat alias — older code/tests may import _VOICE_TIMEOUT_SECONDS.
+_VOICE_TIMEOUT_SECONDS: float = _PER_VOICE_TIMEOUT_S
 
 _RAG_CONTEXT_CHAR_CAP = 8000
 
@@ -314,7 +344,7 @@ async def generate(
         try:
             reply = await asyncio.wait_for(
                 agent.a_generate_reply(messages=_messages),
-                timeout=_VOICE_TIMEOUT_SECONDS,
+                timeout=_PER_VOICE_TIMEOUT_S,
             )
         except TimeoutError:
             # S12-LATENCY-01: timeout surfaces as a placeholder turn (per
@@ -323,10 +353,10 @@ async def generate(
             return _VoiceOutcome(
                 agent=agent_name,
                 kind="timeout",
-                content=f"(voice failed: timeout after {int(_VOICE_TIMEOUT_SECONDS)}s)",
+                content=f"(voice failed: timeout after {int(_PER_VOICE_TIMEOUT_S)}s)",
                 tokens_in=0,
                 tokens_out=0,
-                error_text=f"TimeoutError: voice exceeded {int(_VOICE_TIMEOUT_SECONDS)}s",
+                error_text=f"TimeoutError: voice exceeded {int(_PER_VOICE_TIMEOUT_S)}s",
             )
         except Exception as exc:
             return _VoiceOutcome(

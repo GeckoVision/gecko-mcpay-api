@@ -520,6 +520,83 @@ def check_x402_mode(environ: dict[str, str] | None = None) -> CheckResult:
     return CheckResult(name="env:X402_MODE", ok=True, detail=detail)
 
 
+def check_credit_signing_key(environ: dict[str, str] | None = None) -> CheckResult:
+    """S20-B4 — sanity-check ``GECKO_CREDIT_SIGNING_KEY``.
+
+    * If the credit-pack mint surface is implicitly active
+      (``GECKO_SKILLS_DISPATCH_ENABLED`` true) and the signing key is
+      UNSET → FAIL: nobody can mint a credit pack.
+    * If the key IS set but base64-decodes to anything other than 32
+      bytes → FAIL: the env var is corrupt.
+    * Otherwise INFO with a redacted prefix.
+
+    The key is never echoed; the detail row only shows the byte length
+    and a one-byte fingerprint sourced from the *public* key (safe to
+    surface — it's the verifier identity).
+    """
+    env = environ if environ is not None else dict(os.environ)
+    skills_on = env.get("GECKO_SKILLS_DISPATCH_ENABLED", "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    raw = env.get("GECKO_CREDIT_SIGNING_KEY", "").strip()
+
+    if not raw:
+        if skills_on:
+            return CheckResult(
+                name="payments:credit_signing_key",
+                ok=False,
+                detail=(
+                    "GECKO_CREDIT_SIGNING_KEY unset but "
+                    "GECKO_SKILLS_DISPATCH_ENABLED=true — credit-pack mint "
+                    "will fail"
+                ),
+            )
+        return CheckResult(
+            name="payments:credit_signing_key",
+            ok=True,
+            detail="unset (skills dispatch off; not required)",
+            info=True,
+        )
+
+    # Validate base64 + length without instantiating crypto types — keep
+    # doctor light and avoid pulling cryptography on thin clients that
+    # don't have it. A clean import path lives behind the gecko_core
+    # surface; we only care about shape here.
+    import base64
+
+    decoded: bytes | None = None
+    for decoder in (base64.urlsafe_b64decode, base64.b64decode):
+        try:
+            pad = "=" * (-len(raw) % 4)
+            decoded = decoder(raw + pad)  # type: ignore[operator]
+            break
+        except Exception:
+            continue
+    if decoded is None:
+        return CheckResult(
+            name="payments:credit_signing_key",
+            ok=False,
+            detail="GECKO_CREDIT_SIGNING_KEY is not valid base64",
+        )
+    if len(decoded) != 32:
+        return CheckResult(
+            name="payments:credit_signing_key",
+            ok=False,
+            detail=(
+                f"GECKO_CREDIT_SIGNING_KEY decoded to {len(decoded)} bytes; "
+                "expected 32 (Ed25519 raw seed)"
+            ),
+        )
+    return CheckResult(
+        name="payments:credit_signing_key",
+        ok=True,
+        detail="set (32 bytes, Ed25519)",
+    )
+
+
 def check_supabase(client: _SupabaseLike) -> list[CheckResult]:
     """Probe Supabase: connectivity, required extensions, tables, functions.
 
@@ -1195,6 +1272,7 @@ def run_doctor(
     if not thin:
         results.extend(check_server_side_env(environ))
     results.append(check_x402_mode(environ))
+    results.append(check_credit_signing_key(environ))
     results.append(check_gecko_api(environ))
     wallet_results = check_wallet()
     results.extend(wallet_results)

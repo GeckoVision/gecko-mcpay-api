@@ -306,6 +306,70 @@ class X402Dispatcher:
         _idempotency_put(skill_name, x_payment, result)
         return result
 
+    async def authorize_with_credit_token(
+        self,
+        skill_name: str,
+        bearer_token: str,
+    ) -> AuthResult:
+        """Resolve a 402 against a credit-pack JWT instead of an X-PAYMENT.
+
+        Verifies the JWT's signature + expiry, decrements the Mongo
+        balance by :func:`skill_token_cost`, and returns an
+        :class:`AuthResult` whose ``tx_signature`` reuses the JWT's
+        ``jti`` (the original settlement tx signature) so downstream
+        telemetry keeps a single ID across pay paths.
+
+        ``error_detail`` is populated verbatim from the underlying
+        verify / decrement failure (no catch-and-rephrase, per S12.5).
+        """
+        from gecko_core.db.mongo_credit_tokens import (
+            CreditTokenRevoked,
+            InsufficientCredit,
+            decrement_credit_pack,
+        )
+        from gecko_core.payments.credit_token import (
+            CreditTokenError,
+            CreditTokenExpired,
+            CreditTokenInvalid,
+            verify_credit_token,
+        )
+
+        skill = get_skill(skill_name)
+        if skill.dispatch_kind == "credit":
+            return AuthResult(
+                ok=False,
+                error_detail=(
+                    "credit-pack skill cannot be paid with a credit-pack JWT "
+                    "— send X-PAYMENT instead"
+                ),
+            )
+
+        try:
+            claims = verify_credit_token(bearer_token)
+        except CreditTokenExpired as exc:
+            return AuthResult(ok=False, error_detail=f"credit token expired: {exc}")
+        except CreditTokenInvalid as exc:
+            return AuthResult(ok=False, error_detail=f"credit token invalid signature: {exc}")
+        except CreditTokenError as exc:
+            return AuthResult(ok=False, error_detail=f"credit token error: {exc}")
+
+        try:
+            cost = skill_token_cost(skill)
+        except ValueError as exc:
+            return AuthResult(ok=False, error_detail=str(exc))
+
+        try:
+            await decrement_credit_pack(claims.jti, tokens_used=cost)
+        except InsufficientCredit as exc:
+            return AuthResult(ok=False, error_detail=f"credit pack exhausted: {exc}")
+        except CreditTokenRevoked as exc:
+            return AuthResult(ok=False, error_detail=f"credit token revoked: {exc}")
+        except KeyError as exc:
+            return AuthResult(ok=False, error_detail=f"credit pack not found: {exc}")
+
+        # Pattern A: chain comes from claims, never inferred from env.
+        return AuthResult(ok=True, tx_signature=claims.jti, chain=claims.chain)
+
     # ------------------------------------------------------------------
     # Internal helpers.
     # ------------------------------------------------------------------
@@ -347,9 +411,42 @@ class X402Dispatcher:
         }
 
 
+# ---------------------------------------------------------------------------
+# Credit-pack JWT authorization (S20-B4).
+#
+# A holder of a valid credit-pack JWT can spend the bundled token cap of
+# any non-credit-pack skill against their pack. The dispatcher's job:
+#
+#   1. Verify the JWT's signature + expiry (via gecko_core.payments.credit_token).
+#   2. Atomically decrement the Mongo-side balance by skill_token_cost(skill).
+#   3. Return an AuthResult whose tx_signature reuses the JWT's jti so
+#      downstream telemetry (X-Payment-Tx-Signature header, ledger writes)
+#      keeps a single ID across x402 and credit-pack settlements.
+#
+# Per Pattern A: the chain comes off the JWT claims, never hardcoded.
+# ---------------------------------------------------------------------------
+
+
+def skill_token_cost(skill: Skill) -> int:
+    """Tokens a single invocation of ``skill`` consumes against a credit pack.
+
+    For retrieval / debate / pipeline skills this is the bundled output
+    cap (``Skill.bundled_output_tokens``). The credit pack itself
+    (``dispatch_kind == "credit"``) is NOT redeemable against another
+    credit pack — paying for credit with credit would be circular.
+    """
+    if skill.dispatch_kind == "credit":
+        raise ValueError(
+            f"skill {skill.name!r} has dispatch_kind=credit and cannot be "
+            "redeemed against a credit pack — pay with x402"
+        )
+    return int(skill.bundled_output_tokens or 0)
+
+
 __all__ = [
     "AuthResult",
     "ChainKind",
     "X402Dispatcher",
     "price_usd_to_wire_amount",
+    "skill_token_cost",
 ]

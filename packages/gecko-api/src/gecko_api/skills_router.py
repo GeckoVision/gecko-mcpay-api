@@ -17,6 +17,7 @@ import base64
 import json
 import logging
 import os
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Request, Response
@@ -36,6 +37,21 @@ _FLAG_ENV: str = "GECKO_SKILLS_DISPATCH_ENABLED"
 
 def _flag_enabled() -> bool:
     return os.environ.get(_FLAG_ENV, "false").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _extract_bearer_token(headers: Any) -> str | None:
+    """Pull the JWT from an ``Authorization: Bearer <jwt>`` header.
+
+    Case-insensitive; tolerates extra whitespace. Returns None if the
+    header is missing or doesn't start with ``Bearer ``.
+    """
+    auth = headers.get("Authorization") or headers.get("authorization")
+    if not auth:
+        return None
+    parts = auth.strip().split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    return parts[1].strip() or None
 
 
 def _draft_response() -> Response:
@@ -113,6 +129,76 @@ async def _stub_handler(skill: Skill, auth: AuthResult, request: Request) -> dic
     }
 
 
+async def _credit_pack_mint_handler(
+    skill: Skill, auth: AuthResult, request: Request
+) -> dict[str, Any]:
+    """S20-B4 — mint a JWT credit token after a successful x402 settle.
+
+    The dispatcher already confirmed the X-PAYMENT settled (auth.ok ==
+    True, auth.tx_signature carries the on-chain settlement signature).
+    We now:
+
+      1. Bind the JWT's ``jti`` to that tx_signature (anti-replay).
+      2. Persist the pack to Mongo via ``store_credit_pack``
+         (idempotent on ``jti``, so a replay of the same X-PAYMENT
+         doesn't double-mint).
+      3. Return ``{credit_token, tokens_remaining, expires_at, tx_signature}``.
+
+    The wallet ``sub`` is best-effort — we honor an optional
+    ``X-Wallet-Address`` request header so the holder can name the
+    chain-prefixed wallet. If unset we use a sentinel; the JWT is
+    signature-bound to the ``jti`` regardless, so the ``sub`` is purely
+    informational at this layer.
+    """
+    from gecko_core.db.mongo_credit_tokens import store_credit_pack
+    from gecko_core.payments.credit_token import (
+        DEFAULT_TOTAL_TOKENS,
+        CreditTokenClaims,
+        CreditTokenSigningKeyMissing,
+        issue_credit_token,
+        verify_credit_token,
+    )
+
+    if auth.tx_signature is None or auth.chain is None:
+        # Defensive — dispatcher's green path always populates these.
+        raise RuntimeError("credit-pack mint requires a settled tx_signature + chain")
+
+    total_tokens = int(skill.bundled_output_tokens or DEFAULT_TOTAL_TOKENS)
+    wallet = request.headers.get("X-Wallet-Address") or f"{auth.chain}:unknown"
+
+    try:
+        token = issue_credit_token(
+            wallet=wallet,
+            jti=auth.tx_signature,
+            chain=auth.chain,
+            total_tokens=total_tokens,
+        )
+    except CreditTokenSigningKeyMissing as exc:
+        # Surface verbatim — operator forgot to set the signing key.
+        raise RuntimeError(f"credit-pack signing key not configured: {exc}") from exc
+
+    # Re-parse our own token to get canonical claims (iat / exp).
+    claims: CreditTokenClaims = verify_credit_token(token)
+    try:
+        await store_credit_pack(claims, total_tokens=total_tokens)
+    except RuntimeError as exc:
+        # Mongo unavailable — credit pack can't be redeemed without
+        # the ledger row. Bubble up.
+        raise RuntimeError(f"credit-pack ledger unavailable: {exc}") from exc
+
+    expires_at_iso = datetime.fromtimestamp(claims.exp, tz=UTC).isoformat()
+    return {
+        "skill": skill.name,
+        "dispatch_kind": skill.dispatch_kind,
+        "tx_signature": auth.tx_signature,
+        "chain": auth.chain,
+        "status": "ok",
+        "credit_token": token,
+        "tokens_remaining": total_tokens,
+        "expires_at": expires_at_iso,
+    }
+
+
 # ---------------------------------------------------------------------------
 # The single route.
 # ---------------------------------------------------------------------------
@@ -143,16 +229,27 @@ async def dispatch_skill(skill_name: str, request: Request) -> Response:
         )
 
     dispatcher = X402Dispatcher()
-    auth = await dispatcher.authorize(skill_name, request.headers)
+
+    # S20-B4: prefer ``Authorization: Bearer <jwt>`` over ``X-PAYMENT``
+    # for non-credit-pack skills. The bearer flow decrements a previously
+    # purchased credit pack; the X-PAYMENT flow does an x402 settle.
+    bearer = _extract_bearer_token(request.headers)
+    if bearer and skill.dispatch_kind != "credit":
+        auth = await dispatcher.authorize_with_credit_token(skill_name, bearer)
+    else:
+        auth = await dispatcher.authorize(skill_name, request.headers)
 
     if not auth.ok:
         if auth.accepts is not None:
             return _payment_required_response(auth, skill)
         return _verify_failed_response(auth)
 
-    # Green path — every skill currently routes to the stub. B5 swaps
-    # in the per-kind real handler against the same selector.
-    payload = await _stub_handler(skill, auth, request)
+    # Green path. Credit-pack purchases mint a JWT; everything else
+    # routes to the stub handler (B5 will swap real per-kind handlers).
+    if skill.dispatch_kind == "credit":
+        payload = await _credit_pack_mint_handler(skill, auth, request)
+    else:
+        payload = await _stub_handler(skill, auth, request)
     response_headers: dict[str, str] = {}
     if auth.tx_signature:
         response_headers["X-Payment-Tx-Signature"] = auth.tx_signature
