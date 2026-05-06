@@ -37,9 +37,10 @@ class _FakeSupabase:
         raise RuntimeError(f"unexpected rpc: {fn}")
 
 
-# Sentinel key present in all "happy path" run_doctor tests.
+# Sentinel keys present in server-stack run_doctor tests.
 # EMBED_PROVIDER defaults to voyage so VOYAGE_API_KEY must be set for exit_code 0.
 _VOYAGE_KEY = "pa-test-key-ok-1234"
+_OPENAI_KEY = "sk-test-openai-postgres-ann-ok-123456"
 
 
 def test_doctor_thin_client_passes_with_empty_env() -> None:
@@ -79,7 +80,10 @@ def test_doctor_redacts_secrets_in_report() -> None:
 def test_doctor_x402_default_stub_is_ok() -> None:
     # Include server-side creds so Supabase probes are exercised via the
     # injected fake client.
-    env = {var: "x" for var in SERVER_SIDE_ENV_VARS} | {"VOYAGE_API_KEY": _VOYAGE_KEY}
+    env = {var: "x" for var in SERVER_SIDE_ENV_VARS} | {
+        "VOYAGE_API_KEY": _VOYAGE_KEY,
+        "OPENAI_API_KEY": _OPENAI_KEY,
+    }
     manifest = {
         "extensions": list(REQUIRED_EXTENSIONS),
         "tables": list(REQUIRED_TABLES),
@@ -92,7 +96,10 @@ def test_doctor_x402_default_stub_is_ok() -> None:
 
 
 def test_doctor_x402_invalid_value_fails() -> None:
-    env = {var: "x" for var in SERVER_SIDE_ENV_VARS} | {"X402_MODE": "bogus"}
+    env = {var: "x" for var in SERVER_SIDE_ENV_VARS} | {
+        "X402_MODE": "bogus",
+        "OPENAI_API_KEY": _OPENAI_KEY,
+    }
     exit_code, report = run_doctor(environ=env, supabase_client=_FakeSupabase({}))
     assert exit_code == 1
     assert "X402_MODE" in report
@@ -102,6 +109,7 @@ def test_doctor_passes_with_full_env_and_migrations() -> None:
     env = {var: "x" for var in SERVER_SIDE_ENV_VARS} | {
         "X402_MODE": "stub",
         "VOYAGE_API_KEY": _VOYAGE_KEY,
+        "OPENAI_API_KEY": _OPENAI_KEY,
     }
     manifest = {
         "extensions": list(REQUIRED_EXTENSIONS),
@@ -119,6 +127,7 @@ def test_doctor_fails_when_migrations_missing() -> None:
     env = {var: "x" for var in SERVER_SIDE_ENV_VARS} | {
         "X402_MODE": "stub",
         "VOYAGE_API_KEY": _VOYAGE_KEY,
+        "OPENAI_API_KEY": _OPENAI_KEY,
     }
     manifest: dict[str, list[str]] = {"extensions": [], "tables": [], "functions": []}
     exit_code, report = run_doctor(environ=env, supabase_client=_FakeSupabase(manifest))
@@ -205,6 +214,7 @@ def test_voyage_check_passes_with_key() -> None:
         "X402_MODE": "stub",
         "GECKO_RERANKER": "voyage",
         "VOYAGE_API_KEY": secret,
+        "OPENAI_API_KEY": _OPENAI_KEY,
     }
     manifest = {
         "extensions": list(REQUIRED_EXTENSIONS),
@@ -258,6 +268,7 @@ def test_embed_provider_voyage_with_key() -> None:
             "EMBED_PROVIDER": "voyage",
             "VOYAGE_API_KEY": secret,
             "SUPABASE_URL": "https://x.supabase.co",  # server-stack signal
+            "OPENAI_API_KEY": "sk-test-openai-embed-12345678",
         }
     )
     fail_rows = [r for r in rows if not r.ok]
@@ -267,6 +278,22 @@ def test_embed_provider_voyage_with_key() -> None:
     assert secret not in key_row.detail
     assert "pa-..." in key_row.detail
     assert secret[-4:] in key_row.detail
+
+
+def test_embed_provider_voyage_supabase_without_openai_fails() -> None:
+    """Voyage + Supabase without OPENAI_API_KEY → Postgres ANN cannot run."""
+    from gecko_mcp.doctor import check_embed_provider
+
+    rows = check_embed_provider(
+        environ={
+            "EMBED_PROVIDER": "voyage",
+            "VOYAGE_API_KEY": "pa-test-has-voyage-only",
+            "SUPABASE_URL": "https://x.supabase.co",
+        }
+    )
+    fail = next(r for r in rows if r.name == "embed:openai_for_postgres_ann")
+    assert fail.ok is False
+    assert "OPENAI_API_KEY" in fail.detail
 
 
 def test_embed_provider_openai_no_key() -> None:

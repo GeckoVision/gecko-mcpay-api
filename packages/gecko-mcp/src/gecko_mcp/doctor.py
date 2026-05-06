@@ -10,6 +10,7 @@ var *name* when it's missing or report a redacted boolean.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -44,7 +45,8 @@ OPTIONAL_ENV_VARS: tuple[str, ...] = (
 
 _OPTIONAL_HINTS: dict[str, str] = {
     "DEEPGRAM_API_KEY": "YouTube caption-fallback disabled",
-    "OPENAI_API_KEY": "v2 fallback only; v3 routes through ClawRouter",
+    "OPENAI_API_KEY": "Also required with SUPABASE_URL when EMBED_PROVIDER=voyage "
+    "(Postgres ANN: embed_for_postgres_vector). Otherwise v2 fallback / OpenAI routes.",
     "GECKO_LLM_ENDPOINT": "defaults to http://localhost:8402/v1 (ClawRouter)",
 }
 
@@ -637,6 +639,31 @@ def format_results(results: Iterable[CheckResult]) -> str:
     return "\n".join(lines)
 
 
+def _extract_vector_index_dim(idx_def: dict[str, Any]) -> tuple[int | None, str | None]:
+    """Pull `numDimensions` + `similarity` out of an Atlas Search index def.
+
+    Atlas returns either ``latestDefinition.fields`` (newer) or
+    ``definition.fields`` (older). Each `fields` entry is a dict; the
+    vector entry has ``type=="vector"`` and a ``numDimensions`` int.
+    Returns (None, None) if the shape doesn't match — caller surfaces a
+    parse-failure row.
+    """
+    for key in ("latestDefinition", "definition"):
+        defn = idx_def.get(key)
+        if not isinstance(defn, dict):
+            continue
+        fields = defn.get("fields")
+        if not isinstance(fields, list):
+            continue
+        for f in fields:
+            if not isinstance(f, dict):
+                continue
+            if f.get("type") == "vector" and isinstance(f.get("numDimensions"), int):
+                sim = f.get("similarity") if isinstance(f.get("similarity"), str) else None
+                return int(f["numDimensions"]), sim
+    return None, None
+
+
 def check_chunk_store(environ: dict[str, str] | None = None) -> list[CheckResult]:
     """S18-MONGO-CUTOVER-01 — verify chunk-store backend is reachable.
 
@@ -674,16 +701,58 @@ def check_chunk_store(environ: dict[str, str] | None = None) -> list[CheckResult
         client.admin.command("ping")
         results.append(CheckResult(name="chunk_store:mongo:ping", ok=True, detail=f"db={db_name}"))
 
-        idx_names = {i["name"] for i in client[db_name]["chunks"].list_search_indexes()}
+        from gecko_core.db.mongo_chunks import MONGO_VECTOR_DIM_EXPECTED
+
+        idx_defs = list(client[db_name]["chunks"].list_search_indexes())
+        idx_by_name = {i["name"]: i for i in idx_defs}
         for required in ("chunks_vector", "chunks_text"):
-            ok = required in idx_names
+            present = required in idx_by_name
             results.append(
                 CheckResult(
                     name=f"chunk_store:mongo:index:{required}",
-                    ok=ok,
-                    detail="ready" if ok else f"missing search index: {required}",
+                    ok=present,
+                    detail="ready" if present else f"missing search index: {required}",
                 )
             )
+
+        # S19-MONGO-INDEX-DIM-CHECK-01 — verify the live `chunks_vector` index
+        # numDimensions matches the dim our chunk validators enforce. If S18
+        # left the index at 1536 (the original plan) but ingest writes Voyage
+        # 1024, every insert raises dim_mismatch — surfaced here as a red row
+        # before any user-facing crash.
+        if "chunks_vector" in idx_by_name:
+            vec_def = dict(idx_by_name["chunks_vector"])
+            dim, sim = _extract_vector_index_dim(vec_def)
+            if dim is None:
+                results.append(
+                    CheckResult(
+                        name="chunk_store:mongo:index:chunks_vector:dim",
+                        ok=False,
+                        detail="could not parse numDimensions from index definition",
+                    )
+                )
+            elif dim != MONGO_VECTOR_DIM_EXPECTED:
+                results.append(
+                    CheckResult(
+                        name="chunk_store:mongo:index:chunks_vector:dim",
+                        ok=False,
+                        detail=(
+                            f"dim={dim} expected={MONGO_VECTOR_DIM_EXPECTED} "
+                            "— Voyage embeddings will be rejected by Atlas"
+                        ),
+                    )
+                )
+            else:
+                detail = f"dim={dim} ok"
+                if sim:
+                    detail = f"{detail} similarity={sim}"
+                results.append(
+                    CheckResult(
+                        name="chunk_store:mongo:index:chunks_vector:dim",
+                        ok=True,
+                        detail=detail,
+                    )
+                )
     except Exception as exc:
         results.append(
             CheckResult(
@@ -753,6 +822,158 @@ def check_voyage_api_key(environ: dict[str, str] | None = None) -> list[CheckRes
     return results
 
 
+VOYAGE_LIVE_TIMEOUT_S: float = 5.0
+
+
+async def check_voyage_live(
+    environ: dict[str, str] | None = None,
+) -> list[CheckResult]:
+    """S19-VOYAGE-DOCTOR-LIVE-01 — real Voyage embed + rerank pings.
+
+    Only runs when ``run_doctor(live=True)`` is called (CLI: ``--live``).
+    Each call is hard-timeouted at 5s and returns a single ``CheckResult``;
+    failures surface as red rows with redacted error strings (never echo
+    the API key, even via the SDK exception's ``__str__``).
+
+    The embed ping uses ``voyage-3`` with one short string and asserts the
+    response shape is 1×1024 (matching ``MONGO_VECTOR_DIM_EXPECTED``); a
+    dim mismatch here means the Voyage account was downgraded to a
+    different model and would corrupt Atlas inserts.
+
+    Cost guard: ≤ ~10 embed tokens + ~5 rerank tokens per run. Negligible.
+    """
+    env = environ if environ is not None else dict(os.environ)
+    results: list[CheckResult] = []
+
+    embed_provider = (env.get("EMBED_PROVIDER") or "voyage").strip().lower()
+    reranker = (env.get("GECKO_RERANKER") or "none").strip().lower()
+    voyage_key = env.get("VOYAGE_API_KEY", "").strip()
+
+    if not voyage_key:
+        # Without a key there's nothing to live-ping. Other doctor checks
+        # already surface the missing key as a red row.
+        results.append(
+            CheckResult(
+                name="voyage:live",
+                ok=True,
+                detail="skipped (VOYAGE_API_KEY unset)",
+                info=True,
+            )
+        )
+        return results
+
+    # --- embed live ping -----------------------------------------------------
+    if embed_provider == "voyage":
+        try:
+            import voyageai
+
+            client: Any = voyageai.AsyncClient(api_key=voyage_key)  # type: ignore[attr-defined]
+            resp: Any = await asyncio.wait_for(
+                client.embed(
+                    texts=["doctor ping"],
+                    model="voyage-3",
+                    input_type="query",
+                ),
+                timeout=VOYAGE_LIVE_TIMEOUT_S,
+            )
+            embeddings = list(resp.embeddings)
+            from gecko_core.db.mongo_chunks import MONGO_VECTOR_DIM_EXPECTED
+
+            if len(embeddings) != 1:
+                results.append(
+                    CheckResult(
+                        name="voyage:embed:live",
+                        ok=False,
+                        detail=f"expected 1 vector, got {len(embeddings)}",
+                    )
+                )
+            elif len(embeddings[0]) != MONGO_VECTOR_DIM_EXPECTED:
+                results.append(
+                    CheckResult(
+                        name="voyage:embed:live",
+                        ok=False,
+                        detail=(f"dim={len(embeddings[0])} expected={MONGO_VECTOR_DIM_EXPECTED}"),
+                    )
+                )
+            else:
+                results.append(
+                    CheckResult(
+                        name="voyage:embed:live",
+                        ok=True,
+                        detail=(
+                            f"dim={MONGO_VECTOR_DIM_EXPECTED} "
+                            f"tokens={getattr(resp, 'total_tokens', '?')}"
+                        ),
+                    )
+                )
+        except TimeoutError:
+            results.append(
+                CheckResult(
+                    name="voyage:embed:live",
+                    ok=False,
+                    detail=f"timeout after {VOYAGE_LIVE_TIMEOUT_S}s",
+                )
+            )
+        except Exception as exc:
+            results.append(
+                CheckResult(
+                    name="voyage:embed:live",
+                    ok=False,
+                    detail=_redact(str(exc)),
+                )
+            )
+
+    # --- rerank live ping ----------------------------------------------------
+    if reranker == "voyage":
+        try:
+            import voyageai
+
+            client_r: Any = voyageai.AsyncClient(api_key=voyage_key)  # type: ignore[attr-defined]
+            resp = await asyncio.wait_for(
+                client_r.rerank(
+                    query="ping",
+                    documents=["alpha", "beta"],
+                    model="rerank-2",
+                ),
+                timeout=VOYAGE_LIVE_TIMEOUT_S,
+            )
+            rerank_results = list(getattr(resp, "results", []) or [])
+            if len(rerank_results) != 2:
+                results.append(
+                    CheckResult(
+                        name="voyage:rerank:live",
+                        ok=False,
+                        detail=f"expected 2 results, got {len(rerank_results)}",
+                    )
+                )
+            else:
+                results.append(
+                    CheckResult(
+                        name="voyage:rerank:live",
+                        ok=True,
+                        detail="2 results returned",
+                    )
+                )
+        except TimeoutError:
+            results.append(
+                CheckResult(
+                    name="voyage:rerank:live",
+                    ok=False,
+                    detail=f"timeout after {VOYAGE_LIVE_TIMEOUT_S}s",
+                )
+            )
+        except Exception as exc:
+            results.append(
+                CheckResult(
+                    name="voyage:rerank:live",
+                    ok=False,
+                    detail=_redact(str(exc)),
+                )
+            )
+
+    return results
+
+
 def _is_thin_client(environ: dict[str, str] | None = None) -> bool:
     """True when gecko-mcp is running as a remote client (not as the server itself).
 
@@ -784,7 +1005,9 @@ def check_embed_provider(environ: dict[str, str] | None = None) -> list[CheckRes
     """S22-VOYAGE-EMBED — verify embedding provider config is self-consistent.
 
     EMBED_PROVIDER=voyage (default): VOYAGE_API_KEY must be set and have the
-    expected ``pa-`` prefix. OPENAI_API_KEY is surfaced as INFO (not required).
+    expected ``pa-`` prefix. When ``SUPABASE_URL`` is also set (local server
+    stack), ``OPENAI_API_KEY`` is required too — Postgres ANN RPCs use
+    ``text-embedding-3-small`` (1536) via ``embed_for_postgres_vector``.
 
     EMBED_PROVIDER=openai: OPENAI_API_KEY must be set (non-empty). VOYAGE_API_KEY
     is surfaced as INFO.
@@ -845,6 +1068,32 @@ def check_embed_provider(environ: dict[str, str] | None = None) -> list[CheckRes
         results.append(
             CheckResult(name="embed:voyage_api_key", ok=True, detail=f"prefix=pa-...{suffix}")
         )
+        # Supabase pgvector RPCs (precedent / memory / chunk match) always use
+        # OpenAI text-embedding-3-small (1536) — see embed_for_postgres_vector.
+        if env.get("SUPABASE_URL"):
+            oa = env.get("OPENAI_API_KEY", "")
+            if not oa:
+                results.append(
+                    CheckResult(
+                        name="embed:openai_for_postgres_ann",
+                        ok=False,
+                        detail=(
+                            "SUPABASE_URL set but OPENAI_API_KEY unset — "
+                            "precedent / memory / chunk ANN expects "
+                            "text-embedding-3-small (1536)"
+                        ),
+                    )
+                )
+            else:
+                oa_suffix = oa[-4:] if len(oa) >= 8 else "????"
+                results.append(
+                    CheckResult(
+                        name="embed:openai_for_postgres_ann",
+                        ok=True,
+                        detail=f"sk-...{oa_suffix}",
+                    )
+                )
+        return results
 
     elif provider == "openai":
         key = env.get("OPENAI_API_KEY", "")
@@ -876,6 +1125,7 @@ def run_doctor(
     *,
     environ: dict[str, str] | None = None,
     supabase_client: _SupabaseLike | None = None,
+    live: bool = False,
 ) -> tuple[int, str]:
     """Run every check. Returns (exit_code, rendered_report).
 
@@ -889,6 +1139,9 @@ def run_doctor(
 
     `supabase_client` is injectable for tests. If None and Supabase creds are
     absent, Supabase probes are skipped.
+
+    `live=True` (CLI: ``--live``) issues real Voyage embed + rerank pings to
+    detect revoked keys / outages that env-presence checks can't catch.
     """
     env = environ if environ is not None else dict(os.environ)
     thin = _is_thin_client(env)
@@ -927,6 +1180,8 @@ def run_doctor(
         results.extend(check_chunk_store(environ))
         results.extend(check_embed_provider(environ))
         results.extend(check_voyage_api_key(environ))
+        if live:
+            results.extend(asyncio.run(check_voyage_live(environ)))
 
     # Supabase probes only run in local-dev/server-operator mode when creds are present.
     # Thin clients (remote GECKO_API_URL) never run Supabase probes — the DB is

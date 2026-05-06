@@ -47,10 +47,16 @@ def serve_cmd(env_file: Path | None) -> None:
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     help="Path to .env file. Defaults to ~/.gecko/.env if present.",
 )
-def doctor_cmd(env_file: Path | None) -> None:
+@click.option(
+    "--live",
+    is_flag=True,
+    default=False,
+    help="Issue real Voyage embed + rerank pings to detect revoked keys / outages.",
+)
+def doctor_cmd(env_file: Path | None, live: bool) -> None:
     """Verify env vars and connectivity. Exit non-zero on any failure."""
     _load_env(env_file)
-    exit_code, report = run_doctor()
+    exit_code, report = run_doctor(live=live)
     stream = sys.stderr if exit_code != 0 else sys.stdout
     click.echo(report, file=stream)
     sys.exit(exit_code)

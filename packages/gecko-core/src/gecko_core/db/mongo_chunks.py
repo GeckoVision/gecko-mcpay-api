@@ -46,7 +46,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-EMBED_DIM = 1024
+# Canonical Mongo Atlas Vector Search dim. Doctor (S19-MONGO-INDEX-DIM-CHECK-01)
+# imports this to verify the live `chunks_vector` index `numDimensions` matches.
+# `EMBED_DIM` is kept as a back-compat alias for the existing chunk validators.
+MONGO_VECTOR_DIM_EXPECTED = 1024
+EMBED_DIM = MONGO_VECTOR_DIM_EXPECTED
 
 
 class _MongoUnavailable(RuntimeError):
@@ -350,6 +354,7 @@ async def put_chunk_cache_mongo(
 
 __all__ = [
     "EMBED_DIM",
+    "MONGO_VECTOR_DIM_EXPECTED",
     "chunks_write_audit_rollup_recent_mongo",
     "evict_chunk_cache_mongo",
     "get_chunk_cache_mongo",
