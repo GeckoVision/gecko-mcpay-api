@@ -235,3 +235,10 @@ Three blockers for Track A start. Two more I'd like answers on but can defer.
 - **2026-05-06** — production smoke session `6afd55d7` verified end-to-end on v0.2.12. Surviving dissents motivate this S20 plan.
 - **2026-05-06** — repositioned to "build-context layer" (NOT "judgment as commodity" or "knowledge as commodity" externally). Wedge sentence above. Subscription pricing explicitly rejected (x402 is per-call by protocol; bulk credit pack is the only prepay shape).
 - **2026-05-06** — moat thesis sharpened: vertical-shaped index + build-time consumption + compounding per cell + switching cost on agent integration. Categorized base alone is NOT the moat; it's all four together.
+- **2026-05-06 (late)** — answers from owner brainstorm:
+  - Verticals: ship A1 with 11 seeded; expand incrementally. No upfront lock.
+  - Pioneer's tax: **explicit surcharge** on first call per `(vertical, category)` cell (option b). Transparent — calibrated from real first-run costs, not silent overage. Reasoning: "pay more on the first, as if the user were using pay.sh which charges every call."
+  - Vertical detection: predefined set + classifier on top. If `unknown`, surface candidate set and user picks. **NO cross-vertical fallback.**
+  - `regulated`: subcategory of `business_financial`. Canonical 7 stable.
+  - `gecko_build_context(vertical, category, query)` MCP tool: **promoted to S20** (was S21). Add as Track D-or-extend Track C.
+  - State-of-the-art RAG architecture: data-engineer + staff-engineer (data-architect lens) commissioned to design hybrid search + chunking strategy + pre-filtering + reranking + memory layer using MongoDB Atlas Vector Search + Voyage AI. Reference material: MongoDB Atlas RAG tutorial, MongoDB-AI training tracks (RAG with MongoDB, Memory for AI Applications, Voyage AI with MongoDB, Vector Search Performance).
