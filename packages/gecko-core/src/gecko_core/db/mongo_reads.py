@@ -87,11 +87,21 @@ async def match_chunks_mongo(
     session_id: UUID,
     query_embedding: list[float],
     match_count: int = 8,
+    extra_filter: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    """Top-K cosine match within a session. Empty list if Mongo unconfigured."""
+    """Top-K cosine match within a session. Empty list if Mongo unconfigured.
+
+    ``extra_filter`` (S20-A3) is merged into the ``$vectorSearch.filter``
+    clause — used to exclude ``category=legacy_uncategorized`` /
+    ``metadata.deprecated=true`` from default retrieval.
+    """
     coll = chunks_collection()
     if coll is None:
         return []
+
+    vs_filter: dict[str, Any] = {"session_id": str(session_id)}
+    if extra_filter:
+        vs_filter.update(extra_filter)
 
     pipeline: list[dict[str, Any]] = [
         {
@@ -101,7 +111,7 @@ async def match_chunks_mongo(
                 "queryVector": query_embedding,
                 "numCandidates": max(50, match_count * 10),
                 "limit": match_count,
-                "filter": {"session_id": str(session_id)},
+                "filter": vs_filter,
             }
         },
         {
@@ -201,6 +211,7 @@ async def match_chunks_hybrid_mongo(
     query_embedding: list[float],
     match_count: int = 12,
     per_kind_quota: int = 2,
+    extra_filter: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Hybrid retrieval — quota per provider_kind UNION global top-N.
 
@@ -221,6 +232,10 @@ async def match_chunks_hybrid_mongo(
     pool_size = max(match_count * _HYBRID_POOL_OVERFETCH, 30)
     num_candidates = max(pool_size * _HYBRID_NUM_CANDIDATES_OVERFETCH, 200)
 
+    vs_filter: dict[str, Any] = {"session_id": str(session_id)}
+    if extra_filter:
+        vs_filter.update(extra_filter)
+
     pipeline: list[dict[str, Any]] = [
         {
             "$vectorSearch": {
@@ -229,7 +244,7 @@ async def match_chunks_hybrid_mongo(
                 "queryVector": query_embedding,
                 "numCandidates": num_candidates,
                 "limit": pool_size,
-                "filter": {"session_id": str(session_id)},
+                "filter": vs_filter,
             }
         },
         {
@@ -284,7 +299,112 @@ async def match_chunks_hybrid_mongo(
     return [_row_from_doc(d, d.get("score", 0.0)) for d in capped]
 
 
+# ---------------------------------------------------------------------------
+# match_chunks_filterable (S20-RAG-02 — filterable compound index)
+# ---------------------------------------------------------------------------
+
+
+async def match_chunks_filterable_mongo(
+    *,
+    query_embedding: list[float],
+    vertical: str | None = None,
+    categories: list[str] | None = None,
+    sources: list[str] | None = None,
+    match_count: int = 8,
+    include_legacy: bool = False,
+) -> list[dict[str, Any]]:
+    """S20-RAG-02 — vector match using the filterable compound index.
+
+    Filters are pushed into the ``$vectorSearch.filter`` clause so Atlas
+    pre-filters BEFORE the ANN graph traversal. This is the read-side
+    twin of the migration script ``scripts/mongo/s20_rag02_filterable_index.py``.
+    """
+    coll = chunks_collection()
+    if coll is None:
+        return []
+
+    pipeline = build_filterable_pipeline(
+        query_embedding=query_embedding,
+        vertical=vertical,
+        categories=categories,
+        sources=sources,
+        match_count=match_count,
+        include_legacy=include_legacy,
+    )
+    pipeline.append(
+        {
+            "$project": {
+                "_id": 1,
+                "source_id": 1,
+                "source_url": 1,
+                "chunk_index": 1,
+                "text": 1,
+                "vertical": 1,
+                "category": 1,
+                "source": 1,
+                "provider_kind": 1,
+                "metadata": 1,
+                "score": {"$meta": "vectorSearchScore"},
+            }
+        }
+    )
+
+    rows: list[dict[str, Any]] = []
+    async for doc in coll.aggregate(pipeline):
+        rows.append(_row_from_doc(doc, doc.get("score", 0.0)))
+    return rows
+
+
+def build_filterable_pipeline(
+    *,
+    query_embedding: list[float],
+    vertical: str | None = None,
+    categories: list[str] | None = None,
+    sources: list[str] | None = None,
+    match_count: int = 8,
+    include_legacy: bool = False,
+) -> list[dict[str, Any]]:
+    """Pure builder mirror of :func:`match_chunks_filterable_mongo` for tests.
+
+    Returns the ``$vectorSearch`` aggregation pipeline (without the
+    ``$project`` tail) that would be sent to Atlas, with no I/O.
+    Useful for asserting the filter shape without standing up a fake
+    Mongo collection.
+
+    Filter semantics:
+      - ``vertical=None`` → no vertical filter (cross-vertical retrieval).
+      - ``categories`` empty / None → no category filter.
+      - ``sources`` empty / None → no source filter.
+      - ``include_legacy=False`` (default) → adds ``metadata.deprecated:
+        {$ne: true}`` so soft-deleted/legacy chunks are excluded.
+      - ``include_legacy=True`` → no deprecated filter.
+    """
+    filter_clause: dict[str, Any] = {}
+    if vertical is not None:
+        filter_clause["vertical"] = {"$eq": vertical}
+    if categories:
+        filter_clause["category"] = {"$in": list(categories)}
+    if sources:
+        filter_clause["source"] = {"$in": list(sources)}
+    if not include_legacy:
+        filter_clause["metadata.deprecated"] = {"$ne": True}
+
+    vector_search: dict[str, Any] = {
+        "index": VECTOR_INDEX_NAME,
+        "path": "embedding",
+        "queryVector": query_embedding,
+        "numCandidates": max(200, match_count * 20),
+        "limit": match_count,
+        "exact": False,
+    }
+    if filter_clause:
+        vector_search["filter"] = filter_clause
+    return [{"$vectorSearch": vector_search}]
+
+
 __all__ = [
+    "build_filterable_pipeline",
+    "match_chunks_filterable_mongo",
     "match_chunks_hybrid_mongo",
     "match_chunks_mongo",
     "match_chunks_windowed_mongo",

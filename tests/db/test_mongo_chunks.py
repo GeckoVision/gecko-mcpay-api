@@ -348,6 +348,45 @@ class TestInsertChunksCategorizedFields:
             )
         assert "invalid category" in str(exc_info.value)
 
+    @pytest.mark.asyncio
+    async def test_legacy_uncategorized_rejected_without_deprecated(
+        self, fake_chunks_coll: _FakeChunksCollection
+    ) -> None:
+        """S20-A3 — new ingestions cannot land in the legacy bucket."""
+        from gecko_core.ingestion.exceptions import ChunkValidationError
+
+        with pytest.raises(ChunkValidationError) as exc_info:
+            await mongo_chunks.insert_chunks_mongo(
+                uuid4(),
+                uuid4(),
+                [(0, "ok", _embed())],
+                category="legacy_uncategorized",
+                vertical="unknown",
+                source="web",
+                deprecated=False,
+            )
+        assert exc_info.value.kind == "invalid_category"
+        assert "reserved for the A3 revoke script" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_legacy_uncategorized_allowed_with_deprecated(
+        self, fake_chunks_coll: _FakeChunksCollection
+    ) -> None:
+        """S20-A3 — the revoke script's own write path succeeds."""
+        n = await mongo_chunks.insert_chunks_mongo(
+            uuid4(),
+            uuid4(),
+            [(0, "old chunk", _embed(0.1))],
+            category="legacy_uncategorized",
+            vertical="unknown",
+            source="web",
+            deprecated=True,
+        )
+        assert n == 1
+        d = fake_chunks_coll.docs[0]
+        assert d["category"] == "legacy_uncategorized"
+        assert d["metadata"]["deprecated"] is True
+
 
 # ---------------------------------------------------------------------------
 # S20-A7 — pioneer-cell signal wired through insert_chunks_mongo

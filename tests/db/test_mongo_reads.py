@@ -54,9 +54,25 @@ class _FakeChunksColl:
 
         def _matches(doc: dict[str, Any]) -> bool:
             for k, v in flt.items():
-                got = doc.get(k)
+                # Support dotted-path keys (e.g. "metadata.deprecated").
+                if "." in k:
+                    cur: Any = doc
+                    for part in k.split("."):
+                        if isinstance(cur, dict):
+                            cur = cur.get(part)
+                        else:
+                            cur = None
+                            break
+                    got = cur
+                else:
+                    got = doc.get(k)
                 if isinstance(v, dict) and "$gte" in v:
                     if got is None or got < v["$gte"]:
+                        return False
+                elif isinstance(v, dict) and "$ne" in v:
+                    # S20-A3 — fake the legacy-exclude filter. Missing
+                    # field counts as "not equal" → match passes.
+                    if got == v["$ne"]:
                         return False
                 elif got != v:
                     return False

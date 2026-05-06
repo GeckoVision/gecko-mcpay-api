@@ -44,6 +44,7 @@ from gecko_core.db.mongo import (
 from gecko_core.knowledge.taxonomy import (
     CATEGORIES,
     KNOWLEDGE_SOURCES,
+    LEGACY_CATEGORY,
     VERTICALS,
     Category,
     KnowledgeSource,
@@ -107,6 +108,7 @@ async def insert_chunks_mongo(
     provider_kind: ProviderKind | None = None,
     project_id: UUID | None = None,
     source_url: str | None = None,
+    deprecated: bool = False,
 ) -> int:
     """Bulk-insert chunks. Returns count of *new* documents written.
 
@@ -192,6 +194,18 @@ async def insert_chunks_mongo(
             f"invalid category={category!r}; expected one of {CATEGORIES}",
             kind="invalid_category",
         )
+    # S20-A3 — legacy_uncategorized is reserved for the revoke script.
+    # New ingestions must NOT land in this bucket; the only way to write
+    # `legacy_uncategorized` is to also flip metadata.deprecated=True
+    # (the revoke path's contract). This prevents quiet drift where an
+    # ingestion bug silently dumps real chunks into the legacy bucket and
+    # they then get filtered out of default retrieval.
+    if category == LEGACY_CATEGORY and not deprecated:
+        raise ChunkValidationError(
+            "category=legacy_uncategorized is reserved for the A3 revoke "
+            "script; new ingests must use one of the canonical 7 categories.",
+            kind="invalid_category",
+        )
     if vertical not in VERTICALS:
         raise ChunkValidationError(
             f"invalid vertical={vertical!r}; expected one of {VERTICALS}",
@@ -227,12 +241,16 @@ async def insert_chunks_mongo(
     # chunks own their own URL for citation rendering.
     # captured_at is kept (legacy field) AND mirrored into metadata.timestamp
     # for one sprint so existing analytics keep working while readers migrate.
-    metadata = {
+    metadata: dict[str, Any] = {
         "confidence": float(confidence),
         "usage_count": 0,
         "timestamp": now,
         "pioneer": False,
     }
+    # S20-A3 — only set deprecated when truthy. Default chunks never carry
+    # the key; the revoke script's path stamps it True.
+    if deprecated:
+        metadata["deprecated"] = True
     docs: list[dict[str, Any]] = [
         {
             "session_id": str(session_id),
@@ -511,10 +529,104 @@ async def put_chunk_cache_mongo(
         await coll.bulk_write(operations, ordered=False)
 
 
+# ---------------------------------------------------------------------------
+# usage_count bump (S20-A6 / S20-A-USAGE-COUNT-01)
+# ---------------------------------------------------------------------------
+
+
+async def bump_usage_counts(chunk_ids: list[str]) -> int:
+    """Best-effort ``metadata.usage_count += 1`` for cited chunks.
+
+    REACHABILITY:
+      basic.generate / workflows._run_pro_debate
+        -> bump_usage_counts(result.cited_doc_ids)  [fire-and-forget task]
+        -> chunks_collection().update_many({_id: $in [ObjectId, ...]},
+                                           {$inc: {metadata.usage_count: 1}})
+        -> Mongo doc's metadata.usage_count is incremented.
+
+    Per S20-A6 contract: usage_count is a CITATION-COUNT signal, not a
+    retrieval-count. The caller MUST pass only the chunk_ids that landed
+    in the synth's ``cited_doc_ids`` (already validated subset of
+    rag_context); we don't filter further here.
+
+    Returns the count of docs Mongo reports as modified. Empty input is a
+    cheap zero (no DB call). Mongo errors are caught + logged; the function
+    NEVER raises — usage_count is a side-effect on the success path and
+    must not crash the user-facing synth response.
+    """
+    if not chunk_ids:
+        return 0
+
+    # Defensively convert each chunk_id string to an ObjectId. Anything that
+    # doesn't parse is logged + skipped — keeps a one-bad-id in the list from
+    # blanking the whole bump batch.
+    from bson import ObjectId
+    from bson.errors import InvalidId
+
+    valid_oids: list[ObjectId] = []
+    for cid in chunk_ids:
+        try:
+            valid_oids.append(ObjectId(cid))
+        except (InvalidId, TypeError, ValueError):
+            redacted = (cid[:8] + "...") if isinstance(cid, str) and len(cid) > 8 else repr(cid)
+            logger.warning(
+                "mongo.bump_usage.invalid_id",
+                extra={"event": "mongo.bump_usage.invalid_id", "chunk_id_redacted": redacted},
+            )
+
+    if not valid_oids:
+        return 0
+
+    coll = chunks_collection()
+    if coll is None:
+        logger.warning(
+            "mongo.bump_usage.failed",
+            extra={
+                "event": "mongo.bump_usage.failed",
+                "reason": "chunks_collection_unavailable",
+                "requested_count": len(chunk_ids),
+            },
+        )
+        return 0
+
+    import time
+
+    t0 = time.monotonic()
+    try:
+        result = await coll.update_many(
+            {"_id": {"$in": valid_oids}},
+            {"$inc": {"metadata.usage_count": 1}},
+        )
+        modified = int(getattr(result, "modified_count", 0))
+    except Exception as exc:
+        logger.warning(
+            "mongo.bump_usage.failed",
+            extra={
+                "event": "mongo.bump_usage.failed",
+                "reason": exc.__class__.__name__,
+                "requested_count": len(chunk_ids),
+            },
+        )
+        return 0
+
+    ms_elapsed = (time.monotonic() - t0) * 1000.0
+    logger.info(
+        "mongo.bump_usage.done",
+        extra={
+            "event": "mongo.bump_usage.done",
+            "requested_count": len(chunk_ids),
+            "modified_count": modified,
+            "ms_elapsed": round(ms_elapsed, 2),
+        },
+    )
+    return modified
+
+
 __all__ = [
     "CHUNKS_VERTICAL_CATEGORY_INDEX",
     "EMBED_DIM",
     "MONGO_VECTOR_DIM_EXPECTED",
+    "bump_usage_counts",
     "chunks_write_audit_rollup_recent_mongo",
     "evict_chunk_cache_mongo",
     "get_chunk_cache_mongo",

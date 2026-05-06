@@ -716,6 +716,31 @@ def format_results(results: Iterable[CheckResult]) -> str:
     return "\n".join(lines)
 
 
+def _extract_vector_index_filters(idx_def: dict[str, Any]) -> set[str]:
+    """Pull the set of ``filter``-typed paths out of a live Atlas index def.
+
+    Atlas returns either ``latestDefinition.fields`` (newer) or
+    ``definition.fields`` (older). Each ``fields`` entry is a dict; a
+    filterable entry has ``type=="filter"`` and a ``path`` string.
+    Returns empty set when no filter fields are declared.
+    """
+    for key in ("latestDefinition", "definition"):
+        defn = idx_def.get(key)
+        if not isinstance(defn, dict):
+            continue
+        fields = defn.get("fields")
+        if not isinstance(fields, list):
+            continue
+        out: set[str] = set()
+        for f in fields:
+            if isinstance(f, dict) and f.get("type") == "filter":
+                p = f.get("path")
+                if isinstance(p, str):
+                    out.add(p)
+        return out
+    return set()
+
+
 def _extract_vector_index_dim(idx_def: dict[str, Any]) -> tuple[int | None, str | None]:
     """Pull `numDimensions` + `similarity` out of an Atlas Search index def.
 
@@ -828,6 +853,45 @@ def check_chunk_store(environ: dict[str, str] | None = None) -> list[CheckResult
                         name="chunk_store:mongo:index:chunks_vector:dim",
                         ok=True,
                         detail=detail,
+                    )
+                )
+
+        # S20-RAG-02 — verify the live `chunks_vector` index advertises the
+        # expected filter-typed paths so $vectorSearch can pre-filter past
+        # the ANN stage. Source of truth: gecko_core.db.mongo
+        # CHUNKS_VECTOR_FILTER_FIELDS (Pattern A — declared in one place).
+        if "chunks_vector" in idx_by_name:
+            from gecko_core.db.mongo import CHUNKS_VECTOR_FILTER_FIELDS
+
+            live_filters = _extract_vector_index_filters(dict(idx_by_name["chunks_vector"]))
+            expected = set(CHUNKS_VECTOR_FILTER_FIELDS)
+            missing = expected - live_filters
+            if not live_filters:
+                results.append(
+                    CheckResult(
+                        name="chunk_store:mongo:index:chunks_vector:filters",
+                        ok=False,
+                        detail=(
+                            "no filter fields declared — index is not the S20-RAG-02 "
+                            "filterable compound shape; run "
+                            "scripts/mongo/s20_rag02_filterable_index.py --apply --rebuild"
+                        ),
+                    )
+                )
+            elif missing:
+                results.append(
+                    CheckResult(
+                        name="chunk_store:mongo:index:chunks_vector:filters",
+                        ok=False,
+                        detail="missing filter: " + ", ".join(sorted(missing)),
+                    )
+                )
+            else:
+                results.append(
+                    CheckResult(
+                        name="chunk_store:mongo:index:chunks_vector:filters",
+                        ok=True,
+                        detail=", ".join(sorted(expected)) + " all filterable",
                     )
                 )
 

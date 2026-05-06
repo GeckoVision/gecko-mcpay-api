@@ -712,7 +712,7 @@ async def _run_pro_debate(
     except Exception as exc:  # pragma: no cover — defense in depth
         logger.warning("v5.5 post-processors failed: %s", exc)
 
-    return base_result.model_copy(
+    pro_result = base_result.model_copy(
         update={
             "tier": "pro",
             "transcript": transcript.model_dump(mode="json"),
@@ -729,6 +729,18 @@ async def _run_pro_debate(
             "founder_posture": founder_posture,
         }
     )
+
+    # S20-A6 / S20-A-USAGE-COUNT-01 — fire-and-forget bump of
+    # metadata.usage_count for chunks that landed in the pro synth's
+    # citation set. cited_doc_ids was validated upstream in basic.generate
+    # (and propagates through model_copy unchanged), so any value here is
+    # already ⊆ rag_context. NOT awaited — pro responses ship without
+    # waiting on the usage_count write.
+    from gecko_core.orchestration.basic import _dispatch_usage_count_bump
+
+    _dispatch_usage_count_bump(pro_result.cited_doc_ids, pro_result.citation_markers)
+
+    return pro_result
 
 
 # S17-VERDICT-01 — the judge's "Final verdict: ..." line is no longer the

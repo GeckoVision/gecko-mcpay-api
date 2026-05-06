@@ -24,6 +24,7 @@ from gecko_core.ingestion.embedder import (
     estimate_embed_cost_usd,
 )
 from gecko_core.ingestion.settings import get_ingestion_settings
+from gecko_core.knowledge.taxonomy import LEGACY_CATEGORY
 from gecko_core.models import _validate_citation_uri
 from gecko_core.rag.self_citation import (
     SELF_CITATION_DOWNWEIGHT,
@@ -250,13 +251,41 @@ class RagChunk(BaseModel):
         return data
 
 
+def _legacy_exclude_filter() -> dict[str, Any]:
+    """Mongo $match filter that excludes legacy chunks.
+
+    Excludes BOTH ``category=legacy_uncategorized`` AND chunks where
+    ``metadata.deprecated=true`` (the revoke-script's stamp). Using
+    ``$ne`` for the metadata key tolerates docs that lack the field
+    entirely (the common case for canonical chunks). The filter is
+    pushed into ``$vectorSearch.filter`` so Atlas pre-filters before
+    kNN — avoids reading past legacy candidates we'd have to drop.
+    Atlas needs the underlying paths declared as filterable on the
+    vector index; when they aren't (older deploys), the filter still
+    runs as a post-stage, just slower.
+    """
+    return {
+        "category": {"$ne": LEGACY_CATEGORY},
+        "metadata.deprecated": {"$ne": True},
+    }
+
+
 async def rag_query(
     session_id: UUID,
     question: str,
     top_k: int = 8,
     store: SessionStore | None = None,
+    *,
+    include_legacy: bool = False,
 ) -> list[RagChunk]:
-    """Embed `question` and return the top-k most similar chunks for the session."""
+    """Embed `question` and return the top-k most similar chunks for the session.
+
+    ``include_legacy`` (S20-A3, default False): when True, drops the
+    default exclusion of ``category=legacy_uncategorized`` /
+    ``metadata.deprecated=true`` chunks. Operators / debug runs use
+    this to read the legacy bucket; production retrieval should leave
+    it False.
+    """
     if not question.strip():
         return []
     if top_k <= 0:
@@ -313,6 +342,17 @@ async def rag_query(
             match_chunks_mongo,
         )
 
+        # S20-A3 — exclude legacy chunks by default. Best-effort INFO log
+        # signals the filter is active; we don't run a separate count to
+        # report exact excluded N (would double the wire round-trip).
+        extra_filter: dict[str, Any] | None = None
+        if not include_legacy:
+            extra_filter = _legacy_exclude_filter()
+            logger.info(
+                "rag.query.legacy_filtered legacy_filter_active=true session_id=%s",
+                session_id,
+            )
+
         if use_hybrid:
             try:
                 rows = await match_chunks_hybrid_mongo(
@@ -320,6 +360,7 @@ async def rag_query(
                     query_embedding=query_embedding,
                     match_count=fetch_k,
                     per_kind_quota=per_kind_quota,
+                    extra_filter=extra_filter,
                 )
             except Exception as exc:
                 logger.warning(
@@ -330,12 +371,14 @@ async def rag_query(
                     session_id=session_id,
                     query_embedding=query_embedding,
                     match_count=fetch_k,
+                    extra_filter=extra_filter,
                 )
         else:
             rows = await match_chunks_mongo(
                 session_id=session_id,
                 query_embedding=query_embedding,
                 match_count=fetch_k,
+                extra_filter=extra_filter,
             )
     else:
 
@@ -411,4 +454,4 @@ async def rag_query(
     return await voyage_rerank(question, boosted, top_n=top_k)
 
 
-__all__ = ["RagChunk", "_rerank_by_provider", "rag_query"]
+__all__ = ["RagChunk", "_legacy_exclude_filter", "_rerank_by_provider", "rag_query"]

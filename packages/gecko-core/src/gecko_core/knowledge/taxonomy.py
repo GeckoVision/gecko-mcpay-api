@@ -34,9 +34,18 @@ Category = Literal[
     "technical_engineering",
     "ai_ml",
     "design_ux",
+    "legacy_uncategorized",
 ]
 """Static type alias. Keep in sync with CATEGORIES manually — the
-schema-drift test verifies they match (typing.get_args(Category))."""
+schema-drift test verifies they match (typing.get_args(Category)).
+
+``legacy_uncategorized`` (S20-A3) is a RESERVED bucket — chunks that
+predate the A2 categorized-knowledge fields are stamped with this
+category by the ``scripts/mongo/s20_legacy_revoke.py`` one-shot. New
+ingestions MUST NOT use it; the Mongo write path raises
+``ChunkValidationError(kind='invalid_category')`` if they do, unless
+``metadata.deprecated=True`` is set explicitly (the revoke script's
+own write path)."""
 
 CATEGORIES: Final[tuple[Category, ...]] = (
     "market_intelligence",
@@ -46,8 +55,16 @@ CATEGORIES: Final[tuple[Category, ...]] = (
     "technical_engineering",
     "ai_ml",
     "design_ux",
+    "legacy_uncategorized",
 )
-"""Runtime tuple — used by Mongo validators and runtime enum checks."""
+"""Runtime tuple — used by Mongo validators and runtime enum checks.
+
+The 7 canonical knowledge dimensions plus the reserved S20-A3
+``legacy_uncategorized`` bucket (see Category docstring)."""
+
+LEGACY_CATEGORY: Final[Category] = "legacy_uncategorized"
+"""Single source of truth for the legacy bucket name. Use this constant
+instead of the bare string anywhere downstream (Pattern A)."""
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +142,9 @@ SUBCATEGORIES: Final[dict[Category, tuple[str, ...]]] = {
     "technical_engineering": ("architecture", "infra", "performance", "security"),
     "ai_ml": ("model", "rag", "eval", "prompt"),
     "design_ux": ("flow", "component", "research", "accessibility"),
+    # S20-A3 — legacy bucket has no canonical subcategories; the revoke
+    # script writes ``subcategory=""`` and writes are gated elsewhere.
+    "legacy_uncategorized": (),
 }
 """Canonical subcategory seeds per Category. Mongo writes validate
 ``subcategory`` against this map. Subcategories are open-set and grow
@@ -180,6 +200,7 @@ def default_chunk_metadata() -> ChunkMetadata:
 __all__ = [
     "CATEGORIES",
     "KNOWLEDGE_SOURCES",
+    "LEGACY_CATEGORY",
     "SUBCATEGORIES",
     "VERTICALS",
     "Category",

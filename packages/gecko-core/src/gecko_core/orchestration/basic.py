@@ -898,7 +898,7 @@ async def generate(
         len(out.rationale),
     )
 
-    return ResearchResult(
+    result = ResearchResult(
         session_id=str(session_id),
         tier="basic",
         business_plan=out.business_plan,
@@ -913,6 +913,85 @@ async def generate(
         citation_markers=markers,
         confidence=document_confidence,
     )
+
+    # S20-A6 / S20-A-USAGE-COUNT-01 — fire-and-forget bump of
+    # metadata.usage_count for chunks that landed in the synth output.
+    # NOT awaited: the user's verdict shouldn't wait on a side-effect write.
+    # cited_doc_ids is already validated ⊆ {chunk.chunk_id for chunk in
+    # rag_context} upstream (extract_citation_markers), so any value here
+    # is safe to feed Mongo.
+    _dispatch_usage_count_bump(result.cited_doc_ids, markers)
+
+    return result
+
+
+def _log_task_exception(task: asyncio.Task[Any]) -> None:
+    """Fire-and-forget completion callback. Logs unexpected exceptions.
+
+    bump_usage_counts is itself best-effort and never raises, but we keep
+    this defensive callback so any future fire-and-forget path that DOES
+    raise surfaces in the structured log instead of vanishing into
+    asyncio's "exception was never retrieved" warning.
+    """
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.warning(
+            "fire_and_forget.task_failed",
+            extra={
+                "event": "fire_and_forget.task_failed",
+                "task_name": task.get_name(),
+                "exc_type": exc.__class__.__name__,
+            },
+        )
+
+
+def _dispatch_usage_count_bump(
+    cited_doc_ids: list[str],
+    citation_markers: list[Any],
+) -> None:
+    """Schedule ``bump_usage_counts`` as a fire-and-forget task.
+
+    Skips Mongo entirely when there's nothing to bump (no wasted trip).
+    Emits one ``chunk_cited`` INFO row per cited chunk for the future
+    telemetry dashboard — the bump function itself only sees chunk_ids,
+    so the structured log is the surface where url/span/idx context
+    travels alongside the doc_id.
+    """
+    if not cited_doc_ids:
+        return
+
+    # One log row per cited chunk; carry the marker context (url, span, idx)
+    # when it's available — the bump function itself only takes ids.
+    markers_by_doc: dict[str, Any] = {}
+    for m in citation_markers:
+        try:
+            doc_id = m.doc_id
+        except AttributeError:
+            continue
+        markers_by_doc.setdefault(doc_id, m)
+    for cid in cited_doc_ids:
+        m = markers_by_doc.get(cid)
+        extra: dict[str, Any] = {"event": "chunk_cited", "chunk_id": cid}
+        if m is not None:
+            for attr in ("idx", "url", "span"):
+                val = getattr(m, attr, None)
+                if val is not None:
+                    extra[attr] = val
+        logger.info("chunk_cited", extra=extra)
+
+    from gecko_core.db.mongo_chunks import bump_usage_counts
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop (synchronous test context calling generate via
+        # asyncio.run, already returning). Run inline best-effort —
+        # asyncio.run would re-enter; just skip.
+        return
+    task = loop.create_task(bump_usage_counts(cited_doc_ids), name="bump_usage_counts.basic")
+    task.add_done_callback(_log_task_exception)
 
 
 # Re-export typing helpers callers may want (kept here so tier dispatcher stays narrow).

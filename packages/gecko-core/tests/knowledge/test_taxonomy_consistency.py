@@ -37,8 +37,10 @@ def test_canonical_categories_value() -> None:
         "technical_engineering",
         "ai_ml",
         "design_ux",
+        "legacy_uncategorized",
     )
-    assert len(CATEGORIES) == 7
+    # 7 canonical + 1 reserved S20-A3 legacy bucket.
+    assert len(CATEGORIES) == 8
 
 
 def test_canonical_verticals_value() -> None:
@@ -120,11 +122,12 @@ def test_default_chunk_metadata_shape() -> None:
     assert before - timedelta(seconds=1) <= md["timestamp"] <= after + timedelta(seconds=1)
 
 
-def test_all_25_literal_values_via_constant_tuples() -> None:
-    """7 Categories + 11 Verticals + 7 KnowledgeSources = 25 values
-    must be reachable via the public constant tuples."""
+def test_all_26_literal_values_via_constant_tuples() -> None:
+    """8 Categories (7 canonical + legacy_uncategorized) + 11 Verticals +
+    7 KnowledgeSources = 26 values must be reachable via the public
+    constant tuples."""
     total = len(CATEGORIES) + len(VERTICALS) + len(KNOWLEDGE_SOURCES)
-    assert total == 25
+    assert total == 26
     # And each constant tuple has no duplicates.
     assert len(set(CATEGORIES)) == len(CATEGORIES)
     assert len(set(VERTICALS)) == len(VERTICALS)

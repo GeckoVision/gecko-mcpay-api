@@ -42,6 +42,42 @@ AUDIT_COLLECTION = "chunks_write_audit"
 VECTOR_INDEX_NAME = "chunks_vector"
 SEARCH_INDEX_NAME = "chunks_text"
 
+# S20-RAG-02 — canonical list of filter-field paths declared on the Atlas
+# Search vector index ``chunks_vector``. Single source of truth: the
+# index-management script (``scripts/mongo/s20_rag02_filterable_index.py``)
+# builds the index from this tuple, and the doctor probe asserts the live
+# index advertises these exact paths. Add a path here, the migration script
+# picks it up on the next ``--apply --rebuild`` run.
+#
+# Why these specifically:
+#   - ``vertical`` / ``category`` — pre-filter the categorized cell before
+#     ANN. The wedge of S20's RAG architecture (multi-tenant by vertical).
+#   - ``source`` — KnowledgeSource (web, bazaar, twit_sh…). Lets callers
+#     scope to paid vs free providers without a post-ANN $match.
+#   - ``provider_kind`` — legacy-compatible provider attribution
+#     (web/youtube/bazaar/arxiv/twitsh/hn/reddit/gecko_precedent). Kept
+#     filterable for hybrid retrieval that pre-filters by provider class.
+#   - ``metadata.deprecated`` — the soft-delete flag for legacy chunks
+#     (the A3 ``include_legacy=False`` default excludes these).
+#
+# NB: ``session_id`` and ``project_id`` are also declared filterable on the
+# index for the legacy match_chunks paths; they predate S20 and live in
+# ``CHUNKS_VECTOR_LEGACY_FILTER_FIELDS`` to keep the new compound list
+# auditable on its own.
+CHUNKS_VECTOR_FILTER_FIELDS: tuple[str, ...] = (
+    "vertical",
+    "category",
+    "source",
+    "provider_kind",
+    "metadata.deprecated",
+)
+
+CHUNKS_VECTOR_LEGACY_FILTER_FIELDS: tuple[str, ...] = (
+    "session_id",
+    "project_id",
+    "captured_at",
+)
+
 
 def mongo_uri() -> str | None:
     """Return the configured Mongo URI or None if unset.
@@ -105,6 +141,8 @@ __all__ = [
     "AUDIT_COLLECTION",
     "CACHE_COLLECTION",
     "CHUNKS_COLLECTION",
+    "CHUNKS_VECTOR_FILTER_FIELDS",
+    "CHUNKS_VECTOR_LEGACY_FILTER_FIELDS",
     "CHUNK_DB_DEFAULT",
     "SEARCH_INDEX_NAME",
     "VECTOR_INDEX_NAME",
