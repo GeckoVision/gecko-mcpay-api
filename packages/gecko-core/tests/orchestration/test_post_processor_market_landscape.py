@@ -151,12 +151,12 @@ def _run_landscape_task_sync(
         max_tokens: int | None = None,
     ) -> dict[str, Any]:
         call_count["n"] += 1
-        # Route by what the task is asking for. The landscape system
-        # prompt is the one we want to drive; everything else returns
-        # benign payloads.
-        # Heuristic: only the landscape task passes ``max_tokens`` (the
-        # FIX-05 cap). All other tasks call _call_json without it.
-        if max_tokens is not None:
+        # Route by the system prompt sentinel set in the load_post_processors
+        # stub. S21-FIX-07 expanded the set of sections that pass max_tokens
+        # (surviving_dissent + next_steps now also pass a cap), so the old
+        # "max_tokens is not None ⇒ landscape" heuristic no longer
+        # disambiguates. Match on the explicit sentinel instead.
+        if system == "SYS_LANDSCAPE":
             # Track the cap for the env-override assertion.
             call_count["landscape_max_tokens"] = max_tokens
             if callable(call_json_side_effect):
@@ -167,6 +167,20 @@ def _run_landscape_task_sync(
                 raise call_json_side_effect
             assert isinstance(call_json_side_effect, dict)
             return call_json_side_effect
+        # surviving_dissent / next_steps benign payloads (these now pass
+        # max_tokens too post-FIX-07; we just return shapes that validate).
+        if system == "SYS_DISSENT":
+            return {
+                "dissent_status": "no_surviving_dissent",
+                "dissents": [],
+                "rationale": "",
+            }
+        if system == "SYS_STEPS":
+            return {"steps": []}
+        if system == "SYS_SUMMARY":
+            return {"summary": "ok"}
+        if system == "SYS_CLASSIFY":
+            return {"idea_classification": "unclear", "founder_posture": "unclear"}
         # transcript_summary
         if "summary" not in call_count:
             call_count["summary"] = True

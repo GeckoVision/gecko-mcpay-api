@@ -251,6 +251,17 @@ def extract_citation_markers(
                 unmatched,
                 unmatched_prose,
             )
+        # S21-FIX-07 — emit-rate telemetry. Captured at INFO so the next
+        # dogfood can chart the model's over-emission rate (the
+        # cae5ab28 reproducer: 11 entries against 3 prose markers ⇒
+        # dropped_unmatched=8). prose_markers counts distinct [N].
+        logger.info(
+            "synth.citation.emit_rate emitted=%d prose_markers=%d dropped_unmatched=%d matched=%d",
+            len(grounded),
+            len(prose_idxs),
+            unmatched,
+            len(matched),
+        )
         cited_doc_ids = [m.doc_id for m in matched]
         return matched, cited_doc_ids
 

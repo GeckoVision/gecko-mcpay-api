@@ -197,6 +197,15 @@ then citations MUST be:
 Every ``[N]`` in prose ↔ exactly one citations[*].idx == N entry. No
 exceptions.
 
+DO NOT emit citation entries for chunks you did NOT reference in prose.
+The `citations` array is the inverse map of the `[N]` markers you actually
+wrote — it is NOT a list of every chunk in the Context. The cardinality
+rule: len(citations) == count of distinct [N] in your prose. No exceptions.
+
+Example: if your prose contains exactly "[1]" and "[2]" markers, citations
+MUST have exactly 2 entries (idx=1, idx=2). Do not emit citations[*] for
+unreferenced chunks even if they look relevant.
+
 Rules:
 - Every document MUST include at least one citation.
 - Every citation's source_url MUST be one of the URLs that appears in the

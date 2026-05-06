@@ -24,13 +24,17 @@ from pydantic import BaseModel, ValidationError
 from gecko_core.llm_helpers import build_response_format
 from gecko_core.models import (
     Competitor,
+    Dissent,
+    Falsifier,
     LandscapeSectionFlag,
     MarketLandscape,
     NextStep,
     NextStepsWithFalsifiers,
     PerVoiceReadout,
+    PostProcessorTruncationFlag,
     SurvivingDissent,
 )
+from gecko_core.orchestration.degraded import DegradedSectionTracker
 from gecko_core.orchestration.pro.prompts import load_post_processors
 from gecko_core.orchestration.pro.transcript import DebateTranscript
 from gecko_core.orchestration.settings import (
@@ -246,6 +250,158 @@ def _recover_market_landscape_partial(partial_content: str) -> MarketLandscape:
     return MarketLandscape(competitors=competitors, section_flag=flag)
 
 
+def _walk_top_level_object_fragments(body: str) -> list[str]:
+    """Walk ``body`` (the contents AFTER an opening ``[``) and return the
+    list of completed top-level ``{...}`` object substrings.
+
+    Mirrors the brace/string-depth scan used by
+    :func:`_recover_market_landscape_partial`. Stops at a top-level ``]``.
+    Partial trailing object is silently dropped (the caller doesn't need
+    it — it would have failed validation anyway).
+    """
+    fragments: list[str] = []
+    depth = 0
+    start = 0
+    in_str = False
+    escape = False
+    for i, ch in enumerate(body):
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                fragments.append(body[start : i + 1])
+        elif ch == "]" and depth == 0:
+            break
+    return fragments
+
+
+def _recover_surviving_dissent_partial(partial_content: str) -> SurvivingDissent:
+    """S21-FIX-07 — best-effort parse of a truncated surviving_dissent.
+
+    The shape is ``{dissent_status, dissents: [Dissent], rationale}``. The
+    LLM typically truncates mid-list (closing ``]`` and ``}`` missing). We
+    locate the ``dissents`` array, walk top-level ``{...}`` fragments,
+    validate each as a ``Dissent``, and drop malformed trailing entries.
+
+    Returns a ``SurvivingDissent`` with ``section_flag`` set to either
+    ``"truncated_partial_recovery"`` (≥1 dissent recovered) or
+    ``"truncated_zero_recovery"`` (no recoverable prefix). Always returns
+    a value — never ``None`` — so the renderer can show a degraded-section
+    indicator instead of silently dropping the field. ``dissent_status``
+    defaults to ``"surviving_dissent"`` when at least one dissent was
+    recovered (a non-empty list is by definition surviving dissent), and
+    ``"no_surviving_dissent"`` when zero entries survive — the most
+    conservative reading of a truncated payload.
+    """
+    dissents: list[Dissent] = []
+
+    marker_idx = partial_content.find('"dissents"')
+    if marker_idx == -1:
+        return SurvivingDissent(
+            dissent_status="no_surviving_dissent",
+            dissents=[],
+            rationale="",
+            section_flag="truncated_zero_recovery",
+        )
+    bracket_idx = partial_content.find("[", marker_idx)
+    if bracket_idx == -1:
+        return SurvivingDissent(
+            dissent_status="no_surviving_dissent",
+            dissents=[],
+            rationale="",
+            section_flag="truncated_zero_recovery",
+        )
+
+    body = partial_content[bracket_idx + 1 :]
+    for frag in _walk_top_level_object_fragments(body):
+        try:
+            obj = json.loads(frag)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        try:
+            dissents.append(Dissent.model_validate(obj))
+        except ValidationError:
+            continue
+
+    flag: PostProcessorTruncationFlag = (
+        "truncated_partial_recovery" if dissents else "truncated_zero_recovery"
+    )
+    from gecko_core.voices import DissentStatus
+
+    status: DissentStatus = "surviving" if dissents else "no_surviving_dissent"
+    return SurvivingDissent(
+        dissent_status=status,
+        dissents=dissents,
+        rationale="",
+        section_flag=flag,
+    )
+
+
+def _recover_next_steps_partial(partial_content: str) -> NextStepsWithFalsifiers:
+    """S21-FIX-07 — best-effort parse of a truncated next_steps payload.
+
+    The shape is ``{steps: [NextStep with nested Falsifier]}``. Drop
+    trailing partial steps until the structure validates. Each NextStep
+    has ``falsifier: {what_would_disprove_this, by_when}``; a step missing
+    falsifier fields is invalid and dropped (same posture as
+    :func:`_validate_next_steps_partial`).
+
+    Returns a ``NextStepsWithFalsifiers`` with ``section_flag`` reflecting
+    partial vs zero recovery. Never returns ``None``.
+    """
+    steps: list[NextStep] = []
+
+    marker_idx = partial_content.find('"steps"')
+    if marker_idx == -1:
+        return NextStepsWithFalsifiers(steps=[], section_flag="truncated_zero_recovery")
+    bracket_idx = partial_content.find("[", marker_idx)
+    if bracket_idx == -1:
+        return NextStepsWithFalsifiers(steps=[], section_flag="truncated_zero_recovery")
+
+    body = partial_content[bracket_idx + 1 :]
+    for frag in _walk_top_level_object_fragments(body):
+        try:
+            obj = json.loads(frag)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        # NextStep requires a fully-shaped Falsifier; pre-validate to drop
+        # noise instead of letting model_validate raise on the whole step.
+        falsifier_raw = obj.get("falsifier")
+        if not isinstance(falsifier_raw, dict):
+            continue
+        try:
+            Falsifier.model_validate(falsifier_raw)
+        except ValidationError:
+            continue
+        try:
+            steps.append(NextStep.model_validate(obj))
+        except ValidationError:
+            continue
+
+    flag: PostProcessorTruncationFlag = (
+        "truncated_partial_recovery" if steps else "truncated_zero_recovery"
+    )
+    return NextStepsWithFalsifiers(steps=steps, section_flag=flag)
+
+
 def _validate_next_steps_partial(raw: dict[str, Any]) -> NextStepsWithFalsifiers | None:
     """FIX-03 — validate ``next_steps_with_falsifiers`` step-by-step.
 
@@ -327,7 +483,13 @@ def _coherence_drop_steps(
     dropped = len(next_steps.steps) - len(kept)
     if dropped == 0:
         return next_steps, 0
-    return NextStepsWithFalsifiers(steps=kept), dropped
+    # S21-FIX-07 — preserve section_flag through the coherence drop. The
+    # rebuilt object is the same logical section; losing the flag would
+    # silently drop the truncation signal that OBS-01 relies on.
+    return (
+        NextStepsWithFalsifiers(steps=kept, section_flag=next_steps.section_flag),
+        dropped,
+    )
 
 
 def _build_client() -> AsyncOpenAI:
@@ -347,6 +509,7 @@ async def run_post_processors(
     idea: str,
     *,
     client: AsyncOpenAI | None = None,
+    tracker: DegradedSectionTracker | None = None,
 ) -> tuple[
     PerVoiceReadout | None,
     str | None,
@@ -426,9 +589,13 @@ async def run_post_processors(
                         "max_tokens": ml_cap,
                     },
                 )
+                if tracker is not None and recovered.section_flag is not None:
+                    tracker.mark("market_landscape", recovered.section_flag)
                 return recovered
             except Exception as exc:
                 logger.warning("post-processor market_landscape call failed: %s", exc)
+                if tracker is not None:
+                    tracker.mark("market_landscape", "call_failed")
                 return None
             try:
                 return MarketLandscape.model_validate(raw)
@@ -437,29 +604,81 @@ async def run_post_processors(
                 return None
 
         landscape_task = _landscape_task()
-        dissent_task = _run_section(
-            c,
-            system=prompts["surviving_dissent"],
-            user=user,
-            model_cls=SurvivingDissent,
-            section="surviving_dissent",
-        )
+
+        async def _dissent_task() -> SurvivingDissent | None:
+            # S21-FIX-07 — truncation-aware mirror of _landscape_task.
+            # Bumps max_tokens to settings.max_tokens_surviving_dissent
+            # (default 4000) and best-effort recovers the prefix when
+            # finish_reason=length fires.
+            from gecko_core.orchestration.llm_client import LLMTruncationError
+
+            sd_cap = get_orchestration_settings().max_tokens_surviving_dissent
+            try:
+                raw = await _call_json(
+                    c,
+                    system=prompts["surviving_dissent"],
+                    user=user,
+                    model_cls=SurvivingDissent,
+                    max_tokens=sd_cap,
+                )
+            except LLMTruncationError as exc:
+                recovered = _recover_surviving_dissent_partial(exc.partial_content or "")
+                logger.warning(
+                    "pro.surviving_dissent.truncated section_flag=%s n_dissents=%d max_tokens=%d",
+                    recovered.section_flag,
+                    len(recovered.dissents),
+                    sd_cap,
+                )
+                if tracker is not None and recovered.section_flag is not None:
+                    tracker.mark("surviving_dissent", recovered.section_flag)
+                return recovered
+            except Exception as exc:
+                logger.warning("pro.surviving_dissent.call_failed err=%s", exc)
+                if tracker is not None:
+                    tracker.mark("surviving_dissent", "call_failed")
+                return None
+            try:
+                return SurvivingDissent.model_validate(raw)
+            except ValidationError as exc:
+                logger.warning("post-processor surviving_dissent validation failed: %s", exc)
+                if tracker is not None:
+                    tracker.mark("surviving_dissent", "validation_failed")
+                return None
+
+        dissent_task = _dissent_task()
 
         async def _steps_task() -> NextStepsWithFalsifiers | None:
-            # FIX-03 — partial-tolerant validation. The strict
-            # ``model_cls=NextStepsWithFalsifiers`` path drops the entire
-            # payload when one step is malformed; we want the surviving
-            # steps to propagate so a single bad falsifier doesn't blank
-            # the whole section.
+            # S21-FIX-07 — truncation-aware. Bumps max_tokens to
+            # settings.max_tokens_next_steps and best-effort recovers the
+            # prefix on finish_reason=length. FIX-03 partial validation
+            # remains for the success path (one bad step shouldn't drop
+            # the whole list).
+            from gecko_core.orchestration.llm_client import LLMTruncationError
+
+            ns_cap = get_orchestration_settings().max_tokens_next_steps
             try:
                 raw = await _call_json(
                     c,
                     system=prompts["next_steps_with_falsifiers"],
                     user=user,
                     model_cls=NextStepsWithFalsifiers,
+                    max_tokens=ns_cap,
                 )
+            except LLMTruncationError as exc:
+                recovered = _recover_next_steps_partial(exc.partial_content or "")
+                logger.warning(
+                    "pro.next_steps.truncated section_flag=%s n_steps=%d max_tokens=%d",
+                    recovered.section_flag,
+                    len(recovered.steps),
+                    ns_cap,
+                )
+                if tracker is not None and recovered.section_flag is not None:
+                    tracker.mark("next_steps_with_falsifiers", recovered.section_flag)
+                return recovered
             except Exception as exc:
-                logger.warning("post-processor next_steps_with_falsifiers call failed: %s", exc)
+                logger.warning("pro.next_steps.call_failed err=%s", exc)
+                if tracker is not None:
+                    tracker.mark("next_steps_with_falsifiers", "call_failed")
                 return None
             return _validate_next_steps_partial(raw)
 
@@ -501,7 +720,9 @@ async def run_post_processors(
     summary = results[1]
     # results[2] is already typed MarketLandscape | None (S20-FIX-05 _landscape_task).
     market_landscape = results[2]
-    surviving_dissent = cast("SurvivingDissent | None", results[3])
+    # S21-FIX-07 — _dissent_task returns SurvivingDissent | None natively now;
+    # cast is no longer needed (mypy reports redundant_cast).
+    surviving_dissent = results[3]
     # results[4] is already typed NextStepsWithFalsifiers | None (FIX-03 _steps_task).
     next_steps = results[4]
     classification_pair = results[5]

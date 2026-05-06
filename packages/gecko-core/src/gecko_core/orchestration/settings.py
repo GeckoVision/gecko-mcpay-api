@@ -63,6 +63,11 @@ class OrchestrationSettings(BaseSettings):
     # Default 4000 leaves comfortable headroom; override per-deploy via
     # ``GECKO_MARKET_LANDSCAPE_MAX_TOKENS``.
     max_tokens_market_landscape: int = Field(4000, alias="GECKO_MARKET_LANDSCAPE_MAX_TOKENS")
+    # S21-FIX-07 — surviving_dissent + next_steps_with_falsifiers ran into the
+    # same 2000-token wall on deepseek-v4-flash (session cae5ab28). Same
+    # remediation as market_landscape: bump default to 4000 with env override.
+    max_tokens_surviving_dissent: int = Field(4000, alias="GECKO_SURVIVING_DISSENT_MAX_TOKENS")
+    max_tokens_next_steps: int = Field(4000, alias="GECKO_NEXT_STEPS_MAX_TOKENS")
     max_tokens_refiner: int = Field(4000, alias="ORCH_MAX_TOKENS_REFINER")
     max_tokens_judge_synth: int = Field(4000, alias="ORCH_MAX_TOKENS_JUDGE_SYNTH")
     max_tokens_ask: int = Field(1500, alias="ORCH_MAX_TOKENS_ASK")

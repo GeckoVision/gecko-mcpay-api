@@ -684,11 +684,13 @@ async def _run_pro_debate(
     market_landscape = None
     surviving_dissent = None
     next_steps_with_falsifiers = None
-    # S20-FIX-05-FOLLOWUP / S20-OBS-01 — instantiate the pro tracker before
-    # NOTE: post-processor tracker plumbing is queued for a follow-up ticket
-    # (S21-FIX-07 below). For now, post_processors.py does not yet accept a
-    # tracker arg; the AI/ML follow-up batch will land tracker-marking for
-    # surviving_dissent + next_steps + market_landscape truncation events.
+    # S21-FIX-07 — pro tracker is now plumbed through run_post_processors
+    # so market_landscape / surviving_dissent / next_steps truncation events
+    # mark the tracker, which then drives ResearchResult.degraded_sections
+    # via pp_tracker.apply_to(pro_result) below. If the caller already
+    # passed a tracker, we share that one (so basic-tier marks accumulate);
+    # otherwise we instantiate a fresh tracker scoped to this pro run.
+    pp_tracker = tracker if tracker is not None else DegradedSectionTracker()
     try:
         from gecko_core.orchestration.pro.post_processors import run_post_processors
 
@@ -699,7 +701,7 @@ async def _run_pro_debate(
             surviving_dissent,
             next_steps_with_falsifiers,
             pp_meta,
-        ) = await run_post_processors(transcript, rag_context, idea)
+        ) = await run_post_processors(transcript, rag_context, idea, tracker=pp_tracker)
         if pp_meta.get("_dropped_step_count"):
             logger.info(
                 "post-processor coherence dropped %d next-step(s)",
@@ -744,7 +746,10 @@ async def _run_pro_debate(
     # tracker), apply_to overlays those values. We don't silently override
     # the base_result inheritance: only apply when the caller passed a
     # tracker in OR a fresh local tracker has accumulated state.
-    pro_tracker = tracker if tracker is not None else DegradedSectionTracker()
+    # S21-FIX-07 — reuse the pp_tracker so post-processor marks survive
+    # into apply_to. Previously this re-allocated a fresh tracker, which
+    # silently discarded surviving_dissent / next_steps truncation marks.
+    pro_tracker = pp_tracker
     if pro_tracker.to_dict() or tracker is not None:
         pro_tracker.apply_to(pro_result)
         if pro_result.degraded_sections:

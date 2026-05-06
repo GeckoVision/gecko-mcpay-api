@@ -648,6 +648,16 @@ LandscapeSectionFlag = Literal[
     "truncated_zero_recovery",
 ]
 
+# S21-FIX-07 — shared truncation flag for the other post-processors that
+# can hit the same finish_reason=length cap on deepseek-v4-flash.
+# ``surviving_dissent`` and ``next_steps_with_falsifiers`` use this flag.
+# Same two values as ``LandscapeSectionFlag`` so renderer code can branch
+# on the string literally without per-section enums.
+PostProcessorTruncationFlag = Literal[
+    "truncated_partial_recovery",
+    "truncated_zero_recovery",
+]
+
 # v5.5 — closed list of differentiator axes the market_landscape post-
 # processor picks from. Decoupled from `why_we_are_not_them` (sentence)
 # so the model cannot collapse the prose field into the bare axis name
@@ -710,6 +720,10 @@ class SurvivingDissent(BaseModel):
     dissent_status: DissentStatus
     dissents: list[Dissent] = Field(default_factory=list)
     rationale: str = ""
+    # S21-FIX-07 — set by the post-processor's best-effort recovery path
+    # when the LLM output truncated mid-list. Excluded from verdict_hash
+    # by design (not part of ``_verdict_payload`` in verdict_hash.py).
+    section_flag: PostProcessorTruncationFlag | None = None
 
 
 class Falsifier(BaseModel):
@@ -725,6 +739,9 @@ class NextStep(BaseModel):
 
 class NextStepsWithFalsifiers(BaseModel):
     steps: list[NextStep] = Field(default_factory=list)
+    # S21-FIX-07 — see SurvivingDissent.section_flag. Excluded from
+    # verdict_hash by design.
+    section_flag: PostProcessorTruncationFlag | None = None
 
 
 # ---------------------------------------------------------------------------
