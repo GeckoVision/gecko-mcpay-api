@@ -1,0 +1,12 @@
+{"query": "I want to build a neobank in São Paulo with PIX rails", "expected_vertical": "neobank", "expected_categories": ["business_financial", "technical_engineering"]}
+{"query": "What are the latest funding rounds for prediction markets?", "expected_vertical": "prediction_market", "expected_categories": ["investment_signals", "market_intelligence"]}
+{"query": "How do I evaluate a RAG pipeline at scale?", "expected_vertical": "unknown", "expected_categories": ["ai_ml", "technical_engineering"]}
+{"query": "Design a token swap UX for a Solana DEX", "expected_vertical": "dex", "expected_categories": ["design_ux", "product"]}
+{"query": "What's the TAM for B2B SaaS observability tools in LATAM?", "expected_vertical": "b2b_saas", "expected_categories": ["market_intelligence", "business_financial"]}
+{"query": "Architecture for an on-chain NFT marketplace with royalties", "expected_vertical": "marketplace", "expected_categories": ["technical_engineering", "product"]}
+{"query": "How do consumer social apps retain Gen Z users?", "expected_vertical": "consumer_social", "expected_categories": ["product", "market_intelligence"]}
+{"query": "Pricing strategy for an AI agent platform charging per call", "expected_vertical": "ai_agent_platform", "expected_categories": ["business_financial", "product"]}
+{"query": "Indexer infrastructure performance benchmarks for Solana", "expected_vertical": "indexer", "expected_categories": ["technical_engineering", "ai_ml"]}
+{"query": "Web3 gaming retention curves and tokenomics", "expected_vertical": "gaming", "expected_categories": ["product", "business_financial"]}
+{"query": "What developer tools are devs paying for in 2026?", "expected_vertical": "infra_devtool", "expected_categories": ["market_intelligence", "product"]}
+{"query": "Investor thesis for early-stage prediction market protocols", "expected_vertical": "prediction_market", "expected_categories": ["investment_signals", "market_intelligence"]}
