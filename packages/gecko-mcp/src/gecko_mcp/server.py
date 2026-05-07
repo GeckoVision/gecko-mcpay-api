@@ -1426,36 +1426,26 @@ def _list_tools_sync() -> list[Tool]:
     """Sync mirror of `list_tools()` for FastMCP registration at import time.
 
     `list_tools` is async only because the MCP SDK's decorator demands an
-    awaitable; the body is pure data. We rebuild the list synchronously
-    here to register on FastMCP without bouncing through an event loop.
+    awaitable; the body is pure data — no `await` calls. We step the
+    coroutine manually via `coro.send(None)` and capture the return value
+    from `StopIteration.value`. Works whether or not an event loop is
+    running, which matters because uvicorn loads modules INSIDE its
+    `asyncio.run(serve())` call — the previous `asyncio.get_running_loop()`
+    early-return branch silently registered zero tools in that scenario,
+    causing the production /mcp Streamable HTTP endpoint to return
+    `{"tools":[]}` while stdio worked fine.
     """
-    import asyncio
-
-    # `list_tools()` is a closure-bound coroutine returned by the
-    # @server.list_tools() decorator; call it via asyncio.run is unsafe
-    # at import time if a loop is already running. Instead, pull the
-    # list directly: the registered handler is stored on the low-level
-    # server's request_handlers under the ListToolsRequest type.
-    from mcp.types import ListToolsRequest
-
-    handler = server.request_handlers.get(ListToolsRequest)
-    if handler is None:  # pragma: no cover — defensive
-        return []
-    # The handler is async; call it with a synthetic request.
-    req = ListToolsRequest(method="tools/list")
+    coro = list_tools()
     try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-    if loop is not None and loop.is_running():
-        # Importing in an already-running loop (e.g. test harness): not
-        # supported — but in practice we register at module import which
-        # happens before any loop spins up.
-        return []
-    result: Any = asyncio.run(handler(req))  # type: ignore[arg-type]
-    # `result` is a ServerResult wrapping a ListToolsResult; the inner
-    # `.tools` is the list we want.
-    return list(result.root.tools)
+        coro.send(None)  # advance once; pure-data coroutine completes immediately
+    except StopIteration as stop:
+        coro.close()
+        value = stop.value
+        return list(value) if value is not None else []
+    # Defensive: if the coroutine yielded instead of returning (shouldn't
+    # happen for a sync body), close it and return empty.
+    coro.close()
+    return []
 
 
 class _PassthroughArgModel(ArgModelBase):
