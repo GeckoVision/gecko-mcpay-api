@@ -66,9 +66,10 @@ def test_build_query_extracts_long_keywords() -> None:
     query = _build_query("Gecko: makes judgment tradeable. Use judgmentes as a commodity.")
     # Stopwords ("makes", "use", "as", "a") dropped; long discriminators kept.
     assert "judgment" in query
-    assert "tradeable" in query
-    # AND-chained for arxiv search syntax.
-    assert "+AND+" in query
+    # S21-FIX-09: default OR-joiner for recall; AND-joining produced
+    # zero-hit empty-body responses in production.
+    assert "+OR+" in query
+    assert "+AND+" not in query
 
 
 def test_parse_atom_normalizes_entries() -> None:

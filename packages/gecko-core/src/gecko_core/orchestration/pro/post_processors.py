@@ -402,6 +402,127 @@ def _recover_next_steps_partial(partial_content: str) -> NextStepsWithFalsifiers
     return NextStepsWithFalsifiers(steps=steps, section_flag=flag)
 
 
+def _recover_per_voice_partial(partial_content: str) -> PerVoiceReadout:
+    """S22-FIX-10 — best-effort parse of a truncated per_voice_extraction payload.
+
+    Shape: ``{voices: [VoicePosition, ...]}``. Same brace/string-depth scan
+    as :func:`_recover_market_landscape_partial`. Drops malformed trailing
+    voices via :class:`pydantic.ValidationError` swallowing.
+
+    Always returns a ``PerVoiceReadout`` (never ``None``) so the renderer
+    can show a degraded-section indicator instead of silently dropping the
+    field. Uses ``model_construct`` so the result skips strict validation
+    of the ``voices`` list length / schema invariants — the caller already
+    knows the data is incomplete.
+    """
+    from gecko_core.models import VoicePosition
+
+    voices: list[VoicePosition] = []
+
+    marker_idx = partial_content.find('"voices"')
+    if marker_idx == -1:
+        return PerVoiceReadout.model_construct(voices=[])
+    bracket_idx = partial_content.find("[", marker_idx)
+    if bracket_idx == -1:
+        return PerVoiceReadout.model_construct(voices=[])
+
+    body = partial_content[bracket_idx + 1 :]
+    for frag in _walk_top_level_object_fragments(body):
+        try:
+            obj = json.loads(frag)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        try:
+            voices.append(VoicePosition.model_validate(obj))
+        except ValidationError:
+            continue
+
+    return PerVoiceReadout.model_construct(voices=voices)
+
+
+def _recover_transcript_summary_partial(partial_content: str) -> str | None:
+    """S22-FIX-10 / FIX-11 — best-effort parse of a truncated transcript_summary.
+
+    Shape: ``{summary: "..."}``. The LLM typically truncates mid-string with
+    the closing quote and ``}`` missing. Strategy: regex out the prefix
+    captured between the first ``"summary"`` key and the truncation point.
+
+    Returns the recovered prefix (suffixed with ``" [truncated]"``) when at
+    least 16 chars of summary text were captured; otherwise ``None`` so the
+    renderer / caller treats it as a hard drop.
+    """
+    marker_idx = partial_content.find('"summary"')
+    if marker_idx == -1:
+        return None
+    # Find the opening quote of the value AFTER "summary":
+    colon_idx = partial_content.find(":", marker_idx)
+    if colon_idx == -1:
+        return None
+    open_quote_idx = partial_content.find('"', colon_idx)
+    if open_quote_idx == -1:
+        return None
+
+    body = partial_content[open_quote_idx + 1 :]
+    # Walk until we hit either a balanced closing quote (full JSON) or EOF
+    # (truncation).
+    out_chars: list[str] = []
+    escape = False
+    for ch in body:
+        if escape:
+            out_chars.append(ch)
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if ch == '"':
+            # Reached the genuine close quote — payload was actually
+            # complete; return the unescaped value verbatim.
+            try:
+                decoded = json.loads('"' + "".join(out_chars) + '"')
+            except json.JSONDecodeError:
+                return "".join(out_chars).strip() or None
+            return cast(str, decoded)
+        out_chars.append(ch)
+
+    recovered = "".join(out_chars).strip()
+    if len(recovered) < 16:
+        return None
+    return f"{recovered} [truncated]"
+
+
+def _recover_classification_partial(
+    partial_content: str,
+) -> tuple[str | None, str | None]:
+    """S22-FIX-10 — best-effort parse of a truncated classification_extraction.
+
+    Shape: ``{idea_classification: "...", founder_posture: "..."}``. Both
+    values are short strings from a closed enum; truncation is rare but the
+    cap is shared with the other post-processors. Strategy: regex out
+    whichever keys made it through the truncation prefix. Returns a tuple
+    of ``(idea_classification | None, founder_posture | None)`` with each
+    field independently None when the key was absent or the value was not a
+    valid enum label.
+    """
+    import re
+
+    def _extract(key: str, valid: frozenset[str]) -> str | None:
+        # Match: "key" : "value"  (value being the enum label)
+        pat = re.compile(rf'"{re.escape(key)}"\s*:\s*"([^"\\]*)"')
+        m = pat.search(partial_content)
+        if not m:
+            return None
+        v = m.group(1).strip().lower()
+        return v if v in valid else None
+
+    return (
+        _extract("idea_classification", _CLASSIFICATION_VALID_IDEA),
+        _extract("founder_posture", _CLASSIFICATION_VALID_FOUNDER),
+    )
+
+
 def _validate_next_steps_partial(raw: dict[str, Any]) -> NextStepsWithFalsifiers | None:
     """FIX-03 — validate ``next_steps_with_falsifiers`` step-by-step.
 
@@ -540,25 +661,80 @@ async def run_post_processors(
     c = client if client is not None else _build_client()
 
     try:
-        per_voice_task = _run_section(
-            c,
-            system=prompts["per_voice_extraction"],
-            user=user,
-            model_cls=PerVoiceReadout,
-            section="per_voice_extraction",
-        )
+
+        async def _per_voice_task() -> PerVoiceReadout | None:
+            # S22-FIX-10 — truncation-aware mirror of _landscape_task. The
+            # per_voice_extraction post-processor used to route through the
+            # generic _run_section, which catches LLMTruncationError under
+            # the broad ``except Exception`` and silently drops the whole
+            # section. Now we mark the tracker + best-effort recover the
+            # voice prefix.
+            from gecko_core.orchestration.llm_client import LLMTruncationError
+
+            try:
+                raw = await _call_json(
+                    c,
+                    system=prompts["per_voice_extraction"],
+                    user=user,
+                    model_cls=PerVoiceReadout,
+                )
+            except LLMTruncationError as exc:
+                recovered = _recover_per_voice_partial(exc.partial_content or "")
+                logger.warning("pro.per_voice.truncated n_voices=%d", len(recovered.voices))
+                if tracker is not None:
+                    tracker.mark(
+                        "per_voice",
+                        "truncated_partial_recovery"
+                        if recovered.voices
+                        else "truncated_zero_recovery",
+                    )
+                return recovered
+            except Exception as exc:
+                logger.warning("post-processor per_voice_extraction call failed: %s", exc)
+                if tracker is not None:
+                    tracker.mark("per_voice", "call_failed")
+                return None
+            try:
+                return PerVoiceReadout.model_validate(raw)
+            except ValidationError as exc:
+                logger.warning("post-processor per_voice_extraction validation failed: %s", exc)
+                return None
+
+        per_voice_task = _per_voice_task()
 
         async def _summary_task() -> str | None:
+            # S22-FIX-10 / FIX-11 — truncation-aware. The transcript_summary
+            # post-processor (which feeds ResearchResult.transcript_summary
+            # AND, indirectly, falls back into pro_session_summary surfaces
+            # when the judge transcript turn is degraded) used to silently
+            # return None on a finish_reason=length cap. Best-effort recover
+            # the partial summary prefix instead.
+            from gecko_core.orchestration.llm_client import LLMTruncationError
+
             try:
                 raw = await _call_json(c, system=prompts["transcript_summary"], user=user)
-                summary = raw.get("summary")
-                if isinstance(summary, str) and summary.strip():
-                    return summary.strip()
-                logger.warning("transcript_summary missing 'summary' string")
-                return None
+            except LLMTruncationError as exc:
+                recovered = _recover_transcript_summary_partial(exc.partial_content or "")
+                logger.warning(
+                    "pro.transcript_summary.truncated recovered_chars=%d",
+                    len(recovered) if recovered else 0,
+                )
+                if tracker is not None:
+                    tracker.mark(
+                        "transcript_summary",
+                        "truncated_partial_recovery" if recovered else "truncated_zero_recovery",
+                    )
+                return recovered
             except Exception as exc:
                 logger.warning("post-processor transcript_summary failed: %s", exc)
+                if tracker is not None:
+                    tracker.mark("transcript_summary", "call_failed")
                 return None
+            summary = raw.get("summary")
+            if isinstance(summary, str) and summary.strip():
+                return summary.strip()
+            logger.warning("transcript_summary missing 'summary' string")
+            return None
 
         async def _landscape_task() -> MarketLandscape | None:
             # S20-FIX-05 — market_landscape needs (a) a higher max_tokens
@@ -689,20 +865,47 @@ async def run_post_processors(
             # the judge sentinel drops. Returns ``(idea_classification,
             # founder_posture)`` with each independently None on failure
             # or invalid label.
+            #
+            # S22-FIX-10 — truncation-aware. Truncation here is rare (two
+            # short enum strings) but the cap is shared, so we route the
+            # ``LLMTruncationError`` partial through a regex recovery and
+            # mark the tracker so OBS-01 surfaces the degraded signal even
+            # when one or both labels survived.
+            from gecko_core.orchestration.llm_client import LLMTruncationError
+
             try:
                 raw = await _call_json(c, system=prompts["classification_extraction"], user=user)
-                ideacls = raw.get("idea_classification")
-                founder = raw.get("founder_posture")
-                ideacls_norm: str | None = None
-                founder_norm: str | None = None
-                if isinstance(ideacls, str) and ideacls.lower() in _CLASSIFICATION_VALID_IDEA:
-                    ideacls_norm = ideacls.lower()
-                if isinstance(founder, str) and founder.lower() in _CLASSIFICATION_VALID_FOUNDER:
-                    founder_norm = founder.lower()
+            except LLMTruncationError as exc:
+                ideacls_norm, founder_norm = _recover_classification_partial(
+                    exc.partial_content or ""
+                )
+                logger.warning(
+                    "pro.classification.truncated idea=%s founder=%s",
+                    ideacls_norm,
+                    founder_norm,
+                )
+                if tracker is not None:
+                    tracker.mark(
+                        "classification_extraction",
+                        "truncated_partial_recovery"
+                        if (ideacls_norm or founder_norm)
+                        else "truncated_zero_recovery",
+                    )
                 return (ideacls_norm, founder_norm)
             except Exception as exc:
                 logger.warning("post-processor classification_extraction failed: %s", exc)
+                if tracker is not None:
+                    tracker.mark("classification_extraction", "call_failed")
                 return (None, None)
+            ideacls = raw.get("idea_classification")
+            founder = raw.get("founder_posture")
+            ok_idea: str | None = None
+            ok_founder: str | None = None
+            if isinstance(ideacls, str) and ideacls.lower() in _CLASSIFICATION_VALID_IDEA:
+                ok_idea = ideacls.lower()
+            if isinstance(founder, str) and founder.lower() in _CLASSIFICATION_VALID_FOUNDER:
+                ok_founder = founder.lower()
+            return (ok_idea, ok_founder)
 
         results = await asyncio.gather(
             per_voice_task,
@@ -716,7 +919,9 @@ async def run_post_processors(
         if own_client:
             await c.close()
 
-    per_voice = cast("PerVoiceReadout | None", results[0])
+    # S22-FIX-10 — _per_voice_task now returns PerVoiceReadout | None natively
+    # (replacing the legacy _run_section path), so the cast is no longer needed.
+    per_voice = results[0]
     summary = results[1]
     # results[2] is already typed MarketLandscape | None (S20-FIX-05 _landscape_task).
     market_landscape = results[2]

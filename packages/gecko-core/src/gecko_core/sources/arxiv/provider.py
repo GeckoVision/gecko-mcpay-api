@@ -153,30 +153,108 @@ _STOPWORDS: frozenset[str] = frozenset(
 )
 
 
-def _build_query(idea: str, *, max_keywords: int = 5) -> str:
-    """Extract a small keyword set from the idea for arxiv search_query.
+# S21-FIX-09 query-construction caps. The production failure was an
+# Arxiv URL with 5 ANDed hyphenated terms; the mirror returned an empty
+# 200 (not a valid empty <feed/>) because the query was overconstrained
+# to the point of falling outside the index. Defaults below are tuned to
+# stay inside the well-trodden recall envelope of the mirror:
+#   - cap at 3 terms (going wider drops to zero hits in practice),
+#   - OR-join (Arxiv's relevance ranking surfaces the matched paper;
+#     AND-joining low-frequency tokens is the failure mode here),
+#   - explode hyphens into their constituents so "research-market"
+#     becomes ("research", "market") rather than a literal that the
+#     Arxiv tokenizer never indexes.
+DEFAULT_MAX_KEYWORDS: int = 4
+# Loosened fallback used when the first attempt returns an empty body —
+# we drop to the single most-discriminative term so we at least get the
+# sort-by-relevance head of the index back.
+FALLBACK_MAX_KEYWORDS: int = 1
+# When keyword extraction yields fewer than this many salient tokens,
+# the builder degrades to the raw idea text (truncated) rather than
+# emitting a 0- or 1-term query that the Arxiv mirror routinely answers
+# with a zero-byte body.
+MIN_KEYWORDS_FOR_OR_QUERY: int = 2
+# Hard cap for the raw-idea-fallback path so a 600-char Pro-tier idea
+# doesn't blow past Arxiv's URL-length tolerance.
+RAW_IDEA_FALLBACK_CHAR_BUDGET: int = 80
 
-    Arxiv's search_query is a Lucene-style expression; we use ``all:term``
-    AND'd together so each keyword has to appear somewhere in the
-    title/abstract/comments of returned papers. Conservative match width
-    — broad enough to surface candidates, narrow enough to avoid the
-    "popular phrase that returns 10000 hits" failure mode.
+
+def _split_hyphens(token: str) -> list[str]:
+    """Split a hyphenated token into its constituents.
+
+    Arxiv's search_query tokenizer indexes on word boundaries; literals
+    like ``strategy-architecture`` never match because no abstract carries
+    that exact compound. We split into ``["strategy", "architecture"]``
+    and let the OR-join recover recall.
     """
-    tokens = re.findall(r"[a-zA-Z][a-zA-Z0-9_-]{2,}", (idea or "").lower())
+    parts = [p for p in token.split("-") if p and len(p) > 2]
+    return parts or ([token] if token and "-" not in token else [])
+
+
+def _extract_keywords(idea: str, *, limit: int) -> list[str]:
+    """Return up to ``limit`` salient keywords from ``idea``.
+
+    Hyphenated tokens are exploded; stopwords dropped; longer tokens
+    preferred (they discriminate better than 3-letter words). Order is
+    deterministic for a given input so retries with a shrunk ``limit``
+    return a strict prefix of the wider keyword set.
+    """
+    raw = re.findall(r"[a-zA-Z][a-zA-Z0-9_-]{2,}", (idea or "").lower())
+    exploded: list[str] = []
+    for t in raw:
+        exploded.extend(_split_hyphens(t))
+    # Deterministic ranking: length desc, then first-seen order.
+    indexed = list(enumerate(exploded))
+    indexed.sort(key=lambda pair: (-len(pair[1]), pair[0]))
     seen: set[str] = set()
     kept: list[str] = []
-    # Prefer longer tokens — they discriminate better than 3-letter words.
-    for t in sorted(tokens, key=len, reverse=True):
+    for _, t in indexed:
         if t in _STOPWORDS or t in seen:
             continue
         seen.add(t)
         kept.append(t)
-        if len(kept) >= max_keywords:
+        if len(kept) >= limit:
             break
+    return kept
+
+
+def _build_query(
+    idea: str,
+    *,
+    max_keywords: int = DEFAULT_MAX_KEYWORDS,
+    operator: str = "OR",
+) -> str:
+    """Extract a small keyword set from the idea for arxiv search_query.
+
+    Arxiv's search_query is a Lucene-style expression; we use ``all:term``
+    OR'd together by default — Arxiv's relevance ranking lifts the
+    best-matching abstract to the top, while AND-joining 3+ specialised
+    tokens routinely returns zero hits (S21-FIX-09 production case).
+
+    Hyphenated tokens are exploded into their constituents because the
+    Arxiv index does not tokenise on hyphens, so ``research-market``
+    matches nothing as a literal but ``research OR market`` is fine.
+    """
+    op = operator.upper().strip() or "OR"
+    if op not in {"OR", "AND"}:
+        op = "OR"
+    kept = _extract_keywords(idea, limit=max_keywords)
+    # FIX-09 fallback: if extraction couldn't surface even 2 salient terms,
+    # an OR-of-1 (or empty) query is no better than "send the raw text",
+    # and Arxiv's mirror handles raw text fine *as long as it's bounded*.
+    # We only trigger this when the caller requested >=2 terms; an
+    # explicit ``max_keywords=1`` call (the loosened retry path) is
+    # honored as-is because the caller is intentionally narrowing.
+    if max_keywords >= MIN_KEYWORDS_FOR_OR_QUERY and len(kept) < MIN_KEYWORDS_FOR_OR_QUERY:
+        raw = (idea or "").strip()[:RAW_IDEA_FALLBACK_CHAR_BUDGET]
+        return quote_plus(raw or "research")
     if not kept:
-        # Degrade to the raw idea (clamped) so we still get *something*.
-        return quote_plus((idea or "").strip()[:120] or "research")
-    return "+AND+".join(f"all:{quote_plus(t)}" for t in kept)
+        # Caller asked for 1 term but extraction returned 0 — degrade the
+        # same way rather than emit a malformed empty query.
+        raw = (idea or "").strip()[:RAW_IDEA_FALLBACK_CHAR_BUDGET]
+        return quote_plus(raw or "research")
+    joiner = f"+{op}+"
+    return joiner.join(f"all:{quote_plus(t)}" for t in kept)
 
 
 def _parse_atom(xml_text: str, *, source_url: str | None = None) -> list[dict[str, Any]]:
@@ -334,6 +412,13 @@ class ArxivSource:
             return True
         return _idea_has_technical_signal(idea)
 
+    def _build_url(self, query: str) -> str:
+        return (
+            f"{self._api_base}?search_query={query}"
+            f"&start=0&max_results={self._max_results}"
+            "&sortBy=relevance&sortOrder=descending"
+        )
+
     async def fetch(self, *, idea: str, categories: set[str]) -> SourceResult:
         # Categorical OR keyword-signal — re-check so a direct caller that
         # bypassed ``applies_to`` still gets the right gating + a clean
@@ -345,49 +430,115 @@ class ArxivSource:
                 fired=False,
             )
 
-        query = _build_query(idea)
-        url = (
-            f"{self._api_base}?search_query={query}"
-            f"&start=0&max_results={self._max_results}"
-            "&sortBy=relevance&sortOrder=descending"
-        )
-
         owns_local = False
         client = self._http
         if client is None:
             client = httpx.AsyncClient(timeout=self._timeout)
             owns_local = True
 
+        # Two-attempt strategy: primary query (top-3 OR'd) → on empty body,
+        # one retry with a single most-discriminative term. If both come
+        # back zero-bytes, give up cleanly with a structured WARN that
+        # carries both URLs so the operator can replay them.
+        attempts: list[tuple[str, str]] = []  # (query, url)
+        primary_query = _build_query(idea)
+        attempts.append((primary_query, self._build_url(primary_query)))
+
+        entries: list[dict[str, Any]] = []
+        last_query = primary_query
+        last_url = attempts[0][1]
+        empty_body_urls: list[str] = []
+
         try:
-            try:
-                resp = await client.get(url)
-            except httpx.HTTPError as exc:
-                return SourceResult(
-                    source_name=self.name,
-                    payload={"chunks": []},
-                    fired=False,
-                    error=f"arxiv: http error: {type(exc).__name__}: {exc}",
-                )
+            for attempt_idx, (query, url) in enumerate([*attempts, ("", "")]):
+                # Sentinel allows us to drive the retry inside the loop on
+                # empty_body without duplicating the request code; we break
+                # out as soon as we either get entries or exhaust attempts.
+                if not query:
+                    if not empty_body_urls:
+                        break
+                    # Build fallback only if we hit empty_body at least once.
+                    fallback_query = _build_query(
+                        idea,
+                        max_keywords=FALLBACK_MAX_KEYWORDS,
+                        operator="OR",
+                    )
+                    if fallback_query == primary_query:
+                        # Nothing to loosen — bail.
+                        break
+                    query = fallback_query
+                    url = self._build_url(query)
 
-            if resp.status_code >= 400:
-                return SourceResult(
-                    source_name=self.name,
-                    payload={"chunks": []},
-                    fired=False,
-                    error=f"arxiv: HTTP {resp.status_code}",
-                )
+                last_query, last_url = query, url
 
-            entries = _parse_atom(resp.text, source_url=url)
+                try:
+                    resp = await client.get(url)
+                except httpx.HTTPError as exc:
+                    return SourceResult(
+                        source_name=self.name,
+                        payload={"chunks": []},
+                        fired=False,
+                        error=f"arxiv: http error: {type(exc).__name__}: {exc}",
+                    )
+
+                if resp.status_code >= 400:
+                    return SourceResult(
+                        source_name=self.name,
+                        payload={"chunks": []},
+                        fired=False,
+                        error=f"arxiv: HTTP {resp.status_code}",
+                    )
+
+                body = resp.text or ""
+                if not body.strip():
+                    # Production failure mode — Arxiv responded 200 with
+                    # zero bytes. Distinct from a valid empty <feed/>.
+                    logger.warning(
+                        "arxiv.query.empty_body url=%s attempt=%d",
+                        url,
+                        attempt_idx + 1,
+                    )
+                    empty_body_urls.append(url)
+                    continue  # try the fallback (or exit if exhausted)
+
+                parsed = _parse_atom(body, source_url=url)
+                if not parsed:
+                    # Valid feed with zero results (or parse error already
+                    # WARN'd by `_parse_atom`). Treat zero-results as a
+                    # normal "no match" INFO so the dashboards can ratio
+                    # against `empty_body`.
+                    if "<feed" in body:
+                        logger.info(
+                            "arxiv.query.zero_results url=%s body_len=%d",
+                            url,
+                            len(body),
+                        )
+                    break  # don't retry on legitimate zero-results
+                entries = parsed
+                break
         finally:
             if owns_local:
                 await client.aclose()
 
         if not entries:
+            if len(empty_body_urls) >= 2:
+                # Both attempts came back zero-bytes — emit the give-up
+                # signal so the operator sees this as an Arxiv-side issue
+                # rather than a code bug.
+                logger.warning(
+                    "arxiv.query.give_up urls=%s",
+                    "|".join(empty_body_urls),
+                )
+                err = "arxiv: empty body on retry"
+            elif empty_body_urls:
+                err = "arxiv: empty body"
+            else:
+                err = "arxiv: empty result set"
             return SourceResult(
                 source_name=self.name,
                 payload={"chunks": []},
                 fired=False,
-                error="arxiv: empty result set",
+                error=err,
             )
 
         chunks = [_entry_to_chunk(e) for e in entries[: self._max_results]]
@@ -395,7 +546,7 @@ class ArxivSource:
         # compute a parse-success ratio over a CloudWatch window.
         logger.info(
             "arxiv.parse.success url=%s entry_count=%d chunk_count=%d",
-            url,
+            last_url,
             len(entries),
             len(chunks),
         )
@@ -403,7 +554,7 @@ class ArxivSource:
             source_name=self.name,
             payload={
                 "chunks": chunks,
-                "query": query,
+                "query": last_query,
                 "abstract_count": len(chunks),
             },
             cost_usd=0.0,
@@ -427,10 +578,14 @@ def make_arxiv_source(
 
 __all__ = [
     "ARXIV_API_BASE",
+    "DEFAULT_MAX_KEYWORDS",
     "DEFAULT_MAX_RESULTS",
+    "FALLBACK_MAX_KEYWORDS",
     "ArxivSource",
     "_build_query",
+    "_extract_keywords",
     "_idea_has_technical_signal",
     "_parse_atom",
+    "_split_hyphens",
     "make_arxiv_source",
 ]
