@@ -45,3 +45,9 @@ codex-session.jsonl
 colosseum-report.html
 docs/external/
 .claude/worktrees/
+
+# Pitch deck working files (Notion exports + .pptx; tracked separately if needed)
+gecko_pitch/
+
+# Context-mode local session telemetry
+.github/context-mode/sessions/
