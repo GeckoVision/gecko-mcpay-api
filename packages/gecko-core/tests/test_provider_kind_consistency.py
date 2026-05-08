@@ -74,7 +74,30 @@ def test_canonical_provider_kinds_value() -> None:
         "reddit",
         "gecko_precedent",
         "judge_corpus",
+        # S23-FIX-12 (T1) — marketplace providers.
+        "paysh_manifest",
+        "paysh_live",
+        "bazaar_manifest",
+        "bazaar_live",
     )
+
+
+def test_marketplace_provider_kinds_present() -> None:
+    """S23-FIX-12 (T1) — explicit guard that the four marketplace kinds
+    are members of ProviderKind. Without this, the seed corpus chunks
+    can't validate through ``RagChunk.model_validate`` at retrieval time
+    and the wedge claim ("paysh/bazaar shapes the verdict") is unreachable.
+    """
+    for kind in (
+        "paysh_manifest",
+        "paysh_live",
+        "bazaar_manifest",
+        "bazaar_live",
+    ):
+        assert kind in PROVIDER_KINDS, (
+            f"marketplace provider kind {kind!r} missing from ProviderKind. "
+            "S23-FIX-12 requires these to surface seeded chunks at query time."
+        )
 
 
 def test_provider_kind_literal_matches_runtime_tuple() -> None:
@@ -152,3 +175,21 @@ def test_provider_modules_do_not_redeclare_provider_kind_literal() -> None:
         "ProviderKind Literal instead of importing from "
         "gecko_core.sources.types:\n  " + "\n  ".join(offenders)
     )
+
+
+def test_freshness_tier_values_match_sql_check() -> None:
+    """Pattern A: Python literal must match SQL CHECK constraint exactly."""
+    from pathlib import Path
+
+    from gecko_core.sources.types import FRESHNESS_TIER_VALUES
+
+    migration = (
+        Path(__file__).parent.parent.parent.parent
+        / "infra"
+        / "supabase"
+        / "migrations"
+        / "20260508130000_chunk_freshness_tier.sql"
+    )
+    sql = migration.read_text()
+    for value in FRESHNESS_TIER_VALUES:
+        assert f"'{value}'" in sql, f"freshness tier {value!r} missing from SQL CHECK"

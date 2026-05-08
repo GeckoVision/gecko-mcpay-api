@@ -52,7 +52,7 @@ from gecko_core.knowledge.taxonomy import (
 )
 
 if TYPE_CHECKING:
-    from gecko_core.sources.types import ProviderKind
+    from gecko_core.sources.types import FreshnessTier, ProviderKind
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +109,7 @@ async def insert_chunks_mongo(
     project_id: UUID | None = None,
     source_url: str | None = None,
     deprecated: bool = False,
+    freshness_tier: FreshnessTier = "static",
 ) -> int:
     """Bulk-insert chunks. Returns count of *new* documents written.
 
@@ -268,6 +269,10 @@ async def insert_chunks_mongo(
             "provider_kind": provider_kind if provider_kind is not None else source,
             "project_id": str(project_id) if project_id is not None else None,
             "captured_at": now,
+            # Trading-oracle ingest axis (Pattern A: mirrors SQL CHECK in
+            # 20260508130000_chunk_freshness_tier.sql). Defaults to 'static'
+            # so existing callers are unaffected.
+            "freshness_tier": freshness_tier,
             "metadata": dict(metadata),
         }
         for idx, text, embedding in chunks
