@@ -42,7 +42,7 @@ from gecko_mcp.api_client import GeckoAPIClient
 # to work.
 server: Server = Server("gecko-mcp")
 
-# S22-MCP-HOST-02 — FastMCP instance carries the same 16 tools and serves
+# S22-MCP-HOST-02 — FastMCP instance carries the same 20 tools and serves
 # both `mcp.run(transport="stdio")` for `gecko-mcp serve` and
 # `mcp.streamable_http_app()` mounted at /mcp inside `gecko-api`.
 # `streamable_http_path="/"` is critical: when this app is mounted at
@@ -219,6 +219,20 @@ _PROJECT_ECONOMICS_DESCRIPTION = (
     "`session_id`-scoped economics — pass a project UUID."
 )
 
+_TRADE_RESEARCH_DESCRIPTION = (
+    "Run the 7-agent trade research panel on a Solana DeFi protocol "
+    "question. Specialized finance personas: technical_analyst, "
+    "sentiment_analyst, fundamental_analyst, risk_manager, strategist, "
+    "bull_bear_debater, coordinator. Reads the trading-oracle corpus "
+    "tagged with `vertical` and `protocol` and returns a verdict "
+    "(act|pass|defer), confidence, key_drivers, blocker questions, and "
+    "the per-agent turn transcript. Distinct from `gecko_research`: that "
+    "one runs founder-advisory voices (CEO/CTO/PM/BM/Staff) for idea "
+    "validation; use this one for trading decisions and protocol risk "
+    "research grounded in the paid Bazaar+paysh corpus (Zerion / Exa / "
+    "paysh providers tagged per protocol)."
+)
+
 _REPORT_DESCRIPTION = (
     "Generate a formatted report (HTML or markdown) for a completed research "
     "session. Reads the session's persisted state and renders verdict, sources, "
@@ -284,6 +298,18 @@ async def list_tools() -> list[Tool]:
                             "to per-agent model selection via the curated catalog. "
                             "Default 'balanced' picks Kimi K2.6 / DeepSeek for the "
                             "sweet spot. Orthogonal to 'tier' (basic/pro)."
+                        ),
+                    },
+                    "vertical": {
+                        "type": "string",
+                        "description": (
+                            "Optional app vertical hint (e.g. 'neobank', 'dex', "
+                            "'marketplace'). When set AND marketplace routing is "
+                            "enabled server-side, the RAG layer also reads the "
+                            "vertical-scoped paysh/bazaar marketplace corpus so "
+                            "x402 providers reach the verdict. Unknown values "
+                            "degrade gracefully — corpus read returns empty, "
+                            "session-scoped read still works."
                         ),
                     },
                 },
@@ -672,6 +698,48 @@ async def list_tools() -> list[Tool]:
                 "required": ["project_id"],
             },
         ),
+        Tool(
+            name="gecko_trade_research",
+            description=_TRADE_RESEARCH_DESCRIPTION,
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "idea": {
+                        "type": "string",
+                        "description": (
+                            "Plain-language trade-research question (e.g. "
+                            "'Should I take a small JTO long into the next "
+                            "FOMC?')."
+                        ),
+                    },
+                    "protocol": {
+                        "type": "string",
+                        "description": (
+                            "Solana DeFi protocol in scope (e.g. 'kamino', "
+                            "'jito', 'drift', 'jupiter')."
+                        ),
+                    },
+                    "vertical": {
+                        "type": "string",
+                        "default": "dex",
+                        "description": (
+                            "Corpus vertical to scope chunks against. Defaults "
+                            "to 'dex' — the trading-oracle corpus is dex-tagged."
+                        ),
+                    },
+                    "tier": {
+                        "type": "string",
+                        "enum": ["basic", "pro"],
+                        "default": "basic",
+                        "description": (
+                            "v1 panel logic is identical across tiers; field "
+                            "is reserved for future routing/cost differences."
+                        ),
+                    },
+                },
+                "required": ["idea", "protocol"],
+            },
+        ),
     ]
 
 
@@ -695,6 +763,11 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             raise ValueError(
                 f"tier_preset must be quality|balanced|budget|free, got {tier_preset_raw!r}"
             )
+        # S23-FIX-12 (T1b) — pass vertical through unvalidated. Validation
+        # belongs at the RAG/taxonomy layer; unknown verticals degrade
+        # gracefully (corpus read returns empty).
+        vertical_raw = arguments.get("vertical")
+        vertical = str(vertical_raw) if vertical_raw else None
 
         result = await client.research(
             idea,
@@ -702,6 +775,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             urls=urls,
             project_id=project_id,
             tier_preset=str(tier_preset_raw),
+            vertical=vertical,
         )
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
@@ -841,6 +915,18 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         result = await client.report(
             session_id=str(arguments["session_id"]),
             format=str(format_raw),
+        )
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    if name == "gecko_trade_research":
+        tier_raw = arguments.get("tier", "basic")
+        if tier_raw not in ("basic", "pro"):
+            raise ValueError(f"tier must be 'basic' or 'pro', got {tier_raw!r}")
+        result = await _run_trade_research(
+            idea=str(arguments["idea"]),
+            protocol=str(arguments["protocol"]),
+            vertical=str(arguments.get("vertical", "dex") or "dex"),
+            tier=str(tier_raw),
         )
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
@@ -1369,6 +1455,57 @@ def _build_review_llm_caller(tier_preset: str) -> Any:
     return _call
 
 
+async def _run_trade_research(
+    *,
+    idea: str,
+    protocol: str,
+    vertical: str,
+    tier: str,
+) -> dict[str, Any]:
+    """Run the 7-agent trade research panel and return the verdict as JSON.
+
+    Forwards to gecko-api `/trade_research` when GECKO_API_URL is remote so
+    server-side embeddings + Mongo reads stay on the API host. Local-dev
+    falls back to a direct gecko_core call so a developer iterating on the
+    panel doesn't need a running gecko-api. Mirrors the dispatch pattern in
+    `_run_plan` / `_run_classify`.
+    """
+    import os
+
+    api_url = os.environ.get("GECKO_API_URL")
+    if not _route_uses_local_fallback(api_url):
+        client = _get_client()
+        return await client.trade_research(
+            idea=idea, protocol=protocol, vertical=vertical, tier=tier
+        )
+    # Local-dev fallback — call gecko_core directly. Lazy import keeps AG2
+    # / openai out of the MCP startup path. Reuses the same orchestration
+    # settings the advisor stack uses so a single `OPENAI_API_KEY` /
+    # `OPENROUTER_*` env config covers both surfaces.
+    from gecko_core.orchestration.settings import get_orchestration_settings
+    from gecko_core.orchestration.trade_panel import run_trade_panel_with_retrieval
+
+    orch = get_orchestration_settings()
+    llm_config: dict[str, Any] = {
+        "config_list": [
+            {
+                "model": "gpt-4o-mini",
+                "api_key": orch.llm_api_key,
+                "base_url": orch.llm_endpoint,
+            }
+        ],
+        "temperature": 0.3,
+    }
+    verdict = await run_trade_panel_with_retrieval(
+        idea=idea,
+        protocol=protocol,
+        vertical=vertical,
+        tier=tier,
+        llm_config=llm_config,
+    )
+    return verdict.model_dump(mode="json")
+
+
 async def _run_resume(*, project_id: str, days: int) -> dict[str, Any]:
     from gecko_core.memory.resume import build_resume
 
@@ -1386,7 +1523,7 @@ def _run_available_sources() -> list[dict[str, Any]]:
 
 
 def _register_tools_on_fastmcp() -> None:
-    """Mirror the 16 low-level tools onto the FastMCP instance.
+    """Mirror the 20 low-level tools onto the FastMCP instance.
 
     Why this shape: the existing tests import `list_tools` / `call_tool`
     from this module and monkeypatch module-level `_run_*` helpers. We
@@ -1531,7 +1668,7 @@ def _passthrough_fn_metadata() -> FuncMetadata:
 
 
 # Register at import time so both `mcp.run(transport="stdio")` and
-# `mcp.streamable_http_app()` see the full 16-tool catalog.
+# `mcp.streamable_http_app()` see the full 20-tool catalog.
 _register_tools_on_fastmcp()
 
 

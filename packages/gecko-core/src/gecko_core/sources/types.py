@@ -46,6 +46,17 @@ ProviderKind = Literal[
     "reddit",
     "gecko_precedent",
     "judge_corpus",
+    # S23-FIX-12 (T1) — marketplace providers. Manifest = catalog/discovery
+    # chunks (free), live = paid x402 endpoint responses. Mirrors the four
+    # KnowledgeSource literals in ``gecko_core.knowledge.taxonomy``; they
+    # are intentionally distinct concepts (KnowledgeSource = where the
+    # bytes came from; ProviderKind = the chunks-table column the
+    # retrieval router filters on) but for the marketplace family they
+    # share the same name to avoid an artificial translation layer.
+    "paysh_manifest",
+    "paysh_live",
+    "bazaar_manifest",
+    "bazaar_live",
 ]
 """Static type alias for the ``chunks.provider_kind`` /
 ``sources.provider_kind`` column. Every consumer imports from here."""
@@ -53,4 +64,26 @@ ProviderKind = Literal[
 PROVIDER_KINDS: Final[tuple[str, ...]] = get_args(ProviderKind)
 """Runtime tuple — used by env validation and schema-drift assertions."""
 
-__all__ = ["PROVIDER_KINDS", "ProviderKind"]
+# --- Freshness tier (Pattern A: SQL CHECK in 20260508130000 mirrors this) ---
+# Distinguishes static (protocol docs that age slowly) from daily (paid
+# paysh/bazaar snapshots refreshed on a cadence) from live_only (single-call
+# results never persisted to the vector store). Drift-guarded by
+# ``tests/test_provider_kind_consistency.py::test_freshness_tier_values_match_sql_check``.
+FreshnessTier = Literal["static", "daily", "live_only"]
+FRESHNESS_TIER_VALUES: tuple[FreshnessTier, ...] = ("static", "daily", "live_only")
+
+# --- Content kind (Pattern A: SQL CHECK in 20260508140000 mirrors this) ---
+# 'quote'      = price/TVL/APY snapshots; 24h TTL.
+# 'mechanism'  = protocol architecture, audit reports; 30d TTL.
+# 'governance' = proposals, parameter changes; 7d TTL.
+ContentKind = Literal["quote", "mechanism", "governance", "unknown"]
+CONTENT_KIND_VALUES: tuple[ContentKind, ...] = ("quote", "mechanism", "governance", "unknown")
+
+__all__ = [
+    "CONTENT_KIND_VALUES",
+    "FRESHNESS_TIER_VALUES",
+    "PROVIDER_KINDS",
+    "ContentKind",
+    "FreshnessTier",
+    "ProviderKind",
+]

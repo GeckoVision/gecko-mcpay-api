@@ -433,6 +433,7 @@ class GeckoAPIClient:
         poll_deadline_s: float = 600.0,
         progress: Any | None = None,
         tier_preset: str | None = None,
+        vertical: str | None = None,
     ) -> dict[str, Any]:
         """POST /research (basic) or /research/pro. Pays + polls for result.
 
@@ -454,6 +455,8 @@ class GeckoAPIClient:
             body["frames_username"] = frames_username
         if tier_preset is not None:
             body["tier_preset"] = tier_preset
+        if vertical is not None:
+            body["vertical"] = vertical
 
         # Phase B5 v1 — best-effort client-side budget pre-flight. The server
         # has no per-project ceiling in v1; this trusts the user not to game
@@ -935,6 +938,37 @@ class GeckoAPIClient:
         if not isinstance(result, list):
             raise GeckoAPIError(f"/precedents returned non-list JSON: {type(result).__name__}")
         return result
+
+    async def trade_research(
+        self,
+        *,
+        idea: str,
+        protocol: str,
+        vertical: str = "dex",
+        tier: str = "basic",
+    ) -> dict[str, Any]:
+        """POST /trade_research — 7-agent trade research panel (free in v1).
+
+        Phase 8b ships unpaid; pricing decision deferred until eval data
+        lands. Mirrors the /precedents free-POST shape rather than going
+        through the x402 paid-post helper.
+        """
+        http = await self._free_client()
+        body = {
+            "idea": idea,
+            "protocol": protocol,
+            "vertical": vertical,
+            "tier": tier,
+        }
+        try:
+            response = await http.post("/trade_research", json=body)
+        except httpx.HTTPError as exc:
+            raise GeckoAPIError(f"could not reach gecko-api at {self.api_url}: {exc}") from exc
+        if response.status_code >= 400:
+            raise GeckoAPIError(
+                f"/trade_research returned {response.status_code}: {response.text[:300]}"
+            )
+        return _parse_json_object(response, "/trade_research")
 
     async def list_sources(self, session_id: str) -> list[dict[str, Any]]:
         """GET /sessions/{id}/sources — free."""
