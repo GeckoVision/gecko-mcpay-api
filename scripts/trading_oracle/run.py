@@ -38,6 +38,7 @@ Flags:
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import logging
@@ -103,10 +104,32 @@ def _extract_settled_amount(
 ) -> Decimal:
     """Parse the actual settled amount from response headers.
 
-    Looks for (in priority): ``X-Payment-Receipt`` (USDC atomic),
-    ``X-Settled-Amount`` (USDC atomic). Falls back to ``fallback_usd``
-    (the advertised max) when no usable header is present.
+    Priority:
+      1. ``PAYMENT-RESPONSE`` (Coinbase x402 v2) — base64 JSON receipt with
+         ``settledAmount`` (USDC atomic). Also accepted: ``X-Payment-Response``.
+      2. ``X-Payment-Receipt`` (USDC atomic, plain int) — Phase 6.5D legacy.
+      3. ``X-Settled-Amount`` (USDC atomic, plain int) — Phase 6.5D legacy.
+
+    Falls back to ``fallback_usd`` (the advertised max) when no usable
+    header is present.
     """
+    # v2: PAYMENT-RESPONSE base64 JSON receipt.
+    for key in ("PAYMENT-RESPONSE", "X-Payment-Response", "payment-response", "x-payment-response"):
+        raw = headers.get(key)
+        if not raw:
+            continue
+        try:
+            decoded = json.loads(base64.b64decode(raw).decode("utf-8"))
+        except Exception:
+            continue
+        atomic = decoded.get("settledAmount") or decoded.get("amount")
+        if atomic is None:
+            continue
+        try:
+            return Decimal(str(atomic)) / Decimal(10**6)
+        except (TypeError, ValueError):
+            continue
+    # v1: plain atomic int in X-Payment-Receipt / X-Settled-Amount.
     for key in ("X-Payment-Receipt", "X-Settled-Amount", "x-payment-receipt", "x-settled-amount"):
         raw = headers.get(key)
         if not raw:
@@ -118,6 +141,53 @@ def _extract_settled_amount(
             # blob); ignore and try the next variant.
             continue
     return fallback_usd
+
+
+def _extract_payment_required(response: Any) -> dict[str, Any]:
+    """Read the 402 challenge, preferring v2 PAYMENT-REQUIRED header.
+
+    Coinbase x402 v2 puts the challenge in a base64-encoded
+    ``PAYMENT-REQUIRED`` response header; older v1 servers carry it in
+    the JSON body. We try v2 first, then fall back to body-parsing.
+
+    Returns ``{}`` (rather than raising) when neither path produces a
+    parseable payload — caller checks ``accepts`` truthiness.
+    """
+    headers = getattr(response, "headers", {}) or {}
+    for key in ("PAYMENT-REQUIRED", "X-Payment-Required", "payment-required", "x-payment-required"):
+        raw = headers.get(key)
+        if not raw:
+            continue
+        try:
+            decoded = base64.b64decode(raw).decode("utf-8")
+            parsed = json.loads(decoded)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            continue
+    try:
+        body = response.json()
+    except Exception:
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
+def _build_paid_request_headers(payment_payload: Mapping[str, Any]) -> dict[str, str]:
+    """Encode the signed payment payload and emit BOTH v1 and v2 headers.
+
+    Coinbase x402 v2 expects ``PAYMENT-SIGNATURE``; older v1 servers (and
+    our own current seller path) expect ``X-PAYMENT``. Send both for
+    maximum gateway compatibility — the seller ignores the header it
+    doesn't recognize.
+    """
+    encoded = base64.b64encode(
+        json.dumps(dict(payment_payload), separators=(",", ":")).encode("utf-8")
+    ).decode("ascii")
+    return {
+        "PAYMENT-SIGNATURE": encoded,  # Coinbase x402 v2 canonical
+        "X-PAYMENT": encoded,  # v1 backward-compat
+        "Accept": "application/json",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -511,8 +581,6 @@ class _LiveX402PaidRequester:
     ) -> Any:
         # Lazy imports — keep this module importable in dry-run mode
         # without dragging in the x402 SDK.
-        import base64
-
         import httpx
         from gecko_core.payments.cdp_x402_client import (
             _build_payment_payload,
@@ -565,7 +633,10 @@ class _LiveX402PaidRequester:
                     f"{probe.text[:256]!r}"
                 )
 
-            challenge = probe.json()
+            # Coinbase x402 v2: challenge lives in a base64 PAYMENT-REQUIRED
+            # response header. Older v1 servers put it in the JSON body. Try
+            # v2 first; fall back to v1.
+            challenge = _extract_payment_required(probe)
             accepts = challenge.get("accepts") or []
             if not accepts:
                 raise RuntimeError(f"402 from {url!r} carried empty accepts[]")
@@ -600,16 +671,16 @@ class _LiveX402PaidRequester:
                 payer_private_key=self._payer_private_key,
                 resource_url=url,
             )
-            payload_bytes = json.dumps(
-                sdk_payload.model_dump(by_alias=True, mode="json"),
-                separators=(",", ":"),
-            ).encode("utf-8")
-            x_payment = base64.b64encode(payload_bytes).decode("ascii")
+            payload_dict = sdk_payload.model_dump(by_alias=True, mode="json")
 
-            # Step 4: re-issue with X-PAYMENT, preserving the original
-            # method and body so signed requirements still bind to the
-            # exact request shape the seller authorized.
-            paid_headers = {"X-PAYMENT": x_payment, "Accept": "application/json"}
+            # Step 4: re-issue carrying BOTH v2 (PAYMENT-SIGNATURE) and v1
+            # (X-PAYMENT) headers so we work against modern Coinbase x402
+            # gateways (Exa, Zerion, paysponge, Bankr, BlockRun) AND the
+            # older v1 servers our own seller still speaks. The signed
+            # bytes are identical — only the header name differs. Preserve
+            # method+body so signed requirements still bind to the exact
+            # request shape the seller authorized.
+            paid_headers = _build_paid_request_headers(payload_dict)
             if method == "GET":
                 paid = await client.get(url, params=params, headers=paid_headers)
             else:
@@ -623,12 +694,21 @@ class _LiveX402PaidRequester:
                     f"paid {method} {url!r} returned {paid.status_code}: {paid.text[:256]!r}"
                 )
             tx_signature: str | None = None
-            settle_header = paid.headers.get("X-PAYMENT-RESPONSE")
+            # v2 PAYMENT-RESPONSE first, then v1 X-PAYMENT-RESPONSE.
+            settle_header = (
+                paid.headers.get("PAYMENT-RESPONSE")
+                or paid.headers.get("X-Payment-Response")
+                or paid.headers.get("X-PAYMENT-RESPONSE")
+            )
             if settle_header:
                 try:
                     decoded = base64.b64decode(settle_header).decode("utf-8")
                     settle = json.loads(decoded)
-                    tx_signature = settle.get("transaction") or settle.get("txHash")
+                    tx_signature = (
+                        settle.get("transaction")
+                        or settle.get("txHash")
+                        or settle.get("transactionHash")
+                    )
                 except Exception:
                     tx_signature = None
 
