@@ -129,6 +129,7 @@ def _extract_settled_amount(
 # own wallet address so the call shape is at least valid.
 # ---------------------------------------------------------------------------
 
+import contextlib  # noqa: E402
 import re as _re  # noqa: E402  (kept local to module concern)
 
 
@@ -161,18 +162,47 @@ def _substitute_url_template(url: str, *, wallet_address: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+# Buyer-side URL blocklist: hostnames whose x402 implementation is known
+# non-standard and that our buyer cannot settle against. Venice uses
+# ``X-Sign-In-With-X`` SIWE auth + a top-up flow rather than per-call
+# EIP-3009 in ``X-PAYMENT``, so we skip any of its gateway URLs and let
+# the registry fall through to a sibling endpoint (Bankr / BlockRun /...).
+_VENICE_BLOCKLIST: tuple[str, ...] = ("venice.ai",)
+
+
+def _is_blocked_endpoint_url(url: str) -> bool:
+    """True if ``url`` matches any host in ``_VENICE_BLOCKLIST``."""
+    return any(host in url for host in _VENICE_BLOCKLIST)
+
+
 def _to_planner_listing_paysh(provider: Any) -> dict[str, Any]:
     """Map a ``PayshCatalogProvider`` to the planner's listing dict.
 
     Pulls min_price, fqn, category, and synthesizes a tag list so the
     Solana-DeFi filter can match. paysh providers are Solana-native by
     construction; we tag them as such.
+
+    Emits an ``endpoints`` list (1+ entries) so the per-service-call
+    registry can pick a working endpoint when a manifest exposes more
+    than one. paysh providers historically expose a single ``service_url``;
+    when their manifest carries an ``endpoints`` collection we surface
+    each entry's url + method.
     """
     name = getattr(provider, "title", None) or getattr(provider, "fqn", "<unknown>")
     description = getattr(provider, "description", "") or ""
     category = getattr(provider, "category", "") or ""
     tags = ["solana", category] if category else ["solana"]
     min_price = float(getattr(provider, "min_price_usd", 0.0))
+    service_url = getattr(provider, "service_url", "") or ""
+    raw_endpoints = list(getattr(provider, "endpoints", []) or [])
+    endpoints: list[dict[str, Any]] = []
+    for ep in raw_endpoints:
+        ep_url = getattr(ep, "path", None) or getattr(ep, "url", None) or ""
+        ep_method = (getattr(ep, "method", None) or "GET").upper()
+        if ep_url:
+            endpoints.append({"url": ep_url, "method": ep_method})
+    if not endpoints and service_url:
+        endpoints = [{"url": service_url, "method": "GET"}]
     return {
         "name": name,
         "description": description,
@@ -180,16 +210,23 @@ def _to_planner_listing_paysh(provider: Any) -> dict[str, Any]:
         "price_usd": Decimal(str(min_price)),
         "provider_kind": "paysh_live",
         "fqn": getattr(provider, "fqn", ""),
-        "service_url": getattr(provider, "service_url", ""),
+        "service_url": service_url,
+        "endpoints": endpoints,
     }
 
 
 def _to_planner_listing_bazaar(service: Any) -> dict[str, Any]:
     """Map a ``BazaarService`` to the planner's listing dict.
 
-    Pulls the first endpoint's price, networks, and category. Bazaar is
-    Base-primary but multi-chain; the network list flows through as tags
-    so the filter can decide.
+    Bazaar services often expose 3-6 alternate gateway endpoints for the
+    same logical service (e.g. Claude is reachable via Venice, Bankr,
+    BlockRun). Carry the full ``endpoints`` list — each entry as
+    ``{"url", "method"}`` — so the per-service-call registry can pick the
+    first compatible endpoint instead of being starved by a single-URL
+    listing. ``service_url`` is preserved (= ``endpoints[0].url``) for
+    backward compatibility with callers that haven't been updated.
+
+    ``price_usd`` is the MIN across all endpoints (cheapest path wins).
     """
     name = getattr(service, "name", None) or getattr(service, "id", "<unknown>")
     description = getattr(service, "description", "") or ""
@@ -198,21 +235,22 @@ def _to_planner_listing_bazaar(service: Any) -> dict[str, Any]:
     tags = list(networks)
     if category:
         tags.append(category)
-    # First endpoint with a usable url + price.
-    endpoints = list(getattr(service, "endpoints", []) or [])
-    min_price = 0.0
-    endpoint_url = ""
-    if endpoints:
-        ep = endpoints[0]
-        endpoint_url = getattr(ep, "url", "") or ""
+    raw_endpoints = list(getattr(service, "endpoints", []) or [])
+    endpoints: list[dict[str, Any]] = []
+    prices: list[float] = []
+    for ep in raw_endpoints:
+        ep_url = getattr(ep, "url", "") or ""
+        ep_method = (getattr(ep, "method", None) or "GET").upper()
+        if ep_url:
+            endpoints.append({"url": ep_url, "method": ep_method})
         pricing = getattr(ep, "pricing", None)
         if pricing is not None:
             candidate = getattr(pricing, "minAmount", None) or getattr(pricing, "amount", None)
             if candidate:
-                try:
-                    min_price = float(candidate)
-                except (TypeError, ValueError):
-                    min_price = 0.0
+                with contextlib.suppress(TypeError, ValueError):
+                    prices.append(float(candidate))
+    min_price = min(prices) if prices else 0.0
+    endpoint_url = endpoints[0]["url"] if endpoints else ""
     return {
         "name": name,
         "description": description,
@@ -221,6 +259,7 @@ def _to_planner_listing_bazaar(service: Any) -> dict[str, Any]:
         "provider_kind": "bazaar_live",
         "fqn": getattr(service, "id", ""),
         "service_url": endpoint_url,
+        "endpoints": endpoints,
     }
 
 
@@ -264,6 +303,22 @@ def _load_listings_from_file(path: Path) -> list[dict[str, Any]]:
         # Coerce price_usd to Decimal — JSON has no Decimal type.
         if "price_usd" in d and not isinstance(d["price_usd"], Decimal):
             d["price_usd"] = Decimal(str(d["price_usd"]))
+        # Synthesize endpoints[] when an older fixture only carries
+        # service_url. Each entry needs at minimum {"url", "method"}.
+        eps = d.get("endpoints")
+        if not isinstance(eps, list) or not eps:
+            su = d.get("service_url") or ""
+            d["endpoints"] = [{"url": su, "method": "GET"}] if su else []
+        else:
+            normalized: list[dict[str, Any]] = []
+            for ep in eps:
+                if not isinstance(ep, Mapping):
+                    continue
+                url_v = ep.get("url") or ""
+                method_v = (ep.get("method") or "GET").upper()
+                if url_v:
+                    normalized.append({"url": url_v, "method": method_v})
+            d["endpoints"] = normalized
         out.append(d)
     return out
 
@@ -371,6 +426,29 @@ class _LiveX402PaidRequester:
         self._payer_address = payer_address
         self._network = network
         self._per_call_hard_limit_usd = per_call_hard_limit_usd
+        # Per-call context: full endpoints[] from the active listing,
+        # plus the service_id (fqn) used for registry lookup. Set by
+        # ``set_listing_context`` before each ``request`` call so the
+        # registry can pick the right endpoint when multiple gateways
+        # exist for one service.
+        self._current_endpoints: list[Mapping[str, Any]] = []
+        self._current_service_id: str = ""
+
+    def set_listing_context(
+        self,
+        *,
+        service_id: str,
+        endpoints: Sequence[Mapping[str, Any]],
+    ) -> None:
+        """Stash the active listing's endpoints + service_id for the next call.
+
+        ``request`` is invoked by gecko-core's ``fetch_paid`` with a single
+        URL — but the registry needs the full endpoints[] to pick the
+        compatible one. This is the seam that threads the listing context
+        through without modifying core.
+        """
+        self._current_endpoints = [dict(ep) for ep in endpoints]
+        self._current_service_id = service_id
 
     def _build_request_for_service(
         self,
@@ -380,13 +458,15 @@ class _LiveX402PaidRequester:
     ) -> tuple[str, str, dict[str, Any] | None]:
         """Resolve (url, method, body) for this listing.
 
-        Consults ``service_call_specs.find_spec_for`` against a synthetic
-        endpoints list (one entry, method=POST) — the registry's predicates
-        match on URL path substrings, so this is sufficient for the cases
-        we care about (chat completions, exa search, anthropic messages).
+        Consults ``service_call_specs.find_spec_for`` against the active
+        listing's full endpoints list (set by ``set_listing_context``).
+        Endpoints whose URL hits ``_VENICE_BLOCKLIST`` are filtered out
+        before lookup — Venice's x402 is non-standard SIWE and our buyer
+        cannot settle there, so we prefer Bankr / BlockRun siblings.
 
-        Falls back to ``(url, "GET", None)`` when no spec matches — the
-        legacy paysh-style REST behavior.
+        Falls back to a synthetic single-endpoint list when no listing
+        context was stashed, and to ``(url, "GET", None)`` when no spec
+        matches — the legacy paysh-style REST behavior.
         """
         from urllib.parse import urlparse
 
@@ -395,16 +475,31 @@ class _LiveX402PaidRequester:
         # service_call_specs directly via importlib.
         from service_call_specs import find_spec_for  # type: ignore[import-not-found]
 
-        host = urlparse(url).hostname or ""
-        # Synthesize a service_id from the host; specs match URL substrings
-        # via their endpoint_predicate so the id is rarely the deciding factor.
-        service_id = host
-        synthetic_endpoints: list[Mapping[str, Any]] = [{"url": url, "method": "POST"}]
-        spec, _ep = find_spec_for(service_id, synthetic_endpoints)
-        if spec is None or spec.body_builder is None:
+        if self._current_endpoints:
+            endpoints_for_lookup: list[Mapping[str, Any]] = [
+                ep
+                for ep in self._current_endpoints
+                if not _is_blocked_endpoint_url(str(ep.get("url", "")))
+            ]
+            service_id = self._current_service_id or (urlparse(url).hostname or "")
+        else:
+            endpoints_for_lookup = [{"url": url, "method": "POST"}]
+            service_id = urlparse(url).hostname or ""
+
+        if not endpoints_for_lookup:
+            # Every endpoint blocklisted — caller will fall back to GET.
             return url, "GET", None
+
+        spec, ep = find_spec_for(service_id, endpoints_for_lookup)
+        if spec is None or ep is None or spec.body_builder is None:
+            return url, "GET", None
+        chosen_url = str(ep.get("url") or url)
+        # Substitute {address} on the chosen URL — the caller already did
+        # this on the original ``url``, but if the registry routed us to
+        # a sibling endpoint with its own template, re-apply.
+        chosen_url = _substitute_url_template(chosen_url, wallet_address=self._payer_address)
         body = spec.body_builder(prompt, {})
-        return url, spec.method, body
+        return chosen_url, spec.method, body
 
     async def request(
         self,
@@ -595,7 +690,27 @@ async def _charge_and_fetch(call: PlannedCall) -> dict[str, Any]:
     pk = call.listing.get("provider_kind", "paysh_live")
     fqn = call.listing.get("fqn", "")
     service_url = call.listing.get("service_url", "")
+    listing_endpoints = call.listing.get("endpoints") or []
+    # If endpoints[0] is on the blocklist (Venice) but a sibling is not,
+    # promote the first non-blocked endpoint so gecko-core's
+    # ``_select_endpoint`` (which always picks index 0) issues the probe
+    # against the working gateway.
+    if listing_endpoints:
+        non_blocked = [
+            ep for ep in listing_endpoints if not _is_blocked_endpoint_url(str(ep.get("url", "")))
+        ]
+        if non_blocked:
+            service_url = str(non_blocked[0].get("url") or service_url)
     requester = _build_paid_requester()
+    # Stash the full endpoints[] on the requester so its ``find_spec_for``
+    # call sees siblings (Bankr/BlockRun) and can route around blocked
+    # gateways (Venice). Falls back to legacy synthetic-single-endpoint
+    # behavior when the listing has no endpoints[] field (older fixtures).
+    if hasattr(requester, "set_listing_context"):
+        requester.set_listing_context(
+            service_id=fqn,
+            endpoints=listing_endpoints,
+        )
 
     if pk == "paysh_live":
         from gecko_core.sources.paysh_live import fetch_paid as paysh_fetch_paid

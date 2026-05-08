@@ -65,3 +65,40 @@ def test_anthropic_messages_for_bankr() -> None:
     body = spec.body_builder("p", {})
     assert body is not None
     assert "max_tokens" in body
+
+
+def test_venice_filter_routes_to_bankr_when_both_present() -> None:
+    """When the run.py Venice blocklist filters out Venice URLs, the
+    registry should route the call to a sibling endpoint (Bankr) instead.
+
+    The blocklist lives in run.py, not in service_call_specs (the spec
+    registry is intentionally hostname-agnostic). This test mirrors the
+    filter and asserts find_spec_for picks Bankr.
+    """
+    # Load run.py's _is_blocked_endpoint_url via the same importlib path
+    # the test module uses for service_call_specs — run.py imports
+    # gecko_core which is fine in this env, but we only need the helper
+    # so we replicate the (tiny, pure) substring check here to avoid the
+    # heavy import. Keep this in sync with _VENICE_BLOCKLIST in run.py.
+    _BLOCK = ("venice.ai",)
+
+    def _blocked(url: str) -> bool:
+        return any(host in url for host in _BLOCK)
+
+    endpoints = [
+        {"url": "https://api.venice.ai/api/v1/chat/completions", "method": "POST"},
+        {"url": "https://llm.bankr.bot/v1/messages", "method": "POST"},
+        {"url": "https://blockrun.ai/v1/chat/completions", "method": "POST"},
+    ]
+    filtered = [ep for ep in endpoints if not _blocked(ep["url"])]
+    spec, ep = find_spec_for("docs-anthropic-com", filtered)
+    assert spec is not None
+    assert ep is not None
+    assert "venice.ai" not in ep["url"]
+    # Either Bankr (matches /messages spec) or BlockRun (matches
+    # chat/completions spec) is acceptable — both are reachable via
+    # standard x402 per-call.
+    assert ep["url"] in {
+        "https://llm.bankr.bot/v1/messages",
+        "https://blockrun.ai/v1/chat/completions",
+    }
