@@ -632,14 +632,23 @@ class _LiveX402PaidRequester:
             return url, "GET", None
 
         spec, ep = find_spec_for(service_id, endpoints_for_lookup)
-        if spec is None or ep is None or spec.body_builder is None:
+        if spec is None or ep is None:
             return url, "GET", None
-        chosen_url = str(ep.get("url") or url)
+        # url_override (when set) takes precedence over the chosen
+        # endpoint's URL — used by paysh providers whose catalog URL
+        # points at a non-routable base (paysponge gateway redirect,
+        # CoinGecko's templated path). Falls back to endpoint url.
+        if spec.url_override is not None:
+            chosen_url = spec.url_override(prompt, {})
+        else:
+            chosen_url = str(ep.get("url") or url)
         # Substitute {address} on the chosen URL — the caller already did
         # this on the original ``url``, but if the registry routed us to
         # a sibling endpoint with its own template, re-apply.
         chosen_url = _substitute_url_template(chosen_url, wallet_address=self._payer_address)
-        body = spec.body_builder(prompt, {})
+        # GET specs (e.g. CoinGecko) carry no body even when url_override
+        # is set; only build a body when the spec advertises one.
+        body = spec.body_builder(prompt, {}) if spec.body_builder is not None else None
         return chosen_url, spec.method, body
 
     async def request(

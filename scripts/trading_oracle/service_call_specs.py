@@ -11,6 +11,10 @@ A spec maps a service_id (or pattern) to:
   - HTTP method
   - body template (callable that takes the prompt + ctx and returns dict | None)
   - content type (default application/json for POST)
+  - url_override (optional): per-call URL rewriter. When set, its return
+    value REPLACES the chosen endpoint's URL before the request fires.
+    Used by paysh providers whose catalog URL points at a non-routable
+    base (paysponge gateway redirect, CoinGecko's templated path, etc.).
 
 If a service has no spec, fall back to the legacy GET-with-?q= behavior.
 """
@@ -20,12 +24,18 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
+from urllib.parse import quote
 
 HttpMethod = Literal["GET", "POST"]
 
 # A body builder takes (prompt, context) and returns a dict to JSON-encode,
 # or None for no body (GET).
 BodyBuilder = Callable[[str, Mapping[str, Any]], dict[str, Any] | None]
+
+# A URL override takes (prompt, context) and returns the final URL string
+# to call. Used to rewrite paysh provider URLs that don't match the
+# catalog's advertised path (gateway redirects, templated placeholders).
+UrlOverride = Callable[[str, Mapping[str, Any]], str]
 
 
 @dataclass(frozen=True)
@@ -37,6 +47,49 @@ class CallSpec:
     method: HttpMethod
     body_builder: BodyBuilder | None  # None means no body (GET)
     content_type: str = "application/json"
+    # Optional URL rewriter. When set, the requester MUST use the returned
+    # URL instead of the chosen endpoint's url. Default None preserves
+    # legacy behavior (use endpoints[0].url verbatim).
+    url_override: UrlOverride | None = None
+
+
+def _coingecko_url_override(prompt: str, ctx: Mapping[str, Any]) -> str:
+    """Rewrite paysh CoinGecko calls to /x402/onchain/search/pools.
+
+    The catalog advertises a templated URL (``:solana_address`` placeholder)
+    on the bare ``/x402/onchain`` path that 404s. The cleanest x402 endpoint
+    for our protocol-name query is ``/onchain/search/pools`` which takes no
+    path placeholders and accepts ``?query=<term>&network=<chain>``. We pin
+    ``network=solana`` for the trading-oracle vertical and pass the prompt
+    (or a ``protocol`` from ``ctx``) as ``query``.
+
+    Confirmed against pro-api.coingecko.com on 2026-05-08 — returns 402
+    with a v2 ``payment-required`` header (Base USDC 0.01, Solana USDC
+    0.01 — pick whichever matches X402_NETWORK).
+    """
+    ctx_d = dict(ctx) if ctx else {}
+    protocol = str(ctx_d.get("protocol") or "").strip()
+    network = str(ctx_d.get("network") or "solana").strip() or "solana"
+    query_term = protocol or (prompt.strip().split()[0] if prompt.strip() else "usdc")
+    return (
+        "https://pro-api.coingecko.com/api/v3/x402/onchain/search/pools"
+        f"?query={quote(query_term)}&network={quote(network)}"
+    )
+
+
+def _perplexity_url_override(prompt: str, ctx: Mapping[str, Any]) -> str:
+    """Rewrite paysh Perplexity calls to ``/v1/sonar`` on paysponge.
+
+    The catalog URL is the bare host ``https://pplx.x402.paysponge.com``,
+    which 302-redirects to the paysponge dashboard (HTML, not x402). The
+    actual x402-bearing endpoint — confirmed via probe on 2026-05-08 —
+    is ``POST /v1/sonar`` (chat-completions-style body) which returns 402
+    with a v2 ``payment-required`` header.
+
+    We don't carry path templates here; the rewrite is an unconditional
+    suffix swap.
+    """
+    return "https://pplx.x402.paysponge.com/v1/sonar"
 
 
 # Registry. Order matters — first matching pattern wins.
@@ -74,6 +127,32 @@ _REGISTRY: tuple[CallSpec, ...] = (
             "max_tokens": 1500,
             "messages": [{"role": "user", "content": prompt}],
         },
+    ),
+    # Paysh — CoinGecko Onchain DEX. Catalog URL templates a placeholder we
+    # don't substitute; rewrite to /x402/onchain/search/pools (a real x402
+    # endpoint) and pin network=solana for the trading-oracle vertical.
+    # GET, no body — query goes in the rewritten URL.
+    CallSpec(
+        service_id_pattern="paysponge/coingecko",
+        endpoint_predicate=lambda ep: True,  # url_override replaces it anyway
+        method="GET",
+        body_builder=None,
+        url_override=_coingecko_url_override,
+    ),
+    # Paysh — Perplexity (paysponge gateway). Catalog URL is the bare host
+    # which 302s to paysponge's dashboard; rewrite to /v1/sonar (the actual
+    # x402-bearing path, confirmed via probe). POST with chat-completions
+    # body shape.
+    CallSpec(
+        service_id_pattern="paysponge/perplexity",
+        endpoint_predicate=lambda ep: True,  # url_override replaces it anyway
+        method="POST",
+        body_builder=lambda prompt, ctx: {
+            "model": ctx.get("model", "sonar"),
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 1500,
+        },
+        url_override=_perplexity_url_override,
     ),
 )
 

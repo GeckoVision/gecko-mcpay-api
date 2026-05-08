@@ -67,6 +67,66 @@ def test_anthropic_messages_for_bankr() -> None:
     assert "max_tokens" in body
 
 
+def test_coingecko_url_override_pins_solana_search_pools() -> None:
+    """paysh CoinGecko: catalog URL is bare /x402/onchain (404). Spec must
+    rewrite to /x402/onchain/search/pools with ?query=<protocol>&network=solana.
+    Confirmed against pro-api.coingecko.com 2026-05-08 — 402 challenge."""
+    spec, ep = find_spec_for(
+        "paysponge/coingecko",
+        [{"url": "https://pro-api.coingecko.com/api/v3/x402/onchain", "method": "GET"}],
+    )
+    assert spec is not None
+    assert ep is not None
+    assert spec.url_override is not None
+    url = spec.url_override("ignored prompt", {"protocol": "kamino"})
+    assert "x402/onchain/search/pools" in url
+    assert "query=kamino" in url
+    assert "network=solana" in url
+
+
+def test_coingecko_url_override_default_network_solana() -> None:
+    """Network defaults to solana when not in ctx — trading-oracle vertical."""
+    spec, _ = find_spec_for(
+        "paysponge/coingecko",
+        [{"url": "https://pro-api.coingecko.com/api/v3/x402/onchain", "method": "GET"}],
+    )
+    assert spec is not None and spec.url_override is not None
+    url = spec.url_override("p", {"protocol": "jupiter"})
+    assert "network=solana" in url
+    assert "query=jupiter" in url
+
+
+def test_perplexity_url_override_targets_v1_sonar() -> None:
+    """paysh Perplexity: catalog URL is bare host that 302s to paysponge's
+    dashboard. Probe on 2026-05-08 confirmed POST /v1/sonar returns 402.
+    Spec must rewrite to that path."""
+    spec, _ = find_spec_for(
+        "paysponge/perplexity",
+        [{"url": "https://pplx.x402.paysponge.com", "method": "POST"}],
+    )
+    assert spec is not None
+    assert spec.url_override is not None
+    url = spec.url_override("test prompt", {"protocol": "drift"})
+    assert "pplx.x402.paysponge.com" in url
+    assert url.endswith("/v1/sonar")
+    assert url != "https://pplx.x402.paysponge.com"  # must be a fuller path
+    # Perplexity is POST chat-completions-shape — body builder must produce
+    # a messages[] payload so the requester's POST branch fires.
+    assert spec.method == "POST"
+    assert spec.body_builder is not None
+    body = spec.body_builder("hello sonar", {})
+    assert body is not None
+    assert body["messages"][0]["content"] == "hello sonar"
+
+
+def test_callspec_url_override_default_none_keeps_legacy_path() -> None:
+    """Existing specs (exa-ai, chat-completions, /messages) must NOT carry
+    a url_override — preserves the legacy ep["url"] code path."""
+    spec, _ = find_spec_for("exa-ai", [{"url": "https://api.exa.ai/search", "method": "POST"}])
+    assert spec is not None
+    assert spec.url_override is None
+
+
 def test_venice_filter_routes_to_bankr_when_both_present() -> None:
     """When the run.py Venice blocklist filters out Venice URLs, the
     registry should route the call to a sibling endpoint (Bankr) instead.
