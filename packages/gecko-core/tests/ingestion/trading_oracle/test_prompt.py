@@ -1,7 +1,10 @@
+import pytest
 from gecko_core.ingestion.trading_oracle.prompt import (
     SOLANA_DEFI_PROTOCOLS,
     TRADING_ORACLE_PROMPT,
+    TRADING_ORACLE_PROTOCOLS_V1,
     is_solana_defi_relevant,
+    prompt_for_protocol,
 )
 
 
@@ -112,3 +115,33 @@ def test_filter_rejects_air_quality():
         )
         is False
     )
+
+
+def test_prompt_for_protocol_names_one_protocol():
+    body = prompt_for_protocol("Kamino")
+    assert "Kamino" in body
+    # Should NOT mention the other 9 protocols since this is single-scoped
+    for other in [
+        "Jupiter",
+        "Jito",
+        "Pyth",
+        "Drift",
+        "Orca",
+        "Raydium",
+        "Meteora",
+        "MarginFi",
+        "Sanctum",
+    ]:
+        assert other not in body, f"prompt_for_protocol('Kamino') leaked {other}"
+
+
+def test_prompt_for_protocol_rejects_empty():
+    with pytest.raises(ValueError):
+        prompt_for_protocol("")
+
+
+def test_prompt_for_protocol_works_for_all_v1_protocols():
+    for p in TRADING_ORACLE_PROTOCOLS_V1:
+        body = prompt_for_protocol(p)
+        assert p in body
+        assert len(body) > 100  # rough sanity

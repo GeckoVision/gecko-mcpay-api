@@ -411,6 +411,13 @@ _PAID_REQUESTER_SINGLETON: Any | None = None
 # when it inspects the seller's advertised maxAmount.
 _PER_CALL_HARD_LIMIT_USD: Decimal = Decimal("0.10")
 
+# Per-protocol-pass query string. Set by the orchestration loop in ``main``
+# once before each protocol pass; ``_charge_and_fetch`` reads this to scope
+# the LLM call to a single protocol. Set per-pass (not per-call) since the
+# loop is sequential — no race. Falls back to ``TRADING_ORACLE_PROMPT``
+# (the multi-protocol default) when unset.
+_CURRENT_QUERY: str | None = None
+
 
 def _build_paid_requester() -> Any:
     """Construct a live x402 ``PaidRequester`` from env. Raises if config missing.
@@ -767,6 +774,10 @@ async def _charge_and_fetch(call: PlannedCall) -> dict[str, Any]:
     # dry-run never drags them into the import path.
     from gecko_core.ingestion.trading_oracle.prompt import TRADING_ORACLE_PROMPT
 
+    # Use the per-protocol-pass query when the loop has set one; otherwise
+    # fall back to the all-protocols default. Bound per-pass by ``main``.
+    query = _CURRENT_QUERY if _CURRENT_QUERY else TRADING_ORACLE_PROMPT
+
     pk = call.listing.get("provider_kind", "paysh_live")
     fqn = call.listing.get("fqn", "")
     service_url = call.listing.get("service_url", "")
@@ -809,7 +820,7 @@ async def _charge_and_fetch(call: PlannedCall) -> dict[str, Any]:
         )
         result = await paysh_fetch_paid(
             fqn,
-            TRADING_ORACLE_PROMPT,
+            query,
             x402_client=requester,
             catalog_providers=[provider],
         )
@@ -836,7 +847,7 @@ async def _charge_and_fetch(call: PlannedCall) -> dict[str, Any]:
         )
         result = await bazaar_fetch_paid(
             fqn,
-            TRADING_ORACLE_PROMPT,
+            query,
             x402_client=requester,
             catalog_services=[service],
         )
@@ -859,11 +870,17 @@ async def _write_chunk(
     vertical: str,
     freshness_tier: str,
     source_url: str,
+    protocol: list[str] | tuple[str, ...] = (),
+    content_kind: str = "unknown",
 ) -> None:
     """Embed and persist one chunk to MongoDB with the trading-oracle axes.
 
     Wraps ``insert_chunks_mongo``. Embedding is computed via the standard
     ingestion embedder so the dim matches the Atlas Vector Search index.
+
+    ``protocol`` and ``content_kind`` are the trading-oracle schema axes
+    (Phase 6.6C, commit 5ffb052). Defaults preserve backward-compat for
+    callers that don't tag.
     """
     # Lazy imports keep this leg out of the dry-run code path entirely.
     from uuid import uuid4
@@ -883,6 +900,8 @@ async def _write_chunk(
         provider_kind=provider_kind,  # type: ignore[arg-type]
         source_url=source_url,
         freshness_tier=freshness_tier,  # type: ignore[arg-type]
+        protocol=list(protocol),
+        content_kind=content_kind,  # type: ignore[arg-type]
     )
 
 
@@ -928,12 +947,25 @@ def _log_plan(plan_calls: Sequence[PlannedCall], skipped: Sequence[Any]) -> None
         "is $10."
     ),
 )
+@click.option(
+    "--protocols",
+    default="Jupiter,Kamino,Pyth,Drift,Jito",
+    show_default=True,
+    help=(
+        "Comma-separated list of Solana-DeFi protocols to scope per-call "
+        "queries to. Each protocol triggers a fresh planner + executor pass "
+        "through the same filtered listings, so total calls = N_protocols x "
+        "M_planned_per_pass. Cap (--cap-usd) is shared cumulatively across "
+        "the matrix."
+    ),
+)
 def main(
     cap_usd: str,
     dry_run: bool,
     source: str,
     listings_json: Path | None,
     max_per_call_usd: str,
+    protocols: str,
 ) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     global _PER_CALL_HARD_LIMIT_USD
@@ -966,35 +998,106 @@ def main(
             wanted_pk = "paysh_live" if source == "paysh" else "bazaar_live"
             listings = [le for le in listings if le.get("provider_kind") == wanted_pk]
 
-        plan = plan_ingest(listings, cap_usd=Decimal(cap_usd))
-        log.info(
-            "planned %d calls (skip %d, projected $%s, cap $%s)",
-            len(plan.calls),
-            len(plan.skipped),
-            plan.projected_total_usd,
-            cap_usd,
-        )
-        _log_plan(plan.calls, plan.skipped)
+        # Per-protocol orchestration matrix: same listings × N protocols.
+        # Each protocol pass runs a fresh planner + executor with a
+        # protocol-scoped query, and each emitted chunk is tagged with
+        # protocol=[<name>] (consumes the schema axis from 5ffb052).
+        protocol_list = [p.strip() for p in protocols.split(",") if p.strip()]
+        if not protocol_list:
+            raise click.ClickException("--protocols produced an empty list")
 
-        if dry_run:
-            log.info("DRY RUN — no charges, no writes.")
-            return 0
+        from gecko_core.ingestion.trading_oracle.prompt import prompt_for_protocol
 
-        report = await execute_plan(
-            plan,
-            charge_and_fetch=_charge_and_fetch,
-            write_chunk=_write_chunk,
-            vertical="dex",
-        )
+        cap = Decimal(cap_usd)
+        cumulative_spent = Decimal("0")
+        cumulative_chunks = 0
+        cumulative_failures: list[str] = []
+        global _CURRENT_QUERY
+
+        for protocol in protocol_list:
+            remaining = cap - cumulative_spent
+            if remaining <= 0:
+                log.warning("budget exhausted; stopping protocol loop at %r", protocol)
+                break
+            log.info(
+                "=== protocol pass: %s (remaining cap $%s) ===",
+                protocol,
+                remaining,
+            )
+
+            plan = plan_ingest(listings, cap_usd=remaining)
+            log.info(
+                "[%s] planned %d calls (skip %d, projected $%s, remaining $%s)",
+                protocol,
+                len(plan.calls),
+                len(plan.skipped),
+                plan.projected_total_usd,
+                remaining,
+            )
+            _log_plan(plan.calls, plan.skipped)
+
+            if dry_run:
+                log.info("DRY RUN [%s] — no charges, no writes.", protocol)
+                continue
+
+            # Bind the per-protocol query for this pass. _charge_and_fetch
+            # reads _CURRENT_QUERY; the loop is sequential so no race.
+            _CURRENT_QUERY = prompt_for_protocol(protocol)
+            proto_lower = protocol.lower()
+
+            async def write_chunk_for_protocol(
+                *,
+                text: str,
+                provider_kind: str,
+                vertical: str,
+                freshness_tier: str,
+                source_url: str,
+                _proto: str = proto_lower,
+            ) -> None:
+                # Closure binds the active protocol for chunk tagging.
+                # ``content_kind="unknown"`` is the safe default until we
+                # add per-source classification.
+                await _write_chunk(
+                    text=text,
+                    provider_kind=provider_kind,
+                    vertical=vertical,
+                    freshness_tier=freshness_tier,
+                    source_url=source_url,
+                    protocol=[_proto],
+                    content_kind="unknown",
+                )
+
+            report = await execute_plan(
+                plan,
+                charge_and_fetch=_charge_and_fetch,
+                write_chunk=write_chunk_for_protocol,
+                vertical="dex",
+            )
+            cumulative_spent += report.spent_usd
+            cumulative_chunks += report.chunks_written
+            cumulative_failures.extend(f"[{protocol}] {f}" for f in report.failures)
+            log.info(
+                "[%s] done: spent $%s (cum $%s), wrote %d chunks (cum %d), %d failures",
+                protocol,
+                report.spent_usd,
+                cumulative_spent,
+                report.chunks_written,
+                cumulative_chunks,
+                len(report.failures),
+            )
+
+        # Reset module-level binding so a re-import / re-run starts clean.
+        _CURRENT_QUERY = None
+
         log.info(
-            "DONE: spent $%s, wrote %d chunks, %d failures",
-            report.spent_usd,
-            report.chunks_written,
-            len(report.failures),
+            "ALL PROTOCOLS DONE: spent $%s, wrote %d chunks, %d failures total",
+            cumulative_spent,
+            cumulative_chunks,
+            len(cumulative_failures),
         )
-        for f in report.failures:
+        for f in cumulative_failures:
             log.warning("  FAIL %s", f)
-        return 1 if report.failures else 0
+        return 1 if cumulative_failures else 0
 
     sys.exit(asyncio.run(_run()))
 

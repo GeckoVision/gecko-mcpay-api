@@ -21,6 +21,38 @@ SOLANA_DEFI_PROTOCOLS: tuple[str, ...] = (
     "Sanctum",
 )
 
+TRADING_ORACLE_PROTOCOLS_V1: tuple[str, ...] = (
+    "Jupiter",
+    "Kamino",
+    "Pyth",
+    "Drift",
+    "Jito",
+)
+
+
+def prompt_for_protocol(protocol: str) -> str:
+    """Single-protocol variant of TRADING_ORACLE_PROMPT.
+
+    Used by the per-protocol ingest loop so each call's response is
+    scoped to one protocol's facts. The returned string has the same
+    shape as TRADING_ORACLE_PROMPT but names ONE protocol — so the
+    answer LLM stays focused and the resulting chunks are unambiguously
+    taggable with protocol=[<name>].
+    """
+    p = protocol.strip()
+    if not p:
+        raise ValueError("protocol cannot be empty")
+    return (
+        f"Acting as a Solana DeFi trading research oracle: for the protocol "
+        f"{p}, retrieve and summarize current operational facts that affect "
+        f"a trader's decision-making — pool TVL trends, fee tiers, oracle "
+        f"staleness windows, recent governance / parameter changes, audit "
+        f"status, known incident history within the last 90 days, and "
+        f"integration partners. Cite source per fact. Do not produce trade "
+        f"recommendations; produce parameters a trader's agent needs to reason."
+    )
+
+
 TRADING_ORACLE_PROMPT: str = (
     "Acting as a Solana DeFi trading research oracle: for the protocols "
     + ", ".join(SOLANA_DEFI_PROTOCOLS)
