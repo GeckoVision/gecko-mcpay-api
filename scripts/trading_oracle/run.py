@@ -999,7 +999,7 @@ async def _write_chunk(
         chunks=[(0, text, list(embedding))],
         category="market_intelligence",
         vertical=vertical,  # type: ignore[arg-type]
-        source="paysh" if provider_kind == "paysh_live" else "bazaar",  # type: ignore[arg-type]
+        source="paysh_live" if provider_kind == "paysh_live" else "bazaar_live",  # type: ignore[arg-type]
         provider_kind=provider_kind,  # type: ignore[arg-type]
         source_url=source_url,
         freshness_tier=freshness_tier,  # type: ignore[arg-type]
