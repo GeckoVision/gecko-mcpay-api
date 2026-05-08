@@ -445,6 +445,33 @@ def _build_routes(settings: Settings) -> dict[str, RouteConfig]:
         ],
         description="Classify an idea into categories with suggested sources and priority weights",
     )
+    # Phase 10A — POST /trade_research x402 gate. Was free in Phase 8b
+    # (DoS surface: client loop hits Mongo + AG2 7-agent debate per call).
+    # Registered in both stub and live so Bazaar discovery sees it.
+    routes["POST /trade_research"] = RouteConfig(
+        accepts=[
+            PaymentOption(
+                scheme="exact",
+                pay_to=pay_to,
+                price=settings.trade_research_basic_price,
+                network=chain_id,
+                extra=svm_extra,
+            ),
+        ],
+        description="Run the 7-agent trade research panel (basic tier)",
+    )
+    routes["POST /trade_research/pro"] = RouteConfig(
+        accepts=[
+            PaymentOption(
+                scheme="exact",
+                pay_to=pay_to,
+                price=settings.trade_research_pro_price,
+                network=chain_id,
+                extra=svm_extra,
+            ),
+        ],
+        description="Run the 7-agent trade research panel (pro tier)",
+    )
     # S23-REPORT-01 — gecko_report HTTP surface. Registered in both stub and
     # live so Bazaar discovery sees it under either deploy. $0.05 flat.
     routes["POST /report/:session_id"] = RouteConfig(
@@ -805,6 +832,11 @@ app.add_middleware(
 _UNPAID_RATE_LIMIT_PER_MINUTE = 30
 _RATE_LIMITED_PATHS = frozenset({"/research", "/research/pro", "/plan"})
 
+# Phase 10A — /trade_research is heavier than /research (AG2 7-agent
+# debate + Mongo retrieval per call), so it gets a stricter unpaid cap.
+_TRADE_RESEARCH_RATE_LIMIT_PER_MINUTE = 10
+_TRADE_RESEARCH_RATE_LIMITED_PATHS = frozenset({"/trade_research", "/trade_research/pro"})
+
 
 # Per-IP token bucket state. Single-process only; Sprint 13+ should
 # migrate to Redis for multi-replica deploys.
@@ -859,6 +891,9 @@ class _UnauthenticatedRateLimitMiddleware:
         self.rate = int(rate_per_minute)
         self.paths = paths
         self.window = 60.0
+        # Per-instance bucket so two stacked middlewares (e.g. /research at
+        # 30/min and /trade_research at 10/min) don't share counters.
+        self._state: dict[str, list[float]] = {}
 
     async def __call__(
         self,
@@ -890,10 +925,10 @@ class _UnauthenticatedRateLimitMiddleware:
         now = time.monotonic()
         cutoff = now - self.window
         async with _unpaid_rate_lock:
-            entries = _unpaid_rate_state.get(client_ip, [])
+            entries = self._state.get(client_ip, [])
             entries = [t for t in entries if t >= cutoff]
             if len(entries) >= self.rate:
-                _unpaid_rate_state[client_ip] = entries
+                self._state[client_ip] = entries
                 await _send_json_error(
                     send,
                     status=429,
@@ -905,7 +940,7 @@ class _UnauthenticatedRateLimitMiddleware:
                 )
                 return
             entries.append(now)
-            _unpaid_rate_state[client_ip] = entries
+            self._state[client_ip] = entries
 
         await self.app(scope, receive, send)
 
@@ -1065,6 +1100,15 @@ app.add_middleware(
     _UnauthenticatedRateLimitMiddleware,
     rate_per_minute=_UNPAID_RATE_LIMIT_PER_MINUTE,
     paths=_RATE_LIMITED_PATHS,
+)
+# Phase 10A — stricter 10/min cap on /trade_research endpoints. Stacked
+# alongside the 30/min cap above; each instance shares the same per-IP
+# bucket store but tracks its own paths frozenset, so a /research caller
+# does not consume budget against /trade_research and vice versa.
+app.add_middleware(
+    _UnauthenticatedRateLimitMiddleware,
+    rate_per_minute=_TRADE_RESEARCH_RATE_LIMIT_PER_MINUTE,
+    paths=_TRADE_RESEARCH_RATE_LIMITED_PATHS,
 )
 app.add_middleware(_BodySizeLimitMiddleware, max_bytes=_MAX_REQUEST_BODY_BYTES)
 
@@ -2079,9 +2123,11 @@ async def precedents_call(req: dict[str, Any], request: Request) -> list[dict[st
 
 # ---------------------------------------------------------------------------
 # Phase 8b — POST /trade_research: 7-agent trade research panel.
+# Phase 10A — gated by x402 ($0.25 basic / $0.75 pro). Was free in 8b;
+# DoS surface (Mongo retrieval + AG2 7-agent debate per call) closed by
+# the gate plus a 10/min/IP unauthenticated rate limit.
 #
-# Free endpoint (no x402 gate) — pricing decision deferred until eval data
-# lands. Returns the TradePanelVerdict shape. Companion to /research:
+# Companion to /research:
 #   - /research          → founder-advisory voices for idea validation
 #   - /trade_research    → 7 finance personas for trading decisions
 # ---------------------------------------------------------------------------
@@ -2089,7 +2135,7 @@ async def precedents_call(req: dict[str, Any], request: Request) -> list[dict[st
 
 @app.post("/trade_research", response_model=TradeResearchResponse)
 async def trade_research(req: TradeResearchRequest, request: Request) -> TradeResearchResponse:
-    """Phase 8b — 7-agent trade research panel.
+    """Phase 8b/10A — 7-agent trade research panel ($0.25 basic via x402).
 
     See ``gecko_trade_research`` MCP tool for the description shipped to
     Claude Code skill manifests. This handler does the retrieval + panel
@@ -2129,6 +2175,50 @@ async def trade_research(req: TradeResearchRequest, request: Request) -> TradeRe
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("trade_research: failed for protocol=%r", req.protocol)
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+
+    return TradeResearchResponse(**verdict.model_dump())
+
+
+@app.post("/trade_research/pro", response_model=TradeResearchResponse)
+async def trade_research_pro(req: TradeResearchRequest, request: Request) -> TradeResearchResponse:
+    """Phase 10A — pro-tier 7-agent trade research panel ($0.75 via x402).
+
+    Identical handler logic to ``/trade_research``; the price difference
+    reflects the higher cost ceiling for the pro debate path. The body's
+    ``tier`` field is forced to ``"pro"`` here so callers can't pay the
+    pro price for a basic run.
+    """
+    from gecko_core.orchestration.settings import get_orchestration_settings
+    from gecko_core.orchestration.trade_panel import run_trade_panel_with_retrieval
+
+    _ = getattr(request.state, "payment_payload", None)
+
+    orch = get_orchestration_settings()
+    llm_config: dict[str, Any] = {
+        "config_list": [
+            {
+                "model": "gpt-4o-mini",
+                "api_key": orch.llm_api_key,
+                "base_url": orch.llm_endpoint,
+            }
+        ],
+        "temperature": 0.3,
+    }
+
+    try:
+        verdict = await run_trade_panel_with_retrieval(
+            idea=req.idea,
+            protocol=req.protocol,
+            vertical=req.vertical,
+            tier="pro",
+            llm_config=llm_config,
+        )
+    except ValueError as exc:
+        logger.exception("trade_research_pro: bad config for protocol=%r", req.protocol)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("trade_research_pro: failed for protocol=%r", req.protocol)
         raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
 
     return TradeResearchResponse(**verdict.model_dump())
