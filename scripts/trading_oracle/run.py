@@ -59,6 +59,37 @@ log = logging.getLogger("trading_oracle.run")
 
 
 # ---------------------------------------------------------------------------
+# URL template substitution.
+#
+# Bazaar listings often have endpoint URLs like
+# https://api.zerion.io/v1/wallets/{address}/portfolio. Without
+# substitution they 402 with empty accepts[]. We substitute the buyer's
+# own wallet address so the call shape is at least valid.
+# ---------------------------------------------------------------------------
+
+import re as _re  # noqa: E402  (kept local to module concern)
+
+
+def _substitute_url_template(url: str, *, wallet_address: str) -> str:
+    """Replace {address} placeholders in bazaar endpoint URLs with the buyer wallet.
+
+    Bazaar listings often have endpoint URLs like
+    https://api.zerion.io/v1/wallets/{address}/portfolio. Without
+    substitution they 402 with empty accepts[]. We substitute the buyer's
+    own wallet address so the call shape is at least valid.
+    """
+    substituted = url.replace("{address}", wallet_address)
+    leftover = _re.findall(r"\{[^}]+\}", substituted)
+    if leftover:
+        log.warning(
+            "URL %r still contains unresolved placeholders %s after substitution; issuing as-is",
+            substituted,
+            leftover,
+        )
+    return substituted
+
+
+# ---------------------------------------------------------------------------
 # Listing-shape adapters.
 #
 # paysh_manifest / bazaar_manifest emit catalog rows whose shapes don't match
@@ -289,6 +320,12 @@ class _LiveX402PaidRequester:
             _build_payment_requirements,
         )
         from gecko_core.sources.paysh_live import PaidResponse
+
+        # Substitute {address} (and warn on other unresolved placeholders) so
+        # bazaar wallet-portfolio listings (e.g. Zerion) get a valid URL shape
+        # before the 402 probe. Without this, the seller returns 402 with an
+        # empty accepts[] and the buyer dance aborts before any payment fires.
+        url = _substitute_url_template(url, wallet_address=self._payer_address)
 
         async with httpx.AsyncClient(timeout=timeout_seconds) as client:
             # Step 1: probe for 402.

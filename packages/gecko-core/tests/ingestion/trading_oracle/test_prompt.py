@@ -71,6 +71,34 @@ def test_filter_rejects_email_service():
     )
 
 
+def test_filter_accepts_perplexity_via_allowlist():
+    assert (
+        is_solana_defi_relevant(
+            {
+                "name": "Perplexity",
+                "fqn": "docs-perplexity-ai",
+                "description": "AI search and reasoning",
+                "tags": ["base", "ai"],  # no solana token, no defi token
+            }
+        )
+        is True
+    )
+
+
+def test_filter_accepts_claude_via_allowlist():
+    assert (
+        is_solana_defi_relevant(
+            {
+                "name": "Claude",
+                "fqn": "docs-anthropic-com",
+                "description": "Anthropic models",
+                "tags": ["base"],
+            }
+        )
+        is True
+    )
+
+
 def test_filter_rejects_air_quality():
     """Air Quality API — paysh environmental data tagged with "oracle" but
     irrelevant to Solana DeFi. Should reject before the DeFi-token path."""

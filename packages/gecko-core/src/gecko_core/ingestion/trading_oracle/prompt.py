@@ -57,6 +57,23 @@ _EVM_REJECT_TOKENS = (
     "avalanche",
 )
 
+# Bazaar/paysh service IDs that are research-LLMs — they take free-text and
+# return grounded answers, which is exactly what TRADING_ORACLE_PROMPT
+# wants. Bypass the Solana-DeFi listing filter for these. The filter was
+# designed for *data-feed* listings; research-LLMs are a different category
+# better-judged by their *output*, not their *metadata*.
+TRADING_ORACLE_RESEARCH_LLM_FQNS: frozenset[str] = frozenset(
+    {
+        "docs-perplexity-ai",  # Perplexity, Base, $0.01-$0.10
+        "docs-anthropic-com",  # Claude, Base, $0.001-$10
+        "deepseek-com",  # DeepSeek, Base, $0.001-$10
+        "exa-ai",  # Exa AI search, Base, $0.001-$0.015
+        "platform-openai-com",  # ChatGPT, Base, $0.001-$10
+        "paysponge/perplexity",  # paysh's Perplexity wrapper
+    }
+)
+
+
 # Known false-positive tokens. These listings substring-match the DeFi
 # token list (e.g. AirQuality "AQI" + tag "oracle") but have nothing to
 # do with Solana DeFi. Anything matching here short-circuits to reject
@@ -89,6 +106,12 @@ def _haystack(listing: Mapping[str, object]) -> str:
 
 
 def is_solana_defi_relevant(listing: Mapping[str, object]) -> bool:
+    # Research-LLM allowlist: these services take free-text and return
+    # grounded answers, which fits TRADING_ORACLE_PROMPT directly. Skip
+    # the metadata-based Solana-DeFi filter for them.
+    fqn = listing.get("fqn")
+    if isinstance(fqn, str) and fqn in TRADING_ORACLE_RESEARCH_LLM_FQNS:
+        return True
     h = _haystack(listing)
     # Reject known false-positives BEFORE the DeFi-substring path runs.
     # AgentMail (email) matches "oracle" via vendor description; AirQuality
