@@ -526,7 +526,7 @@ async def _write_chunk(
     from gecko_core.db.mongo_chunks import insert_chunks_mongo
     from gecko_core.ingestion.embedder import embed
 
-    vectors = await embed([text])
+    vectors, _tokens = await embed([text])
     embedding = vectors[0] if vectors else []
     await insert_chunks_mongo(
         session_id=uuid4(),
