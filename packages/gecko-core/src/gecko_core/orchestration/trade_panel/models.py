@@ -12,6 +12,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from gecko_core.orchestration.trade_panel.backtest.models import BacktestReport
+
 # Final-verdict tokens. Mirrors the coordinator's closing-line regex.
 TradeVerdictLiteral = Literal["act", "pass", "defer"]
 
@@ -64,9 +66,18 @@ class TradePanelVerdict(BaseModel):
         default_factory=list,
         description="Full transcript in canonical agent order.",
     )
+    backtest: BacktestReport | None = Field(
+        default=None,
+        description=(
+            "Realized-history replay of the Strategist intent. None when "
+            "enable_backtest=False (default) or when the panel is rerun "
+            "by a caller that doesn't surface backtests."
+        ),
+    )
 
 
 __all__ = [
+    "BacktestReport",
     "TradePanelTurn",
     "TradePanelVerdict",
     "TradeVerdictLiteral",

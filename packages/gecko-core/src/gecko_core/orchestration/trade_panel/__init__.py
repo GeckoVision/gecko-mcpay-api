@@ -25,6 +25,7 @@ last turn.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import re
@@ -527,6 +528,48 @@ async def retrieve_trade_corpus_chunks(
     return rows
 
 
+# Strategist closing-line: "Strategic intent: open small long, normal stop,
+# weeks horizon — falsifier: ...". v1 best-effort regex over the free-form
+# sentence. When the panel adopts the structured Phase 9 prompt addendum
+# (entry_window/exit_horizon/direction/size_band) we'll prefer those keys
+# directly on the parsed_verdict.
+_STRATEGIST_DIRECTION_RE = re.compile(r"\b(long|short|neutral)\b", re.IGNORECASE)
+_STRATEGIST_HORIZON_RE = re.compile(r"\b(intraday|days|weeks|months|\d+\s*[dwhm])\b", re.IGNORECASE)
+_STRATEGIST_SIZE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%")
+
+
+def _strategist_intent_from_turn(turn: TradePanelTurn | None, protocol: str) -> dict[str, Any]:
+    """Best-effort extraction of a backtestable intent from the strategist turn.
+
+    Pulls direction (long/short/neutral), a horizon hint, and an optional
+    size band out of the closing line. Returns a dict shaped for
+    :func:`backtest_intent`. Always populates ``protocol`` so the caller
+    has a routable key even when the rest is thin.
+    """
+    intent: dict[str, Any] = {"protocol": protocol.strip().lower()}
+    if turn is None:
+        return intent
+    line = (turn.parsed_verdict or {}).get("strategic_intent") or ""
+    if not line:
+        return intent
+    if dm := _STRATEGIST_DIRECTION_RE.search(line):
+        intent["direction"] = dm.group(1).lower()
+    if hm := _STRATEGIST_HORIZON_RE.search(line):
+        token = hm.group(1).lower()
+        # Map qualitative tokens to representative day counts.
+        mapped = {
+            "intraday": "1d",
+            "days": "3d",
+            "weeks": "14d",
+            "months": "60d",
+        }.get(token, token)
+        intent["exit_horizon"] = mapped
+    if sm := _STRATEGIST_SIZE_RE.search(line):
+        with contextlib.suppress(ValueError):
+            intent["size_pct"] = float(sm.group(1))
+    return intent
+
+
 async def run_trade_panel_with_retrieval(
     idea: str,
     protocol: str,
@@ -536,6 +579,8 @@ async def run_trade_panel_with_retrieval(
     top_k: int = _DEFAULT_TRADE_TOP_K,
     llm_config: dict[str, Any] | None = None,
     agent_factory: AgentFactory | None = None,
+    enable_backtest: bool = False,
+    history_source: Any | None = None,
 ) -> TradePanelVerdict:
     """Convenience wrapper — fetch corpus chunks, then run the 7-agent panel.
 
@@ -543,11 +588,17 @@ async def run_trade_panel_with_retrieval(
     itself does NOT touch the vector store (that contract is locked by Phase
     8a). This wrapper does the retrieval up front and forwards into
     :func:`run_trade_panel`.
+
+    Phase 9 addendum: when ``enable_backtest=True``, the strategist turn's
+    intent is extracted and replayed against historical price data via
+    :func:`backtest_intent`. The resulting :class:`BacktestReport` is
+    attached to the returned verdict. Default False keeps existing callers
+    on the Phase 8 contract.
     """
     chunks = await retrieve_trade_corpus_chunks(
         idea=idea, protocol=protocol, vertical=vertical, top_k=top_k
     )
-    return await run_trade_panel(
+    verdict = await run_trade_panel(
         idea=idea,
         protocol=protocol,
         retrieved_chunks=chunks,
@@ -555,3 +606,25 @@ async def run_trade_panel_with_retrieval(
         llm_config=llm_config,
         agent_factory=agent_factory,
     )
+
+    if not enable_backtest:
+        return verdict
+
+    # Lazy import keeps the backtest sub-package off the trade_panel hot path
+    # when callers leave the flag at its default.
+    from gecko_core.orchestration.trade_panel.backtest import (
+        backtest_intent as _backtest_intent,
+    )
+    from gecko_core.orchestration.trade_panel.backtest.history_source import (
+        PythHermesHistorySource,
+    )
+
+    strategist_turn = next((t for t in verdict.turns if t.agent == STRATEGIST), None)
+    intent_dict = _strategist_intent_from_turn(strategist_turn, protocol)
+    source = history_source if history_source is not None else PythHermesHistorySource()
+    try:
+        report = await _backtest_intent(intent_dict, source)
+    except Exception as exc:  # pragma: no cover - defensive; backtest never raises
+        _log.warning("trade_panel.backtest.error err=%s", exc)
+        return verdict
+    return verdict.model_copy(update={"backtest": report})
