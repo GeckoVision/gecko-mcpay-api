@@ -193,3 +193,21 @@ def test_freshness_tier_values_match_sql_check() -> None:
     sql = migration.read_text()
     for value in FRESHNESS_TIER_VALUES:
         assert f"'{value}'" in sql, f"freshness tier {value!r} missing from SQL CHECK"
+
+
+def test_content_kind_values_match_sql_check() -> None:
+    """Pattern A: ContentKind literal must match SQL CHECK exactly."""
+    from pathlib import Path
+
+    from gecko_core.sources.types import CONTENT_KIND_VALUES
+
+    migration = (
+        Path(__file__).parent.parent.parent.parent
+        / "infra"
+        / "supabase"
+        / "migrations"
+        / "20260508140000_chunk_protocol_content_kind.sql"
+    )
+    sql = migration.read_text()
+    for value in CONTENT_KIND_VALUES:
+        assert f"'{value}'" in sql, f"content kind {value!r} missing from SQL CHECK"

@@ -72,9 +72,18 @@ PROVIDER_KINDS: Final[tuple[str, ...]] = get_args(ProviderKind)
 FreshnessTier = Literal["static", "daily", "live_only"]
 FRESHNESS_TIER_VALUES: tuple[FreshnessTier, ...] = ("static", "daily", "live_only")
 
+# --- Content kind (Pattern A: SQL CHECK in 20260508140000 mirrors this) ---
+# 'quote'      = price/TVL/APY snapshots; 24h TTL.
+# 'mechanism'  = protocol architecture, audit reports; 30d TTL.
+# 'governance' = proposals, parameter changes; 7d TTL.
+ContentKind = Literal["quote", "mechanism", "governance", "unknown"]
+CONTENT_KIND_VALUES: tuple[ContentKind, ...] = ("quote", "mechanism", "governance", "unknown")
+
 __all__ = [
+    "CONTENT_KIND_VALUES",
     "FRESHNESS_TIER_VALUES",
     "PROVIDER_KINDS",
+    "ContentKind",
     "FreshnessTier",
     "ProviderKind",
 ]
