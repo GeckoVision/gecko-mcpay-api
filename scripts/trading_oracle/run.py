@@ -59,6 +59,68 @@ log = logging.getLogger("trading_oracle.run")
 
 
 # ---------------------------------------------------------------------------
+# Buyer-side per-call cap helper.
+#
+# Per the x402 spec, ``accepts[].maxAmountRequired`` is a MAXIMUM the seller
+# might charge — not a guaranteed amount. Sellers like Venice quote a per-1M-
+# token cap (e.g. $10) but settle a tiny fraction per call. The buyer should
+# protect itself with an explicit per-call hard limit and accept any
+# advertised max <= that limit. Actual settlement is tracked separately from
+# the response (X-Payment-Receipt header) and only that amount is charged
+# against the session budget.
+# ---------------------------------------------------------------------------
+
+
+def _check_advertised_within_limit(
+    accepts: Sequence[Mapping[str, Any]],
+    per_call_limit_usd: Decimal,
+) -> Decimal:
+    """Validate the seller's advertised max against the buyer's hard limit.
+
+    Returns the advertised max in USD when within limit. Raises
+    ``RuntimeError`` with a clear message when the seller's advertised
+    ``maxAmountRequired`` exceeds the buyer's per-call cap.
+
+    USDC has 6 decimals — atomic units are divided by 1e6.
+    """
+    if not accepts:
+        raise RuntimeError("402 carried empty accepts[]")
+    chosen = accepts[0]
+    advertised_atomic = int(chosen.get("maxAmountRequired") or chosen.get("amount") or "0")
+    advertised_usd = Decimal(advertised_atomic) / Decimal(10**6)
+    if advertised_usd > per_call_limit_usd:
+        raise RuntimeError(
+            f"x402 advertised maxAmount ${advertised_usd:.4f} exceeds "
+            f"buyer per-call hard limit ${per_call_limit_usd:.4f}"
+        )
+    return advertised_usd
+
+
+def _extract_settled_amount(
+    headers: Mapping[str, str],
+    *,
+    fallback_usd: Decimal,
+) -> Decimal:
+    """Parse the actual settled amount from response headers.
+
+    Looks for (in priority): ``X-Payment-Receipt`` (USDC atomic),
+    ``X-Settled-Amount`` (USDC atomic). Falls back to ``fallback_usd``
+    (the advertised max) when no usable header is present.
+    """
+    for key in ("X-Payment-Receipt", "X-Settled-Amount", "x-payment-receipt", "x-settled-amount"):
+        raw = headers.get(key)
+        if not raw:
+            continue
+        try:
+            return Decimal(int(raw)) / Decimal(10**6)
+        except (TypeError, ValueError):
+            # Header present but not a plain atomic int (could be a JSON
+            # blob); ignore and try the next variant.
+            continue
+    return fallback_usd
+
+
+# ---------------------------------------------------------------------------
 # URL template substitution.
 #
 # Bazaar listings often have endpoint URLs like
@@ -219,6 +281,11 @@ def _load_listings_from_file(path: Path) -> list[dict[str, Any]]:
 # nonce semantics are intent-id scoped, not requester-instance scoped).
 _PAID_REQUESTER_SINGLETON: Any | None = None
 
+# Buyer-side per-call hard limit in USD. Set by ``main`` from the CLI flag
+# ``--max-per-call-usd`` (default $0.10) and read by ``_LiveX402PaidRequester``
+# when it inspects the seller's advertised maxAmount.
+_PER_CALL_HARD_LIMIT_USD: Decimal = Decimal("0.10")
+
 
 def _build_paid_requester() -> Any:
     """Construct a live x402 ``PaidRequester`` from env. Raises if config missing.
@@ -267,6 +334,7 @@ def _build_paid_requester() -> Any:
         payer_private_key=private_key,
         payer_address=address,
         network=network,
+        per_call_hard_limit_usd=_PER_CALL_HARD_LIMIT_USD,
     )
     return _PAID_REQUESTER_SINGLETON
 
@@ -297,10 +365,12 @@ class _LiveX402PaidRequester:
         payer_private_key: str,
         payer_address: str,
         network: str,
+        per_call_hard_limit_usd: Decimal = Decimal("0.10"),
     ) -> None:
         self._payer_private_key = payer_private_key
         self._payer_address = payer_address
         self._network = network
+        self._per_call_hard_limit_usd = per_call_hard_limit_usd
 
     def _build_request_for_service(
         self,
@@ -404,13 +474,19 @@ class _LiveX402PaidRequester:
             accepts = challenge.get("accepts") or []
             if not accepts:
                 raise RuntimeError(f"402 from {url!r} carried empty accepts[]")
+            # Treat advertised maxAmountRequired as a SELLER-side cap, not a
+            # guaranteed charge. Reject only if it exceeds the buyer's
+            # per-call hard limit; ``max_cost_usd`` (planner-listing posted
+            # price) is informational here and feeds the BudgetGuard at the
+            # session level via the actual settled amount returned below.
+            advertised_usd = _check_advertised_within_limit(accepts, self._per_call_hard_limit_usd)
+            log.info(
+                "x402 402 from %s: advertised max $%.4f (within buyer per-call limit $%.4f)",
+                url,
+                float(advertised_usd),
+                float(self._per_call_hard_limit_usd),
+            )
             chosen = accepts[0]
-            advertised_atomic = int(chosen.get("maxAmountRequired") or chosen.get("amount") or "0")
-            advertised_usd = Decimal(advertised_atomic) / Decimal(10**6)
-            if advertised_usd > Decimal(str(max_cost_usd)):
-                raise RuntimeError(
-                    f"advertised price {advertised_usd} USD exceeds caller cap {max_cost_usd} USD"
-                )
 
             sdk_requirements = _build_payment_requirements(
                 amount_usd=advertised_usd,
@@ -467,9 +543,30 @@ class _LiveX402PaidRequester:
                 body = paid.json() if "json" in content_type else text
             except Exception:
                 body = text
+
+            # Settlement amount: prefer X-Payment-Receipt / X-Settled-Amount
+            # (actual atomic USDC settled). Fall back to the advertised max
+            # when no header is present.
+            #
+            # Invariant: by the time we get here, we already accepted the
+            # advertised max as <= per-call hard limit (raised in
+            # ``_check_advertised_within_limit`` otherwise), so falling back
+            # to advertised_usd is bounded.
+            assert advertised_usd <= self._per_call_hard_limit_usd, (
+                "advertised_usd should already be capped by the per-call "
+                "hard limit before we get here"
+            )
+            settled_usd = _extract_settled_amount(paid.headers, fallback_usd=advertised_usd)
+            log.info(
+                "x402 settled %s: actual=$%.6f advertised_max=$%.4f (header_present=%s)",
+                url,
+                float(settled_usd),
+                float(advertised_usd),
+                settled_usd != advertised_usd,
+            )
             return PaidResponse(
                 status_code=200,
-                cost_usd=float(advertised_usd),
+                cost_usd=float(settled_usd),
                 response_body=body,
                 response_text=text,
                 content_type=content_type,
@@ -622,8 +719,30 @@ def _log_plan(plan_calls: Sequence[PlannedCall], skipped: Sequence[Any]) -> None
     default=None,
     help="Pre-loaded planner-shaped listings (skips catalog fetch).",
 )
-def main(cap_usd: str, dry_run: bool, source: str, listings_json: Path | None) -> None:
+@click.option(
+    "--max-per-call-usd",
+    default="0.10",
+    show_default=True,
+    help=(
+        "Buyer-side hard limit per call in USD. Sellers advertise a MAX "
+        "(maxAmountRequired) in x402 accepts[] that may be far larger than "
+        "actual settlement (e.g. Venice quotes $10 max for chat-completions "
+        "billed per-token). We reject any listing whose advertised max "
+        "exceeds this limit. Default $0.10 is conservative; pass e.g. "
+        "10.00 if you accept Claude/Anthropic listings whose advertised max "
+        "is $10."
+    ),
+)
+def main(
+    cap_usd: str,
+    dry_run: bool,
+    source: str,
+    listings_json: Path | None,
+    max_per_call_usd: str,
+) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    global _PER_CALL_HARD_LIMIT_USD
+    _PER_CALL_HARD_LIMIT_USD = Decimal(max_per_call_usd)
 
     async def _run() -> int:
         # Listings: file-loaded fixture (no network) or live catalog fetch.
