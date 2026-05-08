@@ -111,6 +111,11 @@ class Settings(BaseModel):
     ask_free_quota_per_session: int = 100
     # S23-REPORT-01: report generation price. $0.05 flat.
     report_call_price: str = "$0.05"
+    # Phase 10A: /trade_research x402 gate. Two prices keyed by tier:
+    # basic ($0.25) and pro ($0.75 — matches the pro debate in /research).
+    # Stub mode still registers the route so Bazaar discovery sees it.
+    trade_research_basic_price: str = "$0.25"
+    trade_research_pro_price: str = "$0.75"
 
     # S5-API-03: tiered /route pricing. Sprint 4 shipped a single flat
     # $0.02 charge; Sprint 5 splits it into three paths so heavy callers
@@ -245,6 +250,8 @@ class Settings(BaseModel):
         ask_call_price = os.environ.get("ASK_CALL_PRICE", "$0.01")
         classify_call_price = os.environ.get("CLASSIFY_CALL_PRICE", "$0.10")
         report_call_price = os.environ.get("REPORT_CALL_PRICE", "$0.05")
+        trade_research_basic_price = os.environ.get("TRADE_RESEARCH_BASIC_PRICE", "$0.25")
+        trade_research_pro_price = os.environ.get("TRADE_RESEARCH_PRO_PRICE", "$0.75")
         ask_free_quota_raw = os.environ.get("ASK_FREE_QUOTA_PER_SESSION", "100")
         try:
             ask_free_quota = int(ask_free_quota_raw)
@@ -292,6 +299,8 @@ class Settings(BaseModel):
             ask_free_quota_per_session=ask_free_quota,
             events_secret=events_secret,
             report_call_price=report_call_price,
+            trade_research_basic_price=trade_research_basic_price,
+            trade_research_pro_price=trade_research_pro_price,
         )
 
 

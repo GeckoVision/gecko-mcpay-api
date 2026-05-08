@@ -230,7 +230,8 @@ _TRADE_RESEARCH_DESCRIPTION = (
     "one runs founder-advisory voices (CEO/CTO/PM/BM/Staff) for idea "
     "validation; use this one for trading decisions and protocol risk "
     "research grounded in the paid Bazaar+paysh corpus (Zerion / Exa / "
-    "paysh providers tagged per protocol)."
+    "paysh providers tagged per protocol). "
+    "Pays $0.25 basic / $0.75 pro via x402."
 )
 
 _REPORT_DESCRIPTION = (
