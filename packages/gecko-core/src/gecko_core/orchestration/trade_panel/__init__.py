@@ -70,7 +70,9 @@ __all__ = [
     "TradeVerdictLiteral",
     "build_groupchat",
     "load_prompts",
+    "retrieve_trade_corpus_chunks",
     "run_trade_panel",
+    "run_trade_panel_with_retrieval",
 ]
 
 # Pre-compiled closing-line regexes — case-insensitive, multiline-friendly.
@@ -402,3 +404,154 @@ async def run_trade_panel(
         messages.append({"role": "assistant", "content": text})
 
     return _build_verdict_from_coordinator(turns)
+
+
+# ---------------------------------------------------------------------------
+# Phase 8b — retrieval glue
+#
+# The panel itself stays retrieval-agnostic (Phase 8a contract). This
+# convenience wrapper is the public entry point the MCP tool + REST endpoint
+# call: it embeds the question once, reads top-K chunks scoped to
+# (vertical, protocol) from the trading-oracle corpus, and forwards into
+# run_trade_panel.
+#
+# Why filter shape: the `vertical` field IS declared as a filterable path on
+# the chunks_vector index (see CHUNKS_VECTOR_FILTER_FIELDS); `protocol` is
+# NOT. We push `vertical` into $vectorSearch.filter (Atlas pre-filters before
+# the ANN graph traversal) and post-$match on `protocol` after the kNN. This
+# keeps round trips at one and avoids a noisy index migration just for the
+# trade-research surface.
+# ---------------------------------------------------------------------------
+
+_DEFAULT_TRADE_TOP_K: int = 15
+
+
+async def retrieve_trade_corpus_chunks(
+    *,
+    idea: str,
+    protocol: str,
+    vertical: str = "dex",
+    top_k: int = _DEFAULT_TRADE_TOP_K,
+) -> list[dict[str, Any]]:
+    """Embed ``idea`` and read top-K chunks scoped to ``(vertical, protocol)``.
+
+    Returns a list of plain dicts shaped for ``run_trade_panel`` (``text`` +
+    ``source`` keys are the only contract). Returns ``[]`` when the chunk
+    store is not configured for Mongo, when the embedder yields no vector,
+    or when the corpus has no matching rows. Production-only — no Supabase
+    fallback because the trading-oracle corpus is Mongo-native.
+    """
+    if top_k <= 0 or not idea.strip():
+        return []
+    proto_norm = protocol.strip().lower()
+    if not proto_norm:
+        return []
+
+    # Lazy imports keep gecko_core's startup cost off the trade_panel package
+    # import path (the in-process MCP server imports this module at boot).
+    from gecko_core.db import get_chunk_store
+    from gecko_core.db.mongo import VECTOR_INDEX_NAME, chunks_collection
+    from gecko_core.ingestion.embedder import embed
+
+    if get_chunk_store() != "mongo":
+        _log.warning(
+            "trade_panel.retrieve.skip reason=non_mongo_store store=%s",
+            get_chunk_store(),
+        )
+        return []
+    coll = chunks_collection()
+    if coll is None:
+        return []
+
+    vectors, _tokens = await embed([idea])
+    if not vectors:
+        return []
+    query_vector = vectors[0]
+
+    # numCandidates oversized vs. top_k — Atlas's ANN graph needs slack to
+    # land good rows after the post-$match on protocol filters out chunks
+    # that survive the vertical pre-filter but are tagged for a different
+    # protocol. 20x is the same shape `build_filterable_pipeline` uses.
+    pipeline: list[dict[str, Any]] = [
+        {
+            "$vectorSearch": {
+                "index": VECTOR_INDEX_NAME,
+                "path": "embedding",
+                "queryVector": query_vector,
+                "numCandidates": max(200, top_k * 20),
+                "limit": top_k * 5,
+                "exact": False,
+                "filter": {
+                    "vertical": {"$eq": vertical},
+                    "metadata.deprecated": {"$ne": True},
+                },
+            }
+        },
+        {"$match": {"protocol": proto_norm}},
+        {"$limit": top_k},
+        {
+            "$project": {
+                "_id": 1,
+                "source_url": 1,
+                "text": 1,
+                "vertical": 1,
+                "protocol": 1,
+                "provider_kind": 1,
+                "source": 1,
+                "metadata": 1,
+                "score": {"$meta": "vectorSearchScore"},
+            }
+        },
+    ]
+
+    rows: list[dict[str, Any]] = []
+    try:
+        async for doc in coll.aggregate(pipeline):
+            rows.append(
+                {
+                    "id": str(doc.get("_id", "")),
+                    "text": doc.get("text") or "",
+                    "source_url": doc.get("source_url") or "",
+                    # Prefer the catalog-named `source` (e.g. "exa", "zerion",
+                    # "paysh"); fall back to the legacy provider_kind tag.
+                    "source": (doc.get("source") or doc.get("provider_kind") or "unknown"),
+                    "provider_kind": doc.get("provider_kind") or "web",
+                    "protocol": doc.get("protocol") or proto_norm,
+                    "vertical": doc.get("vertical") or vertical,
+                    "score": float(doc.get("score") or 0.0),
+                }
+            )
+    except Exception as exc:  # pragma: no cover - defensive
+        _log.warning("trade_panel.retrieve.error err=%s", exc)
+        return []
+    return rows
+
+
+async def run_trade_panel_with_retrieval(
+    idea: str,
+    protocol: str,
+    *,
+    vertical: str = "dex",
+    tier: str = "basic",
+    top_k: int = _DEFAULT_TRADE_TOP_K,
+    llm_config: dict[str, Any] | None = None,
+    agent_factory: AgentFactory | None = None,
+) -> TradePanelVerdict:
+    """Convenience wrapper — fetch corpus chunks, then run the 7-agent panel.
+
+    Phase 8b's public entry point for the MCP tool + REST endpoint. The panel
+    itself does NOT touch the vector store (that contract is locked by Phase
+    8a). This wrapper does the retrieval up front and forwards into
+    :func:`run_trade_panel`.
+    """
+    chunks = await retrieve_trade_corpus_chunks(
+        idea=idea, protocol=protocol, vertical=vertical, top_k=top_k
+    )
+    return await run_trade_panel(
+        idea=idea,
+        protocol=protocol,
+        retrieved_chunks=chunks,
+        tier=tier,
+        llm_config=llm_config,
+        agent_factory=agent_factory,
+    )

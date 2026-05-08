@@ -26,7 +26,7 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 import gecko_core
@@ -1142,6 +1142,13 @@ class ResearchRequest(BaseModel):
     # Tier enum at request time). Default 'balanced'. Plumbed through
     # gecko_core.research → pro debate via the existing tier_preset arg.
     tier_preset: str = Field(default="balanced", pattern="^(quality|balanced|budget|free)$")
+    # S23-FIX-12 (T1b) — optional vertical hint. Plumbed through to
+    # ``gecko_core.research`` → ``rag_query`` so the marketplace corpus
+    # read fires when ``GECKO_MARKETPLACE_ROUTING_ENABLED`` is on.
+    # Unvalidated at the wire boundary; the RAG/taxonomy layer is the
+    # source of truth for known verticals and unknown values degrade
+    # gracefully (corpus read returns empty, session-scoped read still works).
+    vertical: str | None = None
 
 
 class AskRequest(BaseModel):
@@ -1261,6 +1268,37 @@ class PaidAskRequest(BaseModel):
 
     session_id: str = Field(..., min_length=1)
     question: str = Field(..., min_length=3, max_length=500)
+
+
+class TradeResearchRequest(BaseModel):
+    """Phase 8b — request shape for POST /trade_research.
+
+    Free in v1 (no x402 gate). The 7-agent panel reads the trading-oracle
+    corpus filtered by ``(vertical, protocol)`` and returns the verdict
+    shape. ``protocol`` is required and lower-cased downstream.
+    """
+
+    idea: str = Field(..., min_length=3, max_length=2000)
+    protocol: str = Field(..., min_length=1, max_length=64)
+    vertical: str = Field(default="dex", min_length=1, max_length=64)
+    tier: Tier = "basic"
+
+
+class TradeResearchResponse(BaseModel):
+    """Wire response for POST /trade_research.
+
+    Mirrors :class:`gecko_core.orchestration.trade_panel.TradePanelVerdict`
+    field-for-field. The ``turns`` list carries plain dicts so we don't
+    couple this surface to the core's pydantic model when consumers
+    deserialize off the wire.
+    """
+
+    verdict: Literal["act", "pass", "defer"]
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    key_drivers: list[str] = Field(default_factory=list)
+    dissent_count: int = Field(default=0, ge=0)
+    blocker_questions: list[str] = Field(default_factory=list)
+    turns: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ClassifyRequest(BaseModel):
@@ -1408,6 +1446,7 @@ async def _run_research_background(session_id: UUID, req: ResearchRequest) -> No
             skip_payment_gate=True,
             session_id=session_id,
             tier_preset=req.tier_preset,
+            vertical=req.vertical,
         )
         await store.set_result(session_id, result.model_dump(mode="json"))
         await store.update_status(session_id, "complete")
@@ -1511,6 +1550,7 @@ async def _run_pro_background(session_id: UUID, req: ResearchRequest) -> None:
         urls=req.urls,
         project_id=req.project_id,
         tier_preset=req.tier_preset,
+        vertical=req.vertical,
     )
 
 
@@ -1521,6 +1561,7 @@ async def _run_pro_debate(
     urls: list[str] | None = None,
     project_id: str | None = None,
     tier_preset: str = "balanced",
+    vertical: str | None = None,
 ) -> None:
     """Run a Pro debate against an existing session_id.
 
@@ -1540,6 +1581,7 @@ async def _run_pro_debate(
             skip_payment_gate=True,
             session_id=session_id,
             tier_preset=tier_preset,
+            vertical=vertical,
         )
         await store.set_result(session_id, result.model_dump(mode="json"))
         await store.update_status(session_id, "complete")
@@ -2033,6 +2075,63 @@ async def precedents_call(req: dict[str, Any], request: Request) -> list[dict[st
     except Exception as exc:
         logger.exception("precedents: failed for idea=%r", idea[:80])
         raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+
+
+# ---------------------------------------------------------------------------
+# Phase 8b — POST /trade_research: 7-agent trade research panel.
+#
+# Free endpoint (no x402 gate) — pricing decision deferred until eval data
+# lands. Returns the TradePanelVerdict shape. Companion to /research:
+#   - /research          → founder-advisory voices for idea validation
+#   - /trade_research    → 7 finance personas for trading decisions
+# ---------------------------------------------------------------------------
+
+
+@app.post("/trade_research", response_model=TradeResearchResponse)
+async def trade_research(req: TradeResearchRequest, request: Request) -> TradeResearchResponse:
+    """Phase 8b — 7-agent trade research panel.
+
+    See ``gecko_trade_research`` MCP tool for the description shipped to
+    Claude Code skill manifests. This handler does the retrieval + panel
+    invocation in one round trip; payload is JSON in / JSON out, no
+    streaming in v1.
+    """
+    from gecko_core.orchestration.settings import get_orchestration_settings
+    from gecko_core.orchestration.trade_panel import run_trade_panel_with_retrieval
+
+    _ = getattr(request.state, "payment_payload", None)
+
+    orch = get_orchestration_settings()
+    llm_config: dict[str, Any] = {
+        "config_list": [
+            {
+                "model": "gpt-4o-mini",
+                "api_key": orch.llm_api_key,
+                "base_url": orch.llm_endpoint,
+            }
+        ],
+        "temperature": 0.3,
+    }
+
+    try:
+        verdict = await run_trade_panel_with_retrieval(
+            idea=req.idea,
+            protocol=req.protocol,
+            vertical=req.vertical,
+            tier=req.tier,
+            llm_config=llm_config,
+        )
+    except ValueError as exc:
+        # Missing llm_config in production is the expected ValueError; surface
+        # as 500 so the caller sees a clear server-side config gap rather than
+        # a generic 422.
+        logger.exception("trade_research: bad config for protocol=%r", req.protocol)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("trade_research: failed for protocol=%r", req.protocol)
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+
+    return TradeResearchResponse(**verdict.model_dump())
 
 
 # S5-API-03: tiered /route pricing. Each path is gated by x402 at a
