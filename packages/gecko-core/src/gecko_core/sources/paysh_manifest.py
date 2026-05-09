@@ -644,6 +644,7 @@ async def fetch_catalog(
             source_name=SOURCE_NAME,
             payload={
                 "chunks": chunks,
+                "providers": list(catalog.providers[:max_entries]),
                 "catalog_version": catalog.version,
                 "provider_count": catalog.provider_count,
                 "generated_at": catalog.generated_at,

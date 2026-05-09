@@ -462,6 +462,7 @@ async def _fetch_and_parse(
             source_name=SOURCE_NAME,
             payload={
                 "chunks": chunks,
+                "services": list(catalog.services[:max_entries]),
                 "service_count": len(catalog.services),
                 "total": catalog.total,
                 "limit": catalog.limit,

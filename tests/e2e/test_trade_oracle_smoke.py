@@ -60,7 +60,7 @@ pytestmark = [pytest.mark.e2e_smoke]
 _BASE_URL_ENV = "GECKO_E2E_BASE_URL"
 _KAMINO_QUESTION = "Should a trader deposit USDC into Kamino's USDC reserve right now?"
 _DEFAULT_PROTOCOL = "kamino"
-_DEFAULT_VERTICAL = "defi-trading"
+_DEFAULT_VERTICAL = "dex"  # must match VERTICALS in gecko_core.knowledge.taxonomy; "defi-trading" is not valid and made retrieval return 0 hits silently (see PR #13)
 _VALID_DECISIONS: frozenset[str] = frozenset({"act", "pass", "defer"})
 
 
