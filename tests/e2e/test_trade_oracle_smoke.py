@@ -36,12 +36,19 @@ memory ``project_x402_stub_then_live``). The tests therefore submit a
 stub payment payload; a live-mode flip would require regenerating the
 header against the facilitator and is explicitly out of scope here.
 
-The pro-tier wire shape currently carries no ``backtest`` field at the
-HTTP layer — Phase 10A folded the backtest evidence into the
-``key_drivers`` and ``turns`` of the same TradePanelVerdict envelope.
-The smoke asserts that pro produces the same envelope at the higher
-$0.75 price point so any future schema split (e.g. a real ``backtest``
-field) is caught at the contract level.
+Issue #15 (2026-05-09): both basic and pro must carry a top-level
+``citations`` array with structured ``{id, source, url, chunk_id,
+provider_kind, freshness_tier, snippet}`` entries. The inline ``[N]``
+markers inside ``turns[].content`` keep working — the ``id`` field
+links the two surfaces. ``_assert_verdict_shape`` enforces this.
+
+Issue #14 (2026-05-09): the pro envelope MUST carry a ``backtest``
+field that the basic envelope does not. The dogfood that surfaced the
+regression showed pro returning structurally identical wire envelopes
+(same top-level keys, +1 cite ref). The pro smoke now asserts the
+divergence at the wire level — ``pro.keys() != basic.keys()`` AND
+``backtest`` is present on pro — so any future drift back to
+shape-equivalence is caught at the contract layer.
 """
 
 from __future__ import annotations
@@ -60,7 +67,7 @@ pytestmark = [pytest.mark.e2e_smoke]
 _BASE_URL_ENV = "GECKO_E2E_BASE_URL"
 _KAMINO_QUESTION = "Should a trader deposit USDC into Kamino's USDC reserve right now?"
 _DEFAULT_PROTOCOL = "kamino"
-_DEFAULT_VERTICAL = "defi-trading"
+_DEFAULT_VERTICAL = "dex"  # must match VERTICALS in gecko_core.knowledge.taxonomy; "defi-trading" is not valid and made retrieval return 0 hits silently (see PR #13)
 _VALID_DECISIONS: frozenset[str] = frozenset({"act", "pass", "defer"})
 
 
@@ -129,6 +136,19 @@ def _paid_post(client: httpx.Client, *, path: str, body: dict) -> httpx.Response
     return client.post(path, json=body, headers={"PAYMENT-SIGNATURE": payment_header})
 
 
+_REQUIRED_CITATION_KEYS: frozenset[str] = frozenset(
+    {"id", "source", "url", "chunk_id", "provider_kind", "freshness_tier", "snippet"}
+)
+
+
+def _assert_citation_shape(citations: list[dict]) -> None:
+    """Issue #15 — every entry must carry the structured citation contract."""
+    for entry in citations:
+        assert isinstance(entry, dict), f"non-dict citation: {entry!r}"
+        missing = _REQUIRED_CITATION_KEYS - set(entry.keys())
+        assert not missing, f"citation missing keys {missing!r}: {entry!r}"
+
+
 def _assert_verdict_shape(body: dict) -> None:
     """Common shape assertions for both basic and pro responses."""
     assert body.get("verdict") in _VALID_DECISIONS, (
@@ -149,6 +169,20 @@ def _assert_verdict_shape(body: dict) -> None:
     assert isinstance(body.get("blocker_questions"), list)
     assert isinstance(body.get("dissent_count"), int)
 
+    # Issue #15: structured citations[] sibling to inline [N] markers in
+    # turns[].content. Each entry carries id/source/url/chunk_id/
+    # provider_kind/freshness_tier/snippet so skill authors can render
+    # cite chips without regex-extracting from prose. Empty list is only
+    # acceptable on a corpus-empty run; the kamino+dex smoke is expected
+    # to land >= 1 hit post-#16 ingest backfill.
+    citations = body.get("citations")
+    assert isinstance(citations, list), f"missing citations[]: {citations!r}"
+    assert len(citations) >= 1, (
+        "expected >= 1 structured citation on the wire; "
+        f"got {citations!r} — issue #15 regression or empty corpus"
+    )
+    _assert_citation_shape(citations)
+
 
 def test_basic_route_serves_402_and_settles_in_stub(http_client: httpx.Client) -> None:
     body = {
@@ -158,7 +192,38 @@ def test_basic_route_serves_402_and_settles_in_stub(http_client: httpx.Client) -
     }
     r = _paid_post(http_client, path="/trade_research", body=body)
     assert r.status_code == 200, f"basic settle failed: {r.status_code} {r.text}"
-    _assert_verdict_shape(r.json())
+    basic = r.json()
+    _assert_verdict_shape(basic)
+    # Issue #14 — basic must NOT carry backtest. response_model_exclude_none=True
+    # on the basic route strips the field from the wire.
+    assert "backtest" not in basic, (
+        f"basic envelope unexpectedly carries 'backtest': {basic.get('backtest')!r}"
+    )
+
+
+def test_pro_envelope_diverges_from_basic_with_backtest(http_client: httpx.Client) -> None:
+    """Issue #14 AC — pro and basic must NOT be structurally identical."""
+    body = {
+        "idea": _KAMINO_QUESTION,
+        "protocol": _DEFAULT_PROTOCOL,
+        "vertical": _DEFAULT_VERTICAL,
+    }
+    rb = _paid_post(http_client, path="/trade_research", body=body)
+    rp = _paid_post(http_client, path="/trade_research/pro", body=body)
+    assert rb.status_code == 200 and rp.status_code == 200
+    basic, pro = rb.json(), rp.json()
+
+    assert set(pro.keys()) != set(basic.keys()), (
+        f"issue #14 regression: pro and basic returned identical keys.\n"
+        f"basic={sorted(basic.keys())!r}\npro={sorted(pro.keys())!r}"
+    )
+    assert pro.get("backtest") is not None, (
+        f"pro envelope missing non-null 'backtest': {pro.get('backtest')!r}"
+    )
+    bt = pro["backtest"]
+    assert isinstance(bt, dict)
+    for required in ("pnl_pct", "drawdown_pct", "source", "unbacktestable"):
+        assert required in bt, f"backtest missing required key {required!r}: {bt!r}"
 
 
 def test_pro_route_advertises_higher_price_and_settles(http_client: httpx.Client) -> None:

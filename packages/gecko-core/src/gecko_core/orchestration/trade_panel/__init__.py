@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import re
@@ -34,6 +35,7 @@ from typing import Any, Protocol, cast
 
 from gecko_core.orchestration.trade_panel.agents import build_groupchat
 from gecko_core.orchestration.trade_panel.models import (
+    Citation,
     TradePanelTurn,
     TradePanelVerdict,
     TradeVerdictLiteral,
@@ -53,6 +55,12 @@ from gecko_core.orchestration.trade_panel.prompts import (
     TradePanelPromptsConfigError,
     load_prompts,
 )
+from gecko_core.sources.types import (
+    FRESHNESS_TIER_VALUES,
+    PROVIDER_KINDS,
+    FreshnessTier,
+    ProviderKind,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -65,10 +73,12 @@ __all__ = [
     "SENTIMENT_ANALYST",
     "STRATEGIST",
     "TECHNICAL_ANALYST",
+    "Citation",
     "TradePanelPromptsConfigError",
     "TradePanelTurn",
     "TradePanelVerdict",
     "TradeVerdictLiteral",
+    "build_citations_from_chunks",
     "build_groupchat",
     "load_prompts",
     "retrieve_trade_corpus_chunks",
@@ -448,6 +458,19 @@ async def retrieve_trade_corpus_chunks(
     if not proto_norm:
         return []
 
+    # Issue #12 — diagnostic instrumentation. Log entry to retrieval so we
+    # can disambiguate "handler never called retrieval" from "retrieval was
+    # called but Atlas returned 0 hits". Protocol/vertical are echoed
+    # verbatim so we can spot casing / whitespace / vertical drift between
+    # ingest tagging and read-side filter.
+    _log.info(
+        "trade_panel.retrieve.entry protocol=%s vertical=%s top_k=%d question_len=%d",
+        proto_norm,
+        vertical,
+        top_k,
+        len(idea),
+    )
+
     # Lazy imports keep gecko_core's startup cost off the trade_panel package
     # import path (the in-process MCP server imports this module at boot).
     from gecko_core.db import get_chunk_store
@@ -462,10 +485,12 @@ async def retrieve_trade_corpus_chunks(
         return []
     coll = chunks_collection()
     if coll is None:
+        _log.warning("trade_panel.retrieve.skip reason=no_collection")
         return []
 
     vectors, _tokens = await embed([idea])
     if not vectors:
+        _log.warning("trade_panel.retrieve.skip reason=empty_embed_vector")
         return []
     query_vector = vectors[0]
 
@@ -498,6 +523,7 @@ async def retrieve_trade_corpus_chunks(
                 "vertical": 1,
                 "protocol": 1,
                 "provider_kind": 1,
+                "freshness_tier": 1,
                 "source": 1,
                 "metadata": 1,
                 "score": {"$meta": "vectorSearchScore"},
@@ -517,6 +543,7 @@ async def retrieve_trade_corpus_chunks(
                     # "paysh"); fall back to the legacy provider_kind tag.
                     "source": (doc.get("source") or doc.get("provider_kind") or "unknown"),
                     "provider_kind": doc.get("provider_kind") or "web",
+                    "freshness_tier": doc.get("freshness_tier") or "static",
                     "protocol": doc.get("protocol") or proto_norm,
                     "vertical": doc.get("vertical") or vertical,
                     "score": float(doc.get("score") or 0.0),
@@ -525,6 +552,23 @@ async def retrieve_trade_corpus_chunks(
     except Exception as exc:  # pragma: no cover - defensive
         _log.warning("trade_panel.retrieve.error err=%s", exc)
         return []
+
+    # Issue #12 — exit log. hit_count + top_score disambiguate "Atlas returned
+    # nothing" (likely filter-shape / ingest-tag drift) from "Atlas returned
+    # rows but the post-$match on protocol filtered them out". The mongo_filter
+    # echo lets the founder grep prod logs and replay the exact pipeline shape
+    # against Atlas Compass.
+    top_score = rows[0]["score"] if rows else 0.0
+    _log.info(
+        "trade_panel.retrieve.exit protocol=%s vertical=%s hit_count=%d "
+        "top_score=%.4f mongo_filter=vertical=%s,protocol=%s",
+        proto_norm,
+        vertical,
+        len(rows),
+        top_score,
+        vertical,
+        proto_norm,
+    )
     return rows
 
 
@@ -570,6 +614,64 @@ def _strategist_intent_from_turn(turn: TradePanelTurn | None, protocol: str) -> 
     return intent
 
 
+_CITATION_SNIPPET_LIMIT: int = 240
+
+
+def _coerce_provider_kind(raw: Any) -> ProviderKind:
+    """Whitelist a chunk's provider_kind to the canonical Literal.
+
+    Pattern A: anything not in PROVIDER_KINDS falls back to ``"web"`` so
+    we don't leak adapter-internal tags (e.g. ``"bazaar:dataset"``) onto
+    the wire. The ingest path is responsible for translating those at
+    write time; this is the read-side defensive backstop.
+    """
+    if isinstance(raw, str) and raw in PROVIDER_KINDS:
+        return cast(ProviderKind, raw)
+    return "web"
+
+
+def _coerce_freshness_tier(raw: Any) -> FreshnessTier:
+    if isinstance(raw, str) and raw in FRESHNESS_TIER_VALUES:
+        return raw
+    return "static"
+
+
+def build_citations_from_chunks(chunks: list[dict[str, Any]]) -> list[Citation]:
+    """Project retrieved chunks into the wire-shape :class:`Citation` list.
+
+    Issue #15. The 1-indexed ``id`` matches the inline ``[N]`` markers
+    that ``_format_chunks`` injects into the opening prompt — that's the
+    contract callers rely on to link prose to the cite array.
+
+    URL fallback: when ``source_url`` is empty (e.g. live-only chunks
+    with no canonical URL), we synthesize ``gecko://chunk/<sha256[:16]>``
+    keyed off ``chunk_id``. This keeps the wire field non-empty and
+    deterministic without inventing a fake http URL.
+    """
+    out: list[Citation] = []
+    for idx, chunk in enumerate(chunks, start=1):
+        chunk_id = str(chunk.get("id") or "")
+        url = str(chunk.get("source_url") or "").strip()
+        if not url:
+            digest = hashlib.sha256(chunk_id.encode("utf-8")).hexdigest()[:16]
+            url = f"gecko://chunk/{digest}"
+        snippet = (chunk.get("text") or chunk.get("content") or "").strip()
+        if len(snippet) > _CITATION_SNIPPET_LIMIT:
+            snippet = snippet[:_CITATION_SNIPPET_LIMIT]
+        out.append(
+            Citation(
+                id=idx,
+                source=str(chunk.get("source") or chunk.get("provider_kind") or "unknown"),
+                url=url,
+                chunk_id=chunk_id,
+                provider_kind=_coerce_provider_kind(chunk.get("provider_kind")),
+                freshness_tier=_coerce_freshness_tier(chunk.get("freshness_tier")),
+                snippet=snippet,
+            )
+        )
+    return out
+
+
 async def run_trade_panel_with_retrieval(
     idea: str,
     protocol: str,
@@ -598,6 +700,23 @@ async def run_trade_panel_with_retrieval(
     chunks = await retrieve_trade_corpus_chunks(
         idea=idea, protocol=protocol, vertical=vertical, top_k=top_k
     )
+
+    # Issue #12 — panel kickoff log. Truthy chunks here but empty
+    # `citations` on the response would point at hypothesis 3 (prompt-drop):
+    # retrieval landed rows but the panel's _format_chunks / opening prompt
+    # isn't injecting them. chunk_ids are bounded to 15 by _DEFAULT_TRADE_TOP_K
+    # so this stays cheap.
+    chunk_ids = [c.get("id", "") for c in chunks]
+    _log.info(
+        "trade_panel.kickoff protocol=%s vertical=%s tier=%s "
+        "chunks_passed_to_panel=%d chunk_ids=%s",
+        protocol.strip().lower(),
+        vertical,
+        tier,
+        len(chunks),
+        chunk_ids,
+    )
+
     verdict = await run_trade_panel(
         idea=idea,
         protocol=protocol,
@@ -606,6 +725,14 @@ async def run_trade_panel_with_retrieval(
         llm_config=llm_config,
         agent_factory=agent_factory,
     )
+
+    # Issue #15: attach the structured citation list sourced from the same
+    # chunks the panel saw. The 1-indexed ids match the inline [N] markers
+    # the personas cite in their turns, so consumers can render cite chips
+    # without regex-extracting from prose.
+    citations = build_citations_from_chunks(chunks)
+    if citations:
+        verdict = verdict.model_copy(update={"citations": citations})
 
     if not enable_backtest:
         return verdict

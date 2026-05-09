@@ -1335,6 +1335,13 @@ class TradeResearchResponse(BaseModel):
     field-for-field. The ``turns`` list carries plain dicts so we don't
     couple this surface to the core's pydantic model when consumers
     deserialize off the wire.
+
+    Issue #14: ``backtest`` is the pro-tier-only field that justifies the
+    3x price delta over basic. Always ``None`` on the basic envelope (the
+    handler does not enable the backtest path); always a dict on pro
+    (either real PnL stats, or ``unbacktestable=True`` + ``reason`` when
+    the price source has no history). Surfacing the unbacktestable shape
+    is intentional — the buyer paid for evidence either way.
     """
 
     verdict: Literal["act", "pass", "defer"]
@@ -1343,6 +1350,25 @@ class TradeResearchResponse(BaseModel):
     dissent_count: int = Field(default=0, ge=0)
     blocker_questions: list[str] = Field(default_factory=list)
     turns: list[dict[str, Any]] = Field(default_factory=list)
+    citations: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "Issue #15: structured cite list. Each entry: "
+            "{id, source, url, chunk_id, provider_kind, freshness_tier, snippet}. "
+            "Sibling to inline [N] markers in turns[].content; id links the two. "
+            "Empty list when the panel ran without retrieval. provider_kind / "
+            "freshness_tier mirror gecko_core.sources.types Literals."
+        ),
+    )
+    backtest: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Pro-tier only. Realized-history replay of the Strategist intent "
+            "(pnl_pct, drawdown_pct, hit_rate, source) or {'unbacktestable': "
+            "True, 'reason': '...'} when the price corpus can't satisfy. "
+            "Always None on the basic envelope."
+        ),
+    )
 
 
 class ClassifyRequest(BaseModel):
@@ -2133,7 +2159,11 @@ async def precedents_call(req: dict[str, Any], request: Request) -> list[dict[st
 # ---------------------------------------------------------------------------
 
 
-@app.post("/trade_research", response_model=TradeResearchResponse)
+@app.post(
+    "/trade_research",
+    response_model=TradeResearchResponse,
+    response_model_exclude_none=True,
+)
 async def trade_research(req: TradeResearchRequest, request: Request) -> TradeResearchResponse:
     """Phase 8b/10A — 7-agent trade research panel ($0.25 basic via x402).
 
@@ -2142,10 +2172,26 @@ async def trade_research(req: TradeResearchRequest, request: Request) -> TradeRe
     invocation in one round trip; payload is JSON in / JSON out, no
     streaming in v1.
     """
+    from uuid import uuid4
+
     from gecko_core.orchestration.settings import get_orchestration_settings
     from gecko_core.orchestration.trade_panel import run_trade_panel_with_retrieval
 
     _ = getattr(request.state, "payment_payload", None)
+
+    # Issue #12 — diagnostic instrumentation. Per-request trace_id flows
+    # into retrieval + panel logs so a single user-reported empty-citations
+    # call can be reconstructed end-to-end from the access log.
+    trace_id = uuid4().hex[:12]
+    request.state.trade_research_trace_id = trace_id
+    logger.info(
+        "trade_research.handler_entry trace_id=%s tier=%s vertical=%s protocol=%s question_len=%d",
+        trace_id,
+        req.tier,
+        req.vertical,
+        req.protocol,
+        len(req.idea),
+    )
 
     orch = get_orchestration_settings()
     llm_config: dict[str, Any] = {
@@ -2189,10 +2235,24 @@ async def trade_research_pro(req: TradeResearchRequest, request: Request) -> Tra
     ``tier`` field is forced to ``"pro"`` here so callers can't pay the
     pro price for a basic run.
     """
+    from uuid import uuid4
+
     from gecko_core.orchestration.settings import get_orchestration_settings
     from gecko_core.orchestration.trade_panel import run_trade_panel_with_retrieval
 
     _ = getattr(request.state, "payment_payload", None)
+
+    # Issue #12 — see /trade_research handler above for rationale.
+    trace_id = uuid4().hex[:12]
+    request.state.trade_research_trace_id = trace_id
+    logger.info(
+        "trade_research_pro.handler_entry trace_id=%s tier=pro vertical=%s "
+        "protocol=%s question_len=%d",
+        trace_id,
+        req.vertical,
+        req.protocol,
+        len(req.idea),
+    )
 
     orch = get_orchestration_settings()
     llm_config: dict[str, Any] = {
@@ -2207,12 +2267,19 @@ async def trade_research_pro(req: TradeResearchRequest, request: Request) -> Tra
     }
 
     try:
+        # Issue #14 — pro tier MUST add evidence the basic envelope doesn't
+        # carry, otherwise buyers can't justify paying 3x. enable_backtest
+        # turns on the Phase 9 CoinGecko OHLCV replay; the backtest payload
+        # is then surfaced on the wire below. Backtest never raises (the
+        # core wrapper catches and returns the verdict unchanged), so a
+        # CoinGecko outage degrades gracefully to verdict-only.
         verdict = await run_trade_panel_with_retrieval(
             idea=req.idea,
             protocol=req.protocol,
             vertical=req.vertical,
             tier="pro",
             llm_config=llm_config,
+            enable_backtest=True,
         )
     except ValueError as exc:
         logger.exception("trade_research_pro: bad config for protocol=%r", req.protocol)
@@ -2221,7 +2288,24 @@ async def trade_research_pro(req: TradeResearchRequest, request: Request) -> Tra
         logger.exception("trade_research_pro: failed for protocol=%r", req.protocol)
         raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
 
-    return TradeResearchResponse(**verdict.model_dump())
+    # Issue #14 — guarantee a non-null `backtest` on the pro wire envelope
+    # even when the upstream wrapper swallowed an exception or the
+    # strategist turn never produced a parseable intent. The
+    # ``unbacktestable=True`` shape is the documented graceful-degradation
+    # contract; surfacing it on the wire is what makes the pro tier
+    # observably distinct from basic.
+    payload = verdict.model_dump()
+    if payload.get("backtest") is None:
+        payload["backtest"] = {
+            "pnl_pct": 0.0,
+            "drawdown_pct": 0.0,
+            "n_similar_setups": 0,
+            "hit_rate": 0.0,
+            "source": "coingecko",
+            "unbacktestable": True,
+            "reason": "no_strategist_intent",
+        }
+    return TradeResearchResponse(**payload)
 
 
 # S5-API-03: tiered /route pricing. Each path is gated by x402 at a
