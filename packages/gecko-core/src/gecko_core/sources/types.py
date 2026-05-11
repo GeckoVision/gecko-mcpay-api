@@ -57,6 +57,16 @@ ProviderKind = Literal[
     "paysh_live",
     "bazaar_manifest",
     "bazaar_live",
+    # Investor-canon corpus (free + public-domain). Trade-vertical wedge:
+    # ground every coach decision in attributed investor-canon citations
+    # blended with live on-chain freshness data. See
+    # docs/strategy/2026-05-11-trade-vertical-expansion.md §6.
+    "canon_marks",       # Howard Marks / Oaktree client memos
+    "canon_damodaran",   # Aswath Damodaran / NYU Stern PDFs + posts
+    "canon_mauboussin",  # Michael Mauboussin / Morgan Stanley papers
+    "canon_youtube",     # Patrick Boyle, Ben Felix, Mauboussin transcripts
+    "canon_berkshire",   # Berkshire Hathaway shareholder letters 1965-now
+    "canon_macro",       # Fed, BIS, IMF working papers
 ]
 """Static type alias for the ``chunks.provider_kind`` /
 ``sources.provider_kind`` column. Every consumer imports from here."""

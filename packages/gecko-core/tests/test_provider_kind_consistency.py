@@ -79,6 +79,14 @@ def test_canonical_provider_kinds_value() -> None:
         "paysh_live",
         "bazaar_manifest",
         "bazaar_live",
+        # Investor-canon corpus (free + public-domain). See
+        # docs/strategy/2026-05-11-trade-vertical-expansion.md §6.
+        "canon_marks",
+        "canon_damodaran",
+        "canon_mauboussin",
+        "canon_youtube",
+        "canon_berkshire",
+        "canon_macro",
     )
 
 

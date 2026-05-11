@@ -1,0 +1,274 @@
+{
+  "events": [
+    {
+      "ts": 0.0,
+      "mint": "MINT_GOOD",
+      "price": 1.0,
+      "kind": "tick",
+      "drawdown_pct": 0.0,
+      "session_high": 1.0,
+      "momentum": 0.0
+    },
+    {
+      "ts": 86400.0,
+      "mint": "MINT_GOOD",
+      "price": 0.97,
+      "kind": "tick",
+      "drawdown_pct": 3.0000000000000027,
+      "session_high": 1.0,
+      "momentum": 0.0
+    },
+    {
+      "ts": 172800.0,
+      "mint": "MINT_GOOD",
+      "price": 0.94,
+      "kind": "tick",
+      "drawdown_pct": 6.000000000000005,
+      "session_high": 1.0,
+      "momentum": 0.0
+    },
+    {
+      "ts": 259200.0,
+      "mint": "MINT_GOOD",
+      "price": 0.99,
+      "kind": "tick",
+      "drawdown_pct": 1.0000000000000009,
+      "session_high": 1.0,
+      "momentum": 0.0
+    },
+    {
+      "ts": 345600.0,
+      "mint": "MINT_GOOD",
+      "price": 1.04,
+      "kind": "tick",
+      "drawdown_pct": 0.0,
+      "session_high": 1.04,
+      "momentum": 0.0
+    },
+    {
+      "ts": 432000.0,
+      "mint": "MINT_GOOD",
+      "price": 1.02,
+      "kind": "tick",
+      "drawdown_pct": 1.9230769230769247,
+      "session_high": 1.04,
+      "momentum": 0.0
+    },
+    {
+      "ts": 518400.0,
+      "mint": "MINT_GOOD",
+      "price": 0.96,
+      "kind": "tick",
+      "drawdown_pct": 7.692307692307699,
+      "session_high": 1.04,
+      "momentum": 0.0
+    },
+    {
+      "ts": 604800.0,
+      "mint": "MINT_GOOD",
+      "price": 1.0,
+      "kind": "tick",
+      "drawdown_pct": 3.8461538461538494,
+      "session_high": 1.04,
+      "momentum": 0.0
+    },
+    {
+      "ts": 691200.0,
+      "mint": "MINT_GOOD",
+      "price": 1.05,
+      "kind": "tick",
+      "drawdown_pct": 0.0,
+      "session_high": 1.05,
+      "momentum": 0.0
+    },
+    {
+      "ts": 777600.0,
+      "mint": "MINT_GOOD",
+      "price": 1.1,
+      "kind": "tick",
+      "drawdown_pct": 0.0,
+      "session_high": 1.1,
+      "momentum": 0.0
+    },
+    {
+      "ts": 864000.0,
+      "mint": "MINT_DRAW",
+      "price": 1.1,
+      "kind": "tick",
+      "drawdown_pct": 0.0,
+      "session_high": 1.1,
+      "momentum": 0.0
+    },
+    {
+      "ts": 950400.0,
+      "mint": "MINT_DRAW",
+      "price": 1.05,
+      "kind": "tick",
+      "drawdown_pct": 4.545454545454549,
+      "session_high": 1.1,
+      "momentum": 0.0
+    },
+    {
+      "ts": 1036800.0,
+      "mint": "MINT_DRAW",
+      "price": 0.98,
+      "kind": "tick",
+      "drawdown_pct": 10.909090909090919,
+      "session_high": 1.1,
+      "momentum": 0.0
+    },
+    {
+      "ts": 1123200.0,
+      "mint": "MINT_DRAW",
+      "price": 0.92,
+      "kind": "tick",
+      "drawdown_pct": 16.363636363636367,
+      "session_high": 1.1,
+      "momentum": 0.0
+    },
+    {
+      "ts": 1209600.0,
+      "mint": "MINT_DRAW",
+      "price": 0.88,
+      "kind": "tick",
+      "drawdown_pct": 20.000000000000007,
+      "session_high": 1.1,
+      "momentum": 0.0
+    },
+    {
+      "ts": 1296000.0,
+      "mint": "MINT_DRAW",
+      "price": 0.85,
+      "kind": "tick",
+      "drawdown_pct": 22.727272727272734,
+      "session_high": 1.1,
+      "momentum": 0.0
+    },
+    {
+      "ts": 1382400.0,
+      "mint": "MINT_DRAW",
+      "price": 0.83,
+      "kind": "tick",
+      "drawdown_pct": 24.545454545454557,
+      "session_high": 1.1,
+      "momentum": 0.0
+    },
+    {
+      "ts": 1468800.0,
+      "mint": "MINT_DRAW",
+      "price": 0.82,
+      "kind": "tick",
+      "drawdown_pct": 25.454545454545464,
+      "session_high": 1.1,
+      "momentum": 0.0
+    },
+    {
+      "ts": 1555200.0,
+      "mint": "MINT_DRAW",
+      "price": 0.81,
+      "kind": "tick",
+      "drawdown_pct": 26.363636363636367,
+      "session_high": 1.1,
+      "momentum": 0.0
+    },
+    {
+      "ts": 1641600.0,
+      "mint": "MINT_DRAW",
+      "price": 0.8,
+      "kind": "tick",
+      "drawdown_pct": 27.272727272727277,
+      "session_high": 1.1,
+      "momentum": 0.0
+    },
+    {
+      "ts": 1728000.0,
+      "mint": "MINT_RECO",
+      "price": 1.0,
+      "kind": "tick",
+      "drawdown_pct": 0.0,
+      "session_high": 1.0,
+      "momentum": 0.0
+    },
+    {
+      "ts": 1814400.0,
+      "mint": "MINT_RECO",
+      "price": 0.96,
+      "kind": "tick",
+      "drawdown_pct": 4.0000000000000036,
+      "session_high": 1.0,
+      "momentum": 0.0
+    },
+    {
+      "ts": 1900800.0,
+      "mint": "MINT_RECO",
+      "price": 0.92,
+      "kind": "tick",
+      "drawdown_pct": 7.9999999999999964,
+      "session_high": 1.0,
+      "momentum": 0.0
+    },
+    {
+      "ts": 1987200.0,
+      "mint": "MINT_RECO",
+      "price": 0.95,
+      "kind": "tick",
+      "drawdown_pct": 5.000000000000004,
+      "session_high": 1.0,
+      "momentum": 0.0
+    },
+    {
+      "ts": 2073600.0,
+      "mint": "MINT_RECO",
+      "price": 1.0,
+      "kind": "tick",
+      "drawdown_pct": 0.0,
+      "session_high": 1.0,
+      "momentum": 0.0
+    },
+    {
+      "ts": 2160000.0,
+      "mint": "MINT_RECO",
+      "price": 1.05,
+      "kind": "tick",
+      "drawdown_pct": 0.0,
+      "session_high": 1.05,
+      "momentum": 0.0
+    },
+    {
+      "ts": 2246400.0,
+      "mint": "MINT_RECO",
+      "price": 1.1,
+      "kind": "tick",
+      "drawdown_pct": 0.0,
+      "session_high": 1.1,
+      "momentum": 0.0
+    },
+    {
+      "ts": 2332800.0,
+      "mint": "MINT_RECO",
+      "price": 1.08,
+      "kind": "tick",
+      "drawdown_pct": 1.8181818181818195,
+      "session_high": 1.1,
+      "momentum": 0.0
+    },
+    {
+      "ts": 2419200.0,
+      "mint": "MINT_RECO",
+      "price": 1.06,
+      "kind": "tick",
+      "drawdown_pct": 3.636363636363639,
+      "session_high": 1.1,
+      "momentum": 0.0
+    },
+    {
+      "ts": 2505600.0,
+      "mint": "MINT_RECO",
+      "price": 1.12,
+      "kind": "tick",
+      "drawdown_pct": 0.0,
+      "session_high": 1.12,
+      "momentum": 0.0
+    }
+  ]
+}

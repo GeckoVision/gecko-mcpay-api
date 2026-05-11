@@ -16,6 +16,11 @@ import click
 from dotenv import find_dotenv, load_dotenv
 from gecko_core._logging import install as install_redaction
 
+# SE-1 — `bb trade-agent` subcommand group. Lives in gecko-core so the
+# runtime is importable from MCP / API surfaces too; the CLI just mounts
+# the Click group.
+from gecko_core.trade_agent.cli import trade_agent_cmd
+
 from gecko_cli.commands.advise import advise_cmd
 from gecko_cli.commands.ask import ask_cmd
 from gecko_cli.commands.classify import classify_cmd
@@ -136,6 +141,7 @@ cli.add_command(wallet_cmd)
 cli.add_command(judges_cmd)
 cli.add_command(refine_cmd)
 cli.add_command(competitors_landscape_cmd)
+cli.add_command(trade_agent_cmd)
 
 
 # Back-compat alias — older docs reference `main`.
