@@ -1254,7 +1254,7 @@ requires-dist = [
 
 [[package]]
 name = "gecko-core"
-version = "0.2.24"
+version = "0.2.25"
 source = { editable = "packages/gecko-core" }
 dependencies = [
     { name = "ag2", extra = ["openai"] },
@@ -1277,6 +1277,7 @@ dependencies = [
     { name = "tenacity" },
     { name = "tiktoken" },
     { name = "voyageai" },
+    { name = "websockets" },
     { name = "x402", extra = ["evm", "svm"] },
     { name = "youtube-transcript-api" },
     { name = "yt-dlp" },
@@ -1310,6 +1311,7 @@ requires-dist = [
     { name = "tiktoken", specifier = ">=0.7" },
     { name = "voyageai", specifier = ">=0.2" },
     { name = "voyageai", marker = "extra == 'rerank'", specifier = ">=0.2" },
+    { name = "websockets", specifier = ">=12.0" },
     { name = "x402", extras = ["evm", "svm"], specifier = ">=2.8.0" },
     { name = "youtube-transcript-api", specifier = ">=0.6" },
     { name = "yt-dlp", specifier = ">=2025.1" },
@@ -1337,7 +1339,7 @@ requires-dist = [
 
 [[package]]
 name = "gecko-mcp"
-version = "0.2.24"
+version = "0.2.25"
 source = { editable = "packages/gecko-mcp" }
 dependencies = [
     { name = "click" },
