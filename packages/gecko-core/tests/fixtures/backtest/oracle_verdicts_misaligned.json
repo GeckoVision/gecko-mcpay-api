@@ -1,0 +1,20 @@
+{
+  "64d5697e9fa52515953603b542d4bff3": {
+    "verdict": "pass",
+    "confidence": 0.85,
+    "verdict_id": "v-good-pass",
+    "citations": []
+  },
+  "609eabef2219552b71716ef543daa143": {
+    "verdict": "act",
+    "confidence": 0.9,
+    "verdict_id": "v-draw-act",
+    "citations": []
+  },
+  "57c4f599c7247d7ed4fbc9044851474e": {
+    "verdict": "pass",
+    "confidence": 0.85,
+    "verdict_id": "v-reco-pass",
+    "citations": []
+  }
+}
