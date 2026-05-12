@@ -139,6 +139,64 @@ Five things changed since 05:30:
 
 **Branch state:** `s24/wave-1-execution` has **9 commits** as of 06:30. Two follow-up commits expected from ai-ml-engineer #3.
 
+---
+
+## ADDENDUM 2 (08:15 BRT) — ai-ml-engineer #3 returned with honest signal
+
+Final overnight dispatch landed. **Branch now at 11 commits.** Read full report at `docs/eval/2026-05-13-s24-eval-honest-state.md`.
+
+### 10-fixture re-run (post strategist + confidence-band patch)
+
+| Metric | Target | Pre-patch (10-1) | Post-patch (10-2) | Δ |
+|---|---|---|---|---|
+| brier_overall | ≤ 0.30 | 0.277 | **0.218** | ✅ improved |
+| act-30d-profit | ≥ 0.58 | 0.75 (n=4) | 0.50 (n=2) | ⚠ n drop; not readable |
+| pass-drawdown-avoid | ≥ 0.60 | 0.333 | 0.333 | ❌ unchanged |
+| defer_rate | < 0.30 | 0.30 | 0.50 | ❌ regressed |
+
+### What's structurally fixed (durable)
+
+- **Confidence-band collapse fixed in code.** Was all-0.75; now spreads 0.40–0.75 across the 10-fixture run. Brier dropped 0.06 — real calibration gain.
+- **Target-case fixed.** `jupiter-2025Q1-lst-rotation-msol` was the structural tell — `pass / 0.75 / dis=3`. Now `pass / 0.40 / dis=2`. The verdict was already correct (rotation_lost); the calibration was the bug.
+
+### What regressed (and why)
+
+- **Defer-rate doubled.** The new prompt defer-(iii) clause ("defer when ≥3 voices oppose") is being interpreted leniently by gpt-4o-mini — the model self-elects defer on moderate disagreement, not just on hard 3+ dissent. The code-level override (gated at `dissent>=3`) never fired in this run; the regression came from prompt language alone.
+- **act_30d_profit n dropped** from 4 → 2 because more verdicts became defer. With n=2, the 0.50 reading is statistically meaningless.
+- **pass_drawdown unchanged at 0.333.** Per the agent, this is a **corpus/retrieval problem, not a panel problem.** The same memo applies as the original retrieval-wedge bug — fresh canonical-link data (Pyth real-time, refreshed CL) would move it. Prompt iteration alone won't.
+
+### Why I stopped dispatching
+
+The agent's honest report (Option A "cheap" / Option B "skip" / Option C "real") points to corpus-quality work — Pyth real-time, fresh canonical-link refresh — as the highest-leverage next move. That's a S25 corpus-investment workstream, not a S24 prompt-iteration. Continuing overnight risks regressing the Brier gain we just landed. Stopping is the right call.
+
+### Updated morning checklist
+
+1. `git log --oneline s24/wave-1-execution` — **11 commits**
+2. **Read `docs/eval/2026-05-13-s24-eval-honest-state.md` first** — the full structured report from the third agent, written explicitly for your morning review
+3. Read this handoff (addendum sections especially)
+4. Decision matrix:
+   - **Option A: ship as-is.** Brier 0.218 is well under bar; act-profit n=2 is unreadable; defer regression is interpretive-prompt-fix-cheap. Flip live x402 (WS-C) on schedule Day 9, take the imperfect-but-honest state into the field.
+   - **Option B: one more cheap iteration.** Surgical $0.30 — rewrite defer-(iii) from interpretive to mechanical ("3+ closing-line tokens explicitly oppose verdict"). Keep code overrides as safety net. Re-run 10-fixture. Time: ~15 min.
+   - **Option C: corpus invest first.** Add Pyth historical-replay + DefiLlama refresh as S24 Day-2 work. Cost ~2 days of data-engineer time. Defers live flip to late S24 or S25.
+5. **Decide D4/D5/D6** (Task #9) for S25 lane assignment
+6. `git push origin s24/wave-1-execution`
+
+### Final task tracker
+
+| Task | State |
+|---|---|
+| #1 D1/D2/D3 | ✅ closed |
+| #2 WS-A eval | 🟡 Brier passing, defer-rate regressed; founder picks Option A/B/C |
+| #3 WS-B runtime | ✅ effectively complete (dual-write follow-up flagged) |
+| #4 WS-C live flip | ✅ scaffolding done, gated on Task #2 founder decision |
+| #5 WS-D observability | ✅ complete |
+| #6 WS-E install polish | ⏸ pending — doctor CLI from WS-D is a head-start |
+| #7 WS-F panel safety | ⏸ pending |
+| #8 WS-G GTM | ⏸ pending — Day-7 gated |
+| #9 D4/D5/D6 | ✅ closed (recs accepted) |
+
+**Bottom line:** Five of eight S24 tasks materially advanced or complete in one overnight session. The verdict pipeline is alive, calibrated, and grounded in market_data citations. Three honest options for the morning are documented in the eval-honest-state report — none are landmines.
+
 **Updated morning checklist:**
 
 1. `git log --oneline s24/wave-1-execution` — expect 10-11 commits
