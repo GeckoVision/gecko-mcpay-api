@@ -1,0 +1,118 @@
+# S24 Wave 1 — morning handoff (2026-05-12 night-shift)
+
+> **For:** founder, on waking
+> **Branch:** `s24/wave-1-execution` (4 commits + 1-2 more from night-shift agents)
+> **Status:** Wave 1 plan + scaffolding + first production touchpoint complete. Eval gate not yet broken — night-shift agents are surgically fixing it now.
+
+---
+
+## What landed (committed to `s24/wave-1-execution`)
+
+| Commit | Artifact |
+|---|---|
+| `1ebf6df` | **Strategy docs** — `docs/strategy/2026-05-12-s24-plan.md` + `2026-05-12-multi-sprint-roadmap.md` (S24 → S39 arc, V1 ship S28, V0.2 S31, V1.0 S34, V2 S35+) |
+| `6f03261` | **DE-4 Mongo agent collections** — applied live; 4 collections + 12 indexes. Pattern A literals through `gecko_core.types`. **market_data ProviderKind** wired into retrieval $match. 14-chunk sample ingest live (Pyth + DefiLlama, 5 protocols). |
+| `5ef3e24` | **WS-A eval scaffold** — `defi_trade_suite.json` (10 fixtures), scorer with blinding assertions, two dry-run reports. Prompt patch (technical_analyst → macro_regime_analyst). |
+| `a2ec5ac` | **WS-C live-flip scaffolding** — push-button runbook for Day-9 flip, buyer-side client + gate guard (kill-switch + tool allowlist), 6 replay-mode tests + 1 gated live-record test. **`gecko_research` intentionally excluded from live allowlist.** |
+
+---
+
+## The headline: panel still 100%-defer
+
+Both dry runs (5 fixtures each, ~$0.80 each) returned `defer_rate: 1.0`. Even with market-data chunks present in Mongo, the panel won't produce a directional verdict.
+
+**Two root causes identified, both being fixed by the night-shift ai-ml-engineer dispatch (background, in progress):**
+
+1. **Retrieval $match is vertical-filtered.** Market-data ingest wrote `vertical="dex"` but fixtures span dex / lending / perps / infra / lst. Drift perp + lending fixtures get `cites=0` because retrieval rejects market_data on vertical mismatch. Fix in flight: bypass vertical filter when `provider_kind=market_data` (similar to canon's `protocol=[]` cross-cutting pattern).
+
+2. **Abstain protocols too tight.** Even when 15 canon citations land (3/5 fixtures), the panel defers because technical_analyst (now macro_regime_analyst) abstains too aggressively, leaving the strategist with no directional signal. Fix in flight: require ≥3/7 voices to abstain before coordinator escalates to defer; force technical_analyst to produce regime call when market_data citations are present.
+
+The fix is surgical (1 file in trade_panel/__init__.py + 1 file in _default_prompts.json) and includes a re-run of the 5-fixture sweep to verify defer-rate breaks.
+
+---
+
+## Live production state
+
+- **Mongo Atlas** (`gecko_trade_agent` + `gecko_events` dbs): collections + indexes live, validator at `level=moderate`.
+- **gecko-api** (api.geckovision.tech): unchanged. `X402_MODE=stub` per memory `project_x402_stub_then_live`. Live flip gated on WS-A eval pass (Day 9 target = 2026-05-20 Tuesday).
+- **Market_data corpus**: 14 sample chunks across kamino, drift, jupiter, sanctum, marinade. Pyth feeds confirmed; DefiLlama 400s on some protocol IDs (non-blocking — Pyth is the price layer).
+- **PyPI gecko-mcp**: still `v0.2.25`. Next bump after WS-B SE-1 runtime reconciliation lands.
+
+---
+
+## Background agents running while you sleep
+
+Two `run_in_background` Agent dispatches active. They'll commit to the same `s24/wave-1-execution` branch as they finish.
+
+**Agent A — ai-ml-engineer night-shift (Task #2 continuation):**
+- Fix retrieval $match to accept market_data across verticals
+- Soften abstain triggers in technical_analyst + sentiment_analyst + fundamental_analyst prompts
+- Update coordinator threshold to require ≥3 voices abstain before defer
+- Re-run 5-fixture sweep (basic tier) — goal `defer_rate < 1.0`
+- If sweep breaks, also re-run 3 fixtures pro tier
+- Cost budget: $5
+- Expected delivery: 15-30 min from launch
+
+**Agent B — software-engineer (Task #3 — WS-B SE-1):**
+- Reconcile `trade_agent/runtime.py` + `state/mongo.py` with the new DE-4 schema
+- Audit `scripts/mongo/bootstrap_trade_agent.py` — retire or update
+- Wire `agent_journal` event emission for every state transition
+- Wire minimal `agent_hotpath_snapshot` write path (stubbed data source)
+- Run 16-test trade_agent suite + smoke `bb trade-agent up → ls → inspect → stop → purge`
+- Expected delivery: 30-45 min from launch
+
+---
+
+## Three founder calls still pending
+
+| Decision | Recommended | Why decide |
+|---|---|---|
+| **D4 (S25)** | General-coach branch in S25, **gated on S24 discovery sessions** | If first 3 sessions show ≥2 Caios, proceed; if non-DeFi bouncers dominate, accelerate; if 0/3 reachable, defer to S26 |
+| **D5 (S27/S29)** | Backtest skeleton in S27 + full in S29 (split) | S27 needs eval rigor; S29's paper-trade gate needs the full surface |
+| **D6 (S25/S27)** | Read-only digest S25 + actionable S27 | S24 falsifier dates don't mature until late S25 — premature digest is spam |
+
+Defaults to recs if no counter. **Action requested before end-of-S24-Day-7 (2026-05-18).**
+
+---
+
+## Open risks for morning review
+
+1. **If ai-ml-engineer night-shift doesn't break defer-rate**, S24 is at structural risk. Fallback paths:
+   - Roll back the abstain-protocol patch entirely → accept 0.88 V1 accuracy on general suite as the production state (no calibration claim, GTM "honest verdict" framing softens)
+   - Pivot S24 to "eval suite first, GTM second" — push live flip to S25
+   - Architectural rethink: pull market_data into 4-of-7 voices as a corpus-mandatory citation (not optional)
+   - My instinct: option 1 is the safest morning call if Agent A returns with defer-rate still 1.0
+
+2. **Drift/perps + lending verticals zero-citation** even with patched $match — corpus gap, not retrieval bug. Day 2-3 work: ingest paysh/bazaar lending + perps chunks alongside market-data backfill. Not a Day 1 fix.
+
+3. **Pyth Hermes does NOT have a true OHLCV historical endpoint.** Data-engineer flagged this — current ingest stub fetches `latest_price_feeds` and renders a single-row CSV. WS-A Day 2-3 follow-up: swap to Birdeye OHLCV. The dry-run signal proves the path; the corpus depth is the Day-2 work.
+
+4. **Background process risk:** background Agents complete and notify; if they encounter Mongo errors or rate-limit issues, they'll surface in their report-back. Worst case: morning reveals one or both didn't finish cleanly. Recovery: re-dispatch with the same prompt.
+
+---
+
+## Concrete morning actions
+
+1. **Review the branch** — `git -C /home/nan/PycharmProjects/Gecko/gecko-mcpay-api log --oneline s24/wave-1-execution` (5-7 commits expected by morning).
+2. **Read background agent reports** — they'll have left summary outputs from the Agent tool returns. Check the Wave-1 latest sweep file `tests/eval/live_runs/2026-05-12-s24-defi-trade-*.json` for the defer-rate.
+3. **Decide D4/D5/D6** — Task #9 is closed with recs; counter or confirm.
+4. **If defer-rate broke** — green-light the full 40-fixture $30 sweep for Day 2-3.
+5. **If defer-rate still 1.0** — pick fallback path (rollback abstain patch vs. push live flip to S25 vs. corpus-mandatory citation rethink).
+6. **Push the branch when ready** — `git -C /home/nan/PycharmProjects/Gecko/gecko-mcpay-api push origin s24/wave-1-execution` (auto-mode classifier blocks me from doing this).
+
+---
+
+## Remaining S24 workstreams (not started overnight)
+
+| Task | Status | Owner | Trigger |
+|---|---|---|---|
+| #5 WS-D observability + economics ledger | pending | ai-ml-engineer + software-engineer | After WS-B SE-1 reconciliation lands |
+| #6 WS-E install + onboarding polish | pending | software-engineer + cofounder | After WS-B runtime stable |
+| #7 WS-F panel cost safety + reliability | pending | ai-ml-engineer + staff-engineer | After WS-A defer-rate breaks |
+| #8 WS-G GTM beat (10 outside-network installs) | pending | founder execute | After Day 7 (Twitter thread) — gated on live flip + verdict quality |
+
+These dispatch as a next batch once we have signal on Wave 1. I'll fire them sequentially in tomorrow's night-shift if it makes sense; otherwise wait for your morning call.
+
+---
+
+**Synthesized at 05:30 BRT / 2026-05-12 morning, while background agents finish their first surgical iterations.**
