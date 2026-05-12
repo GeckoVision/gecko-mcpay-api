@@ -258,6 +258,42 @@ def _count_dissent(turns: list[TradePanelTurn], final_verdict: str) -> int:
     return count
 
 
+# Tokens that mean "this voice did not pick a direction" — S24 night-shift.
+# Used by both the abstain-count defer rule AND the confidence-penalty
+# normalization in _build_verdict_from_coordinator.
+_ABSTAIN_TOKENS: dict[str, set[str]] = {
+    TECHNICAL_ANALYST: {"mixed"},
+    SENTIMENT_ANALYST: {"neutral"},
+    FUNDAMENTAL_ANALYST: {"stable"},
+    RISK_MANAGER: {"elevated"},
+}
+
+
+def _count_abstains(turns: list[TradePanelTurn]) -> int:
+    """How many of the four primary analysts abstained from a direction."""
+    count = 0
+    for turn in turns:
+        if turn.agent not in _ABSTAIN_TOKENS:
+            continue
+        parsed = turn.parsed_verdict or {}
+        if not parsed:
+            continue
+        val = next(iter(parsed.values()), None)
+        if isinstance(val, str) and val.strip().lower() in _ABSTAIN_TOKENS[turn.agent]:
+            count += 1
+    return count
+
+
+# S24 night-shift confidence anchor — coordinator prompt instructs the
+# model to start from 0.70 and apply penalties. We re-apply the same
+# rules in code as a safety net against collapsed-band failure mode.
+_CONF_ANCHOR = 0.70
+_CONF_PENALTY_PER_DISSENT = 0.10
+_CONF_PENALTY_PER_ABSTAIN = 0.05
+_CONF_FLOOR = 0.30
+_CONF_CEILING = 0.85
+
+
 def _coerce_verdict_token(raw: Any) -> TradeVerdictLiteral:
     """Squash a free-form verdict string into the Literal — strict whitelist."""
     if isinstance(raw, str):
@@ -306,21 +342,73 @@ def _build_verdict_from_coordinator(
     closing = coord_turn.parsed_verdict or {}
 
     verdict = _coerce_verdict_token(block.get("verdict") or closing.get("verdict"))
-    confidence = _coerce_confidence(block.get("confidence", 0.5))
+    raw_confidence = _coerce_confidence(block.get("confidence", 0.5))
     key_drivers = _coerce_str_list(block.get("key_drivers"))
     blocker_questions = _coerce_str_list(block.get("blocker_questions"))
 
-    # Dissent count: trust the coordinator's self-report when present and
-    # non-negative-int; otherwise compute from analyst turns.
+    # S24 night-shift: always re-derive dissent + abstain from analyst turns.
+    # The coordinator's self-report is advisory but not authoritative — we've
+    # seen the model under-count both in practice (jupiter-2025Q1 fixture
+    # reported dissent=3 but coordinator still passed at 0.75).
+    derived_dissent = _count_dissent(turns, verdict)
+    derived_abstains = _count_abstains(turns)
     raw_dissent = block.get("dissent_count")
     if isinstance(raw_dissent, int) and raw_dissent >= 0:
-        dissent_count = raw_dissent
+        dissent_count = max(raw_dissent, derived_dissent)
     else:
-        dissent_count = _count_dissent(turns, verdict)
+        dissent_count = derived_dissent
+
+    # S24 night-shift defer override (rule iii in coordinator prompt):
+    # high-conviction dissent against a 'pass' call → flip to defer and
+    # surface the disagreement as a blocker. Mirror for 'act' for
+    # symmetry. Three voices opposing a directional call is structural
+    # disagreement, not noise.
+    if verdict in {"act", "pass"} and dissent_count >= 3:
+        blocker_questions = [
+            *blocker_questions,
+            f"3+ analysts dissent against the '{verdict}' call — resolve which voice's "
+            "lens is wrong before committing.",
+        ]
+        verdict = "defer"
+
+    # S24 night-shift abstain-floor defer rule: 3+ genuine abstains across
+    # the four primary analysts means the panel lacks evidence to call.
+    # This catches the case where the coordinator forces a direction despite
+    # most voices declining to call. Skipped when verdict is already defer.
+    if verdict in {"act", "pass"} and derived_abstains >= 3:
+        blocker_questions = [
+            *blocker_questions,
+            f"{derived_abstains} of 4 primary analysts abstained — corpus too thin "
+            "to support a directional call.",
+        ]
+        verdict = "defer"
+
+    # S24 night-shift confidence-band normalization. Coordinator prompt
+    # asks the model to start at 0.70 and subtract penalties; we enforce
+    # the same shape in code as a safety net (the model collapsed to
+    # 0.75 across all 10 fixtures on 2026-05-12 despite the prompt).
+    # We take the MIN of (model's self-report, anchor - penalties) so the
+    # model can lower confidence further on its own judgment but cannot
+    # silently inflate past the penalty-adjusted ceiling.
+    penalty = (
+        _CONF_PENALTY_PER_DISSENT * dissent_count + _CONF_PENALTY_PER_ABSTAIN * derived_abstains
+    )
+    anchored = _CONF_ANCHOR - penalty
+    if verdict == "defer":
+        # Defer carries its own meaning; keep model's self-report but
+        # clamp to ceiling. No anchoring penalty applied — a defer
+        # IS the response to weak signal.
+        confidence = min(raw_confidence, _CONF_CEILING)
+    else:
+        # Take the model's confidence but cap it at the anchored ceiling.
+        # If the model under-reports relative to penalties, trust the
+        # model (it may see a clean signal the heuristic missed).
+        confidence = min(raw_confidence, anchored)
+        confidence = max(_CONF_FLOOR, min(_CONF_CEILING, confidence))
 
     return TradePanelVerdict(
         verdict=verdict,
-        confidence=confidence,
+        confidence=round(confidence, 2),
         key_drivers=key_drivers,
         dissent_count=dissent_count,
         blocker_questions=blocker_questions,
@@ -517,12 +605,16 @@ async def retrieve_trade_corpus_chunks(
                 "filter": {
                     "$or": [
                         {"vertical": {"$eq": vertical}},
-                        {"provider_kind": {"$in": [
-                            "market_data",
-                            "canon_marks",
-                            "canon_damodaran",
-                            "canon_berkshire",
-                        ]}},
+                        {
+                            "provider_kind": {
+                                "$in": [
+                                    "market_data",
+                                    "canon_marks",
+                                    "canon_damodaran",
+                                    "canon_berkshire",
+                                ]
+                            }
+                        },
                     ],
                     "metadata.deprecated": {"$ne": True},
                 },
@@ -540,12 +632,16 @@ async def retrieve_trade_corpus_chunks(
         # provenance but cross-protocol macro feeds (SOL/USD, BTC/USD)
         # are useful to every voice, so the provider_kind clause admits
         # them regardless of protocol match. Pattern F.
-        {"$match": {"$or": [
-            {"protocol": proto_norm},
-            {"protocol": {"$size": 0}},
-            {"protocol": {"$exists": False}},
-            {"provider_kind": "market_data"},
-        ]}},
+        {
+            "$match": {
+                "$or": [
+                    {"protocol": proto_norm},
+                    {"protocol": {"$size": 0}},
+                    {"protocol": {"$exists": False}},
+                    {"provider_kind": "market_data"},
+                ]
+            }
+        },
         {"$limit": top_k},
         {
             "$project": {
