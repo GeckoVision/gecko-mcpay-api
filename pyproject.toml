@@ -73,6 +73,13 @@ markers = [
     # GECKO_E2E_BASE_URL is set so a default `pytest` run never hits the network.
     # Pairs with scripts/falsifier_tavily.py, the manual Gecko-vs-Tavily probe.
     "e2e_smoke: end-to-end smoke against a live HTTP gecko-api (skipped unless GECKO_E2E_BASE_URL is set)",
+    # S24 WS-C Task #4: gated buyer-side x402 contract test for the live
+    # Solana settlement path (LiveBuyerX402Client). Replay mode runs in CI
+    # against recorded fixtures under tests/integration/fixtures/live_buyer/;
+    # live re-record requires GECKO_LIVE_SOLANA=1 + funded buyer wallet env
+    # (BUYER_WALLET_PRIVATE_KEY_PATH + BUYER_WALLET_PUBKEY). Mirrors the
+    # live_cdp Pattern-C template from S12.5-TEST-04 for the Solana lane.
+    "live_solana: gated buyer-side x402 contract test against real Solana facilitator (cassette replay by default)",
 ]
 
 [dependency-groups]
