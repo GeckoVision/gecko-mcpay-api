@@ -1328,6 +1328,28 @@ class TradeResearchRequest(BaseModel):
     tier: Tier = "basic"
 
 
+def _extract_settle_receipt(request: Request) -> tuple[str | None, str]:
+    """S24 WS-E — pull (tx_signature, x402_mode) off the request.
+
+    The Coinbase x402 middleware attaches ``payment_payload`` to
+    ``request.state`` on a settled call. When the payload includes a
+    ``tx_signature`` key (live settle), we surface it; otherwise we treat
+    the call as stub. ``X402_MODE`` is read from the resolved settings so
+    a stub-mode handler never advertises a live receipt even if the
+    middleware leaks one.
+    """
+    import os
+
+    payload = getattr(request.state, "payment_payload", None)
+    tx_sig: str | None = None
+    if isinstance(payload, dict):
+        raw = payload.get("tx_signature") or payload.get("tx_hash")
+        if isinstance(raw, str) and raw:
+            tx_sig = raw
+    mode = os.environ.get("X402_MODE", "stub")
+    return tx_sig, mode
+
+
 class TradeResearchResponse(BaseModel):
     """Wire response for POST /trade_research.
 
@@ -1367,6 +1389,22 @@ class TradeResearchResponse(BaseModel):
             "(pnl_pct, drawdown_pct, hit_rate, source) or {'unbacktestable': "
             "True, 'reason': '...'} when the price corpus can't satisfy. "
             "Always None on the basic envelope."
+        ),
+    )
+    # S24 WS-E — settlement receipt (mirrors TradePanelVerdict).
+    tx_signature: str | None = Field(
+        default=None,
+        description="Solana on-chain x402 settlement signature; null in stub mode.",
+    )
+    solscan_url: str | None = Field(
+        default=None,
+        description="Solscan deep link for tx_signature; null in stub mode.",
+    )
+    settlement_mode: Literal["stub", "live"] = Field(
+        default="stub",
+        description=(
+            "Whether real money moved on chain. Canonical literal lives in "
+            "gecko_core.types.SettlementMode (Pattern A)."
         ),
     )
 
@@ -2218,18 +2256,37 @@ async def trade_research(req: TradeResearchRequest, request: Request) -> TradeRe
             tier=req.tier,
             llm_config=llm_config,
         )
-    except ValueError as exc:
+    except ValueError:
         # Missing llm_config in production is the expected ValueError; surface
-        # as 500 so the caller sees a clear server-side config gap rather than
-        # a generic 422.
+        # as 500 with a friendly one-liner. Detail is redacted — the
+        # underlying ValueError can echo env keys in its message.
         logger.exception("trade_research: bad config for protocol=%r", req.protocol)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "trade_research is misconfigured on the server; "
+                "try again in a minute or contact support@geckovision.tech"
+            ),
+        ) from None
     except Exception as exc:
+        # One-line user-facing message; class name only, never the message
+        # (it can leak MONGODB_URI, API keys, internal paths).
         logger.exception("trade_research: failed for protocol=%r", req.protocol)
-        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"trade_research failed ({type(exc).__name__}) — "
+                "retry in a minute; if it persists, run `gecko-mcp doctor`"
+            ),
+        ) from None
 
     latency_ms = int((_time.monotonic() - _t0) * 1000)
     _payload = verdict.model_dump()
+    # S24 WS-E — populate the settlement receipt from the x402 middleware.
+    from gecko_core.payments.receipts import build_receipt
+
+    tx_sig, x402_mode = _extract_settle_receipt(request)
+    _payload.update(build_receipt(tx_signature=tx_sig, x402_mode=x402_mode))
     await emit_event(
         "verdict.served",
         {
@@ -2239,6 +2296,7 @@ async def trade_research(req: TradeResearchRequest, request: Request) -> TradeRe
             "citation_count": len(_payload.get("citations") or []),
             "dissent_count": len(_payload.get("dissent") or []),
             "confidence": _payload.get("confidence"),
+            "settlement_mode": _payload.get("settlement_mode"),
             "trace_id": trace_id,
         },
     )
@@ -2305,12 +2363,24 @@ async def trade_research_pro(req: TradeResearchRequest, request: Request) -> Tra
             llm_config=llm_config,
             enable_backtest=True,
         )
-    except ValueError as exc:
+    except ValueError:
         logger.exception("trade_research_pro: bad config for protocol=%r", req.protocol)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "trade_research is misconfigured on the server; "
+                "try again in a minute or contact support@geckovision.tech"
+            ),
+        ) from None
     except Exception as exc:
         logger.exception("trade_research_pro: failed for protocol=%r", req.protocol)
-        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"trade_research failed ({type(exc).__name__}) — "
+                "retry in a minute; if it persists, run `gecko-mcp doctor`"
+            ),
+        ) from None
 
     # Issue #14 — guarantee a non-null `backtest` on the pro wire envelope
     # even when the upstream wrapper swallowed an exception or the
@@ -2330,6 +2400,11 @@ async def trade_research_pro(req: TradeResearchRequest, request: Request) -> Tra
             "reason": "no_strategist_intent",
         }
     latency_ms = int((_time.monotonic() - _t0) * 1000)
+    # S24 WS-E — populate the settlement receipt from the x402 middleware.
+    from gecko_core.payments.receipts import build_receipt
+
+    tx_sig, x402_mode = _extract_settle_receipt(request)
+    payload.update(build_receipt(tx_signature=tx_sig, x402_mode=x402_mode))
     await emit_event(
         "verdict.served",
         {
@@ -2339,6 +2414,7 @@ async def trade_research_pro(req: TradeResearchRequest, request: Request) -> Tra
             "citation_count": len(payload.get("citations") or []),
             "dissent_count": len(payload.get("dissent") or []),
             "confidence": payload.get("confidence"),
+            "settlement_mode": payload.get("settlement_mode"),
             "trace_id": trace_id,
         },
     )

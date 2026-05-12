@@ -40,6 +40,8 @@ SERVER_SIDE_ENV_VARS: tuple[str, ...] = (
 OPTIONAL_ENV_VARS: tuple[str, ...] = (
     "DEEPGRAM_API_KEY",
     "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "HELIUS_API_KEY",
     "GECKO_LLM_ENDPOINT",
 )
 
@@ -47,6 +49,8 @@ _OPTIONAL_HINTS: dict[str, str] = {
     "DEEPGRAM_API_KEY": "YouTube caption-fallback disabled",
     "OPENAI_API_KEY": "Also required with SUPABASE_URL when EMBED_PROVIDER=voyage "
     "(Postgres ANN: embed_for_postgres_vector). Otherwise v2 fallback / OpenAI routes.",
+    "ANTHROPIC_API_KEY": "eval-harness Anthropic calls; not required for verdict path",
+    "HELIUS_API_KEY": "trade-agent hotpath (Solana RPC) — required for trader mode (v0.2)",
     "GECKO_LLM_ENDPOINT": "defaults to http://localhost:8402/v1 (ClawRouter)",
 }
 
@@ -1157,6 +1161,55 @@ async def check_voyage_live(
     return results
 
 
+def check_openai_live(environ: dict[str, str] | None = None) -> CheckResult:
+    """S24 WS-E — cheap OpenAI /models probe under ``--live``.
+
+    Hits ``GET https://api.openai.com/v1/models`` with the configured key.
+    Cost: 0 tokens (model list is free). Times out at 5s. Returns a single
+    PASS / FAIL row with redacted detail — the key is never echoed.
+    """
+    import httpx
+
+    env = environ if environ is not None else dict(os.environ)
+    key = env.get("OPENAI_API_KEY", "").strip()
+    if not key:
+        return CheckResult(
+            name="openai:live",
+            ok=True,
+            detail="skipped (OPENAI_API_KEY unset)",
+            info=True,
+        )
+    try:
+        resp = httpx.get(
+            "https://api.openai.com/v1/models",
+            headers={"Authorization": f"Bearer {key}"},
+            timeout=5.0,
+        )
+    except Exception as exc:
+        return CheckResult(
+            name="openai:live",
+            ok=False,
+            detail=f"OpenAI unreachable — check network ({exc.__class__.__name__})",
+        )
+    if resp.status_code == 401:
+        return CheckResult(
+            name="openai:live",
+            ok=False,
+            detail="OPENAI_API_KEY rejected (401) — rotate the key in your .env",
+        )
+    if resp.status_code != 200:
+        return CheckResult(
+            name="openai:live",
+            ok=False,
+            detail=f"OpenAI returned status {resp.status_code} — retry in a minute",
+        )
+    try:
+        n = len(resp.json().get("data", []))
+    except Exception:
+        n = 0
+    return CheckResult(name="openai:live", ok=True, detail=f"reachable ({n} models)")
+
+
 def _is_thin_client(environ: dict[str, str] | None = None) -> bool:
     """True when gecko-mcp is running as a remote client (not as the server itself).
 
@@ -1366,6 +1419,7 @@ def run_doctor(
         results.extend(check_voyage_api_key(environ))
         if live:
             results.extend(asyncio.run(check_voyage_live(environ)))
+            results.append(check_openai_live(environ))
 
     # Supabase probes only run in local-dev/server-operator mode when creds are present.
     # Thin clients (remote GECKO_API_URL) never run Supabase probes — the DB is

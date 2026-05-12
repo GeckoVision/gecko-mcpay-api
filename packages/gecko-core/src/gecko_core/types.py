@@ -114,9 +114,11 @@ EventKind = Literal[
     "cache.hit",
     "cache.miss",
     "oracle.cost_usd",
+    "oracle.rate_limit_hit",
     "agent.tick",
     "agent.opportunity",
     "agent.error",
+    "agent.spend_cap_hit",
     "x402.settle",
     "x402.refund",
     "x402.live_blocked",
@@ -125,6 +127,31 @@ EventKind = Literal[
 collection (TTL 180d). Per docs/strategy/2026-05-12-s24-plan.md §4 WS-D."""
 
 EVENT_KIND_VALUES: Final[tuple[EventKind, ...]] = get_args(EventKind)
+
+# ---------------------------------------------------------------------------
+# Settlement mode (S24 WS-E).
+#
+# Carried on every paid verdict envelope alongside ``tx_signature`` +
+# ``solscan_url``. Distinct from ``PaymentMode`` (broader: stub/live/frames/cdp
+# — the *facilitator* identity) because consumers of the verdict envelope only
+# care about a binary "did real money move?" not which facilitator routed it.
+# All non-stub facilitators (live, frames, cdp) settle on-chain and collapse
+# to ``"live"`` on the verdict envelope.
+#
+# Pattern A — when a new verdict-receipt-bearing tier lands, edit this Literal
+# and the receipt builder in gecko_core.payments.receipts.
+# ---------------------------------------------------------------------------
+
+SettlementMode = Literal["stub", "live"]
+"""Whether on-chain settlement happened for a paid verdict.
+
+  stub — X402_MODE=stub OR no payment_payload on request.state.
+         tx_signature is null; solscan_url is null.
+  live — real x402 settlement; tx_signature carries the on-chain sig
+         and solscan_url is auto-built from it.
+"""
+
+SETTLEMENT_MODE_VALUES: Final[tuple[SettlementMode, ...]] = get_args(SettlementMode)
 
 
 __all__ = [
@@ -135,6 +162,7 @@ __all__ = [
     "EVENT_KIND_VALUES",
     "FRESHNESS_TIER_VALUES",
     "PROVIDER_KINDS",
+    "SETTLEMENT_MODE_VALUES",
     "AgentJournalEvent",
     "AgentMode",
     "AgentStatus",
@@ -142,4 +170,5 @@ __all__ = [
     "EventKind",
     "FreshnessTier",
     "ProviderKind",
+    "SettlementMode",
 ]
