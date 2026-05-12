@@ -24,7 +24,9 @@ uv run bb trade-agent purge --status stopped
 
 # 4. Pre-warm a verdict in the cache so reverdict returns in ~5s
 #    (the demo benefits from a fast cache-hit on the reverdict moment)
-uv run bb trade-agent reverdict <agent_id> --tier basic --dry-run  # this one's just to confirm the path works
+#    Use --tier pro to match the voice-over claim of "seven specialist voices"
+#    (basic = 5 voices, pro = 7 voices).
+uv run bb trade-agent reverdict <agent_id> --tier pro --dry-run  # this one's just to confirm the path works
 
 # 5. Have the example spec file ready
 cat /home/nan/.gecko/specs/example-kamino-dca.json | head -5
@@ -107,7 +109,7 @@ The script is timed. Each beat has: **what's on screen** (left), **what to say**
 
 | screen | voice-over |
 |---|---|
-| End card: <br><br> **`app.geckovision.tech`** <br><br> *(below, smaller)* <br> `curl -fsSL app.geckovision.tech/install.sh \| bash` <br><br> *(below, even smaller)* <br> `no API keys · just a wallet` | *"Yesterday I caught a retrieval bug that hid our entire corpus from the panel. Shipped Option C, validated in production smoke. That's the founder mode. One curl command. No API keys. Find me at geckovision.tech."* |
+| End card: <br><br> **`app.geckovision.tech`** <br><br> *(below, smaller)* <br> `curl -fsSL app.geckovision.tech/install.sh \| bash` <br><br> *(below, even smaller)* <br> `no API keys · just a wallet` | *"Yesterday I caught a retrieval bug that hid our entire 4,800-chunk corpus from the panel. Fixed it the right way — architectural cleanup, not a workaround. Validated in production smoke. That's founder mode. One curl command. No API keys. Find me at geckovision dot tech."* |
 
 *Action:* hold the end card for the last 3-4 seconds.
 

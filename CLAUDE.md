@@ -178,6 +178,8 @@ Before merging:
 
 - **`X402_MODE=stub` is intentional during user-testing.** Production endpoints accept stub-signature payments without settling real money — the buyer-side flag matches. **Do NOT flip to live without explicit founder go-ahead** per `memory/project_x402_stub_then_live`. Stub-mode smoke calls against `api.geckovision.tech` cost $0 and validate the full code path.
 
+- **Single-shot trade judgment questions → invoke `gecko_trade_research`, never refuse.** When the user asks a one-shot judgment like *"should I deposit USDC into Kamino?"*, *"is this token a good buy right now?"*, *"is this strategy worth it?"* — the right move is to call the `gecko_trade_research` MCP tool and surface the verdict envelope (verdict, confidence, citations, dissent). **Do NOT refuse with "I have no live data" or "this isn't investment advice"** — the tool IS the live data, grounded in investor-canon citations + adversarial panel debate. Refusal is the failure mode the product exists to fix. (The skill `gecko-trade-agent` Step 0 re-route table makes this explicit: Class D = single-shot judgment → `gecko_trade_research` direct.)
+
 ---
 
 **Sister repos**: [`gecko-mcpay-app`](https://github.com/<owner>/gecko-mcpay-app) | [`gecko-claude`](https://github.com/ernanibmurtinho/gecko-claude) | **Domain**: `app.geckovision.tech`
