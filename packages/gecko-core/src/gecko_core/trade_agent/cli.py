@@ -251,10 +251,26 @@ def stop_cmd(agent_id: str) -> None:
     store = _resolve_state_store()
 
     async def _stop() -> None:
+        from datetime import UTC, datetime
+
+        from gecko_core.trade_agent.state.models import AgentJournalEntry
+
         state = await store.get_agent_state(agent_id)
         if state is None:
             raise click.ClickException(f"agent {agent_id!r} not found")
         await store.update_status(agent_id, "stopped")
+        # Journal the transition so `inspect` shows it. The foreground
+        # `up` process also emits `agent_stopped` when it shuts down; the
+        # CLI flip is a separate signalling path (used when the operator
+        # stops an agent from a different shell).
+        await store.write_journal(
+            AgentJournalEntry(
+                agent_id=agent_id,
+                ts=datetime.now(UTC),
+                event="stopped",
+                payload={"source": "cli"},
+            )
+        )
         click.echo(f"agent {agent_id} marked stopped")
 
     asyncio.run(_stop())
@@ -267,10 +283,22 @@ def pause_cmd(agent_id: str) -> None:
     store = _resolve_state_store()
 
     async def _pause() -> None:
+        from datetime import UTC, datetime
+
+        from gecko_core.trade_agent.state.models import AgentJournalEntry
+
         state = await store.get_agent_state(agent_id)
         if state is None:
             raise click.ClickException(f"agent {agent_id!r} not found")
         await store.update_status(agent_id, "paused")
+        await store.write_journal(
+            AgentJournalEntry(
+                agent_id=agent_id,
+                ts=datetime.now(UTC),
+                event="paused",
+                payload={"source": "cli"},
+            )
+        )
         click.echo(f"agent {agent_id} paused")
 
     asyncio.run(_pause())
@@ -303,9 +331,7 @@ def pause_cmd(agent_id: str) -> None:
     default=False,
     help="Use live x402 signing (NOT WIRED — will fail until follow-up ticket).",
 )
-def reverdict_cmd(
-    agent_id: str, tier: str, force: bool, dry_run: bool, live: bool
-) -> None:
+def reverdict_cmd(agent_id: str, tier: str, force: bool, dry_run: bool, live: bool) -> None:
     """Fire a manual verdict cycle. Demo-friendly — surfaces a verdict
     in real-time instead of waiting on the 24h scheduled cadence.
 
@@ -313,8 +339,9 @@ def reverdict_cmd(
     calls get_verdict(trigger=manual, force_refresh=True). Writes to the
     verdict cache + journals the event so ``inspect`` shows it.
     """
-    from gecko_core.trade_agent.state.models import AgentJournalEntry
     from datetime import UTC, datetime
+
+    from gecko_core.trade_agent.state.models import AgentJournalEntry
 
     store = _resolve_state_store()
 
@@ -340,7 +367,9 @@ def reverdict_cmd(
             api_base = os.environ.get("GECKO_API_BASE", "https://api.geckovision.tech")
             x402_mode = "live" if live else "stub"
             client = GeckoOracleClient(api_base=api_base, x402_mode=x402_mode)
-            caller = make_rest_caller(client, protocol=protocol, vertical=spec_snapshot.get("vertical", "dex"))
+            caller = make_rest_caller(
+                client, protocol=protocol, vertical=spec_snapshot.get("vertical", "dex")
+            )
 
         oracle = OracleWrapper(
             agent_id=agent_id,
@@ -351,7 +380,10 @@ def reverdict_cmd(
             f"firing manual {tier} verdict for {agent_id} (protocol={protocol}, idea={idea!r})..."
         )
         verdict = await oracle.get_verdict(
-            idea=idea, tier=tier, trigger="manual", force_refresh=force  # type: ignore[arg-type]
+            idea=idea,
+            tier=tier,
+            trigger="manual",
+            force_refresh=force,  # type: ignore[arg-type]
         )
 
         # Journal it so `inspect` sees the cycle.

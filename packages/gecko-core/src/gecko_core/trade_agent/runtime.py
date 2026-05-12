@@ -158,6 +158,15 @@ class AgentRuntime:
             interval_s=60 * 60 * 24,
             callback=self._scheduled_refresh,
         )
+        # Scheduled hotpath-snapshot write (5min cadence; TTL is 5min).
+        # Stub source — real Helius/Pyth wiring lands in W3-1. The point
+        # of writing now is to exercise the validator-gated TTL collection
+        # so backtest replay + observability surfaces have data.
+        self._scheduler.schedule(
+            "hotpath_snapshot_tick",
+            interval_s=60 * 5,
+            callback=self._scheduled_hotpath_snapshot,
+        )
         await self._enqueue_journal("agent_started", {"mode": self.mode})
 
     async def stop(self) -> None:
@@ -368,6 +377,29 @@ class AgentRuntime:
             logger.warning("journal.queue_full agent_id=%s dropped_oldest=1", self.agent_id)
             with contextlib.suppress(asyncio.QueueFull):
                 self._journal_q.put_nowait(entry)
+
+    async def _scheduled_hotpath_snapshot(self) -> None:
+        """Write a stub snapshot doc per protocol.
+
+        Real upstream is the Helius WS feed (ticket W3-1). The stub
+        payload is enough to exercise the write path + TTL index. Failure
+        is non-fatal — never block trading on observability writes.
+        """
+        proto = getattr(self.spec, "protocol", "unknown") or "unknown"
+        snapshot = {
+            "source": "stub",
+            "spec_version": self.spec.version,
+            "mode": self.mode,
+            "status": self._status,
+        }
+        try:
+            await self.state_store.write_hotpath_snapshot(self.agent_id, proto, snapshot)
+        except Exception:
+            logger.exception(
+                "hotpath_snapshot.write_failed agent_id=%s protocol=%s",
+                self.agent_id,
+                proto,
+            )
 
     async def _scheduled_refresh(self) -> None:
         # Best-effort scheduled re-verdict on the *session* idea. Cache
