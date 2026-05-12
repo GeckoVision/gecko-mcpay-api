@@ -276,6 +276,155 @@ def pause_cmd(agent_id: str) -> None:
     asyncio.run(_pause())
 
 
+@trade_agent_cmd.command("reverdict")
+@click.argument("agent_id")
+@click.option(
+    "--tier",
+    type=click.Choice(["basic", "pro"]),
+    default="basic",
+    show_default=True,
+    help="Verdict tier — basic ($0.25) or pro ($0.75). Stub-mode is free.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    default=True,
+    help="Force refresh even on cache hit. Default ON (the point of reverdict is to surface a fresh call).",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Use stub caller — no network at all, returns synthetic 'act' verdict.",
+)
+@click.option(
+    "--live",
+    is_flag=True,
+    default=False,
+    help="Use live x402 signing (NOT WIRED — will fail until follow-up ticket).",
+)
+def reverdict_cmd(
+    agent_id: str, tier: str, force: bool, dry_run: bool, live: bool
+) -> None:
+    """Fire a manual verdict cycle. Demo-friendly — surfaces a verdict
+    in real-time instead of waiting on the 24h scheduled cadence.
+
+    Looks up the agent's spec from agent_state, builds an OracleWrapper,
+    calls get_verdict(trigger=manual, force_refresh=True). Writes to the
+    verdict cache + journals the event so ``inspect`` shows it.
+    """
+    from gecko_core.trade_agent.state.models import AgentJournalEntry
+    from datetime import UTC, datetime
+
+    store = _resolve_state_store()
+
+    async def _reverdict() -> None:
+        state = await store.get_agent_state(agent_id)
+        if state is None:
+            raise click.ClickException(f"agent {agent_id!r} not found")
+
+        spec_snapshot = state.spec_snapshot or {}
+        spec_name = spec_snapshot.get("name") or state.spec_id
+        protocol = spec_snapshot.get("protocol", "unknown")
+
+        # Build the same idea shape the runtime uses for scheduled refresh.
+        idea = f"session:{spec_name}"
+
+        # Pick the caller. CLI defaults x402_mode=stub regardless of env so
+        # the broader-system GECKO_X402_MODE=live (used by scripts/trading_oracle/)
+        # doesn't crash this command — the oracle_client live-mode signing
+        # path is not wired yet. --live flag below opts in explicitly.
+        if dry_run:
+            caller = make_stub_caller()
+        else:
+            api_base = os.environ.get("GECKO_API_BASE", "https://api.geckovision.tech")
+            x402_mode = "live" if live else "stub"
+            client = GeckoOracleClient(api_base=api_base, x402_mode=x402_mode)
+            caller = make_rest_caller(client, protocol=protocol, vertical=spec_snapshot.get("vertical", "dex"))
+
+        oracle = OracleWrapper(
+            agent_id=agent_id,
+            state_store=store,
+            caller=caller,
+        )
+        click.echo(
+            f"firing manual {tier} verdict for {agent_id} (protocol={protocol}, idea={idea!r})..."
+        )
+        verdict = await oracle.get_verdict(
+            idea=idea, tier=tier, trigger="manual", force_refresh=force  # type: ignore[arg-type]
+        )
+
+        # Journal it so `inspect` sees the cycle.
+        entry = AgentJournalEntry(
+            agent_id=agent_id,
+            ts=datetime.now(UTC),
+            event="verdict_called",
+            payload={
+                "trigger": "manual",
+                "tier": tier,
+                "verdict": verdict.get("verdict"),
+                "confidence": verdict.get("confidence"),
+                "n_citations": len(verdict.get("citations", []) or []),
+                "n_dissent": verdict.get("dissent_count", 0),
+            },
+        )
+        await store.write_journal(entry)
+
+        click.echo(
+            f"  verdict={verdict.get('verdict')}  "
+            f"confidence={verdict.get('confidence')}  "
+            f"citations={len(verdict.get('citations', []) or [])}  "
+            f"dissent={verdict.get('dissent_count', 0)}"
+        )
+        if not dry_run and hasattr(caller, "__self__"):
+            await caller.__self__.aclose()  # type: ignore[attr-defined]
+
+    asyncio.run(_reverdict())
+
+
+@trade_agent_cmd.command("purge")
+@click.option(
+    "--status",
+    type=click.Choice(["stopped", "running", "paused", "halted"]),
+    default="stopped",
+    show_default=True,
+    help="Status to purge.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="List what would be purged without deleting.",
+)
+def purge_cmd(status: str, dry_run: bool) -> None:
+    """Delete agent_state rows by status. Cleans up orphans from earlier
+    runs where SIGKILL prevented the Mongo state update.
+
+    Does NOT delete journal entries (those are TTL-managed at 90 days).
+    """
+    store = _resolve_state_store()
+
+    async def _purge() -> None:
+        states = await store.list_agent_states(status=status)
+        if not states:
+            click.echo(f"no agents with status={status!r}")
+            return
+        for s in states:
+            if dry_run:
+                click.echo(f"WOULD PURGE  {s.agent_id}  spec={s.spec_id}")
+            else:
+                # Use the raw collection — there's no delete in StateStore protocol.
+                # This is a CLI-side cleanup, not a runtime concern, so reaching past
+                # the protocol is acceptable. v1.0 would add StateStore.delete.
+                if isinstance(store, MongoStateStore):
+                    await store._db["agent_state"].delete_one({"agent_id": s.agent_id})
+                    click.echo(f"PURGED       {s.agent_id}")
+                else:
+                    click.echo(f"SKIP (in-memory store, no-op): {s.agent_id}")
+
+    asyncio.run(_purge())
+
+
 @trade_agent_cmd.command("backtest")
 @click.option(
     "--spec",
