@@ -111,3 +111,58 @@ My recommendation is **A then C, skipping B**: cheapest revert first, then inves
 - Post-patch: `tests/eval/live_runs/2026-05-12-s24-defi-trade-10-2.json`
 
 Spend tonight: ~$0.30 (one 10-fixture basic-tier sweep). Within budget.
+
+---
+
+## Resolution attempt 2026-05-12 — Option B applied, FAILED, surgical next-fix below
+
+**Action:** rewrote coordinator defer-(iii) from interpretive ("3+ analysts point against") to mechanical token-count rule (count exact closing-line opposition tokens; >=3 → defer; <2 → never defer from this clause). Added explicit non-trigger list ("elevated" doesn't count, "stable" doesn't count, "neutral" doesn't count, etc.). Code-level safety nets untouched.
+
+**Side-finding (load-bearing, surface to founder):** `_default_prompts.json` at HEAD parses as INVALID JSON (trailing `,` after `"coordinator"` value + trailing `,` after `agents` object). `json.loads` rejects it cleanly. Yet the night-shift baseline `2026-05-12-s24-defi-trade-10-2.json` reports 10 successful panel runs. Two possibilities:
+  (a) `GECKO_TRADE_PANEL_PROMPTS_PATH` was env-mounted to a different (valid) file at the night-shift run, and the bundled `_default_prompts.json` is structurally broken but never loaded in prod;
+  (b) the baseline file is a leftover from a still-earlier run and the night-shift sweep actually crashed before writing.
+Either way: the night-shift baseline cannot be trusted as a true post-patch state until reconciled. I removed the trailing commas as part of this turn's edit; JSON now parses.
+
+### Post-Option-B 4-metric scorecard (N=10, basic, fresh sweep)
+
+| Metric | Target | 10-2 (baseline) | 10-3 (Option B) | Status |
+|---|---|---|---|---|
+| brier_overall | <= 0.30 | 0.218 | **0.16** | pass (improved) |
+| act_30d_profit_rate (n>=4) | >= 0.58 | 0.50 (n=2) | **null (n=0)** | FAIL (no acts at all) |
+| pass_drawdown_avoid_rate | >= 0.60 | 0.333 | **0.0 (n=1)** | FAIL |
+| defer_rate | < 0.30 | 0.50 | **0.90** | FAIL (regression) |
+
+Verdict distribution: `act=0 pass=1 defer=9`. The panel collapsed almost entirely into defer. **1 of 4 metrics green. Worse than baseline.** Resolution call: **NO**, 3-of-4 not landed.
+
+### Why Option B failed (honest diagnosis)
+
+The mechanical rewrite is longer and structurally more salient than the prior interpretive clause. gpt-4o-mini now treats the closing-line enumeration as a *checklist of reasons to defer* rather than the *narrow guardrail* it was intended to be. The "EXPLICIT NON-TRIGGERS" subsection added bulk that reads as authority on when defer applies, not when it doesn't. We added more words to the defer clause; the model deferred more. Predictable in hindsight.
+
+The token-count rule itself is sound, but **a mechanical count belongs in code, not in a prompt**. gpt-4o-mini cannot reliably count exact-match tokens across 6 prior turns; it pattern-matches "rule about defer → defer is the safe call".
+
+### Surgical next-fix recommendation (Option A.2)
+
+**Move defer-(iii) out of the prompt entirely. Implement it in `_build_verdict_from_coordinator` as a deterministic counter, symmetric for act/pass.**
+
+1. Delete the entire defer-(iii) clause from the coordinator prompt. Keep (i) abstain-majority and (ii) balanced-debate as the only prompt-level defer triggers. The prompt then reads: "default to act or pass; defer only when the panel itself abstained or the debate is genuinely tied."
+2. In code, after the coordinator returns its draft verdict, parse the 6 voice closing lines, count exact-match opposition tokens against the draft direction, and override draft → defer only when count >= 3. This is what the existing `_count_abstains` infrastructure already does for abstain-majority; extend it to opposition-majority.
+3. The eval ask is then: does removing the prompt-side defer clause restore act/pass volume (target defer_rate <= 0.30), while the code-side counter retains the explicit-opposition safety net?
+
+Cost: ~30 min code, $0.30 eval. Lower-risk than further prompt edits — every prompt iteration so far has *increased* defer rate because the model is biased toward caution when the prompt mentions defer at all.
+
+**If A.2 also fails: the structural problem is gpt-4o-mini's caution bias on this domain, not the prompt or the code. Move to gpt-4o (mini → full) for the coordinator role only, leaving the 6 analyst roles on mini for cost. Expected ~3x coordinator-call cost; basic tier rises from ~$0.0015 to ~$0.005/idea. Still within tier economics.**
+
+### Trailing-comma fix is in this commit
+
+`_default_prompts.json` HEAD-state would not parse under strict JSON. This turn's edit also removed the two trailing commas that were blocking parse. Whatever the baseline-10-2 run was actually loading, the next run will deterministically load the bundled file.
+
+### Files changed this turn
+
+- `packages/gecko-core/src/gecko_core/orchestration/trade_panel/_default_prompts.json` — coordinator defer-(iii) rewritten to mechanical token-count rule; trailing commas removed; JSON now parses strict.
+- `docs/eval/2026-05-13-s24-eval-honest-state.md` — this Resolution section.
+
+### Run artifact
+
+- `tests/eval/live_runs/2026-05-12-s24-defi-trade-10-3.json` (Option B sweep, defer_rate=0.90).
+
+Spend this turn: ~$0.30. Cumulative: ~$0.60. Within $1 budget.
