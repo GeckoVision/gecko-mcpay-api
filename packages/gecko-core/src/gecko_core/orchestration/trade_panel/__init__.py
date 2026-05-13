@@ -167,6 +167,20 @@ def _opening_prompt(idea: str, protocol: str, chunks: list[dict[str, Any]]) -> s
             "the question asks about.\n"
             "  Phantom citation (claiming a chunk you did not read in body "
             "text) is a panel failure mode and disqualifies the turn.\n"
+            "\nQUANTITATIVE GROUNDING (mandatory for every non-coordinator voice):\n"
+            "  When you write a specific number — TVL, APR/APY, price, volume, "
+            "ratio, percentage, dollar figure — you MUST either:\n"
+            "    (a) QUOTE the exact substring from the cited chunk that "
+            "contains that number, in the same line — "
+            "e.g. `TVL is $1,505,498,759 [3: 'tvl: 1505498759']`, OR\n"
+            "    (b) Write the claim WITHOUT a citation and prefix it "
+            "`unsourced:` — e.g. `unsourced: yields appear competitive vs peers`.\n"
+            "  Do NOT cite a chunk number for a figure that does not appear "
+            "verbatim in that chunk. Inferring a plausible TVL/APR/price from "
+            "field names, related magnitudes, or surrounding context is a "
+            "hallucination and disqualifies the turn. When in doubt, write "
+            "the qualitative claim with `unsourced:` rather than fabricate a "
+            "specific number.\n"
         )
     )
     return (
