@@ -89,6 +89,8 @@ def test_canonical_provider_kinds_value() -> None:
         "canon_macro",
         # S24 WS-A — market-data grounding (Pyth + DefiLlama).
         "market_data",
+        # S26 #14 — direct protocol-native API ingest.
+        "protocol_native",
     )
 
 

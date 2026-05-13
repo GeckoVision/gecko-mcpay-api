@@ -118,6 +118,7 @@ KnowledgeSource = Literal[
     "user_query",
     "enriched_output",
     "market_data",
+    "protocol_native",
 ]
 """Static type alias. Keep in sync with KNOWLEDGE_SOURCES manually.
 
@@ -146,6 +147,7 @@ KNOWLEDGE_SOURCES: Final[tuple[KnowledgeSource, ...]] = (
     "user_query",
     "enriched_output",
     "market_data",
+    "protocol_native",
 )
 """Runtime tuple — used by Mongo validators."""
 
