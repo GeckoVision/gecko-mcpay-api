@@ -147,17 +147,24 @@ def _opening_prompt(idea: str, protocol: str, chunks: list[dict[str, Any]]) -> s
     safe under the plateau-memory caveat.
     """
     n_chunks = len(chunks)
+    # S28 #25 — softened from the S26 #19 "cite-broadly" directive. With
+    # Cohere rerank serving 5 high-relevance chunks, breadth pressure was
+    # producing citations padded for coverage rather than for grounding.
+    # New directive: cite what you reason over, do NOT cite for breadth,
+    # and do NOT mistake a chunk's numeric content for the target metric
+    # unless the chunk names the target.
     breadth_block = (
         ""
         if n_chunks == 0
         else (
-            "\n\nCITATION BREADTH (mandatory for every non-coordinator voice):\n"
-            f"  You have {n_chunks} numbered corpus chunks ([1] through [{n_chunks}]).\n"
-            "  Your turn MUST cite at least 4 DISTINCT chunk indices when "
-            f"{n_chunks} >= 6, drawn from across the full range — "
-            "  do NOT cite only edges [1][2][N-1][N]. Walk the middle. If a "
-            "middle chunk is not directly relevant, name it briefly and say "
-            "why you set it aside; do not silently skip.\n"
+            "\n\nCITATION DISCIPLINE (mandatory for every non-coordinator voice):\n"
+            f"  You have {n_chunks} reranked corpus chunks of high semantic "
+            "relevance. Cite the chunks you actually reason over in body text "
+            "(typically 3-5). Do NOT cite chunks just for breadth or coverage.\n"
+            "  If a chunk reports a specific number (TVL, APR, price, volume), "
+            "do NOT treat that number as the answer to a question unless the "
+            "chunk explicitly identifies the same pool/vault/asset/protocol "
+            "the question asks about.\n"
             "  Phantom citation (claiming a chunk you did not read in body "
             "text) is a panel failure mode and disqualifies the turn.\n"
         )
@@ -596,7 +603,7 @@ async def run_trade_panel(
 # trade-research surface.
 # ---------------------------------------------------------------------------
 
-_DEFAULT_TRADE_TOP_K: int = 15
+_DEFAULT_TRADE_TOP_K: int = 5  # S28 #25 — Cohere rerank lets us serve only the top semantic chunks; was 15 (Path D)
 
 # S25 #13 — scoring boost terms. Empirical: Atlas vectorSearchScore on the
 # corpus sits in [0.69, 0.78] for typical queries; a +0.15 boost pushes a
@@ -1062,12 +1069,37 @@ async def retrieve_trade_corpus_chunks(
     # S25 #13 — apply scoring boosts in Python over the oversampled pool.
     # The boost terms themselves live in _apply_retrieval_boosts.
     rows = _apply_retrieval_boosts(rows, protocol=proto_norm, as_of_date=as_of_date)
+
+    # S28 #25 — Cohere semantic rerank over the wide (~180-candidate) pool.
+    # Inserted between boost and quota_floor: the boost stage encodes
+    # structural priors (provider/protocol/date), then Cohere re-orders by
+    # query semantics, then quota_floor enforces breadth invariants.
+    #
+    # Graceful degrade: if COHERE_API_KEY is unset (or any soft failure),
+    # cohere_rerank returns [] and we fall through to the existing slate.
+    # The Path D baseline is preserved end-to-end when the key is absent.
+    if rows:
+        try:
+            from gecko_core.rag.rerank import cohere_rerank
+
+            documents = [str(r.get("text") or "") for r in rows]
+            pairs = await cohere_rerank(query=idea, documents=documents, top_n=top_k)
+            if pairs:
+                rows = [rows[idx] for idx, _score in pairs if 0 <= idx < len(rows)]
+        except Exception as exc:  # pragma: no cover - defensive
+            _log.warning("trade_panel.retrieve.rerank_error err=%s (falling through)", exc)
+
     # S27 #21 — provider_kind quota allocator. Replaces the prior
     # `rows[:top_k]` straight slice that routinely filled all 15 slots
     # with protocol_native because of the +0.25 boost stack. The quota
     # floor reserves slots for canon + market_data so the rubric judge's
     # `must_cite_provider_kinds` set can actually be covered. Boost still
     # ranks within each bucket. See _provider_quota_floor.
+    #
+    # S28 #25 — when cohere_rerank ran and returned top_n=5 rows, the
+    # quota floor is effectively a no-op (rows fits within top_k); when
+    # rerank degraded gracefully (no key, error), this still slices the
+    # wide pool down to top_k with quota guarantees.
     rows = _provider_quota_floor(rows, top_k=top_k)
 
     # Issue #12 — exit log. hit_count + top_score disambiguate "Atlas returned
