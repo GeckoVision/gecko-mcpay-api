@@ -571,7 +571,7 @@ async def run_trade_panel(
 # trade-research surface.
 # ---------------------------------------------------------------------------
 
-_DEFAULT_TRADE_TOP_K: int = 15
+_DEFAULT_TRADE_TOP_K: int = 7
 
 # S25 #13 — scoring boost terms. Empirical: Atlas vectorSearchScore on the
 # corpus sits in [0.69, 0.78] for typical queries; a +0.15 boost pushes a
