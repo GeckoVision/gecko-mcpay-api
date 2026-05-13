@@ -603,7 +603,7 @@ async def run_trade_panel(
 # trade-research surface.
 # ---------------------------------------------------------------------------
 
-_DEFAULT_TRADE_TOP_K: int = 10  # S29 #31 — bumped 5→10; quota_floor now runs BEFORE rerank with top_k*2 pre-rerank slate so Cohere reranks within a provider-kind-balanced candidate set
+_DEFAULT_TRADE_TOP_K: int = 5  # S29 #34 — ablation: revert top_k bump (10→5) while keeping the quota-before-rerank order swap. Hypothesis: pkCov win is from the order swap; the top_k=10 bump diluted dissent_grounding/calibration via wider-slate attention spread. See docs/strategy/2026-05-14-s29-34-ablation-handoff.md.
 
 # S25 #13 — scoring boost terms. Empirical: Atlas vectorSearchScore on the
 # corpus sits in [0.69, 0.78] for typical queries; a +0.15 boost pushes a
