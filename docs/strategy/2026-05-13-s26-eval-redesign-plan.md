@@ -99,6 +99,47 @@ exit 1
 
 That transcript is the canary doing its job: separating "the data was wrong" (D2 → data-engineer) from "the model fabricated a cite index" (D3 → ai-ml-engineer). Both are caught in <30 seconds. Before this tier existed, this failure mode required a Tier-3 rubric run to surface as `hallucination_score=0` with no clue where the bug actually lived.
 
+**Real Tier-1 transcript — 2026-05-12 first run on `s26/eval-redesign` (BEFORE):**
+
+```
+$ make test-canary
+S26 canary | n=1 | suite=canary_suite.json
+  [kamino-2024Q3-jlpusdc-entry] protocol=kamino
+    D1 (answered_back)    : PASS  (verdict=defer, confidence=0.7, 7 turns)
+    D2 (context_overflow) : FAIL
+      fail: chunk dropout: 10 of 15 chunks not reachable in rendered block
+            (cap=8000 chars, block_len=8032)
+    D3 (citations_ground) : PASS  (n_panel_cites=15, n_phantom_cites=0,
+                                   n_inline_markers_out_of_range=0)
+exit 1
+```
+
+Caught the silent truncation: the cap was 8000 chars, the rendered block was 8032 chars, chunks 6-15 vanished into the truncation tail. D3 falsely PASSED because the legacy check only verified `chunk_id` validity and inline-marker in-range — it didn't notice that `build_citations_from_chunks(chunks)` (line ~913) was decorating the verdict with citations the personas never actually wrote.
+
+**Real Tier-1 transcript — 2026-05-12 third run on `s26/cap-fix` (AFTER):**
+
+```
+$ make test-canary
+S26 canary | n=1 | suite=canary_suite.json
+  [kamino-2024Q3-jlpusdc-entry] protocol=kamino
+    D1 (answered_back)    : PASS  (verdict=defer, confidence=0.7, 7 turns)
+    D2 (context_overflow) : PASS  (n_chunks_rendered=15 of 15,
+                                   block_chars=29676, cap=60000,
+                                   estimated_tokens=7530)
+    D3 (citations_ground) : FAIL
+      fail: phantom citations: 10 of 15 — markers [4][5][6][7][8][9][10][11] ...
+            never appear in any persona content
+      details: persona_markers_seen=[1, 2, 3, 14, 15]
+               phantom_markers=[4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+exit 1
+```
+
+D2 now PASSes — the cap bump from 8000 → 60000 puts the full 29.7k-char rendered block well inside the budget and well inside `gpt-4o-mini`'s 128k context (estimated ~7.5k prompt tokens vs. 128k limit, >100k headroom). D3 now FAILs, but **honestly** — the strengthened phantom-marker check surfaces that `build_citations_from_chunks` is post-hoc-decorating the envelope with 10 of 15 markers the personas never cited. The personas only wrote `[1][2][3][14][15]`; the other 10 citations are caller-visible grounding without model-visible content.
+
+That second failure is a **separate panel-prompt bug** filed as a follow-up ticket: under v0.1 prompts the 7 personas don't reason across all retrieved chunks, just the first few + the tail. Cap-fix removed Bug 1 (truncation); the strengthened D3 made Bug 2 visible. Fixing the prompt to actually iterate over all retrieved chunks is a separate ai-ml-engineer ticket and out of scope for `s26/cap-fix`.
+
+Artifact: `tests/eval/live_runs/2026-05-13-canary-postfix.json`.
+
 ### Tier 2 — Sprint baseline
 
 **Input:** N=3 fixtures across distinct protocols. Re-uses the first three rows of `defi_trade_rubric_suite.json` (kamino-jlpusdc, kamino-sol-leverage, drift-sol-perp).

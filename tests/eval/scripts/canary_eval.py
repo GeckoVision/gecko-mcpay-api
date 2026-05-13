@@ -191,7 +191,18 @@ def _check_d3_citations_grounded(
     verdict_obj: Any,
     chunks: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """D3: cite.chunk_id ∈ retrieval set AND every inline [N] is in-range."""
+    """D3: cite.chunk_id ∈ retrieval set AND every inline [N] is in-range
+    AND every citation's [N] marker actually appears in some persona turn.
+
+    The third sub-check ("phantom-marker") catches the structural failure
+    mode introduced by ``build_citations_from_chunks(chunks)`` (see
+    ``trade_panel/__init__.py`` line ~913): that helper iterates the FULL
+    retrieved chunks list AFTER the panel returns, so citations carry
+    valid ``chunk_id`` and in-range markers even when the panel never saw
+    chunks past index K (e.g. via cap truncation). A citation marker the
+    personas never wrote is "phantom" — caller-visible grounding but
+    model-invisible content.
+    """
     failures: list[str] = []
 
     valid_chunk_ids = {str(c.get("id", "")) for c in chunks}
@@ -215,13 +226,16 @@ def _check_d3_citations_grounded(
             f"{phantom_cites[:3]!r}{' ...' if len(phantom_cites) > 3 else ''}"
         )
 
-    # Inline [N] markers across all turns.
+    # Inline [N] markers across all turns — collect once for reuse below.
+    turns = list(getattr(verdict_obj, "turns", []) or [])
+    persona_marker_set: set[int] = set()
     out_of_range: list[dict[str, Any]] = []
-    for turn in getattr(verdict_obj, "turns", []) or []:
+    for turn in turns:
         agent = getattr(turn, "agent", "?")
         content = getattr(turn, "content", "") or ""
         for m in _INLINE_MARKER_RE.findall(content):
             n = int(m)
+            persona_marker_set.add(n)
             if n < 1 or n > n_chunks:
                 out_of_range.append({"agent": agent, "marker": n, "max": n_chunks})
     if out_of_range:
@@ -229,6 +243,24 @@ def _check_d3_citations_grounded(
             f"{len(out_of_range)} inline [N] marker(s) out of range "
             f"(n_chunks={n_chunks}): {out_of_range[:3]!r}"
             f"{' ...' if len(out_of_range) > 3 else ''}"
+        )
+
+    # Phantom-marker detection: each citation has a 1-indexed `id` matching
+    # the `[N]` marker convention in _format_chunks. If a citation's N is
+    # never written by any persona, the cite is post-hoc decoration only.
+    phantom_markers: list[int] = []
+    for cite in panel_cites:
+        marker = getattr(cite, "id", None)
+        if not isinstance(marker, int):
+            continue
+        if marker not in persona_marker_set:
+            phantom_markers.append(marker)
+    if phantom_markers:
+        sample = "".join(f"[{n}]" for n in sorted(phantom_markers)[:8])
+        suffix = " ..." if len(phantom_markers) > 8 else ""
+        failures.append(
+            f"phantom citations: {len(phantom_markers)} of {len(panel_cites)} — "
+            f"markers {sample}{suffix} never appear in any persona content"
         )
 
     return {
@@ -239,6 +271,9 @@ def _check_d3_citations_grounded(
             "n_valid_chunk_ids": len(valid_chunk_ids),
             "n_phantom_cites": len(phantom_cites),
             "n_inline_markers_out_of_range": len(out_of_range),
+            "n_phantom_markers": len(phantom_markers),
+            "persona_markers_seen": sorted(persona_marker_set),
+            "phantom_markers": sorted(phantom_markers),
         },
     }
 

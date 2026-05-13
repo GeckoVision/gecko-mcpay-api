@@ -96,7 +96,8 @@ _CLOSING_RE: dict[str, re.Pattern[str]] = {
 # Per-voice timeout. Trade-panel v1 keeps the same default as Pro to start;
 # tune separately when we have eval data.
 _PER_VOICE_TIMEOUT_S: float = 120.0
-_RAG_CONTEXT_CHAR_CAP: int = 8000
+# 60k chars ~= 15k tokens; gpt-4o-mini context is 128k; raises ceiling without removing the safety
+_RAG_CONTEXT_CHAR_CAP: int = 60000
 
 
 class _LLMReplier(Protocol):
