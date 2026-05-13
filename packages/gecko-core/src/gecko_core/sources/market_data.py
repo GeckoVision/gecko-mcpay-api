@@ -197,6 +197,33 @@ def render_candle_chunk(asset: str, candles_csv: str, as_of_iso: str) -> str:
     )
 
 
+def render_historical_price_chunk(
+    asset: str,
+    price_usd: float,
+    publish_time_iso: str,
+    fixture_as_of_date: str,
+) -> str:
+    """Render a Pyth historical price point for a fixture-aligned date.
+
+    S26 #14 Gap 3. The trade-panel rubric eval revealed market_data
+    chunks were current-snapshot-only, so a 2024-11-05 SOL=$165
+    fixture retrieved the latest cache (~$95) and the panel had no
+    way to ground a date-aligned answer. This renderer emits one
+    short, citation-friendly chunk per (asset, fixture_as_of_date)
+    pair. The chunk text leads with the as-of date so the embedder
+    keys on it cleanly.
+    """
+    return (
+        f"Pyth historical close for {asset} on {fixture_as_of_date}.\n"
+        f"As-of date: {fixture_as_of_date}.\n"
+        f"Closing price USD: ${price_usd:,.4f}\n"
+        f"Pyth publish_time (UTC): {publish_time_iso}\n"
+        f"Source: Pyth Hermes /api/get_price_feed historical lookup.\n"
+        f"Provider: market_data. Use this for date-aligned grounding of "
+        f"price questions whose as_of_date is {fixture_as_of_date}."
+    )
+
+
 def render_tvl_chunk(
     protocol: str,
     tvl_usd: float,
@@ -226,5 +253,6 @@ __all__ = [
     "build_market_data_plan",
     "pyth_plans_for_protocol",
     "render_candle_chunk",
+    "render_historical_price_chunk",
     "render_tvl_chunk",
 ]
