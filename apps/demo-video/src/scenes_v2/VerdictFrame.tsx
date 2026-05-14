@@ -28,9 +28,9 @@ const PK_COLOR: Record<string, string> = {
   canon_marks: COLORS.purple,
   canon_damodaran: COLORS.purple,
   canon_berkshire: COLORS.purple,
-  market_data: COLORS.mint,
-  paysh_live: COLORS.mint,
-  bazaar_live: COLORS.mint,
+  market_data: COLORS.accent,
+  paysh_live: COLORS.accent,
+  bazaar_live: COLORS.accent,
 };
 
 export const VerdictFrame: React.FC = () => {
@@ -91,7 +91,7 @@ export const VerdictFrame: React.FC = () => {
           </span>
           <span
             style={{
-              color: COLORS.amber,
+              color: COLORS.verdictDefer,
               fontSize: 38,
               fontWeight: 700,
               letterSpacing: 4,
@@ -112,7 +112,7 @@ export const VerdictFrame: React.FC = () => {
                     width: 12,
                     height: 12,
                     borderRadius: 6,
-                    background: dissent ? COLORS.textDim : COLORS.amber,
+                    background: dissent ? COLORS.textDim : COLORS.verdictDefer,
                     opacity: dissent ? 0.5 : 0.9,
                   }}
                 />
@@ -136,7 +136,7 @@ export const VerdictFrame: React.FC = () => {
               border: `1px solid ${COLORS.border}`,
             }}
           >
-            <div style={{ height: "100%", width: "65%", background: COLORS.amber, opacity: 0.6 }} />
+            <div style={{ height: "100%", width: "65%", background: COLORS.verdictDefer, opacity: 0.6 }} />
           </div>
           <div style={{ color: COLORS.textDim, fontSize: 13, marginTop: 6, fontFamily: FONT.mono }}>
             0.65 — protocol-native solid; canon thin but converging

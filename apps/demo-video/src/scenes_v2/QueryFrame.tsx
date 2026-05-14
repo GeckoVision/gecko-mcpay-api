@@ -25,7 +25,7 @@ export const QueryFrame: React.FC = () => {
         <Prompt text={QUESTION} startFrame={10} speed={2.6} />
 
         <div style={{ opacity: calloutOp, marginTop: 12 }}>
-          <span style={{ color: COLORS.mint, marginRight: 10 }}>●</span>
+          <span style={{ color: COLORS.accent, marginRight: 10 }}>●</span>
           <span style={{ color: COLORS.text }}>Calling </span>
           <span style={{ color: COLORS.cyan }}>gecko_trade_research</span>
           <span style={{ color: COLORS.textMuted }}>{"  ·  "}7-agent panel · investor canon · protocol-native</span>
@@ -38,10 +38,10 @@ export const QueryFrame: React.FC = () => {
               width: 10,
               height: 10,
               borderRadius: 5,
-              background: COLORS.mint,
+              background: COLORS.accent,
               marginRight: 12,
               opacity: pulse,
-              boxShadow: `0 0 18px rgba(34, 227, 166, ${pulse * 0.7})`,
+              boxShadow: `0 0 18px rgba(46, 155, 255, ${pulse * 0.7})`,
             }}
           />
           Calling 7 voices...

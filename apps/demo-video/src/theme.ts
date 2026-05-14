@@ -11,12 +11,15 @@ export const COLORS = {
   textMuted: "#9AA4B2",
   textDim: "#5F6A78",
 
-  mint: "#22E3A6", // ACT pill / confidence bar / success / running
+  mint: "#22E3A6", // ACT verdict only — matches landing --verdict-act (green stays for "act")
   mintDim: "#0E5A44",
   magenta: "#E94560", // DISSENT / action bullet
-  amber: "#F5A524", // defer
+  amber: "#F5A524", // legacy (DemoV2 no longer uses this for defer)
   cyan: "#67E8F9", // citations / identifiers
   purple: "#A78BFA", // solana / advisor mode hint
+  accent: "#2e9bff", // landing --accent (sky blue) — brand UI accent
+  accentDim: "#1d6dff",
+  verdictDefer: "#9C9A92", // landing --verdict-defer (muted slate-tan, neutral)
 } as const;
 
 export const FONT = {

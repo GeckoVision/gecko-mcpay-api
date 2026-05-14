@@ -124,7 +124,7 @@ export const Prompt: React.FC<{ text: string; startFrame?: number; speed?: numbe
   const { shown, done, caretVisible } = useTypeOn(text, startFrame, speed);
   return (
     <div style={{ marginBottom: 22 }}>
-      <span style={{ color: COLORS.mint, marginRight: 10 }}>❯</span>
+      <span style={{ color: COLORS.accent, marginRight: 10 }}>❯</span>
       <span>{shown}</span>
       {!done && (
         <span

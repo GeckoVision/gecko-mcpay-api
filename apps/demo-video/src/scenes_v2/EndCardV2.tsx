@@ -24,7 +24,7 @@ export const EndCardV2: React.FC = () => {
         style={{
           position: "absolute",
           inset: 0,
-          background: "radial-gradient(ellipse at center, rgba(34, 227, 166, 0.08) 0%, transparent 60%)",
+          background: "radial-gradient(ellipse at center, rgba(46, 155, 255, 0.10) 0%, transparent 60%)",
         }}
       />
       <div
@@ -38,7 +38,7 @@ export const EndCardV2: React.FC = () => {
           transform: `scale(${urlScale})`,
         }}
       >
-        app<span style={{ color: COLORS.mint }}>.</span>geckovision<span style={{ color: COLORS.mint }}>.</span>tech
+        app<span style={{ color: COLORS.accent }}>.</span>geckovision<span style={{ color: COLORS.accent }}>.</span>tech
       </div>
       <div
         style={{
@@ -52,7 +52,7 @@ export const EndCardV2: React.FC = () => {
           opacity: installOp,
         }}
       >
-        <span style={{ color: COLORS.mint }}>$</span> curl -fsSL app.geckovision.tech/install.sh | bash
+        <span style={{ color: COLORS.accent }}>$</span> curl -fsSL app.geckovision.tech/install.sh | bash
       </div>
       <div
         style={{

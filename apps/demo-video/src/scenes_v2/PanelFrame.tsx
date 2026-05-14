@@ -108,9 +108,9 @@ export const PanelFrame: React.FC = () => {
               style={{
                 height: "100%",
                 width: `${conf * 100}%`,
-                background: COLORS.amber,
+                background: COLORS.verdictDefer,
                 opacity: 0.85,
-                boxShadow: `0 0 12px ${COLORS.amber}80`,
+                boxShadow: `0 0 12px ${COLORS.verdictDefer}80`,
               }}
             />
           </div>
@@ -125,6 +125,6 @@ export const PanelFrame: React.FC = () => {
 
 const stanceColor = (s: Persona["stance"]) => {
   if (s === "act") return COLORS.mint;
-  if (s === "defer") return COLORS.amber;
+  if (s === "defer") return COLORS.verdictDefer;
   return COLORS.magenta;
 };

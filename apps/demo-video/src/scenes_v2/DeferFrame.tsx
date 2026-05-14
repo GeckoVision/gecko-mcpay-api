@@ -31,7 +31,7 @@ export const DeferFrame: React.FC = () => {
 
         {/* Quick panel ping */}
         <div style={{ opacity: panelOp, marginTop: 14, color: COLORS.textMuted }}>
-          <span style={{ color: COLORS.mint, marginRight: 10 }}>●</span>
+          <span style={{ color: COLORS.accent, marginRight: 10 }}>●</span>
           Calling 7 voices… <span style={{ color: COLORS.textDim }}>·  responses in 3.1s</span>
         </div>
 
@@ -56,7 +56,7 @@ export const DeferFrame: React.FC = () => {
           </span>
           <span
             style={{
-              color: COLORS.amber,
+              color: COLORS.verdictDefer,
               fontSize: 38,
               fontWeight: 700,
               letterSpacing: 4,
@@ -82,7 +82,7 @@ export const DeferFrame: React.FC = () => {
               border: `1px solid ${COLORS.border}`,
             }}
           >
-            <div style={{ height: "100%", width: `${conf * 100}%`, background: COLORS.amber, opacity: 0.55 }} />
+            <div style={{ height: "100%", width: `${conf * 100}%`, background: COLORS.verdictDefer, opacity: 0.55 }} />
           </div>
         </div>
 
@@ -93,7 +93,7 @@ export const DeferFrame: React.FC = () => {
             padding: "26px 28px",
             background: COLORS.bgRaised,
             border: `1px solid ${COLORS.border}`,
-            borderLeft: `3px solid ${COLORS.amber}`,
+            borderLeft: `3px solid ${COLORS.verdictDefer}`,
             borderRadius: 8,
             opacity: honestOp,
           }}
@@ -104,14 +104,14 @@ export const DeferFrame: React.FC = () => {
           <div
             style={{
               color: COLORS.text,
-              fontSize: 30,
-              fontFamily: FONT.display,
-              fontWeight: 600,
+              fontSize: 28,
+              fontFamily: FONT.mono,
+              fontWeight: 500,
               marginTop: 10,
-              letterSpacing: -0.5,
+              letterSpacing: 0,
             }}
           >
-            Corpus too thin<span style={{ color: COLORS.amber }}>.</span> I won't pretend to know<span style={{ color: COLORS.amber }}>.</span>
+            Corpus too thin<span style={{ color: COLORS.verdictDefer }}>.</span> I won't pretend to know<span style={{ color: COLORS.verdictDefer }}>.</span>
           </div>
           <div style={{ color: COLORS.textMuted, fontSize: 16, marginTop: 10 }}>
             0 citations from market_data · 0 from paysh_live · 0 from canon. Defer is the only honest call.
