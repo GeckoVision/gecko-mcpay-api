@@ -43,5 +43,20 @@
       "69fd53953cc0ffe147e82282",
       "69fd25fc170ac73a47866517"
     ]
+  },
+  {
+    "executed_at": "2026-05-14T00:23:09.402524+00:00",
+    "class": "D",
+    "label": "paysh_live (whole-kind purge; all 64 empty)",
+    "planned": 64,
+    "deleted": 64,
+    "drift": 0,
+    "sample_deleted_ids": [
+      "6a020b8a171616cd80f33f9d",
+      "6a020b85171616cd80f33f9c",
+      "6a020b7d171616cd80f33f9b",
+      "6a020b78171616cd80f33f9a",
+      "6a020b73171616cd80f33f99"
+    ]
   }
 ]
