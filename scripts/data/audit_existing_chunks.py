@@ -8,12 +8,14 @@ first 80 chars of text) so the founder can decide what to purge.
 This script does NOT mutate the database. It is read-only. Purge
 decisions are explicit follow-ups (Pass 3 onward).
 
-Run:
+Run (no flags — picks up the prod DB via ``MONGODB_CHUNK_DB``):
+
+    uv run python scripts/data/audit_existing_chunks.py --top-samples 10
+
+Optional overrides for staging/test databases:
 
     uv run python scripts/data/audit_existing_chunks.py \\
-        --mongodb-uri "$MONGODB_URI" \\
-        --db gecko --collection chunks \\
-        --top-samples 10
+        --db gecko_rag_staging --collection chunks --mongodb-uri "$MONGODB_URI"
 
 Per ``feedback_no_secret_access``: pass the URI via env. Never echo it.
 
@@ -22,13 +24,22 @@ readable report to stderr.
 
 REACHABILITY:
     scripts/data/audit_existing_chunks.py
-      -> chunks_collection().find({}, projection={text:1, provider_kind:1, source:1, source_url:1})
+      -> gecko_core.db.mongo.chunks_collection() (single source of truth
+         for ``MONGODB_CHUNK_DB`` + ``CHUNKS_COLLECTION``; Pattern A)
+      -> .find({}, projection={text, provider_kind, source, source_url})
       -> assess_chunk_quality(doc['text']) per chunk
       -> Counter[(provider_kind, reason)]
       -> json dump to stdout
 
 The script is the canonical reachability probe for Pattern E ("wired ≠
 reaches the model"). Run it before AND after every corpus mutation.
+
+S30-#38 — defaults route through ``gecko_core.db.mongo.chunks_collection()``
+so the script targets the same DB+collection that production reads/writes.
+Previously this script defaulted to ``--db gecko`` (wrong) and respected
+``MONGO_DB`` (wrong env var); production uses ``gecko_rag`` and
+``MONGODB_CHUNK_DB``. That divergence is exactly the Pattern A violation
+the project conventions guard against.
 """
 
 from __future__ import annotations
@@ -42,6 +53,11 @@ import sys
 from collections import Counter, defaultdict
 from typing import Any
 
+from gecko_core.db.mongo import (
+    CHUNKS_COLLECTION,
+    chunk_db_name,
+    chunks_collection,
+)
 from gecko_core.ingestion.chunk_quality import assess_chunk_quality
 
 logger = logging.getLogger("audit_existing_chunks")
@@ -49,13 +65,18 @@ logger = logging.getLogger("audit_existing_chunks")
 
 async def run_audit(
     *,
-    mongodb_uri: str,
-    db_name: str,
-    collection_name: str,
     top_samples: int,
     batch_size: int,
+    mongodb_uri: str | None = None,
+    db_name: str | None = None,
+    collection_name: str | None = None,
 ) -> dict[str, Any]:
     """Iterate all chunks and produce a quality breakdown.
+
+    Defaults route through ``gecko_core.db.mongo.chunks_collection()`` —
+    the single source of truth for ``MONGODB_CHUNK_DB`` +
+    ``CHUNKS_COLLECTION``. Pass explicit ``db_name`` / ``collection_name``
+    / ``mongodb_uri`` only for staging or test databases.
 
     Returns a dict-shaped report:
         {
@@ -73,14 +94,34 @@ async def run_audit(
             ],
         }
     """
-    # Lazy import so importers that only want the type/signature don't
-    # need motor installed.
-    from motor.motor_asyncio import AsyncIOMotorClient
+    override_uri = mongodb_uri is not None
+    override_db = db_name is not None
+    override_coll = collection_name is not None
 
-    client: Any = AsyncIOMotorClient(mongodb_uri)
+    client: Any = None
+    if override_uri or override_db or override_coll:
+        # Explicit override path — open a one-off client targeted at the
+        # caller-specified database. Lazy import keeps motor optional.
+        from motor.motor_asyncio import AsyncIOMotorClient
+
+        uri = mongodb_uri or os.environ.get("MONGODB_URI")
+        if not uri:
+            raise RuntimeError("override path requires --mongodb-uri or MONGODB_URI env")
+        client = AsyncIOMotorClient(uri)
+        resolved_db = db_name or chunk_db_name()
+        resolved_coll = collection_name or CHUNKS_COLLECTION
+        coll: Any = client[resolved_db][resolved_coll]
+    else:
+        # Canonical path — production wiring via gecko_core.db.mongo.
+        coll = chunks_collection()
+        if coll is None:
+            raise RuntimeError(
+                "chunks_collection() returned None — set MONGODB_URI and "
+                "GECKO_CHUNK_STORE=mongo, or pass explicit --mongodb-uri / "
+                "--db / --collection overrides for a staging database."
+            )
+
     try:
-        coll = client[db_name][collection_name]
-
         total = 0
         by_reason: Counter[str] = Counter()
         by_pk: dict[str, dict[str, Any]] = defaultdict(
@@ -147,7 +188,8 @@ async def run_audit(
         }
         return report
     finally:
-        client.close()
+        if client is not None:
+            client.close()
 
 
 def _render_human(report: dict[str, Any]) -> str:
@@ -186,39 +228,57 @@ def _render_human(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def main() -> int:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
+    # Defaults intentionally None — when omitted, the script routes through
+    # gecko_core.db.mongo (single source of truth for MONGODB_CHUNK_DB +
+    # CHUNKS_COLLECTION). Pass overrides only for staging/test databases.
     parser.add_argument(
         "--mongodb-uri",
-        default=os.environ.get("MONGODB_URI"),
-        help="Mongo connection string (defaults to MONGODB_URI env)",
+        default=None,
+        help=(
+            "Mongo connection string override. Default: route through "
+            "gecko_core.db.mongo (respects MONGODB_URI env)."
+        ),
     )
-    parser.add_argument("--db", default=os.environ.get("MONGO_DB", "gecko"))
-    parser.add_argument("--collection", default="chunks")
+    parser.add_argument(
+        "--db",
+        default=None,
+        help=(
+            "Database override. Default: gecko_core.db.mongo.chunk_db_name() "
+            "(respects MONGODB_CHUNK_DB env; falls back to 'gecko_rag')."
+        ),
+    )
+    parser.add_argument(
+        "--collection",
+        default=None,
+        help=(
+            f"Collection override. Default: {CHUNKS_COLLECTION!r} "
+            "(gecko_core.db.mongo.CHUNKS_COLLECTION)."
+        ),
+    )
     parser.add_argument("--top-samples", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=200)
     parser.add_argument(
         "--out",
         help="Optional path to write the JSON report. stdout always gets it too.",
     )
-    args = parser.parse_args()
+    return parser
 
-    if not args.mongodb_uri:
-        print(
-            "error: pass --mongodb-uri or set MONGODB_URI env",
-            file=sys.stderr,
-        )
-        return 2
+
+def main() -> int:
+    parser = _build_parser()
+    args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     report = asyncio.run(
         run_audit(
+            top_samples=args.top_samples,
+            batch_size=args.batch_size,
             mongodb_uri=args.mongodb_uri,
             db_name=args.db,
             collection_name=args.collection,
-            top_samples=args.top_samples,
-            batch_size=args.batch_size,
         )
     )
 
