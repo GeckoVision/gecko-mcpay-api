@@ -28,5 +28,20 @@
       "6a0215fb5ecb74368afd1b1a",
       "6a02156f3169a51804eec468"
     ]
+  },
+  {
+    "executed_at": "2026-05-14T00:22:19.910636+00:00",
+    "class": "C",
+    "label": "twitsh stub fixtures (twitsh://session/*)",
+    "planned": 118,
+    "deleted": 118,
+    "drift": 0,
+    "sample_deleted_ids": [
+      "69fda6d03cc0ffe147e8233f",
+      "69fda6d03cc0ffe147e8233e",
+      "69fd53953cc0ffe147e82281",
+      "69fd53953cc0ffe147e82282",
+      "69fd25fc170ac73a47866517"
+    ]
   }
 ]
