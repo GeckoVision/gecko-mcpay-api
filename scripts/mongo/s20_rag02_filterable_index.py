@@ -67,10 +67,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from gecko_core.db.mongo import (
+    CHUNKS_COLLECTION,
     CHUNKS_VECTOR_FILTER_FIELDS,
     CHUNKS_VECTOR_LEGACY_FILTER_FIELDS,
     SEARCH_INDEX_NAME,
     VECTOR_INDEX_NAME,
+    chunk_db_name,
 )
 from gecko_core.db.mongo_chunks import MONGO_VECTOR_DIM_EXPECTED
 
@@ -291,8 +293,23 @@ def run(argv: list[str] | None = None, *, collection: Any = None) -> int:
         "--mongodb-uri",
         default=os.environ.get("MONGODB_URI") or os.environ.get("MONGO_URI"),
     )
-    parser.add_argument("--db", default=os.environ.get("MONGODB_CHUNK_DB", "gecko_rag"))
-    parser.add_argument("--collection", default="chunks")
+    # S30-#42: defaults None — route through gecko_core.db.mongo (Pattern A).
+    parser.add_argument(
+        "--db",
+        default=None,
+        help=(
+            "Database override. Default: gecko_core.db.mongo.chunk_db_name() "
+            "(respects $MONGODB_CHUNK_DB; falls back to 'gecko_rag')."
+        ),
+    )
+    parser.add_argument(
+        "--collection",
+        default=None,
+        help=(
+            f"Collection override. Default: {CHUNKS_COLLECTION!r} "
+            "(gecko_core.db.mongo.CHUNKS_COLLECTION)."
+        ),
+    )
     args = parser.parse_args(argv)
 
     apply_mode = bool(args.apply)
@@ -338,7 +355,10 @@ def run(argv: list[str] | None = None, *, collection: Any = None) -> int:
                 file=sys.stderr,
             )
             return 2
-        collection = _open_collection(args.mongodb_uri, args.db, args.collection)
+        # Pattern A: resolve via canonical accessor when overrides absent.
+        db_name = args.db if args.db is not None else chunk_db_name()
+        coll_name = args.collection if args.collection is not None else CHUNKS_COLLECTION
+        collection = _open_collection(args.mongodb_uri, db_name, coll_name)
 
     try:
         v_status = apply_index(collection, definition=vector_def, rebuild=args.rebuild)
