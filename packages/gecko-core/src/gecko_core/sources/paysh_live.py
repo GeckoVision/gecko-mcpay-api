@@ -303,19 +303,119 @@ def _split_into_chunks(text: str, *, words_per_chunk: int = DEFAULT_CHUNK_WORDS)
     return chunks
 
 
+def _compact_scalar(value: Any) -> str:
+    """Render a scalar JSON value for prose output.
+
+    Long opaque strings (mints, signatures, hex digests) are truncated
+    head…tail so the prose stays readable without losing identity. Bools
+    and numbers stringify directly; None becomes ``null``.
+    """
+    if value is None:
+        return "null"
+    if isinstance(value, str):
+        if len(value) <= 80:
+            return value
+        return f"{value[:40]}…{value[-8:]}"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _flatten_json_to_prose(
+    value: Any,
+    *,
+    max_depth: int = 4,
+    max_items: int = 40,
+) -> str:
+    """Render parsed JSON as readable ``key: value`` prose.
+
+    S33-#66: the previous renderer used ``json.dumps(body, indent=2)``,
+    which produces chunks the trade-panel judge correctly marks as
+    irrelevant — e.g. an opaque blob of `{"apy": "0.06...", "tokenMint":
+    "5oVNBeE..."}` with curly braces and quotes carries no narrative
+    weight. The flattened form ``[0].apy: 0.06 / [0].tokenMint: 5oVNBeE…``
+    surfaces the same fields as scannable prose. Depth + item caps keep
+    runaway payloads bounded.
+    """
+    lines: list[str] = []
+    _flatten_walk(
+        value,
+        prefix="",
+        lines=lines,
+        max_depth=max_depth,
+        max_items=max_items,
+        depth=0,
+    )
+    return "\n".join(lines)
+
+
+def _flatten_walk(
+    value: Any,
+    *,
+    prefix: str,
+    lines: list[str],
+    max_depth: int,
+    max_items: int,
+    depth: int,
+) -> None:
+    if depth > max_depth:
+        if prefix:
+            lines.append(f"{prefix}: (depth cap)")
+        return
+    if isinstance(value, dict):
+        items = list(value.items())
+        for k, v in items[:max_items]:
+            new_prefix = f"{prefix}.{k}" if prefix else str(k)
+            if isinstance(v, (dict, list)) and v:
+                _flatten_walk(
+                    v,
+                    prefix=new_prefix,
+                    lines=lines,
+                    max_depth=max_depth,
+                    max_items=max_items,
+                    depth=depth + 1,
+                )
+            else:
+                lines.append(f"{new_prefix}: {_compact_scalar(v)}")
+        if len(items) > max_items:
+            lines.append(f"{prefix or 'root'}: … ({len(items) - max_items} more keys omitted)")
+    elif isinstance(value, list):
+        for i, item in enumerate(value[:max_items]):
+            new_prefix = f"{prefix}[{i}]" if prefix else f"[{i}]"
+            if isinstance(item, (dict, list)) and item:
+                _flatten_walk(
+                    item,
+                    prefix=new_prefix,
+                    lines=lines,
+                    max_depth=max_depth,
+                    max_items=max_items,
+                    depth=depth + 1,
+                )
+            else:
+                lines.append(f"{new_prefix}: {_compact_scalar(item)}")
+        if len(value) > max_items:
+            lines.append(
+                f"{prefix or 'root'}: … ({len(value) - max_items} more items omitted)"
+            )
+    else:
+        lines.append(f"{prefix}: {_compact_scalar(value)}" if prefix else _compact_scalar(value))
+
+
 def _stringify_response(body: Any, fallback_text: str) -> str:
     """Pure: render a response body to text for chunking.
 
-    JSON dicts/lists pretty-print to a stable readable form. Strings
-    pass through. Anything else falls back to the raw response text.
+    Strings pass through. Dicts/lists are flattened to ``key: value``
+    prose via :func:`_flatten_json_to_prose` — the prior implementation
+    used ``json.dumps(body, indent=2)`` which produced chunks the trade
+    panel's rubric judge marked as opaque blobs (S33 data-engineer audit,
+    2026-05-14). Empty flattening or unsupported types fall back to the
+    raw response text.
     """
     if isinstance(body, str):
         return body
     if isinstance(body, (dict, list)):
-        try:
-            return json.dumps(body, indent=2, sort_keys=True, ensure_ascii=False)
-        except (TypeError, ValueError):
-            return fallback_text
+        prose = _flatten_json_to_prose(body)
+        return prose if prose.strip() else fallback_text
     return fallback_text
 
 
@@ -334,6 +434,17 @@ def _build_chunks(
     a charge by design (one paid call → N chunks).
     """
     body_text = _stringify_response(response.response_body, response.response_text)
+    # S33-#66: prepend a provenance header so the rubric judge — which
+    # sees only ``snippet[:240]`` of each Citation — gets fqn + category
+    # + title before falling into the flattened JSON keys. Without this
+    # header, citations open with ``[0].apy: 0.06`` and the judge has no
+    # idea what protocol the data describes.
+    header = (
+        f"Paysh paid response: {fqn} "
+        f"(category={provider.category or 'unknown'}, "
+        f"title={provider.title or fqn}). "
+    )
+    body_text = header + body_text
     sections = _split_into_chunks(body_text)
     if not sections:
         # An empty response body is still ledger-worthy; emit a single

@@ -178,6 +178,48 @@ def test_stringify_response_string_passthrough() -> None:
     assert _stringify_response("hello world", fallback_text="x") == "hello world"
 
 
+def test_stringify_response_flattens_kamino_style_vault_list() -> None:
+    """S33-#66: per data-engineer audit, Kamino-shaped lists used to render
+    as `json.dumps(...)` blobs with curly braces — the rubric judge marked
+    them irrelevant. The flattened renderer must emit ``[0].key: value``
+    prose so apy / mint / tvl read as scannable lines.
+    """
+    body = [
+        {"apy": "0.0609", "tokenMint": "5oVNBeEE...", "name": "JLP-USDC"},
+        {"apy": "0.0591", "tokenMint": "Other...", "name": "SOL-USDC"},
+    ]
+    out = _stringify_response(body, fallback_text="fallback")
+    # Prose markers — no JSON braces, no quote-wrapped keys.
+    assert "{" not in out and "}" not in out
+    assert '"apy"' not in out
+    # Indexed flat prefix surfaces the per-item fields.
+    assert "[0].apy:" in out
+    assert "[0].name:" in out
+    assert "[1].name:" in out
+
+
+def test_build_chunks_prepends_provenance_header() -> None:
+    """S33-#66: every chunk must start with ``Paysh paid response: <fqn>
+    (category=...)`` so the rubric judge's first-240-char snippet view
+    carries protocol provenance before falling into flattened keys.
+    """
+    provider = _make_provider()
+    body = {"apy": "0.06", "tvl": 58234000}
+    response = PaidResponse(
+        status_code=200,
+        cost_usd=0.05,
+        response_body=body,
+        response_text=json.dumps(body),
+        content_type="application/json",
+        tx_signature="sig",
+        response_sha=_hash_body(json.dumps(body)),
+    )
+    chunks = _build_chunks(fqn="kamino/vaults", provider=provider, response=response, query="q")
+    assert chunks
+    assert chunks[0]["text"].startswith("Paysh paid response: kamino/vaults ")
+    assert "category=" in chunks[0]["text"][:240]
+
+
 # ---------------------------------------------------------------------------
 # Pattern C — recorded-fixture replay against a stand-in PaidRequester.
 # ---------------------------------------------------------------------------
