@@ -73,5 +73,20 @@
       "69fc3993c14f4b7af2b6b300",
       "69fc3992c14f4b7af2b6b2ff"
     ]
+  },
+  {
+    "executed_at": "2026-05-14T00:24:40.883978+00:00",
+    "class": "F",
+    "label": "web test fixtures (^chunk text \\d+$)",
+    "planned": 10,
+    "deleted": 10,
+    "drift": 0,
+    "sample_deleted_ids": [
+      "69f64eca5c55500997670ffe",
+      "69f64eca5c55500997670fff",
+      "69f64eca5c55500997671000",
+      "69f64eca5c55500997671001",
+      "69f64eca5c55500997671002"
+    ]
   }
 ]
