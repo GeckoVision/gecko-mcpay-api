@@ -113,6 +113,7 @@ async def insert_chunks_mongo(
     protocol: list[str] | tuple[str, ...] = (),
     content_kind: ContentKind = "unknown",
     is_stale: bool = False,
+    metadata_extra: dict[str, Any] | None = None,
 ) -> int:
     """Bulk-insert chunks. Returns count of *new* documents written.
 
@@ -255,6 +256,15 @@ async def insert_chunks_mongo(
     # the key; the revoke script's path stamps it True.
     if deprecated:
         metadata["deprecated"] = True
+    # S31-#50 — caller-supplied additive metadata (e.g. {"subkind":
+    # "mev_tip_data"}). Merged AFTER the canonical fields so callers cannot
+    # clobber confidence / usage_count / timestamp / pioneer / deprecated;
+    # any collision is silently dropped to preserve the invariant.
+    if metadata_extra:
+        for k, v in metadata_extra.items():
+            if k in metadata:
+                continue
+            metadata[k] = v
     docs: list[dict[str, Any]] = [
         {
             "session_id": str(session_id),

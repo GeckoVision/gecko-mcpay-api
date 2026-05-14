@@ -87,6 +87,8 @@ def test_canonical_provider_kinds_value() -> None:
         "canon_youtube",
         "canon_berkshire",
         "canon_macro",
+        # S31-#50 — free, public protocol-native API + docs content.
+        "protocol_native",
     )
 
 

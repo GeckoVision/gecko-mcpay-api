@@ -117,6 +117,8 @@ KnowledgeSource = Literal[
     "paysh_live",
     "user_query",
     "enriched_output",
+    # S31-#50 — free, public protocol-native API + docs content.
+    "protocol_native",
 ]
 """Static type alias. Keep in sync with KNOWLEDGE_SOURCES manually.
 
@@ -144,6 +146,7 @@ KNOWLEDGE_SOURCES: Final[tuple[KnowledgeSource, ...]] = (
     "paysh_live",
     "user_query",
     "enriched_output",
+    "protocol_native",
 )
 """Runtime tuple — used by Mongo validators."""
 
