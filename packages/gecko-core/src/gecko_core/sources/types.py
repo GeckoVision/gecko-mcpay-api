@@ -61,12 +61,32 @@ ProviderKind = Literal[
     # ground every coach decision in attributed investor-canon citations
     # blended with live on-chain freshness data. See
     # docs/strategy/2026-05-11-trade-vertical-expansion.md §6.
-    "canon_marks",       # Howard Marks / Oaktree client memos
-    "canon_damodaran",   # Aswath Damodaran / NYU Stern PDFs + posts
+    "canon_marks",  # Howard Marks / Oaktree client memos
+    "canon_damodaran",  # Aswath Damodaran / NYU Stern PDFs + posts
     "canon_mauboussin",  # Michael Mauboussin / Morgan Stanley papers
-    "canon_youtube",     # Patrick Boyle, Ben Felix, Mauboussin transcripts
-    "canon_berkshire",   # Berkshire Hathaway shareholder letters 1965-now
-    "canon_macro",       # Fed, BIS, IMF working papers
+    "canon_youtube",  # Patrick Boyle, Ben Felix, Mauboussin transcripts
+    "canon_berkshire",  # Berkshire Hathaway shareholder letters 1965-now
+    "canon_macro",  # Fed, BIS, IMF working papers
+    # S24 WS-A — live market-data grounding. Pyth historical daily candles
+    # + DefiLlama TVL snapshots per protocol. ai-ml-engineer review
+    # (2026-05-12): 3/7 panel voices structurally hallucinate without
+    # market data; technical_analyst cannot ground on Marks memos. Chunks
+    # surface alongside canon (cross-cutting) but tag the protocol so
+    # protocol-equality $match also catches them. See
+    # docs/strategy/2026-05-12-s24-plan.md §4 WS-A and
+    # packages/gecko-core/src/gecko_core/sources/market_data.py.
+    "market_data",
+    # S26 #14 — direct protocol-native API ingest. Chunks pulled from a
+    # protocol's own public API/docs (e.g. Kamino's api.kamino.finance,
+    # Drift's dlob.drift.trade, Jupiter's stats.jup.ag, Jito's kobe
+    # endpoint, Sanctum's public API). Distinct from `paysh_live` which
+    # is per-request paid x402 retrieval against pay.sh-listed providers;
+    # this is free public-API content seeded into the corpus once and
+    # reused across sessions. Retrieval admittance: protocol_native is
+    # treated like paysh_live/bazaar_live in `_apply_retrieval_boosts` —
+    # +0.10 PROVIDER_SPECIFIC boost when protocol matches. See
+    # docs/strategy/2026-05-13-s26-corpus-reingest-handoff.md.
+    "protocol_native",
 ]
 """Static type alias for the ``chunks.provider_kind`` /
 ``sources.provider_kind`` column. Every consumer imports from here."""
@@ -79,8 +99,11 @@ PROVIDER_KINDS: Final[tuple[str, ...]] = get_args(ProviderKind)
 # paysh/bazaar snapshots refreshed on a cadence) from live_only (single-call
 # results never persisted to the vector store). Drift-guarded by
 # ``tests/test_provider_kind_consistency.py::test_freshness_tier_values_match_sql_check``.
-FreshnessTier = Literal["static", "daily", "live_only"]
-FRESHNESS_TIER_VALUES: tuple[FreshnessTier, ...] = ("static", "daily", "live_only")
+# 'hot' (S24 WS-A) = sub-hour cadence market data (Pyth, DefiLlama); embedded
+#   into the vector store so the panel can cite it. Distinct from
+#   'live_only' which is "fetch on request, never persist".
+FreshnessTier = Literal["static", "daily", "live_only", "hot"]
+FRESHNESS_TIER_VALUES: tuple[FreshnessTier, ...] = ("static", "daily", "live_only", "hot")
 
 # --- Content kind (Pattern A: SQL CHECK in 20260508140000 mirrors this) ---
 # 'quote'      = price/TVL/APY snapshots; 24h TTL.
