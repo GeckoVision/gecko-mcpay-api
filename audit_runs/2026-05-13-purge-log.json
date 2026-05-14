@@ -58,5 +58,20 @@
       "6a020b78171616cd80f33f9a",
       "6a020b73171616cd80f33f99"
     ]
+  },
+  {
+    "executed_at": "2026-05-14T00:23:55.710832+00:00",
+    "class": "E",
+    "label": "bazaar_manifest thin (text length < 200)",
+    "planned": 46,
+    "deleted": 46,
+    "drift": 0,
+    "sample_deleted_ids": [
+      "69fc3996c14f4b7af2b6b305",
+      "69fc3996c14f4b7af2b6b304",
+      "69fc3994c14f4b7af2b6b301",
+      "69fc3993c14f4b7af2b6b300",
+      "69fc3992c14f4b7af2b6b2ff"
+    ]
   }
 ]
