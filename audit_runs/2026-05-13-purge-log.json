@@ -88,5 +88,20 @@
       "69f64eca5c55500997671001",
       "69f64eca5c55500997671002"
     ]
+  },
+  {
+    "executed_at": "2026-05-14T00:25:51.480330+00:00",
+    "class": "G",
+    "label": "assorted too_short (paysh_manifest+market_data+canon_damodaran+web-thin leftovers)",
+    "planned": 44,
+    "deleted": 44,
+    "drift": 0,
+    "sample_deleted_ids": [
+      "6a021a5c600a85667fd2c108",
+      "6a021a48600a85667fd2c08b",
+      "6a02e49d5fd7b227d635b3a0",
+      "6a02e4985fd7b227d635b39d",
+      "6a02e48e5fd7b227d635b399"
+    ]
   }
 ]
