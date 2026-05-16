@@ -1,0 +1,1227 @@
+{
+  "date": "2026-05-16",
+  "tier": "basic",
+  "suite": "defi_trade_rubric_suite.json",
+  "n_fixtures_loaded": 10,
+  "n_scored": 10,
+  "aggregate": {
+    "n": 10,
+    "overall_pass_rate": 0.0,
+    "per_dimension_means": {
+      "verdict_accuracy": 0.9,
+      "citation_relevance": 0.21,
+      "provider_kind_coverage": 0.0,
+      "hallucination_score": 0.45,
+      "dissent_grounding": 0.56,
+      "confidence_calibration": 0.515
+    },
+    "per_dimension_pass_rate": {
+      "verdict_accuracy": 0.9,
+      "citation_relevance": 0.2,
+      "provider_kind_coverage": 0.0,
+      "hallucination_score": 0.5,
+      "dissent_grounding": 1.0,
+      "confidence_calibration": 0.4
+    },
+    "thresholds": {
+      "verdict_accuracy": 0.85,
+      "citation_relevance": 0.5,
+      "provider_kind_coverage": 0.7,
+      "hallucination_score": 0.3,
+      "dissent_grounding": 0.5,
+      "confidence_calibration": 0.55
+    }
+  },
+  "rows": [
+    {
+      "id": "kamino-2024Q3-jlpusdc-entry",
+      "protocol": "kamino",
+      "vertical": "dex",
+      "as_of_date": "2024-08-12",
+      "panel": {
+        "verdict": "act",
+        "confidence": 0.75,
+        "dissent_count": 2,
+        "blocker_questions": [
+          "Will the total value locked (TVL) in the Kamino vault increase above $1,000 in the next month?",
+          "Is there a plan for a security audit of the smart contracts in the near future?"
+        ],
+        "n_citations": 15,
+        "provider_kinds_present": [
+          "protocol_native"
+        ],
+        "citations": [
+          {
+            "id": 1,
+            "chunk_id": "6a03d76b83de92abcb720058",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "Protocol-native API: kamino / kamino-vaults (as of 2026-05-13).\nEndpoint description: Kamino K-Vaults catalog \u2014 vault adminAuthority, tokenMint, tokenVault, vault state config. Includes Multiply / Leverage / Yield vault types with their per"
+          },
+          {
+            "id": 2,
+            "chunk_id": "6a080831aaf2166d3b4dea2a",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.0537841073667378319, token mint jag58eRBC1c88LaAsRPspTMvoKJPbnzw9p9fREzHqyV. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 3,
+            "chunk_id": "6a082180aa6c13519ea1c232",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.0537841073667378319, token mint jag58eRBC1c88LaAsRPspTMvoKJPbnzw9p9fREzHqyV. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 4,
+            "chunk_id": "6a080828aaf2166d3b4de9d7",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "Protocol-native API: kamino/kamino-vaults (as of 2026-05-16). Kamino kamino-vaults. Source: https://api.kamino.finance/kvaults/vaults."
+          },
+          {
+            "id": 5,
+            "chunk_id": "6a080828aaf2166d3b4de9cc",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "Protocol-native API: kamino/kamino-vaults (as of 2026-05-16). Kamino kamino-vaults. Source: https://api.kamino.finance/kvaults/vaults."
+          },
+          {
+            "id": 6,
+            "chunk_id": "6a080828aaf2166d3b4de9c8",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "Protocol-native API: kamino/kamino-vaults (as of 2026-05-16). Kamino kamino-vaults. Source: https://api.kamino.finance/kvaults/vaults."
+          },
+          {
+            "id": 7,
+            "chunk_id": "6a080828aaf2166d3b4de9c5",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "Protocol-native API: kamino/kamino-vaults (as of 2026-05-16). Kamino kamino-vaults. Source: https://api.kamino.finance/kvaults/vaults."
+          },
+          {
+            "id": 8,
+            "chunk_id": "6a080828aaf2166d3b4de9c4",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "Protocol-native API: kamino/kamino-vaults (as of 2026-05-16). Kamino kamino-vaults. Source: https://api.kamino.finance/kvaults/vaults."
+          },
+          {
+            "id": 9,
+            "chunk_id": "6a080828aaf2166d3b4de9c0",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "Protocol-native API: kamino/kamino-vaults (as of 2026-05-16). Kamino kamino-vaults. Source: https://api.kamino.finance/kvaults/vaults."
+          },
+          {
+            "id": 10,
+            "chunk_id": "6a080828aaf2166d3b4de9bd",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "Protocol-native API: kamino/kamino-vaults (as of 2026-05-16). Kamino kamino-vaults. Source: https://api.kamino.finance/kvaults/vaults."
+          },
+          {
+            "id": 11,
+            "chunk_id": "6a080828aaf2166d3b4de9bc",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "Protocol-native API: kamino/kamino-vaults (as of 2026-05-16). Kamino kamino-vaults. Source: https://api.kamino.finance/kvaults/vaults."
+          },
+          {
+            "id": 12,
+            "chunk_id": "6a080828aaf2166d3b4de9b8",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "Protocol-native API: kamino/kamino-vaults (as of 2026-05-16). Kamino kamino-vaults. Source: https://api.kamino.finance/kvaults/vaults."
+          },
+          {
+            "id": 13,
+            "chunk_id": "6a080828aaf2166d3b4de9d8",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "Protocol-native API: kamino/kamino-vaults (as of 2026-05-16). Kamino kamino-vaults. Source: https://api.kamino.finance/kvaults/vaults."
+          },
+          {
+            "id": 14,
+            "chunk_id": "6a080828aaf2166d3b4de9d2",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "Protocol-native API: kamino/kamino-vaults (as of 2026-05-16). Kamino kamino-vaults. Source: https://api.kamino.finance/kvaults/vaults."
+          },
+          {
+            "id": 15,
+            "chunk_id": "6a080828aaf2166d3b4de9cf",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "Protocol-native API: kamino/kamino-vaults (as of 2026-05-16). Kamino kamino-vaults. Source: https://api.kamino.finance/kvaults/vaults."
+          }
+        ]
+      },
+      "fixture_expected": {
+        "expected_verdict_v2": "ACT",
+        "expected_verdict_v2_set": [
+          "ACT",
+          "DEFER"
+        ],
+        "must_cite_provider_kinds": [
+          "paysh_live",
+          "market_data",
+          "canon_marks",
+          "canon_damodaran",
+          "canon_berkshire"
+        ],
+        "expected_dissent_topics": [
+          "smart_contract_risk",
+          "leverage_unwind_risk",
+          "vault_parameter_change_risk"
+        ]
+      },
+      "scores": {
+        "verdict_accuracy": 1.0,
+        "citation_relevance": 0.5,
+        "provider_kind_coverage": 0.0,
+        "hallucination_score": 0.0,
+        "dissent_grounding": 0.7,
+        "confidence_calibration": 0.4
+      },
+      "passed": false,
+      "judge_notes": "Citation relevance: All 15 citations are from Kamino protocol-native APIs (kvaults/vaults and staking-yields), which are on-topic for the protocol but citations 1-15 are nearly all duplicates of the same two endpoints with no market_data, canon (Marks/Damodaran), or paysh_live sources. No JLP price context, no leverage/yield canon. Heavily redundant and missing required source diversity \u2014 scored 0.5. Hallucination: The fundamental_analyst and risk_manager both cite TVL of 'approximately $1,000' and the sentiment/bull-bear agents cite APY of '5.38%' \u2014 the APY figure appears to come from citation [2] (staking-yields API showing 0.0537...), so that is marginally sourced. However, the TVL figure of '$1,000' is stated as a concrete number with no matching market_data or paysh_live source \u2014 this is a must_not_hallucinate violation (specific TVL figure cited from what appears to be a canon memo only, not a live market_data source). Score: 0.0. Dissent grounding: Smart contract risk is clearly surfaced by the risk_manager and blocker question #2 explicitly asks about security audit. Leverage unwind risk is not concretely addressed. Vault parameter change risk is absent. One expected dissent topic (smart_contract_risk) is clearly present; others are missing \u2014 scored 0.7. Confidence calibration: Panel states 0.75 confidence but citations are almost entirely duplicate protocol-native vault catalog entries with no market_data, no canon leverage/yield sources, and 2 dissenting agents flagging elevated risk. 0.75 is overconfident given thin, redundant citation base and elevated risk band \u2014 scored 0.4.",
+      "wall_seconds": {
+        "panel": 93.63,
+        "judge": 13.43
+      }
+    },
+    {
+      "id": "kamino-2024Q4-sol-leverage-entry",
+      "protocol": "kamino",
+      "vertical": "lending",
+      "as_of_date": "2024-11-05",
+      "panel": {
+        "verdict": "defer",
+        "confidence": 0.3,
+        "dissent_count": 4,
+        "blocker_questions": [
+          "What is the current health status of the Kamino protocol, including any recent audits or governance changes?",
+          "What are the prevailing market conditions for SOL, including technical indicators and trading volume trends?"
+        ],
+        "n_citations": 0,
+        "provider_kinds_present": [],
+        "citations": []
+      },
+      "fixture_expected": {
+        "expected_verdict_v2": "DEFER",
+        "expected_verdict_v2_set": [
+          "ACT",
+          "DEFER"
+        ],
+        "must_cite_provider_kinds": [
+          "market_data",
+          "canon_marks",
+          "canon_damodaran",
+          "canon_berkshire",
+          "paysh_live"
+        ],
+        "expected_dissent_topics": [
+          "liquidation_cascade_risk",
+          "drawdown_path_risk",
+          "audit_status_uncertainty",
+          "leverage_unwind_risk"
+        ]
+      },
+      "scores": {
+        "verdict_accuracy": 1.0,
+        "citation_relevance": 0.0,
+        "provider_kind_coverage": 0.0,
+        "hallucination_score": 0.5,
+        "dissent_grounding": 0.5,
+        "confidence_calibration": 0.7
+      },
+      "passed": false,
+      "judge_notes": "citation_relevance: Panel returned zero citations (n_citations=0, citations=[]), so there is nothing to score as relevant or irrelevant \u2014 scored 0.0 by default. hallucination_score: The question itself supplies \"$165\" as the user's stated price, and the panel repeats it in context without claiming it as a sourced market fact, which is borderline. However, the fundamental_analyst verdict of \"protocol health: degraded\" is asserted with zero supporting data or citations \u2014 this is a fabricated qualitative claim with no grounding, matching the must_not_hallucinate spirit of unsourced specific claims. Scored 0.5 (partial hallucination: no hard number hallucination, but unsourced protocol-health assertion). dissent_grounding: The risk_manager turn explicitly raises smart-contract risk (maps to audit_status_uncertainty) and operational risk (maps to leverage_unwind_risk), and the bull_bear_debater raises sharp price decline risk (maps to drawdown_path_risk). However, liquidation_cascade_risk \u2014 the most critical expected dissent topic for a 3x leveraged position \u2014 is never concretely named or quantified; it is only vaguely implied. Expected dissent topics are hinted at but not concretely grounded with canon references (Marks on cycles, Damodaran on leverage are absent). Scored 0.5. confidence_calibration: Panel returns confidence=0.3 with a DEFER verdict and dissent_count=4, which is directionally appropriate given zero citations and high uncertainty. Low confidence with high dissent and no data is well-calibrated. Scored 0.7 (slight deduction because the zero-citation state arguably warrants even lower confidence or an explicit \"insufficient data\" flag rather than a structured verdict).",
+      "wall_seconds": {
+        "panel": 101.37,
+        "judge": 12.95
+      }
+    },
+    {
+      "id": "kamino-2025Q1-jitosol-vault",
+      "protocol": "kamino",
+      "vertical": "dex",
+      "as_of_date": "2025-02-18",
+      "panel": {
+        "verdict": "defer",
+        "confidence": 0.7,
+        "dissent_count": 1,
+        "blocker_questions": [
+          "What is the sustainability of the APY for JitoSOL over the next 30 days?",
+          "Are there any recent audits or security assessments of the Kamino protocol that mitigate identified risks?"
+        ],
+        "n_citations": 15,
+        "provider_kinds_present": [
+          "protocol_native"
+        ],
+        "citations": [
+          {
+            "id": 1,
+            "chunk_id": "6a080823aaf2166d3b4de99c",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/kamino-market",
+            "snippet": "Protocol-native API: kamino/kamino-markets (as of 2026-05-16). Kamino Jito Market \u2014 described as JitoSOL-SOL 10x leverage pool, lending-market pubkey H6rHXmXoCQvq8Ue81MqNh7ow5ysPa1dSozwW3PU1dDH6. Source: https://api.kamino.finance/v2/kamino"
+          },
+          {
+            "id": 2,
+            "chunk_id": "6a082176aa6c13519ea1c1a4",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/kamino-market",
+            "snippet": "Protocol-native API: kamino/kamino-markets (as of 2026-05-16). Kamino Jito Market \u2014 described as JitoSOL-SOL 10x leverage pool, lending-market pubkey H6rHXmXoCQvq8Ue81MqNh7ow5ysPa1dSozwW3PU1dDH6. Source: https://api.kamino.finance/v2/kamino"
+          },
+          {
+            "id": 3,
+            "chunk_id": "6a03d77483de92abcb7200c3",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino / kamino-staking-yields (as of 2026-05-13).\nEndpoint description: Kamino-tracked LST staking-yield snapshots \u2014 JitoSOL, mSOL, bSOL, INF current APY + 7d trailing. Quote-kind, refreshable.\nSource URL: https://api."
+          },
+          {
+            "id": 4,
+            "chunk_id": "6a080831aaf2166d3b4dea0e",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.061364789247030438, token mint jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 5,
+            "chunk_id": "6a082180aa6c13519ea1c216",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.061364789247030438, token mint jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 6,
+            "chunk_id": "6a080823aaf2166d3b4de9a1",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/kamino-market",
+            "snippet": "Protocol-native API: kamino/kamino-markets (as of 2026-05-16). Kamino Marinade Market \u2014 described as MSOL-SOL 10x leverage pool, lending-market pubkey GVDUXFwS8uvBG35RjZv6Y8S1AkV5uASiMJ9qTUKqb5PL. Source: https://api.kamino.finance/v2/kamin"
+          },
+          {
+            "id": 7,
+            "chunk_id": "6a082176aa6c13519ea1c1a9",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/kamino-market",
+            "snippet": "Protocol-native API: kamino/kamino-markets (as of 2026-05-16). Kamino Marinade Market \u2014 described as MSOL-SOL 10x leverage pool, lending-market pubkey GVDUXFwS8uvBG35RjZv6Y8S1AkV5uASiMJ9qTUKqb5PL. Source: https://api.kamino.finance/v2/kamin"
+          },
+          {
+            "id": 8,
+            "chunk_id": "6a080831aaf2166d3b4dea10",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.05388030622994532, token mint vSoLxydx6akxyMD9XEcPvGYNGq6Nn66oqVb3UkGkei7. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 9,
+            "chunk_id": "6a082180aa6c13519ea1c218",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.05388030622994532, token mint vSoLxydx6akxyMD9XEcPvGYNGq6Nn66oqVb3UkGkei7. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 10,
+            "chunk_id": "6a082180aa6c13519ea1c211",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.056612477266797824, token mint J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 11,
+            "chunk_id": "6a080831aaf2166d3b4dea09",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.056612477266797824, token mint J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 12,
+            "chunk_id": "6a080831aaf2166d3b4dea06",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.0582212021240425622, token mint mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 13,
+            "chunk_id": "6a082180aa6c13519ea1c20e",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.0582212021240425622, token mint mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 14,
+            "chunk_id": "6a082180aa6c13519ea1c222",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.0059214846463842062, token mint ezSoL6fY1PVdJcJsUpe5CM3xkfmy3zoVCABybm5WtiC. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 15,
+            "chunk_id": "6a080831aaf2166d3b4dea1a",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.0059214846463842062, token mint ezSoL6fY1PVdJcJsUpe5CM3xkfmy3zoVCABybm5WtiC. Source: https://api.kamino.finance/v2/staking-yields."
+          }
+        ]
+      },
+      "fixture_expected": {
+        "expected_verdict_v2": "DEFER",
+        "expected_verdict_v2_set": [
+          "PASS",
+          "DEFER"
+        ],
+        "must_cite_provider_kinds": [
+          "paysh_live",
+          "market_data",
+          "canon_damodaran",
+          "canon_marks"
+        ],
+        "expected_dissent_topics": [
+          "marginal_yield_uplift_risk",
+          "peg_deviation_risk",
+          "transaction_cost_overhead"
+        ]
+      },
+      "scores": {
+        "verdict_accuracy": 1.0,
+        "citation_relevance": 0.55,
+        "provider_kind_coverage": 0.0,
+        "hallucination_score": 0.0,
+        "dissent_grounding": 0.5,
+        "confidence_calibration": 0.65
+      },
+      "passed": false,
+      "judge_notes": "Citation relevance: All 15 citations are from Kamino protocol-native APIs (kamino-markets and staking-yields), which are on-topic for the protocol but many are duplicates and several cover non-JitoSOL LSTs (mSOL, vSOL, JupSOL, ezSOL), making roughly half tangential to the specific JitoSOL-SOL vault question. No canon yield-trap prudence source or Kamino vault manifest is cited. Hallucination: The coordinator and sentiment analyst cite ~6.14% APY for JitoSOL \u2014 this figure does appear in citation [4] (APY 0.061364...) from a protocol_native source, so it is technically sourced. However, the token mint in [4] is jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v (jupSOL, not JitoSOL). Attributing this APY to JitoSOL is a factual misattribution \u2014 a hallucination pattern. Score: 0.0. Dissent grounding: The risk manager raises smart contract and operational risks (touching transaction_cost_overhead and marginal_yield_uplift_risk tangentially), and the bull-bear debater hints at peg deviation implicitly via volatility/leverage risk, but peg_deviation_risk as a concrete expected dissent topic is not explicitly named. marginal_yield_uplift_risk is hinted at but not concretely framed as 'thin yield differential.' Score: 0.5. Confidence calibration: DEFER at 0.7 is reasonable given thin cites and 1 dissent, but slightly overconfident given the misattributed APY data and absence of a Kamino vault manifest or canon yield-trap source. Score: 0.65.",
+      "wall_seconds": {
+        "panel": 60.98,
+        "judge": 13.58
+      }
+    },
+    {
+      "id": "kamino-2025Q3-usdc-pyusd-exit",
+      "protocol": "kamino",
+      "vertical": "dex",
+      "as_of_date": "2025-07-22",
+      "panel": {
+        "verdict": "defer",
+        "confidence": 0.7,
+        "dissent_count": 2,
+        "blocker_questions": [
+          "Does the APY for the Kamino USDC-PYUSD vault increase above 1% over the next 30 days?",
+          "What is the current status of audits or security assessments for the Kamino protocol?"
+        ],
+        "n_citations": 15,
+        "provider_kinds_present": [
+          "protocol_native"
+        ],
+        "citations": [
+          {
+            "id": 1,
+            "chunk_id": "6a080831aaf2166d3b4dea2b",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.0303333556786011283, token mint 6umRHtiuBd1PC6HQhfH9ioNsqY4ihZncZXNPiGu3d3rN. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 2,
+            "chunk_id": "6a082180aa6c13519ea1c233",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.0303333556786011283, token mint 6umRHtiuBd1PC6HQhfH9ioNsqY4ihZncZXNPiGu3d3rN. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 3,
+            "chunk_id": "6a080831aaf2166d3b4dea14",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.0549264036619016591, token mint picobAEvs6w7QEknPce34wAE4gknZA9v5tTonnmHYdX. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 4,
+            "chunk_id": "6a082180aa6c13519ea1c21c",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.0549264036619016591, token mint picobAEvs6w7QEknPce34wAE4gknZA9v5tTonnmHYdX. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 5,
+            "chunk_id": "6a080831aaf2166d3b4dea24",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.063667546775499804, token mint pSo1f9nQXWgXibFtKf7NWYxb5enAM4qfP6UJSiXRQfL. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 6,
+            "chunk_id": "6a082180aa6c13519ea1c22c",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.063667546775499804, token mint pSo1f9nQXWgXibFtKf7NWYxb5enAM4qfP6UJSiXRQfL. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 7,
+            "chunk_id": "6a080831aaf2166d3b4dea0e",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.061364789247030438, token mint jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 8,
+            "chunk_id": "6a082180aa6c13519ea1c216",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.061364789247030438, token mint jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 9,
+            "chunk_id": "6a080831aaf2166d3b4dea0c",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.0600698565639722785, token mint 5oVNBeEEQvYi1cX3ir8Dx5n1P7pdxydbGF2X4TxVusJm. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 10,
+            "chunk_id": "6a082180aa6c13519ea1c214",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.0600698565639722785, token mint 5oVNBeEEQvYi1cX3ir8Dx5n1P7pdxydbGF2X4TxVusJm. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 11,
+            "chunk_id": "6a082180aa6c13519ea1c221",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.0631745559883536378, token mint Dso1bDeDjCQxTrWHqUUi63oBvV7Mdm6WaobLbQ7gnPQ. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 12,
+            "chunk_id": "6a080831aaf2166d3b4dea19",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.0631745559883536378, token mint Dso1bDeDjCQxTrWHqUUi63oBvV7Mdm6WaobLbQ7gnPQ. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 13,
+            "chunk_id": "6a082180aa6c13519ea1c21e",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.0574090744225504455, token mint sSo14endRuUbvQaJS3dq36Q829a3A6BEfoeeRGJywEh. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 14,
+            "chunk_id": "6a080831aaf2166d3b4dea16",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.0574090744225504455, token mint sSo14endRuUbvQaJS3dq36Q829a3A6BEfoeeRGJywEh. Source: https://api.kamino.finance/v2/staking-yields."
+          },
+          {
+            "id": 15,
+            "chunk_id": "6a080831aaf2166d3b4dea29",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino/kamino-staking-yields (as of 2026-05-16). Kamino kamino-staking-yields \u2014 APY 0.0540661895441687778, token mint 3sfANVyJiq5uZCZvyizaDzBtHQQTNBr6RBGdXVmFcN5p. Source: https://api.kamino.finance/v2/staking-yields."
+          }
+        ]
+      },
+      "fixture_expected": {
+        "expected_verdict_v2": "PASS",
+        "expected_verdict_v2_set": [
+          "PASS",
+          "DEFER"
+        ],
+        "must_cite_provider_kinds": [
+          "paysh_live",
+          "market_data",
+          "canon_marks",
+          "canon_damodaran"
+        ],
+        "expected_dissent_topics": [
+          "yield_trap_risk",
+          "stablecoin_peg_risk",
+          "opportunity_cost"
+        ]
+      },
+      "scores": {
+        "verdict_accuracy": 1.0,
+        "citation_relevance": 0.35,
+        "provider_kind_coverage": 0.0,
+        "hallucination_score": 0.0,
+        "dissent_grounding": 0.7,
+        "confidence_calibration": 0.5
+      },
+      "passed": false,
+      "judge_notes": "Citation relevance is low: all 15 citations are from the same Kamino staking-yields API endpoint (many duplicated), and none are specifically tied to the USDC-PYUSD vault in question \u2014 they reference various token mints (JupSOL, picoSOL, etc.) that are unrelated to the stablecoin pair being evaluated. The freshness is also mismatched (dated 2026-05-16 vs question as_of 2025-07-22). Hallucination: the verdict text references \"+0.9% since June\" and \"+0.3% over 30d\" context without a sourced market_data citation, but these figures come from the user's own question framing rather than being asserted by the panel as new facts \u2014 however, the fundamental analyst claims \"degraded\" protocol health and the risk manager asserts \"high severity\" smart contract risk without any supporting citation, which borders on hallucination but doesn't match the strict must_not_hallucinate patterns exactly. No specific APY figure is cited from canon memo only, no peg deviation cited without market_data, no guaranteed yield claim \u2014 so hallucination_score is borderline; giving 0.0 because the panel cites APY figures from the API (e.g. ~0.03%) as if they pertain to the USDC-PYUSD vault without confirming the token mint matches, which is a misleading citation. Dissent grounding: opportunity_cost is hinted at (sentiment analyst mentions competitive landscape, strategist mentions rotating), and yield_trap_risk is partially surfaced (bear case, stagnation concerns), but stablecoin_peg_risk is not concretely raised. At least one expected dissent topic (opportunity_cost/yield_trap) is present, though not sharply articulated. Confidence calibration: 0.7 confidence for a defer verdict with weak/mismatched citations and 2 dissenting agents is mildly over-confident; 0.55-0.6 would be more appropriate.",
+      "wall_seconds": {
+        "panel": 41.94,
+        "judge": 15.04
+      }
+    },
+    {
+      "id": "drift-2024Q4-sol-perp-long",
+      "protocol": "drift",
+      "vertical": "perps",
+      "as_of_date": "2024-12-02",
+      "panel": {
+        "verdict": "pass",
+        "confidence": 0.7,
+        "dissent_count": 0,
+        "blocker_questions": [
+          "What is the current health status of the Drift protocol?",
+          "How does the market react to the FOMC meeting outcomes?"
+        ],
+        "n_citations": 0,
+        "provider_kinds_present": [],
+        "citations": []
+      },
+      "fixture_expected": {
+        "expected_verdict_v2": "PASS",
+        "expected_verdict_v2_set": [
+          "PASS",
+          "DEFER"
+        ],
+        "must_cite_provider_kinds": [
+          "market_data",
+          "canon_marks",
+          "canon_macro",
+          "canon_damodaran",
+          "paysh_live"
+        ],
+        "expected_dissent_topics": [
+          "macro_event_risk",
+          "leverage_unwind_risk",
+          "funding_rate_risk",
+          "liquidation_cascade_risk"
+        ]
+      },
+      "scores": {
+        "verdict_accuracy": 1.0,
+        "citation_relevance": 0.0,
+        "provider_kind_coverage": 0.0,
+        "hallucination_score": 1.0,
+        "dissent_grounding": 0.5,
+        "confidence_calibration": 0.4
+      },
+      "passed": false,
+      "judge_notes": "citation_relevance: Zero citations were provided (n_citations=0), so there are no on-topic or off-topic cites to score \u2014 floor of 0.0 applies. hallucination_score: No specific USD price levels, funding rates, OI figures, or FOMC predictability claims were asserted without sourcing; the panel correctly abstained from fabricating data given empty corpus. Score is 1.0. dissent_grounding: Expected dissent topics (macro_event_risk, leverage_unwind_risk, funding_rate_risk, liquidation_cascade_risk) were only partially surfaced. The bull_bear_debater and risk_manager hinted at macro/FOMC binary outcome risk and leverage risk, but these were vague and not concretely grounded (e.g., no mention of funding rate risk or liquidation cascade risk by name). Blocker questions touch on FOMC uncertainty but remain generic. Score 0.5 for hinted but not concrete coverage. confidence_calibration: The panel issued 'pass' at 0.7 confidence with zero citations and a degraded fundamental assessment. A 0.7 confidence is mildly over-stated given the complete absence of supporting data \u2014 the panel essentially has no informational basis for any confidence level above ~0.5. However, the verdict direction (pass) is correct, partially mitigating the miscalibration. Score 0.4.",
+      "wall_seconds": {
+        "panel": 43.04,
+        "judge": 10.21
+      }
+    },
+    {
+      "id": "drift-2025Q2-jto-perp-short",
+      "protocol": "drift",
+      "vertical": "perps",
+      "as_of_date": "2025-05-14",
+      "panel": {
+        "verdict": "pass",
+        "confidence": 0.7,
+        "dissent_count": 0,
+        "blocker_questions": [
+          "Does JTO-PERP's price fall below $2.00 within 21 days following the supply unlock?"
+        ],
+        "n_citations": 0,
+        "provider_kinds_present": [],
+        "citations": []
+      },
+      "fixture_expected": {
+        "expected_verdict_v2": "ACT",
+        "expected_verdict_v2_set": [
+          "ACT",
+          "DEFER"
+        ],
+        "must_cite_provider_kinds": [
+          "market_data",
+          "paysh_live",
+          "canon_damodaran",
+          "canon_marks"
+        ],
+        "expected_dissent_topics": [
+          "short_squeeze_risk",
+          "funding_rate_risk",
+          "narrative_reversal_risk"
+        ]
+      },
+      "scores": {
+        "verdict_accuracy": 0.0,
+        "citation_relevance": 0.0,
+        "provider_kind_coverage": 0.0,
+        "hallucination_score": 1.0,
+        "dissent_grounding": 0.5,
+        "confidence_calibration": 0.3
+      },
+      "passed": false,
+      "judge_notes": "citation_relevance: Zero citations were provided (n_citations=0, citations=[]), so there is nothing to score as relevant or irrelevant \u2014 floor score applies. hallucination_score: No specific price targets, APY figures, TVL numbers, funding rates, or unlock schedule figures were cited without a source; the panel explicitly acknowledged data absence rather than fabricating numbers, so no must_not_hallucinate patterns are triggered. dissent_grounding: The bull_bear_debater turn hints at narrative_reversal_risk (\"market resilience,\" \"bullish sentiment\") and short_squeeze_risk implicitly (\"significant buy orders\"), but these are vague and not concretely labeled as short-squeeze or funding-rate risk; funding_rate_risk is entirely absent. Partial credit only. confidence_calibration: The panel states confidence 0.7 for a 'pass' verdict despite zero citations, no on-chain data, no tokenomics source for the unlock thesis, and a risk_manager calling risk 'unacceptable' \u2014 yet dissent_count=0. A 'pass' with 0.7 confidence on zero evidence is severely miscalibrated; should be much lower confidence or a DEFER with explicit uncertainty flagging.",
+      "wall_seconds": {
+        "panel": 32.58,
+        "judge": 9.76
+      }
+    },
+    {
+      "id": "jupiter-2024Q3-jlp-vs-jitosol",
+      "protocol": "jupiter",
+      "vertical": "dex",
+      "as_of_date": "2024-09-09",
+      "panel": {
+        "verdict": "defer",
+        "confidence": 0.7,
+        "dissent_count": 2,
+        "blocker_questions": [
+          "Will JitoSOL's price remain above $111.97 over the next 30 days?"
+        ],
+        "n_citations": 15,
+        "provider_kinds_present": [
+          "protocol_native"
+        ],
+        "citations": [
+          {
+            "id": 1,
+            "chunk_id": "6a04bfd0257a849f8e1c097a",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=verified",
+            "snippet": "95,\n    \"website\": \"https://jito.network\"\n  },\n  {\n    \"apy\": {},\n    \"audit\": {\n      \"devMints\": 1,\n      \"freezeAuthorityDisabled\": true,\n      \"topHoldersPercentage\": 46.28561122347944\n    },\n    \"circSupply\": 4318222.494763257,\n    \"cr"
+          },
+          {
+            "id": 2,
+            "chunk_id": "6a08219daa6c13519ea1c2eb",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-lst-list (as of 2026-05-16). Jupiter Jito Staked SOL \u2014 symbol JitoSOL, price $ 111.973, market cap $ 863.06M, FDV $ 863.06M, holders 189.2K, decimals 9. Source: https://lite-api.jup.ag/tokens/v2/t"
+          },
+          {
+            "id": 3,
+            "chunk_id": "6a0808deaaf2166d3b4deb32",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-lst-list (as of 2026-05-16). Jupiter Jito Staked SOL \u2014 symbol JitoSOL, price $ 113.228, market cap $ 872.74M, FDV $ 872.74M, holders 189.2K, decimals 9. Source: https://lite-api.jup.ag/tokens/v2/t"
+          },
+          {
+            "id": 4,
+            "chunk_id": "6a082198aa6c13519ea1c2dc",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=verified",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-verified-list (as of 2026-05-16). Jupiter Jito Staked SOL \u2014 symbol JitoSOL, price $ 111.973, market cap $ 863.06M, FDV $ 863.06M, holders 189.2K, decimals 9. Source: https://lite-api.jup.ag/tokens"
+          },
+          {
+            "id": 5,
+            "chunk_id": "6a0808d8aaf2166d3b4deb21",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=verified",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-verified-list (as of 2026-05-16). Jupiter Jito Staked SOL \u2014 symbol JitoSOL, price $ 113.23, market cap $ 872.75M, FDV $ 872.75M, holders 189.2K, decimals 9. Source: https://lite-api.jup.ag/tokens/"
+          },
+          {
+            "id": 6,
+            "chunk_id": "6a04bfd8257a849f8e1c09a6",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "896637003.8979714,\n    \"firstPool\": {\n      \"createdAt\": \"2024-05-28T07:19:22.813Z\",\n      \"id\": \"Jito4APyf642JPZPx3hGc6WWJ8zPKtRbRs4P815Awbb\"\n    },\n    \"holderCount\": 189183,\n    \"icon\": \"https://storage.googleapis.com/token-metadata/Jito"
+          },
+          {
+            "id": 7,
+            "chunk_id": "6a04bfd8257a849f8e1c09a8",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "3.648467687491794,\n      \"sellOrganicVolume\": 62770.781137501595,\n      \"sellVolume\": 972093.9483275913,\n      \"volumeChange\": 410.15208440853775\n    },\n    \"symbol\": \"JitoSOL\",\n    \"tags\": [\n      \"verified\",\n      \"community\",\n      \"lst\""
+          },
+          {
+            "id": 8,
+            "chunk_id": "6a04bfd8257a849f8e1c09ab",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "05-13T18:15:11.157853063Z\",\n    \"usdPrice\": 107.86991364104423,\n    \"website\": \"https://jup.ag/\"\n  },\n  {\n    \"apy\": {},\n    \"audit\": {\n      \"devBalancePercentage\": 7.351598467980668e-05,\n      \"devMints\": 3,\n      \"freezeAuthorityDisabled"
+          },
+          {
+            "id": 9,
+            "chunk_id": "6a04bfd0257a849f8e1c0977",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=verified",
+            "snippet": "[\n      \"moonshot-verified\",\n      \"verified\"\n    ],\n    \"telegram\": \"https://t.me/+BZlUSV42IgowZjE8\",\n    \"tokenProgram\": \"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\",\n    \"totalSupply\": 999857396.605739,\n    \"updatedAt\": \"2026-05-13T18:1"
+          },
+          {
+            "id": 10,
+            "chunk_id": "6a0808d8aaf2166d3b4deb20",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=verified",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-verified-list (as of 2026-05-16). Jupiter Jupiter Staked SOL \u2014 symbol JupSOL, price $ 105.081, market cap $ 454.04M, FDV $ 454.04M, holders 33.5K, decimals 9. Source: https://lite-api.jup.ag/token"
+          },
+          {
+            "id": 11,
+            "chunk_id": "6a0808deaaf2166d3b4deb31",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-lst-list (as of 2026-05-16). Jupiter Jupiter Staked SOL \u2014 symbol JupSOL, price $ 105.081, market cap $ 454.04M, FDV $ 454.04M, holders 33.5K, decimals 9. Source: https://lite-api.jup.ag/tokens/v2/"
+          },
+          {
+            "id": 12,
+            "chunk_id": "6a08219daa6c13519ea1c2ea",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-lst-list (as of 2026-05-16). Jupiter Jupiter Staked SOL \u2014 symbol JupSOL, price $ 103.968, market cap $ 449.23M, FDV $ 449.23M, holders 33.5K, decimals 9. Source: https://lite-api.jup.ag/tokens/v2/"
+          },
+          {
+            "id": 13,
+            "chunk_id": "6a0808deaaf2166d3b4deb3d",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-lst-list (as of 2026-05-16). Jupiter Lido Staked SOL \u2014 symbol stSOL, price $ 107.865, market cap $ 4.36M, FDV $ 4.36M, holders 30.2K, decimals 9. Source: https://lite-api.jup.ag/tokens/v2/tag?quer"
+          },
+          {
+            "id": 14,
+            "chunk_id": "6a08219daa6c13519ea1c2f6",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-lst-list (as of 2026-05-16). Jupiter Lido Staked SOL \u2014 symbol stSOL, price $ 106.863, market cap $ 4.32M, FDV $ 4.32M, holders 30.2K, decimals 9. Source: https://lite-api.jup.ag/tokens/v2/tag?quer"
+          },
+          {
+            "id": 15,
+            "chunk_id": "6a082198aa6c13519ea1c2db",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=verified",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-verified-list (as of 2026-05-16). Jupiter Jupiter Staked SOL \u2014 symbol JupSOL, price $ 103.968, market cap $ 449.23M, FDV $ 449.23M, holders 33.5K, decimals 9. Source: https://lite-api.jup.ag/token"
+          }
+        ]
+      },
+      "fixture_expected": {
+        "expected_verdict_v2": "DEFER",
+        "expected_verdict_v2_set": [
+          "ACT",
+          "DEFER"
+        ],
+        "must_cite_provider_kinds": [
+          "paysh_live",
+          "market_data",
+          "canon_marks",
+          "canon_damodaran"
+        ],
+        "expected_dissent_topics": [
+          "concentration_risk",
+          "jlp_drawdown_risk",
+          "rotation_timing_risk"
+        ]
+      },
+      "scores": {
+        "verdict_accuracy": 1.0,
+        "citation_relevance": 0.35,
+        "provider_kind_coverage": 0.0,
+        "hallucination_score": 0.0,
+        "dissent_grounding": 0.7,
+        "confidence_calibration": 0.6
+      },
+      "passed": false,
+      "judge_notes": "Citation relevance is low: all 15 citations are Jupiter token-list API endpoints returning LST price/market-cap data (JitoSOL, JupSOL, stSOL). None are JLP-specific sources, no JLP yield/fee data, no paysh_live or market_data sources for JLP performance \u2014 the core of the question. Several citations (stSOL, JupSOL) are entirely tangential. Hallucination: the fundamental analyst cites a TVL figure of ~$896.64M and a prior ~$465.81M with ~92% growth, and the bull/bear debater repeats the $896.64M TVL figure \u2014 these specific TVL numbers appear in chunk [6] (raw API data) but are presented as Jupiter protocol TVL without a proper market_data or paysh_live source; additionally, no JLP yield figure is cited without a source (avoided), but the TVL claim is borderline. The blocker question about JitoSOL price staying above $111.97 is a specific price level derived from citation data, which is acceptable. However, the claim of ~92% TVL growth is fabricated inference not supported by the cited snippets. Marking hallucination_score 0.0 due to the unsourced TVL growth percentage claim. Dissent grounding: concentration_risk is clearly surfaced by risk_manager and sentiment_analyst; jlp_drawdown_risk is only hinted at (not concretely addressed as JLP-specific drawdown risk); rotation_timing_risk is not explicitly named. At least one expected dissent topic (concentration_risk) is clearly present. Confidence calibration: 0.7 confidence with thin, mostly irrelevant citations and no JLP-specific data is mildly overconfident \u2014 should be lower given the absence of JLP yield/fee sources.",
+      "wall_seconds": {
+        "panel": 76.76,
+        "judge": 13.62
+      }
+    },
+    {
+      "id": "jupiter-2025Q1-lst-rotation-msol",
+      "protocol": "jupiter",
+      "vertical": "dex",
+      "as_of_date": "2025-03-04",
+      "panel": {
+        "verdict": "defer",
+        "confidence": 0.7,
+        "dissent_count": 2,
+        "blocker_questions": [
+          "Can bSOL maintain a price above $113.22 while demonstrating sufficient liquidity through the next 30 days?"
+        ],
+        "n_citations": 15,
+        "provider_kinds_present": [
+          "protocol_native"
+        ],
+        "citations": [
+          {
+            "id": 1,
+            "chunk_id": "6a08219daa6c13519ea1c2f3",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-lst-list (as of 2026-05-16). Jupiter BlazeStake Staked SOL (bSOL) \u2014 symbol bSOL, price $ 113.221, market cap $ 90.44M, FDV $ 90.44M, holders 62.2K, decimals 9. Source: https://lite-api.jup.ag/toke"
+          },
+          {
+            "id": 2,
+            "chunk_id": "6a0808deaaf2166d3b4deb3a",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-lst-list (as of 2026-05-16). Jupiter BlazeStake Staked SOL (bSOL) \u2014 symbol bSOL, price $ 114.51, market cap $ 91.47M, FDV $ 91.47M, holders 62.2K, decimals 9. Source: https://lite-api.jup.ag/token"
+          },
+          {
+            "id": 3,
+            "chunk_id": "6a0808d8aaf2166d3b4deb2c",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=verified",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-verified-list (as of 2026-05-16). Jupiter Marinade staked SOL (mSOL) \u2014 symbol mSOL, price $ 122.043, market cap $ 279.91M, FDV $ 279.91M, holders 149.9K, decimals 9. Source: https://lite-api.jup.a"
+          },
+          {
+            "id": 4,
+            "chunk_id": "6a082198aa6c13519ea1c2e2",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=verified",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-verified-list (as of 2026-05-16). Jupiter Marinade staked SOL (mSOL) \u2014 symbol mSOL, price $ 120.695, market cap $ 276.82M, FDV $ 276.82M, holders 149.9K, decimals 9. Source: https://lite-api.jup.a"
+          },
+          {
+            "id": 5,
+            "chunk_id": "6a0808deaaf2166d3b4deb33",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-lst-list (as of 2026-05-16). Jupiter Marinade staked SOL (mSOL) \u2014 symbol mSOL, price $ 122.044, market cap $ 279.91M, FDV $ 279.91M, holders 149.9K, decimals 9. Source: https://lite-api.jup.ag/tok"
+          },
+          {
+            "id": 6,
+            "chunk_id": "6a08219daa6c13519ea1c2ec",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-lst-list (as of 2026-05-16). Jupiter Marinade staked SOL (mSOL) \u2014 symbol mSOL, price $ 120.695, market cap $ 276.82M, FDV $ 276.82M, holders 149.9K, decimals 9. Source: https://lite-api.jup.ag/tok"
+          },
+          {
+            "id": 7,
+            "chunk_id": "6a04bfd8257a849f8e1c09ab",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "05-13T18:15:11.157853063Z\",\n    \"usdPrice\": 107.86991364104423,\n    \"website\": \"https://jup.ag/\"\n  },\n  {\n    \"apy\": {},\n    \"audit\": {\n      \"devBalancePercentage\": 7.351598467980668e-05,\n      \"devMints\": 3,\n      \"freezeAuthorityDisabled"
+          },
+          {
+            "id": 8,
+            "chunk_id": "6a0808deaaf2166d3b4deb4a",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-lst-list (as of 2026-05-16). Jupiter Binance Staked SOL \u2014 symbol BNSOL, price $ 98.4795, market cap $ 978.92M, FDV $ 978.92M, holders 14.2K, decimals 9. Source: https://lite-api.jup.ag/tokens/v2/t"
+          },
+          {
+            "id": 9,
+            "chunk_id": "6a08219daa6c13519ea1c30e",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-lst-list (as of 2026-05-16). Jupiter BybitSOL \u2014 symbol bbSOL, price $ 100.332, market cap $ 115.55M, FDV $ 115.55M, holders 11.9K, decimals 9. Source: https://lite-api.jup.ag/tokens/v2/tag?query=l"
+          },
+          {
+            "id": 10,
+            "chunk_id": "6a08219daa6c13519ea1c2ff",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-lst-list (as of 2026-05-16). Jupiter Backpack Staked SOL \u2014 symbol bpSOL, price $ 95.7521, market cap $ 4.38M, FDV $ 4.38M, holders 1.5K, decimals 9. Source: https://lite-api.jup.ag/tokens/v2/tag?q"
+          },
+          {
+            "id": 11,
+            "chunk_id": "6a08219daa6c13519ea1c303",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-lst-list (as of 2026-05-16). Jupiter Binance Staked SOL \u2014 symbol BNSOL, price $ 97.0109, market cap $ 964.33M, FDV $ 964.33M, holders 14.2K, decimals 9. Source: https://lite-api.jup.ag/tokens/v2/t"
+          },
+          {
+            "id": 12,
+            "chunk_id": "6a0808deaaf2166d3b4deb46",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-lst-list (as of 2026-05-16). Jupiter Backpack Staked SOL \u2014 symbol bpSOL, price $ 96.9478, market cap $ 4.44M, FDV $ 4.44M, holders 1.5K, decimals 9. Source: https://lite-api.jup.ag/tokens/v2/tag?q"
+          },
+          {
+            "id": 13,
+            "chunk_id": "6a0808deaaf2166d3b4deb48",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-lst-list (as of 2026-05-16). Jupiter MoonPay Staked SOL \u2014 symbol mpSOL, price $ 93.6448, market cap $ 1.12M, FDV $ 1.12M, holders 3.3K, decimals 9. Source: https://lite-api.jup.ag/tokens/v2/tag?qu"
+          },
+          {
+            "id": 14,
+            "chunk_id": "6a08219daa6c13519ea1c301",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-lst-list (as of 2026-05-16). Jupiter MoonPay Staked SOL \u2014 symbol mpSOL, price $ 92.0715, market cap $ 1.10M, FDV $ 1.10M, holders 3.3K, decimals 9. Source: https://lite-api.jup.ag/tokens/v2/tag?qu"
+          },
+          {
+            "id": 15,
+            "chunk_id": "6a082198aa6c13519ea1c2cd",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=verified",
+            "snippet": "Protocol-native API: jupiter/jupiter-tokens-verified-list (as of 2026-05-16). Jupiter Helius Staked SOL \u2014 symbol hSOL, price $ 101.641, market cap $ 77.36M, FDV $ 77.36M, holders 9.2K, decimals 9. Source: https://lite-api.jup.ag/tokens/v2/t"
+          }
+        ]
+      },
+      "fixture_expected": {
+        "expected_verdict_v2": "PASS",
+        "expected_verdict_v2_set": [
+          "PASS",
+          "DEFER"
+        ],
+        "must_cite_provider_kinds": [
+          "paysh_live",
+          "market_data",
+          "canon_marks",
+          "canon_damodaran"
+        ],
+        "expected_dissent_topics": [
+          "points_narrative_risk",
+          "peg_deviation_risk",
+          "rotation_cost_overhead"
+        ]
+      },
+      "scores": {
+        "verdict_accuracy": 1.0,
+        "citation_relevance": 0.35,
+        "provider_kind_coverage": 0.0,
+        "hallucination_score": 0.0,
+        "dissent_grounding": 0.5,
+        "confidence_calibration": 0.5
+      },
+      "passed": false,
+      "judge_notes": "Citation relevance is low: all 15 citations are Jupiter token-list API snapshots (price/market-cap data for various LSTs). While bSOL and mSOL prices appear, the bulk of citations are for unrelated LSTs (BNSOL, bbSOL, bpSOL, mpSOL, hSOL) with no on-topic protocol docs, BlazeStake docs, or yield/points-program sources. No paysh_live or market_data source for APY is cited, and the verdict text does not assert a specific bSOL APY figure \u2014 however, the technical analyst cites specific price levels ($113.22, $114.51) sourced from the protocol_native API citations, which is acceptable. The blocker question references $113.22 as a price level tied to a citation, so no hallucination on that front. Hallucination score is 0.0 because the panel does cite a specific bSOL price ($113.22) but it IS backed by citation [1] (protocol_native source), and no specific APY figure is asserted without a source, and no points-program valuation is cited as cash-equivalent. However, the must_not_hallucinate pattern 'claim that points narrative guarantees outperformance' is not present. Dissent grounding is partial: rotation_cost_overhead and peg_deviation_risk are not explicitly surfaced; points_narrative_risk is hinted at (sentiment analyst notes sustainability concerns, risk manager notes liquidity) but the canon requirement (Marks on speculation, Damodaran on narrative pricing, explicit points-as-non-cash framing) is absent \u2014 only hinted. Confidence calibration: 0.7 confidence with thin, mostly tangential citations, no yield/points data, and 2 dissenting agents is mildly overconfident; 0.5-0.6 would be more appropriate.",
+      "wall_seconds": {
+        "panel": 82.09,
+        "judge": 14.66
+      }
+    },
+    {
+      "id": "jito-2025Q2-mev-tip-band",
+      "protocol": "jito",
+      "vertical": "infra",
+      "as_of_date": "2025-04-21",
+      "panel": {
+        "verdict": "defer",
+        "confidence": 0.3,
+        "dissent_count": 0,
+        "blocker_questions": [
+          "Does the transaction success rate at the P75 tip band remain above 80% over the next 7 days?"
+        ],
+        "n_citations": 0,
+        "provider_kinds_present": [],
+        "citations": []
+      },
+      "fixture_expected": {
+        "expected_verdict_v2": "ACT",
+        "expected_verdict_v2_set": [
+          "ACT",
+          "DEFER"
+        ],
+        "must_cite_provider_kinds": [
+          "paysh_live",
+          "market_data",
+          "canon_mauboussin",
+          "canon_damodaran"
+        ],
+        "expected_dissent_topics": [
+          "mempool_depth_volatility",
+          "tip_inflation_risk",
+          "bot_competition_risk"
+        ]
+      },
+      "scores": {
+        "verdict_accuracy": 1.0,
+        "citation_relevance": 0.0,
+        "provider_kind_coverage": 0.0,
+        "hallucination_score": 1.0,
+        "dissent_grounding": 0.5,
+        "confidence_calibration": 0.6
+      },
+      "passed": false,
+      "judge_notes": "citation_relevance: Zero citations were surfaced (n_citations=0, citations=[]), so there is nothing to score as relevant or irrelevant \u2014 floor score of 0.0 applies. hallucination_score: No specific lamport figures, bundle land rates, or \"P75 always lands\" claims appear in any turn or the verdict; the panel correctly abstained from fabricating numbers given no data source. Score 1.0 (clean). dissent_grounding: None of the three expected dissent topics (mempool_depth_volatility, tip_inflation_risk, bot_competition_risk) were explicitly named or concretely developed. The bull_bear_debater vaguely mentions \"competition increases\" and \"volatility,\" which is a faint hint at bot_competition_risk and mempool volatility, but neither is grounded in any evidence or framed as a structured dissent. Score 0.5 (hinted but not concrete). confidence_calibration: The panel issued confidence=0.3 with zero citations and a defer verdict. Given the complete absence of data, a low confidence defer is directionally appropriate. However, the ground truth indicates ACT on P75 was correct (92% land rate), meaning the panel's extreme caution is somewhat miscalibrated \u2014 it over-deferred when the correct answer was actionable. Still, without paysh_live data, deferring is defensible; mild over-caution rather than severe miscalibration. Score 0.6.",
+      "wall_seconds": {
+        "panel": 31.46,
+        "judge": 10.74
+      }
+    },
+    {
+      "id": "sanctum-2025Q3-unstake-vs-hold",
+      "protocol": "sanctum",
+      "vertical": "lst",
+      "as_of_date": "2025-08-05",
+      "panel": {
+        "verdict": "defer",
+        "confidence": 0.6,
+        "dissent_count": 0,
+        "blocker_questions": [
+          "Does the price of INF maintain its peg to SOL over the next 30 days?"
+        ],
+        "n_citations": 0,
+        "provider_kinds_present": [],
+        "citations": []
+      },
+      "fixture_expected": {
+        "expected_verdict_v2": "PASS",
+        "expected_verdict_v2_set": [
+          "PASS",
+          "DEFER"
+        ],
+        "must_cite_provider_kinds": [
+          "paysh_live",
+          "market_data",
+          "canon_marks",
+          "canon_damodaran"
+        ],
+        "expected_dissent_topics": [
+          "peg_deviation_risk",
+          "router_spread_cost",
+          "yield_continuity_risk"
+        ]
+      },
+      "scores": {
+        "verdict_accuracy": 1.0,
+        "citation_relevance": 0.0,
+        "provider_kind_coverage": 0.0,
+        "hallucination_score": 1.0,
+        "dissent_grounding": 0.5,
+        "confidence_calibration": 0.5
+      },
+      "passed": false,
+      "judge_notes": "citation_relevance=0.0: zero citations were surfaced; no on-topic or off-topic cites exist. hallucination_score=1.0: no specific figures (APY, peg ratio, spread) were asserted without a source \u2014 agents correctly abstained from inventing numbers, so no must_not_hallucinate patterns triggered. dissent_grounding=0.5: peg_deviation_risk is hinted at in the bull_bear_debater's decisive question (\"Does the price of INF maintain its peg to SOL?\") and the blocker_questions, but router_spread_cost and yield_continuity_risk are never concretely surfaced \u2014 only vaguely referenced. No agent explicitly names the ~0.1% spread cost vs ~2.1% 30d yield tradeoff. confidence_calibration=0.5: DEFER at 0.6 is defensible given zero citations and data absence, but the ground truth shows PASS (hold) is the correct call with a clear yield-vs-spread signal; the panel's data vacuum led to mild over-caution rather than a well-calibrated low-confidence hold signal.",
+      "wall_seconds": {
+        "panel": 64.32,
+        "judge": 8.91
+      }
+    }
+  ]
+}
