@@ -436,6 +436,150 @@ async def run_trade_panel(
 
 _DEFAULT_TRADE_TOP_K: int = 15
 
+# S33-#82 — canon retrieval floor. The trade-idea query embeds ~0.55 cosine
+# to protocol_native API text and only ~0.38-0.41 to canon investor-canon
+# prose, so canon loses the single-pool ANN race outright (0/75 every
+# fixture — see docs/eval/2026-05-16-s33-retrieval-pipeline-validation.md).
+# A single $vectorSearch can never surface canon for these queries. The fix
+# is a structural floor: a SECOND $vectorSearch leg pre-filtered to canon
+# provider_kinds (an indexed filterable path) guarantees N canon chunks
+# reach the panel alongside protocol_native. The two slates are merged
+# BEFORE the Voyage reranker so the cross-encoder reorders a slate that
+# actually contains canon. This mirrors rag_query's _rerank_by_provider
+# per-kind quota rescue, which the trade-panel path previously lacked.
+_CANON_PROVIDER_KINDS: tuple[str, ...] = tuple(
+    pk for pk in PROVIDER_KINDS if pk.startswith("canon_")
+)
+# Floor of canon chunks guaranteed in the final top_k slate. The canon leg
+# fetches a per-kind-balanced pool (see _retrieve_canon_floor) and the
+# post-rerank quota reserves this many slots for it. 6 of top_k=15 keeps
+# protocol_native the majority voice while guaranteeing the panel sees a
+# diverse canon mix.
+_CANON_FLOOR_COUNT: int = 6
+# Per-canon-kind fetch cap for the canon leg. A single canon $vectorSearch
+# is monopolised by whichever canon kind sits closest in embedding space —
+# measured: canon_macro (Fed/BIS papers) wins the canon ANN race for trade
+# queries and a single pooled leg returns 6/6 canon_macro, starving the
+# canon_marks / canon_damodaran the fixtures actually demand. So the canon
+# leg issues ONE $vectorSearch PER canon kind, capped at this many each,
+# then round-robin merges — guaranteeing kind diversity by construction.
+_CANON_PER_KIND_CAP: int = 4
+
+
+async def _retrieve_canon_floor(
+    *,
+    query_vector: list[float],
+    vertical: str,
+    floor: int,
+) -> list[dict[str, Any]]:
+    """Second $vectorSearch leg, pre-filtered to canon ``provider_kind``s.
+
+    S33-#82. The main leg's slate is monoculture ``protocol_native`` because
+    a trade-idea query is far closer to API text than to investor-canon
+    prose. This leg filters the ANN search to the canon kinds via the
+    ``provider_kind`` indexed filterable path, so canon chunks are ranked
+    only against *each other* and a guaranteed ``floor`` of them survives.
+
+    Returns up to ``floor`` plain dicts shaped identically to the main
+    leg's rows (same ``$project`` keys). Canon chunks carry ``protocol=[]``
+    so they need no protocol ``$match`` — they are cross-cutting frameworks
+    valid for every protocol. Degrades to ``[]`` on any error; a canon-leg
+    failure must never break retrieval.
+    """
+    if floor <= 0 or not _CANON_PROVIDER_KINDS:
+        return []
+
+    from gecko_core.db.mongo import VECTOR_INDEX_NAME, chunks_collection
+
+    coll = chunks_collection()
+    if coll is None:
+        return []
+
+    def _row_from_doc(doc: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": str(doc.get("_id", "")),
+            "text": doc.get("text") or "",
+            "source_url": doc.get("source_url") or "",
+            "source": (doc.get("source") or doc.get("provider_kind") or "unknown"),
+            "provider_kind": doc.get("provider_kind") or "web",
+            "freshness_tier": doc.get("freshness_tier") or "static",
+            "protocol": doc.get("protocol") or [],
+            "vertical": doc.get("vertical") or vertical,
+            "score": float(doc.get("score") or 0.0),
+        }
+
+    project_stage: dict[str, Any] = {
+        "$project": {
+            "_id": 1,
+            "source_url": 1,
+            "text": 1,
+            "vertical": 1,
+            "protocol": 1,
+            "provider_kind": 1,
+            "freshness_tier": 1,
+            "source": 1,
+            "metadata": 1,
+            "score": {"$meta": "vectorSearchScore"},
+        }
+    }
+
+    # One $vectorSearch PER canon kind, capped at _CANON_PER_KIND_CAP each.
+    # A single pooled canon leg is monopolised by the canon kind closest in
+    # embedding space (canon_macro for trade queries); per-kind legs
+    # guarantee canon_marks / canon_damodaran candidates exist before the
+    # round-robin merge. Each leg is small (cap ~4) so the extra Atlas round
+    # trips are cheap. A per-kind leg failure degrades that kind only.
+    per_kind: dict[str, list[dict[str, Any]]] = {}
+    for kind in _CANON_PROVIDER_KINDS:
+        pipeline: list[dict[str, Any]] = [
+            {
+                "$vectorSearch": {
+                    "index": VECTOR_INDEX_NAME,
+                    "path": "embedding",
+                    "queryVector": query_vector,
+                    "numCandidates": max(200, _CANON_PER_KIND_CAP * 40),
+                    "limit": _CANON_PER_KIND_CAP,
+                    "exact": False,
+                    "filter": {
+                        "vertical": {"$eq": vertical},
+                        "provider_kind": {"$eq": kind},
+                        "metadata.deprecated": {"$ne": True},
+                    },
+                }
+            },
+            project_stage,
+        ]
+        kind_rows: list[dict[str, Any]] = []
+        try:
+            async for doc in coll.aggregate(pipeline):
+                kind_rows.append(_row_from_doc(doc))
+        except Exception as exc:  # pragma: no cover - defensive
+            _log.warning("trade_panel.retrieve.canon_leg_error kind=%s err=%s", kind, exc)
+            continue
+        if kind_rows:
+            per_kind[kind] = kind_rows
+
+    if not per_kind:
+        return []
+
+    # Round-robin across canon kinds so the returned pool is kind-balanced:
+    # take the top chunk of each kind, then the 2nd of each, etc. The
+    # post-rerank quota downstream re-scores this pool, but a balanced pool
+    # in means a balanced (canon_marks + canon_damodaran + ...) set survives.
+    merged: list[dict[str, Any]] = []
+    rank = 0
+    while True:
+        added_this_round = False
+        for kind in _CANON_PROVIDER_KINDS:
+            rows_for_kind = per_kind.get(kind, [])
+            if rank < len(rows_for_kind):
+                merged.append(rows_for_kind[rank])
+                added_this_round = True
+        if not added_this_round:
+            break
+        rank += 1
+    return merged
+
 
 async def retrieve_trade_corpus_chunks(
     *,
@@ -489,13 +633,20 @@ async def retrieve_trade_corpus_chunks(
         _log.warning("trade_panel.retrieve.skip reason=no_collection")
         return []
 
-    # S33-#79 — Voyage asymmetric retrieval: the query side embeds with
-    # input_type="query"; corpus chunks should embed with "document". This
-    # is consistent ONLY once the corpus is re-embedded as "document"
-    # (tracked as a combined re-embed with data-engineer #80); a "query"
-    # embed against the pre-S33 input_type=None corpus is a mixed space
-    # until that re-embed lands.
-    vectors, _tokens = await embed([idea], input_type="query")
+    # S33-#82 — query embed input_type. S33-#79 set input_type="query" on
+    # the asymmetric-retrieval assumption. The S33-#81 diagnosis measured
+    # the opposite: vs a fixed canon chunk, query-side "query" embedding
+    # gives cos 0.38 while symmetric None gives 0.41 and "document" 0.53 —
+    # "query" *widens* the query<->canon gap. The live $vectorSearch band
+    # (~0.55 true cosine) matches the document-style pairing, not the
+    # query-style one. Reverted to symmetric None: it ranks canon strictly
+    # higher than "query" and needs no corpus re-embed (the corpus was
+    # re-embedded "document" in #80; None query vs document corpus is the
+    # closest available pairing without a re-embed). This is a query-side
+    # code-only change. NOTE: the structural canon fix is the canon-floor
+    # leg below — input_type alone moves cosine ~0.03 but canon still loses
+    # the single-pool ANN race outright (0/75 at every input_type).
+    vectors, _tokens = await embed([idea], input_type=None)
     if not vectors:
         _log.warning("trade_panel.retrieve.skip reason=empty_embed_vector")
         return []
@@ -579,22 +730,100 @@ async def retrieve_trade_corpus_chunks(
         _log.warning("trade_panel.retrieve.error err=%s", exc)
         return []
 
-    # S33-#79 — semantic rerank. $vectorSearch returns a flat cosine band
-    # (live probe: top-15 in a 0.804-0.818 spread); cosine alone cannot
-    # separate on-target from loosely-related chunks at that resolution. A
-    # Voyage rerank-2 cross-encoder re-scores the wide over-fetch slate by
-    # true query relevance and truncates to top_k. Flag-gated on
-    # GECKO_RERANKER=voyage; graceful-degrades to the vector-order slate
-    # (rows[:top_k]) on flag-off, missing key, timeout, or any API error —
-    # retrieval never breaks on a rerank failure.
+    # S33-#82 — canon retrieval floor with a POST-rerank quota.
+    #
+    # An earlier shape merged canon into a single pre-rerank slate, but the
+    # cross-encoder scores protocol_native API text above canon prose for a
+    # trade-idea query, so a single rerank still truncated canon down to ~1
+    # of top_k and, worse, kept whichever canon chunk happened to score
+    # highest (often canon_macro) rather than a balanced canon mix. The
+    # structural fix is a quota that bites AFTER rerank: rerank the two
+    # legs INDEPENDENTLY, then assemble the final top_k as
+    # `(top_k - quota)` protocol rows + `quota` canon rows. Each canon
+    # slot is still the most query-relevant canon chunk per the
+    # cross-encoder — the rerank does the ordering, the quota does the
+    # structural guarantee. Mirrors rag_query's _rerank_by_provider
+    # reserve_quota, which the trade-panel path previously lacked.
     pre_rerank_count = len(rows)
-    rows = await voyage_rerank_dicts(idea, rows, top_n=top_k)
-    reranked = bool(rows) and rows[0].get("rerank_score") is not None
+    canon_rows = await _retrieve_canon_floor(
+        query_vector=query_vector,
+        vertical=vertical,
+        floor=_CANON_FLOOR_COUNT,
+    )
+    seen_ids = {r["id"] for r in rows if r.get("id")}
+    canon_rows = [r for r in canon_rows if r.get("id") not in seen_ids]
+
+    # S33-#79 — semantic rerank. $vectorSearch returns a flat cosine band;
+    # cosine alone cannot separate on-target from loosely-related chunks at
+    # that resolution. A Voyage rerank-2 cross-encoder re-scores each leg by
+    # true query relevance. Flag-gated on GECKO_RERANKER=voyage; graceful-
+    # degrades to the vector-order slate on flag-off, missing key, timeout,
+    # or any API error — retrieval never breaks on a rerank failure.
+    canon_quota = min(_CANON_FLOOR_COUNT, top_k) if canon_rows else 0
+    protocol_slots = max(0, top_k - canon_quota)
+    protocol_reranked = await voyage_rerank_dicts(idea, rows, top_n=top_k)
+    canon_reranked: list[dict[str, Any]] = []
+    if canon_rows:
+        # Rerank the whole balanced canon pool, then pick the quota by
+        # round-robin across canon kinds so the cross-encoder cannot
+        # re-collapse the slate onto one canon kind. The rerank still
+        # orders WITHIN each kind by query relevance; the round-robin
+        # preserves the kind diversity the canon leg built in.
+        canon_pool = await voyage_rerank_dicts(idea, canon_rows, top_n=len(canon_rows))
+        by_kind: dict[str, list[dict[str, Any]]] = {}
+        for r in canon_pool:
+            by_kind.setdefault(str(r.get("provider_kind") or ""), []).append(r)
+        rr = 0
+        while len(canon_reranked) < canon_quota:
+            added = False
+            for kind_rows in by_kind.values():
+                if rr < len(kind_rows):
+                    canon_reranked.append(kind_rows[rr])
+                    added = True
+                    if len(canon_reranked) >= canon_quota:
+                        break
+            if not added:
+                break
+            rr += 1
+
+    # Assemble: protocol head fills the non-quota slots, canon fills the
+    # quota, then any spare capacity (canon leg returned fewer than quota)
+    # is back-filled from the protocol tail. dedup by id throughout.
+    final_rows: list[dict[str, Any]] = []
+    final_ids: set[str] = set()
+    for r in protocol_reranked[:protocol_slots]:
+        rid = str(r.get("id") or "")
+        if rid and rid in final_ids:
+            continue
+        final_rows.append(r)
+        final_ids.add(rid)
+    for r in canon_reranked[:canon_quota]:
+        rid = str(r.get("id") or "")
+        if rid and rid in final_ids:
+            continue
+        final_rows.append(r)
+        final_ids.add(rid)
+    for r in protocol_reranked:
+        if len(final_rows) >= top_k:
+            break
+        rid = str(r.get("id") or "")
+        if rid and rid in final_ids:
+            continue
+        final_rows.append(r)
+        final_ids.add(rid)
+    rows = final_rows[:top_k]
+
+    reranked = bool(rows) and any(r.get("rerank_score") is not None for r in rows)
+    canon_in_slate = sum(1 for r in rows if str(r.get("provider_kind") or "").startswith("canon_"))
     _log.info(
-        "trade_panel.retrieve.rerank candidates=%d returned=%d reranked=%s",
+        "trade_panel.retrieve.rerank candidates=%d returned=%d reranked=%s "
+        "canon_leg=%d canon_in_slate=%d canon_quota=%d",
         pre_rerank_count,
         len(rows),
         reranked,
+        len(canon_rows),
+        canon_in_slate,
+        canon_quota,
     )
 
     # Issue #12 — exit log. hit_count + top_score disambiguate "Atlas returned
