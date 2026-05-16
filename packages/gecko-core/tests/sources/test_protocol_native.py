@@ -21,6 +21,7 @@ import json
 
 from gecko_core.sources.protocol_native import (
     ProtocolEndpoint,
+    _render_drift_funding_payload,
     _render_tip_floor_payload,
     render_chunk,
     render_chunks,
@@ -172,6 +173,93 @@ def test_render_tip_floor_payload_direct_dict() -> None:
     assert len(chunks) == 1
     _assert_no_braces(chunks)
     _assert_header(chunks)
+
+
+# ---------------------------------------------------------------------------
+# Drift — S33-#75 Data API funding-rate history → per-record prose.
+# The payload is {"success": true, "records": [{...}]} — a dict wrapping a
+# list, the shape _render_fallback would mangle.
+# ---------------------------------------------------------------------------
+
+_DRIFT_FUNDING = {
+    "success": True,
+    "records": [
+        {
+            "fundingRate": "-1025",
+            "fundingRateLong": "-512",
+            "fundingRateShort": "513",
+            "oraclePriceTwap": "84690000",
+            "markPriceTwap": "84650000",
+            "periodRevenue": "-2063300000",
+            "ts": "1775066400",
+            "slot": 339876543,
+        },
+        {
+            "fundingRate": "880",
+            "fundingRateLong": "440",
+            "fundingRateShort": "-440",
+            "oraclePriceTwap": "84710000",
+            "markPriceTwap": "84740000",
+            "periodRevenue": "1500000000",
+            "ts": "1775062800",
+            "slot": 339870000,
+        },
+    ],
+}
+
+
+def test_drift_funding_payload_splits_per_record() -> None:
+    ep = _ep("drift-funding-sol-perp", protocol="drift", kind="quote")
+    chunks = render_chunks(ep, json.dumps(_DRIFT_FUNDING), "2026-05-16")
+    assert len(chunks) == 2, "a 2-record funding payload must yield 2 chunks"
+    _assert_no_braces(chunks)
+    _assert_header(chunks)
+    # The market symbol + funding numbers surface as prose.
+    joined = " ".join(chunks)
+    assert "SOL-PERP" in joined
+    assert "funding rate" in joined
+    assert "oracle price TWAP" in joined
+    assert "mark price TWAP" in joined
+    # The interpretation note leads the first chunk only.
+    assert "divide the raw funding rate by" in chunks[0]
+    assert "divide the raw funding rate by" not in chunks[1]
+
+
+def test_drift_funding_payload_direct_helper() -> None:
+    """The helper reads body['records'] and emits one sentence per record."""
+    ep = _ep("drift-funding-btc-perp", protocol="drift", kind="quote")
+    chunks = _render_drift_funding_payload(ep, _DRIFT_FUNDING, "2026-05-16")
+    assert len(chunks) == 2
+    _assert_no_braces(chunks)
+    _assert_header(chunks)
+    assert "BTC-PERP" in chunks[0]
+
+
+def test_drift_funding_payload_missing_records_falls_back() -> None:
+    """A skeleton/empty payload (no 'records' list) falls back, never crashes."""
+    ep = _ep("drift-funding-eth-perp", protocol="drift", kind="quote")
+    chunks = _render_drift_funding_payload(ep, {"success": True}, "2026-05-16")
+    assert chunks  # fallback, never empty
+    _assert_no_braces(chunks)
+    _assert_header(chunks)
+
+
+def test_drift_market_prices_payload_splits_per_market() -> None:
+    ep = _ep("drift-market-prices", protocol="drift", kind="quote")
+    body = {
+        "success": True,
+        "markets": [
+            {"symbol": "SOL-PERP", "marketIndex": 0, "marketType": "perp", "price24hAgo": 83.68},
+            {"symbol": "BTC-PERP", "marketIndex": 1, "marketType": "perp", "price24hAgo": 64210.0},
+        ],
+    }
+    chunks = render_chunks(ep, json.dumps(body), "2026-05-16")
+    assert len(chunks) == 2
+    _assert_no_braces(chunks)
+    _assert_header(chunks)
+    joined = " ".join(chunks)
+    assert "SOL-PERP" in joined
+    assert "24h-ago price" in joined
 
 
 # ---------------------------------------------------------------------------
