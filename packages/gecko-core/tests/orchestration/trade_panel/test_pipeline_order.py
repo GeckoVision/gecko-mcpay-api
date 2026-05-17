@@ -1,183 +1,281 @@
-"""S29 #31 — pipeline ordering tests for retrieve_trade_corpus_chunks.
+"""S35-#83 — pipeline invariant tests for retrieve_trade_corpus_chunks.
 
-The swap under test: `_provider_quota_floor` now runs BEFORE `cohere_rerank`
-(was: rerank-then-quota_floor). The floor allocates `top_k*2` candidates
-balanced across provider_kinds; Cohere then reranks within that balanced
-slate down to `top_k`.
+Rewritten against the *current* S33-#79/#82 + S34-#85/#87 pipeline. The
+superseded shape these tests used to pin — `_provider_quota_floor` running
+before a single `cohere_rerank`, with `top_k==10` and a `top_k*2` candidate
+floor — no longer exists. The current pipeline is:
 
-These tests pin call order + arg shapes via lightweight monkeypatches.
-The actual ranking math is exercised in test_provider_quota.py + the
-Cohere rerank module's own tests — we don't double-cover here.
+    main $vectorSearch leg (protocol_native + cross-cutting)
+      -> _apply_retrieval_boosts
+    _retrieve_canon_floor: one $vectorSearch PER canon provider_kind,
+      round-robin merged into a kind-balanced canon pool
+    voyage_rerank_dicts on each leg INDEPENDENTLY
+    post-rerank quota: canon_quota = min(_CANON_FLOOR_COUNT, top_k // 2)
+      protocol_slots = top_k - canon_quota
+    assemble protocol head + canon quota, back-fill from protocol tail
+    truncate to top_k
+
+Invariants pinned here (vs the old superseded ones):
+
+1. `_DEFAULT_TRADE_TOP_K == 15` (S34-#87) — unchanged from the old file.
+2. Canon-floor guarantee — canon chunks reach the output when the canon
+   leg returns rows (the S33-#82 dedicated-leg fix). Old tests had no
+   canon leg at all.
+3. protocol_native majority at small top_k — the S34-#85 fix: canon is
+   clamped to `<= top_k // 2`, so protocol_native always holds a
+   `>= ceil(top_k/2)` majority. Old tests asserted only ">=2 distinct
+   kinds" with no majority guarantee — they would have passed the
+   2026-05-16 5/5-canon regression.
+4. Graceful rerank degrade — when `voyage_rerank_dicts` no-ops (flag
+   off / empty), the pipeline still returns a `top_k`-length slate with
+   the canon quota honoured.
+5. Final output length == top_k.
+
+Light fakes only (repo memory `feedback_lighter_tests`): a per-pipeline
+fake Mongo `aggregate` that distinguishes the main leg from the per-kind
+canon legs by the `$vectorSearch.filter` shape, and a no-op embedder. The
+Voyage reranker is left flag-off (`GECKO_RERANKER` unset) so it degrades
+to the vector-order slate — that *is* the degrade path under test, and it
+keeps the suite free + deterministic (no API key, no network).
 """
 
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
 from gecko_core.orchestration import trade_panel as tp
 
-# S33 merge — this whole module pins a superseded pipeline. S33-#79/#82
-# replaced the S29-#31 `_provider_quota_floor → cohere_rerank` path with the
-# voyage-rerank + dedicated canon-retrieval-floor architecture, and S29-#34
-# moved the default top_k 10 → 5. These tests assert the removed shape.
-# Skipped, not deleted — a rewrite against the S33 pipeline is tracked in
-# S33-#83. The live S33 path is covered by the 42 passing trade_panel tests
-# and the deterministic retrieval eval (tests/eval/scripts/retrieval_eval.py).
-pytestmark = pytest.mark.skip(
-    reason="S33-#83: pipeline superseded by canon-floor + voyage_rerank — rewrite pending"
-)
 
-
-def _chunk(score: float, provider_kind: str, text: str | None = None) -> dict[str, Any]:
+def _chunk(score: float, provider_kind: str, idx: int) -> dict[str, Any]:
+    """A raw Mongo-doc-shaped row. `idx` keeps `_id` unique across the pool."""
+    is_canon = provider_kind.startswith("canon_")
     return {
-        "id": f"id_{provider_kind}_{score}",
-        "text": text if text is not None else ("x" * 400),
-        "source_url": f"https://example/{provider_kind}",
+        "_id": f"id_{provider_kind}_{idx}",
+        "text": "x" * 400,
+        "source_url": f"https://example/{provider_kind}/{idx}",
         "source": provider_kind,
         "provider_kind": provider_kind,
         "freshness_tier": "static",
-        "protocol": [],
+        # Canon chunks carry protocol=[] (cross-cutting); protocol_native
+        # chunks carry the exact protocol tag so they survive the $match.
+        "protocol": [] if is_canon else ["kamino"],
         "vertical": "dex",
+        "metadata": {},
         "score": score,
     }
 
 
+def _canon_kind_of_pipeline(pipeline: list[dict[str, Any]]) -> str | None:
+    """Return the canon provider_kind a per-kind canon leg filters on.
+
+    The canon leg (`_retrieve_canon_floor`) issues one `$vectorSearch` per
+    canon kind with `filter.provider_kind.$eq == <kind>`. The main leg uses
+    a `$or` filter and has no `provider_kind.$eq`. This lets the fake route
+    each `aggregate` call to the right row subset.
+    """
+    for stage in pipeline:
+        vs = stage.get("$vectorSearch")
+        if not vs:
+            continue
+        filt = vs.get("filter") or {}
+        pk = filt.get("provider_kind")
+        if isinstance(pk, dict) and "$eq" in pk:
+            return str(pk["$eq"])
+    return None
+
+
 def _install_fake_mongo(monkeypatch: pytest.MonkeyPatch, pool: list[dict[str, Any]]) -> None:
-    """Wire fake chunk-store, embedder, and Mongo collection.aggregate."""
+    """Wire a per-pipeline fake chunk-store, embedder, and Mongo collection.
+
+    The fake `aggregate` inspects the pipeline: a per-kind canon leg yields
+    only that kind's rows; the main leg yields ONLY non-canon rows. That
+    mirrors the real S33-#81 finding — canon loses the single-pool ANN race
+    outright (0/75), which is precisely why the dedicated per-kind canon leg
+    exists. If the main leg also returned canon, the id-dedup in
+    `retrieve_trade_corpus_chunks` would strip the canon leg's rows.
+    """
     import gecko_core.db as db_mod
     import gecko_core.db.mongo as mongo_mod
     import gecko_core.ingestion.embedder as embedder_mod
 
-    fake_coll = MagicMock()
+    class _FakeCollection:
+        def aggregate(self, pipeline: list[dict[str, Any]]) -> Any:
+            canon_kind = _canon_kind_of_pipeline(pipeline)
 
-    async def _aiter(_pipeline: Any):
-        for row in pool:
-            yield {
-                "_id": row["id"],
-                "source_url": row["source_url"],
-                "text": row["text"],
-                "vertical": row["vertical"],
-                "protocol": row["protocol"],
-                "provider_kind": row["provider_kind"],
-                "freshness_tier": row["freshness_tier"],
-                "source": row["source"],
-                "metadata": {},
-                "score": row["score"],
-            }
+            async def _aiter() -> Any:
+                for row in pool:
+                    pk = str(row["provider_kind"])
+                    if canon_kind is not None:
+                        # Per-kind canon leg: only that kind's rows.
+                        if pk != canon_kind:
+                            continue
+                    elif pk.startswith("canon_"):
+                        # Main leg: canon loses the single-pool ANN race.
+                        continue
+                    yield dict(row)
 
-    fake_coll.aggregate = lambda pipeline: _aiter(pipeline)
+            return _aiter()
 
+    fake_coll = _FakeCollection()
     monkeypatch.setattr(db_mod, "get_chunk_store", lambda: "mongo")
     monkeypatch.setattr(mongo_mod, "chunks_collection", lambda: fake_coll)
     monkeypatch.setattr(mongo_mod, "VECTOR_INDEX_NAME", "test_index", raising=False)
 
-    async def _fake_embed(texts: list[str]) -> tuple[list[list[float]], int]:
+    async def _fake_embed(
+        texts: list[str], *, input_type: str | None = None
+    ) -> tuple[list[list[float]], int]:
         return ([[0.0] * 1536 for _ in texts], 0)
 
     monkeypatch.setattr(embedder_mod, "embed", _fake_embed)
 
 
+def _build_pool() -> list[dict[str, Any]]:
+    """A wide pool: protocol_native majority + a balanced canon mix.
+
+    protocol_native rows score above canon (a trade-idea query is closer to
+    API text than to investor prose — the real S33-#81 finding) so the
+    vector-order slate has protocol_native at the head.
+    """
+    pool: list[dict[str, Any]] = []
+    idx = 0
+    for _ in range(40):
+        pool.append(_chunk(score=0.9 - idx * 0.0005, provider_kind="protocol_native", idx=idx))
+        idx += 1
+    for kind in ("canon_marks", "canon_damodaran", "canon_berkshire", "canon_macro"):
+        for _ in range(4):
+            pool.append(_chunk(score=0.55 - idx * 0.0005, provider_kind=kind, idx=idx))
+            idx += 1
+    return pool
+
+
+def _canon_count(rows: list[dict[str, Any]]) -> int:
+    return sum(1 for r in rows if str(r.get("provider_kind") or "").startswith("canon_"))
+
+
+def test_default_top_k_constant_is_15() -> None:
+    """S34-#87 raised the production default to 15 — the retrieval eval found
+    provider_kind_coverage=0.567 at top_k=5 (fails the 0.8 gate) vs 0.967 at
+    top_k=15. Pin it. See docs/eval/2026-05-17-s34-topk-cost-model.md."""
+    assert tp._DEFAULT_TRADE_TOP_K == 15
+
+
+def test_canon_floor_constant_is_6() -> None:
+    """`_CANON_FLOOR_COUNT` sizes the canon retrieval leg + the post-rerank
+    quota ceiling. 6 of top_k=15 is the 40%-canon split the floor was
+    designed for (S34-#85 comment block)."""
+    assert tp._CANON_FLOOR_COUNT == 6
+
+
 @pytest.mark.asyncio
-async def test_quota_floor_runs_before_rerank(monkeypatch: pytest.MonkeyPatch) -> None:
-    """quota_floor must be called BEFORE cohere_rerank, with top_k*2 as the
-    floor's slot count and the original top_k as Cohere's top_n."""
-
-    call_order: list[tuple[str, dict[str, Any]]] = []
-
-    pool = [
-        _chunk(score=0.9 - i * 0.001, provider_kind=kind)
-        for i, kind in enumerate(
-            ["protocol_native"] * 20
-            + ["canon_damodaran"] * 10
-            + ["canon_marks"] * 10
-            + ["canon_berkshire"] * 8
-            + ["market_data"] * 6
-            + ["bazaar_live"] * 6
-        )
-    ]
+async def test_canon_floor_reaches_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """S33-#82 canon-floor guarantee: when the dedicated per-kind canon leg
+    returns rows, canon chunks survive into the final top_k slate. The old
+    single-pool pipeline returned 0/75 canon — this is the structural fix."""
+    pool = _build_pool()
     _install_fake_mongo(monkeypatch, pool)
-
-    real_floor = tp._provider_quota_floor
-
-    def _spy_floor(rows: list[dict[str, Any]], *, top_k: int, **kw: Any) -> list[dict[str, Any]]:
-        call_order.append(("quota_floor", {"top_k": top_k, "input_size": len(rows)}))
-        return real_floor(rows, top_k=top_k, **kw)
-
-    monkeypatch.setattr(tp, "_provider_quota_floor", _spy_floor)
-
-    async def _fake_rerank(*, query: str, documents: list[str], top_n: int):
-        call_order.append(("rerank", {"top_n": top_n, "input_size": len(documents)}))
-        return [(i, 1.0 - i * 0.01) for i in range(min(top_n, len(documents)))]
-
-    import gecko_core.rag.rerank as rerank_mod
-
-    monkeypatch.setattr(rerank_mod, "cohere_rerank", _fake_rerank)
 
     out = await tp.retrieve_trade_corpus_chunks(
         idea="should I deposit into kamino jlp/usdc?",
         protocol="kamino",
         vertical="dex",
-        top_k=10,
+        top_k=15,
     )
 
-    # 1. Order: quota_floor first, then rerank.
-    assert [name for name, _ in call_order] == ["quota_floor", "rerank"], call_order
+    assert len(out) == 15
+    # At top_k=15: canon_quota = min(6, 15//2) = 6.
+    assert _canon_count(out) == 6, [r["provider_kind"] for r in out]
+    # The canon mix is diverse — the per-kind leg + round-robin merge
+    # guarantees the cross-encoder cannot collapse onto one canon kind.
+    canon_kinds = {r["provider_kind"] for r in out if str(r["provider_kind"]).startswith("canon_")}
+    assert len(canon_kinds) >= 2, canon_kinds
 
-    # 2. quota_floor gets top_k*2 = 20, and the FULL wide pool as input.
-    floor_kwargs = call_order[0][1]
-    assert floor_kwargs["top_k"] == 20
-    assert floor_kwargs["input_size"] == len(pool)
 
-    # 3. Cohere rerank gets top_n=top_k=10, operating on the quota-floored set.
-    rerank_kwargs = call_order[1][1]
-    assert rerank_kwargs["top_n"] == 10
-    assert 10 <= rerank_kwargs["input_size"] <= 20
+@pytest.mark.asyncio
+async def test_protocol_native_majority_at_small_top_k(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """S34-#85 fix: canon is clamped to `<= top_k // 2` so protocol_native
+    always holds a `>= ceil(top_k/2)` majority. The 2026-05-16 regression
+    was canon_quota=min(6, 5)=5 at top_k=5 — the canon FLOOR became a
+    CEILING that consumed the whole slate and the panel saw 0 protocol
+    chunks for a protocol-specific question."""
+    pool = _build_pool()
+    _install_fake_mongo(monkeypatch, pool)
 
-    # 4. Final output is top_k chunks.
-    assert len(out) == 10
+    out = await tp.retrieve_trade_corpus_chunks(
+        idea="kamino vault deposit?",
+        protocol="kamino",
+        vertical="dex",
+        top_k=5,
+    )
 
-    # 5. Diversity invariant — ≥2 distinct provider_kinds.
-    distinct = {c["provider_kind"] for c in out}
-    assert len(distinct) >= 2, distinct
+    assert len(out) == 5
+    # canon_quota = min(_CANON_FLOOR_COUNT=6, 5 // 2) = 2.
+    canon = _canon_count(out)
+    assert canon <= 5 // 2, f"canon={canon} exceeds the top_k//2 clamp"
+    protocol_native = sum(1 for r in out if r["provider_kind"] == "protocol_native")
+    # protocol_native keeps the >= ceil(top_k/2) majority.
+    assert protocol_native >= 3, [r["provider_kind"] for r in out]
 
 
 @pytest.mark.asyncio
 async def test_pipeline_survives_rerank_degrade(monkeypatch: pytest.MonkeyPatch) -> None:
-    """When cohere_rerank returns [] (no key, soft failure), pipeline
-    falls through to the quota-floored slate truncated to top_k."""
-
-    # Interleave kinds so the score-sorted slate has natural diversity —
-    # this exercises that quota_floor + truncate preserves it even without
-    # Cohere rerank.
-    kinds_cycle = ["protocol_native", "canon_damodaran", "canon_marks", "market_data"]
-    pool = [
-        _chunk(score=0.9 - i * 0.001, provider_kind=kinds_cycle[i % len(kinds_cycle)])
-        for i in range(26)
-    ]
+    """Graceful degrade: with `GECKO_RERANKER` unset, `voyage_rerank_dicts`
+    no-ops to the vector-order slate. The pipeline must still return a
+    `top_k`-length slate with the canon quota honoured — retrieval never
+    breaks on a rerank failure."""
+    monkeypatch.delenv("GECKO_RERANKER", raising=False)
+    pool = _build_pool()
     _install_fake_mongo(monkeypatch, pool)
-
-    async def _empty_rerank(**kwargs: Any):
-        return []
-
-    import gecko_core.rag.rerank as rerank_mod
-
-    monkeypatch.setattr(rerank_mod, "cohere_rerank", _empty_rerank)
 
     out = await tp.retrieve_trade_corpus_chunks(
         idea="kamino deposit?",
         protocol="kamino",
         vertical="dex",
-        top_k=10,
+        top_k=15,
     )
 
-    assert len(out) == 10
-    assert len({c["provider_kind"] for c in out}) >= 2
+    assert len(out) == 15
+    # Canon quota still honoured on the degrade path.
+    assert _canon_count(out) == 6
+    # No rerank_score was attached (the reranker no-opped).
+    assert all(r.get("rerank_score") is None for r in out)
 
 
-def test_default_top_k_constant_is_15() -> None:
-    """S34 #87 raised the production default to 15 — the retrieval eval
-    found provider_kind_coverage=0.567 at top_k=5 (fails the 0.8 gate) vs
-    0.967 at top_k=15. Pin it. See docs/eval/2026-05-17-s34-topk-cost-model.md."""
-    assert tp._DEFAULT_TRADE_TOP_K == 15
+@pytest.mark.asyncio
+async def test_output_length_equals_top_k_when_canon_leg_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the canon leg returns nothing (no canon corpus ingested),
+    `canon_quota` collapses to 0 and the protocol head back-fills the whole
+    slate — output length is still exactly top_k."""
+    # Pool with zero canon rows: every per-kind canon leg yields [].
+    pool = [
+        _chunk(score=0.9 - i * 0.0005, provider_kind="protocol_native", idx=i) for i in range(40)
+    ]
+    _install_fake_mongo(monkeypatch, pool)
+
+    out = await tp.retrieve_trade_corpus_chunks(
+        idea="kamino deposit?",
+        protocol="kamino",
+        vertical="dex",
+        top_k=15,
+    )
+
+    assert len(out) == 15
+    assert _canon_count(out) == 0
+    assert all(r["provider_kind"] == "protocol_native" for r in out)
+
+
+@pytest.mark.asyncio
+async def test_empty_idea_and_nonpositive_top_k_short_circuit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Guard rails: blank idea or top_k <= 0 return [] before any Mongo
+    call. Pinned so a refactor cannot silently drop the early-out."""
+    pool = _build_pool()
+    _install_fake_mongo(monkeypatch, pool)
+
+    assert await tp.retrieve_trade_corpus_chunks(idea="   ", protocol="kamino") == []
+    assert await tp.retrieve_trade_corpus_chunks(idea="kamino?", protocol="kamino", top_k=0) == []
