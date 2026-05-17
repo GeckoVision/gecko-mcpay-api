@@ -256,7 +256,7 @@ def _provider_kind_coverage(
     set" computed over a single mixed citations[]. That mixing is exactly
     what made citation_relevance and this dimension anti-correlated.
 
-    Decoupled computation: ``must_cite_provider_kinds`` is split by family —
+    Decoupled computation. The fixture's required kinds are split by family:
     protocol/market kinds must appear in ``evidence_citations``; canon kinds
     must appear in ``framework_context``. The score is the FRACTION of
     required kinds satisfied in their correct list:
@@ -264,18 +264,31 @@ def _provider_kind_coverage(
         (protocol kinds present in evidence + canon kinds present in
          framework) / total required kinds
 
+    Where the fixture's required kinds come from (S35-#99 re-point):
+      * Preferred — explicit ``must_cite_evidence_kinds`` +
+        ``must_cite_framework_kinds`` on the fixture (self-documenting which
+        list each kind belongs in).
+      * Fallback — the flat legacy ``must_cite_provider_kinds`` list, auto-
+        split by the ``canon_`` prefix (``_is_canon_kind``).
+
     Fractional, not binary: a verdict that surfaces the protocol data but
     drops one canon lens still scores partial, which is a more honest signal
     than a 0/1 cliff. When a fixture lists no must-cite kinds, returns 1.0
     (nothing to cover). When required kinds exist but BOTH emitted lists are
     empty, returns 0.0.
     """
-    must = set(fixture.get("must_cite_provider_kinds", []) or [])
+    explicit_evidence = fixture.get("must_cite_evidence_kinds")
+    explicit_framework = fixture.get("must_cite_framework_kinds")
+    if explicit_evidence is not None or explicit_framework is not None:
+        required_evidence = set(explicit_evidence or [])
+        required_canon = set(explicit_framework or [])
+    else:
+        flat = set(fixture.get("must_cite_provider_kinds", []) or [])
+        required_evidence = {k for k in flat if not _is_canon_kind(k)}
+        required_canon = {k for k in flat if _is_canon_kind(k)}
+    must = required_evidence | required_canon
     if not must:
         return 1.0
-
-    required_evidence = {k for k in must if not _is_canon_kind(k)}
-    required_canon = {k for k in must if _is_canon_kind(k)}
 
     evidence_present = {c.get("provider_kind", "web") for c in evidence_citations}
     framework_present = {c.get("provider_kind", "web") for c in framework_context}
