@@ -361,6 +361,76 @@ def _coerce_confidence(raw: Any) -> float:
     return max(0.0, min(1.0, val))
 
 
+# S34-#70 — confidence parity. The coordinator turn carries TWO
+# confidence-bearing surfaces: the ```json``` fenced block (a `confidence`
+# field) and the prose body (the coordinator prompt asks the model to
+# *state* its confidence inline, e.g. "Confidence: 0.70"). gpt-4o-mini
+# does not reliably keep the two numbers in sync — a prod smoke returned
+# envelope confidence 0.4 while the turn prose said 0.70. Two numbers for
+# one verdict is a trust bug. We extract the prose number here so
+# `_build_verdict_from_coordinator` can reconcile both surfaces in CODE
+# (per repo memory feedback_prompt_iteration_plateau: confidence
+# reconciliation belongs in code, not a prompt instruction — gpt-4o-mini
+# rounds toward caution on any prompt directive).
+_PROSE_CONFIDENCE_RE = re.compile(
+    r"confidence[\s:=]*(?:is|of|at|=)?\s*([01](?:\.\d+)?|0?\.\d+|\d{1,3})\s*(%?)",
+    re.IGNORECASE,
+)
+# Two surfaces "agree" within this tolerance — below it, no reconciliation
+# (0.70 vs 0.72 is rounding noise, not a disagreement).
+_CONF_PARITY_EPSILON = 0.05
+
+
+def _extract_prose_confidence(text: str) -> float | None:
+    """Pull a stated confidence number from the coordinator's prose body.
+
+    Returns the value normalized to [0,1], or ``None`` when the prose
+    states no confidence. Tolerates both fraction form ("0.70") and
+    percentage form ("70%"). Pure + deterministic — unit-testable with a
+    plain string, no panel run required.
+    """
+    last: float | None = None
+    for m in _PROSE_CONFIDENCE_RE.finditer(text):
+        num_s, pct = m.group(1), m.group(2)
+        try:
+            val = float(num_s)
+        except ValueError:  # pragma: no cover - regex guarantees numeric
+            continue
+        if pct == "%" or val > 1.0:
+            val = val / 100.0
+        if 0.0 <= val <= 1.0:
+            last = val  # last stated confidence wins (closing summary)
+    return last
+
+
+def _reconcile_confidence(
+    block_confidence: float,
+    prose_confidence: float | None,
+) -> tuple[float, bool]:
+    """S34-#70 — collapse two confidence surfaces into ONE deterministic value.
+
+    Parity rule:
+      - No prose confidence stated → trust the JSON block (the structured
+        contract surface).
+      - Surfaces agree within ``_CONF_PARITY_EPSILON`` → JSON block value
+        (the canonical structured field; rounding noise is not a conflict).
+      - Surfaces DISAGREE → take ``min(block, prose)``. A disagreement is
+        itself evidence the model is not converged on its own conviction;
+        a low-conviction verdict must not inherit the higher of two
+        self-reports. We pick the lower surface (conservative) rather than
+        always-JSON because the bug we are fixing is an *inflated* envelope
+        number — the lower value is the safe deterministic choice.
+
+    Returns ``(confidence, disagreed)``. ``disagreed`` lets the caller log
+    the parity event without a schema change.
+    """
+    if prose_confidence is None:
+        return block_confidence, False
+    if abs(block_confidence - prose_confidence) <= _CONF_PARITY_EPSILON:
+        return block_confidence, False
+    return min(block_confidence, prose_confidence), True
+
+
 def _coerce_str_list(raw: Any) -> list[str]:
     if not isinstance(raw, list):
         return []
@@ -391,7 +461,24 @@ def _build_verdict_from_coordinator(
     closing = coord_turn.parsed_verdict or {}
 
     verdict = _coerce_verdict_token(block.get("verdict") or closing.get("verdict"))
-    raw_confidence = _coerce_confidence(block.get("confidence", 0.5))
+
+    # S34-#70 — confidence parity. The JSON block and the prose body can
+    # state two different confidence numbers for the same verdict. Collapse
+    # them to ONE deterministic value here (in code), then feed the result
+    # into the existing S24 band-normalization. min(block, prose) on a
+    # disagreement: a split self-report is a low-conviction signal, so the
+    # envelope must not inherit the higher number.
+    block_confidence = _coerce_confidence(block.get("confidence", 0.5))
+    prose_confidence = _extract_prose_confidence(coord_turn.content)
+    raw_confidence, _conf_disagreed = _reconcile_confidence(block_confidence, prose_confidence)
+    if _conf_disagreed:
+        _log.warning(
+            "trade_panel.confidence_parity_conflict block=%.2f prose=%.2f resolved=%.2f",
+            block_confidence,
+            prose_confidence,
+            raw_confidence,
+        )
+
     key_drivers = _coerce_str_list(block.get("key_drivers"))
     blocker_questions = _coerce_str_list(block.get("blocker_questions"))
 
