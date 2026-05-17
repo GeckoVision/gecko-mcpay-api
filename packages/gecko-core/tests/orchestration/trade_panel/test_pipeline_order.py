@@ -18,6 +18,17 @@ from unittest.mock import MagicMock
 import pytest
 from gecko_core.orchestration import trade_panel as tp
 
+# S33 merge — this whole module pins a superseded pipeline. S33-#79/#82
+# replaced the S29-#31 `_provider_quota_floor → cohere_rerank` path with the
+# voyage-rerank + dedicated canon-retrieval-floor architecture, and S29-#34
+# moved the default top_k 10 → 5. These tests assert the removed shape.
+# Skipped, not deleted — a rewrite against the S33 pipeline is tracked in
+# S33-#83. The live S33 path is covered by the 42 passing trade_panel tests
+# and the deterministic retrieval eval (tests/eval/scripts/retrieval_eval.py).
+pytestmark = pytest.mark.skip(
+    reason="S33-#83: pipeline superseded by canon-floor + voyage_rerank — rewrite pending"
+)
+
 
 def _chunk(score: float, provider_kind: str, text: str | None = None) -> dict[str, Any]:
     return {

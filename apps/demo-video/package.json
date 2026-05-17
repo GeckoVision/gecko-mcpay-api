@@ -1,0 +1,23 @@
+{
+  "name": "gecko-demo-video",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "remotion render FinalDemo out/final_demo/gecko-demo.mp4 --codec h264 --crf 18 --color-space bt709",
+    "render-draft": "remotion render FinalDemo out/final_demo/gecko-demo-draft.mp4 --codec h264 --crf 23"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.255",
+    "@remotion/google-fonts": "4.0.255",
+    "@remotion/media-utils": "4.0.255",
+    "@remotion/transitions": "4.0.255",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "remotion": "4.0.255"
+  },
+  "devDependencies": {
+    "@types/react": "19.0.0",
+    "typescript": "5.6.3"
+  }
+}

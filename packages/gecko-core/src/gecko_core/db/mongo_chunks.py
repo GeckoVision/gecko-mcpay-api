@@ -113,6 +113,8 @@ async def insert_chunks_mongo(
     protocol: list[str] | tuple[str, ...] = (),
     content_kind: ContentKind = "unknown",
     is_stale: bool = False,
+    as_of_date: str | None = None,
+    metadata_extra: dict[str, Any] | None = None,
 ) -> int:
     """Bulk-insert chunks. Returns count of *new* documents written.
 
@@ -126,6 +128,10 @@ async def insert_chunks_mongo(
     REQUIRED for new callers; ``provider_kind`` is the deprecated alias
     for ``source`` and emits a ``DeprecationWarning`` for one sprint
     (S21 removes it).
+
+    S33-#68 — ``as_of_date`` carries the data's as-of date (a string day
+    bucket, e.g. ``"2026-05-16"``), distinct from ``captured_at`` (the
+    ingest wall-clock). ``None`` when the caller doesn't supply it.
     """
     if not chunks:
         return 0
@@ -299,6 +305,15 @@ async def insert_chunks_mongo(
     # the key; the revoke script's path stamps it True.
     if deprecated:
         metadata["deprecated"] = True
+    # S31-#50 — caller-supplied additive metadata (e.g. {"subkind":
+    # "mev_tip_data"}). Merged AFTER the canonical fields so callers cannot
+    # clobber confidence / usage_count / timestamp / pioneer / deprecated;
+    # any collision is silently dropped to preserve the invariant.
+    if metadata_extra:
+        for k, v in metadata_extra.items():
+            if k in metadata:
+                continue
+            metadata[k] = v
     docs: list[dict[str, Any]] = [
         {
             "session_id": str(session_id),
@@ -316,6 +331,11 @@ async def insert_chunks_mongo(
             "provider_kind": provider_kind if provider_kind is not None else source,
             "project_id": str(project_id) if project_id is not None else None,
             "captured_at": now,
+            # S33-#68 — the data's as-of date (e.g. a protocol_native day
+            # bucket "2026-05-16"), distinct from captured_at (ingest
+            # wall-clock). None for callers that don't supply it so
+            # existing chunk shapes are unchanged.
+            "as_of_date": as_of_date,
             # Trading-oracle ingest axis (Pattern A: mirrors SQL CHECK in
             # 20260508130000_chunk_freshness_tier.sql). Defaults to 'static'
             # so existing callers are unaffected.
@@ -408,6 +428,64 @@ async def insert_chunks_mongo(
         },
     )
     return inserted
+
+
+# ---------------------------------------------------------------------------
+# chunks (replace-before-insert — S33-#80)
+# ---------------------------------------------------------------------------
+
+
+async def delete_chunks_for_source_mongo(
+    *,
+    provider_kind: str,
+    source_url: str,
+    protocol: str | None = None,
+) -> int:
+    """Delete every chunk for one ingest source. Returns the deleted count.
+
+    S33-#80 — daily re-ingest idempotency. The ``protocol_native`` ingest
+    keyed ``source_id`` on ``uuid5(url + day_bucket)``, so a re-run on a
+    new calendar day minted a fresh ``source_id`` and the
+    ``(source_id, chunk_index)`` unique index let every chunk be inserted
+    AGAIN — the corpus accreted one full duplicate set per ingest day
+    (verified: 1,807 redundant copies = 19.9% of the dex corpus).
+
+    The fix is replace-before-insert: the ingest calls this with the
+    endpoint's ``(provider_kind, source_url, protocol)`` to drop the prior
+    day's chunks, then inserts the fresh set. The match is on the stable
+    ``source_url`` (NOT ``source_id``, which still varies day-to-day) so a
+    re-ingest is a true replace regardless of how ``source_id`` is minted.
+
+    No-op (returns 0) when the chunks collection is unavailable — the
+    caller treats that the same as "nothing to delete" and the insert that
+    follows will surface the real Mongo-unavailable error.
+    """
+    coll = chunks_collection()
+    if coll is None:
+        return 0
+
+    query: dict[str, Any] = {
+        "provider_kind": provider_kind,
+        "source_url": source_url,
+    }
+    if protocol is not None:
+        # protocol is stored as a list; match the single-element list the
+        # protocol_native ingest writes (one protocol slug per endpoint).
+        query["protocol"] = [protocol]
+
+    result = await coll.delete_many(query)
+    deleted = int(getattr(result, "deleted_count", 0))
+    logger.info(
+        "mongo.delete_chunks_for_source.done",
+        extra={
+            "event": "mongo.delete_chunks_for_source.done",
+            "provider_kind": provider_kind,
+            "source_url": source_url,
+            "protocol": protocol,
+            "deleted_count": deleted,
+        },
+    )
+    return deleted
 
 
 # ---------------------------------------------------------------------------
@@ -691,6 +769,7 @@ __all__ = [
     "MONGO_VECTOR_DIM_EXPECTED",
     "bump_usage_counts",
     "chunks_write_audit_rollup_recent_mongo",
+    "delete_chunks_for_source_mongo",
     "evict_chunk_cache_mongo",
     "get_chunk_cache_mongo",
     "insert_chunks_mongo",

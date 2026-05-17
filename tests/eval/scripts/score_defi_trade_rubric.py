@@ -318,6 +318,25 @@ async def _score_one(
         }
         for c in (getattr(verdict_obj, "citations", []) or [])
     ]
+    # Full per-citation evidence dump — added 2026-05-14 per S33 diagnostic.
+    # The aggregate row previously stored only `n_citations` +
+    # `provider_kinds_present`, which forced post-hoc bucketing to rely on
+    # the judge's prose description of each cite. Surfacing chunk_id +
+    # source + provider_kind + freshness_tier + url + snippet lets an
+    # analyst cross-reference Mongo for `as_of_date` and `protocol` without
+    # re-running the panel.
+    citations_dump = [
+        {
+            "id": c.id,
+            "chunk_id": c.chunk_id,
+            "source": c.source,
+            "provider_kind": c.provider_kind,
+            "freshness_tier": c.freshness_tier,
+            "url": c.url,
+            "snippet": c.snippet,
+        }
+        for c in (getattr(verdict_obj, "citations", []) or [])
+    ]
     verdict_accuracy = _verdict_accuracy(verdict_obj.verdict, fixture)
     provider_coverage = _provider_kind_coverage(citations_dicts, fixture)
 
@@ -349,6 +368,7 @@ async def _score_one(
             "blocker_questions": list(verdict_obj.blocker_questions),
             "n_citations": len(citations_dicts),
             "provider_kinds_present": sorted({c["provider_kind"] for c in citations_dicts}),
+            "citations": citations_dump,
         },
         "fixture_expected": {
             "expected_verdict_v2": fixture.get("expected_verdict_v2"),
@@ -399,6 +419,14 @@ async def run(*, limit: int | None, tier: str, tag: str) -> int:
         sys.stdout.flush()
         try:
             row = await _score_one(f, tier=tier, llm_config=llm_config)
+        except ImportError as exc:
+            # Environment broken (e.g. `uv sync --all-packages` not run).
+            # Don't silently fail every fixture and save an n=0 artifact —
+            # bail loudly so the operator fixes the env and re-runs.
+            print(f"FAIL ({type(exc).__name__}: {exc})")
+            raise SystemExit(
+                f"environment error: {exc}. Run `uv sync --all-packages` and retry."
+            ) from exc
         except Exception as exc:
             print(f"FAIL ({type(exc).__name__}: {exc})")
             continue

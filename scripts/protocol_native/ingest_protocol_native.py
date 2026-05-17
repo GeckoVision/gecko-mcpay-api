@@ -16,9 +16,15 @@ Run:
     uv run python scripts/protocol_native/ingest_protocol_native.py --protocols kamino,drift
     uv run python scripts/protocol_native/ingest_protocol_native.py --dry-run --sample
 
-Idempotent: ``source_id = UUID5(NAMESPACE_URL, "<endpoint_url>#<day_bucket>")``.
-Re-running on the same calendar day produces 0 net new chunks via the
-unique index on ``(source_id, chunk_index)``.
+Idempotent (S33-#80): ``source_id = UUID5(NAMESPACE_URL, "<endpoint_url>")``
+— STABLE, no day bucket. Each ingest first deletes the prior chunks for
+that endpoint's ``(provider_kind, source_url, protocol)`` via
+``delete_chunks_for_source_mongo`` and then inserts the fresh set. A daily
+re-ingest is therefore a true REPLACE, not an append — the pre-S33-#80
+``#<day_bucket>`` suffix minted a new ``source_id`` every day, so the
+``(source_id, chunk_index)`` unique index never collided and the corpus
+accreted one full duplicate set per ingest day (19.9% of the dex corpus
+was duplicate text by 2026-05-16).
 """
 
 from __future__ import annotations
@@ -30,12 +36,10 @@ import re
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
 import click
 import httpx
-
 
 # --- Minimal HTML → text cleanup ------------------------------------------
 # We don't pull in BeautifulSoup for this script — keep deps narrow. The
@@ -52,8 +56,15 @@ _HTML_ENTITY = re.compile(r"&(#\d+|#x[0-9a-fA-F]+|[a-zA-Z]+);")
 _MULTI_WS = re.compile(r"\s+")
 
 _ENTITY_MAP = {
-    "amp": "&", "lt": "<", "gt": ">", "quot": '"', "apos": "'",
-    "nbsp": " ", "ndash": "-", "mdash": "—", "hellip": "…",
+    "amp": "&",
+    "lt": "<",
+    "gt": ">",
+    "quot": '"',
+    "apos": "'",
+    "nbsp": " ",
+    "ndash": "-",
+    "mdash": "—",
+    "hellip": "…",
 }
 
 
@@ -91,19 +102,23 @@ def html_to_text(html: str) -> str:
     # the whole site.
     return text[:40000]
 
+
 _REPO = Path(__file__).resolve().parents[2]
 _GC_SRC = _REPO / "packages" / "gecko-core" / "src"
 if str(_GC_SRC) not in sys.path:
     sys.path.insert(0, str(_GC_SRC))
 
-from gecko_core.db.mongo_chunks import insert_chunks_mongo  # noqa: E402
+from gecko_core.db.mongo_chunks import (  # noqa: E402
+    delete_chunks_for_source_mongo,
+    insert_chunks_mongo,
+)
 from gecko_core.ingestion.chunker import chunk as chunk_text  # noqa: E402
 from gecko_core.ingestion.embedder import embed  # noqa: E402
 from gecko_core.sources.protocol_native import (  # noqa: E402
     ALL_PROTOCOL_ENDPOINTS,
     ProtocolEndpoint,
     endpoints_for_protocol,
-    render_chunk,
+    render_chunk_pairs,
 )
 
 log = logging.getLogger("protocol_native.ingest")
@@ -191,7 +206,7 @@ async def _fetch(client: httpx.AsyncClient, ep: ProtocolEndpoint) -> str | None:
             body[:120].replace("\n", " "),
         )
         return body
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning("FETCH-ERR %s exc=%s", ep.slug, exc)
         return None
 
@@ -207,25 +222,69 @@ async def ingest_endpoint(
     if body is None:
         return {"chunks": 0, "skipped": 1}
 
-    rendered = render_chunk(ep, body, day_iso)
-    chunks_list = chunk_text(rendered) or [rendered]
+    # S33-#61/#63/#64 — render_chunk_pairs emits per-entity prose chunks
+    # (one per kamino vault / jupiter token; tip-floor ladder flattened),
+    # each as a (display_text, embed_text) pair.
+    #
+    # S33-#80 — embed_text is the SIGNAL ONLY (provenance header stripped);
+    # display_text keeps the header for citation/provenance. The shared
+    # boilerplate header dominated short chunks' embedding vectors and
+    # compressed cosine spread (retrieval-quality diagnosis §4). We chunk
+    # and embed the body-only text, and rebuild the display text by
+    # prepending the header to each chunker segment. Per-entity chunks are
+    # short and pass through the chunker as a single segment; a long
+    # docs-prose body splits into N segments, each of which then carries
+    # the header for display so every cited segment keeps provenance.
+    pairs = render_chunk_pairs(ep, body, day_iso)
+    embed_texts: list[str] = []
+    display_texts: list[str] = []
+    for display, embed_body in pairs:
+        # The display header is whatever display had minus embed_body's
+        # content; reconstruct it from the known prefix length.
+        header = display[: len(display) - len(embed_body)].rstrip()
+        for segment in chunk_text(embed_body) or [embed_body]:
+            embed_texts.append(segment)
+            display_texts.append(f"{header} {segment}".strip() if header else segment)
     log.info(
-        "RENDER %s chunks=%d total_chars=%d",
+        "RENDER %s prose_chunks=%d embed_chunks=%d embed_chars=%d display_chars=%d",
         ep.slug,
-        len(chunks_list),
-        sum(len(c) for c in chunks_list),
+        len(pairs),
+        len(embed_texts),
+        sum(len(c) for c in embed_texts),
+        sum(len(c) for c in display_texts),
     )
 
-    if dry_run:
-        return {"chunks": len(chunks_list), "skipped": 0}
+    if not embed_texts:
+        log.warning("RENDER-EMPTY %s — all chunks degenerate, skipping", ep.slug)
+        return {"chunks": 0, "skipped": 1}
 
-    vectors, _tokens = await embed(chunks_list)
+    if dry_run:
+        return {"chunks": len(embed_texts), "skipped": 0}
+
+    # S33-#80 — embed the SIGNAL-ONLY text, store the DISPLAY text.
+    # S33-#79 follow-up — embed corpus chunks as "document" so they sit in
+    # the same asymmetric space as the input_type="query" retrieval queries.
+    vectors, _tokens = await embed(embed_texts, input_type="document")
     rows: list[tuple[int, str, list[float]]] = [
-        (i, chunks_list[i], list(vectors[i])) for i in range(len(chunks_list))
+        (i, display_texts[i], list(vectors[i])) for i in range(len(embed_texts))
     ]
 
-    source_key = f"protocol_native:{ep.slug}#{day_iso}"
+    # S33-#80 — stable source_id (no day bucket). Combined with the
+    # replace-before-insert below, a daily re-ingest is a true replace.
+    source_key = f"protocol_native:{ep.slug}"
     source_id = uuid5(NAMESPACE_URL, source_key)
+
+    # S33-#80 — replace, not append: drop the prior day's chunks for this
+    # endpoint before inserting the fresh set. Matched on the stable
+    # source_url so it works regardless of how source_id was minted on the
+    # prior ingest (pre-#80 chunks carry a day-bucketed source_id).
+    deleted = await delete_chunks_for_source_mongo(
+        provider_kind="protocol_native",
+        source_url=ep.url,
+        protocol=ep.protocol,
+    )
+    if deleted:
+        log.info("REPLACE %s deleted_prior_chunks=%d", ep.slug, deleted)
 
     # Pattern F: protocol_native carries the exact protocol tag (NOT
     # protocol=[]), so retrieval admittance routes via the protocol-exact
@@ -244,9 +303,13 @@ async def ingest_endpoint(
         freshness_tier="daily",
         protocol=(ep.protocol,),
         content_kind=ep.content_kind,  # type: ignore[arg-type]
+        # S33-#68 — the data's as-of date (the day bucket), distinct from
+        # captured_at (ingest wall-clock). Lets retrieval + the panel
+        # reason about freshness without parsing the chunk text.
+        as_of_date=day_iso,
     )
     log.info(
-        "INSERT %s new_chunks=%d (day_bucket=%s) source_id=%s",
+        "INSERT %s new_chunks=%d (as_of_date=%s) source_id=%s",
         ep.slug,
         inserted,
         day_iso,
@@ -255,9 +318,7 @@ async def ingest_endpoint(
     return {"chunks": inserted, "skipped": 0}
 
 
-async def amain(
-    *, endpoints: list[ProtocolEndpoint], dry_run: bool, sleep_seconds: float
-) -> int:
+async def amain(*, endpoints: list[ProtocolEndpoint], dry_run: bool, sleep_seconds: float) -> int:
     log.info(
         "=== protocol_native ingest: %d endpoints (dry_run=%s) ===",
         len(endpoints),

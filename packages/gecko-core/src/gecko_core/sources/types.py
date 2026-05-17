@@ -76,16 +76,12 @@ ProviderKind = Literal[
     # docs/strategy/2026-05-12-s24-plan.md §4 WS-A and
     # packages/gecko-core/src/gecko_core/sources/market_data.py.
     "market_data",
-    # S26 #14 — direct protocol-native API ingest. Chunks pulled from a
-    # protocol's own public API/docs (e.g. Kamino's api.kamino.finance,
-    # Drift's dlob.drift.trade, Jupiter's stats.jup.ag, Jito's kobe
-    # endpoint, Sanctum's public API). Distinct from `paysh_live` which
-    # is per-request paid x402 retrieval against pay.sh-listed providers;
-    # this is free public-API content seeded into the corpus once and
-    # reused across sessions. Retrieval admittance: protocol_native is
-    # treated like paysh_live/bazaar_live in `_apply_retrieval_boosts` —
-    # +0.10 PROVIDER_SPECIFIC boost when protocol matches. See
-    # docs/strategy/2026-05-13-s26-corpus-reingest-handoff.md.
+    # S26 #14 — direct protocol-native API ingest. Free public-API/docs
+    # content (Kamino, Drift, Jupiter, Jito MEV, Sanctum). Distinct from
+    # paysh_live (paid x402) and canon_* (cross-cutting investor lit).
+    # Carries an exact protocol tag so the protocol-exact retrieval boost
+    # applies. See scripts/protocol_native/ingest_protocol_native.py and
+    # scripts/protocol_native/ingest_jito_mev.py.
     "protocol_native",
 ]
 """Static type alias for the ``chunks.provider_kind`` /

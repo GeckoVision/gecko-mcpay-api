@@ -44,7 +44,7 @@ from gecko_core.sessions.store import SessionStore
 # inside the existing lifespan. Same x402 PaymentMiddlewareASGI wraps it
 # automatically (see app.add_middleware(PaymentMiddlewareASGI, ...)).
 from gecko_mcp.server import mcp as _gecko_mcp
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import (
     get_remote_address,  # noqa: F401  (legacy import retained for downstream imports)
@@ -1113,6 +1113,46 @@ app.add_middleware(
 app.add_middleware(_BodySizeLimitMiddleware, max_bytes=_MAX_REQUEST_BODY_BYTES)
 
 
+# Bot-probe block. Known vuln-scanner paths — WordPress, .git, .env,
+# phpMyAdmin, PHP/CGI extensions — get an instant 404 before routing.
+# Deliberately a plain 404, NOT a 402: a payment challenge on a junk path
+# tells a scanner the host is "interesting" and worth revisiting, whereas a
+# 404 is a boring dead end. No tarpit — holding the connection open would
+# be a self-DoS lever for an attacker who controls request volume.
+_BOT_PROBE_EXTENSIONS: tuple[str, ...] = (
+    ".php",
+    ".asp",
+    ".aspx",
+    ".jsp",
+    ".cgi",
+    ".env",
+    ".sql",
+    ".bak",
+)
+_BOT_PROBE_SUBSTRINGS: tuple[str, ...] = (
+    "/wp-admin",
+    "/wp-includes",
+    "/wp-login",
+    "/wordpress",
+    "/cgi-bin",
+    "/.git",
+    "/.env",
+    "/phpmyadmin",
+    "/xmlrpc",
+    "/vendor/",
+    "/.aws",
+)
+
+
+@app.middleware("http")
+async def _bot_probe_block(request: Request, call_next: Any) -> Response:
+    path = request.url.path.lower()
+    if path.endswith(_BOT_PROBE_EXTENSIONS) or any(s in path for s in _BOT_PROBE_SUBSTRINGS):
+        return Response(status_code=404)
+    response: Response = await call_next(request)
+    return response
+
+
 # Internal ops routes (S2X-09: /internal/twitsh/balance for EventBridge).
 # Mounted after middleware so x402 doesn't gate them; they're free and
 # read-only. Discovery: not advertised in /.well-known/x402.
@@ -1197,6 +1237,36 @@ class ResearchRequest(BaseModel):
 
 class AskRequest(BaseModel):
     question: str = Field(..., min_length=3, max_length=500)
+
+
+class TelemetryEventRequest(BaseModel):
+    """S33-#73 — body shape for POST /events (top-of-funnel telemetry).
+
+    Unauthenticated by design: it must fire before a wallet exists. All
+    string fields are length-capped at the wire boundary so an abusive
+    client cannot bloat the row; `metadata` is capped by a field validator.
+    `event_type` is free-text — the known values live in
+    `gecko_core.telemetry.store.KNOWN_TELEMETRY_EVENTS`, not a Literal.
+    """
+
+    event_type: str = Field(..., min_length=1, max_length=64)
+    wallet_address: str | None = Field(default=None, max_length=128)
+    email: str | None = Field(default=None, max_length=320)
+    installer_tag: str | None = Field(default=None, max_length=128)
+    metadata: dict[str, Any] | None = None
+
+    @field_validator("metadata")
+    @classmethod
+    def _cap_metadata(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        # Defensive size cap — telemetry metadata is small key/value context
+        # (OS, installer version, error string). Reject anything large.
+        if v is None:
+            return None
+        if len(v) > 25:
+            raise ValueError("metadata has too many keys (max 25)")
+        if len(json.dumps(v, default=str)) > 4096:
+            raise ValueError("metadata too large (max 4KB serialized)")
+        return v
 
 
 class RouteRequest(BaseModel):
@@ -3357,6 +3427,54 @@ async def pricing() -> dict[str, Any]:
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok", "payments": _settings.x402_mode}
+
+
+@app.post("/events", status_code=202)
+@limiter.limit("30/minute")
+async def record_telemetry_event(
+    request: Request,
+    body: TelemetryEventRequest,
+) -> dict[str, bool]:
+    """S33-#73 — record a top-of-funnel telemetry event.
+
+    Unauthenticated and NOT x402-gated: it must fire before a wallet exists
+    (install_started/install_error come from the skill installer itself).
+    Thin transport — parse, call the gecko-core helper, return 202. Never
+    echoes stored data back. Telemetry failures are swallowed in the store
+    layer, so this always returns 202 once the body validates.
+    """
+    from gecko_core.telemetry import record_event
+
+    await record_event(
+        body.event_type,
+        wallet_address=body.wallet_address,
+        email=body.email,
+        installer_tag=body.installer_tag,
+        metadata=body.metadata,
+    )
+    return {"ok": True}
+
+
+@app.get("/metrics/telemetry", include_in_schema=False)
+@limiter.limit("10/minute")
+async def telemetry_metrics(request: Request) -> dict[str, Any]:
+    """Internal install-funnel rollup — counts only, never email values.
+
+    Undocumented (`include_in_schema=False`) so it stays off the public
+    OpenAPI contract. Exposes aggregate counts + an emails COUNT; no PII
+    values ever leave this handler. If this needs a wider audience, gate it
+    behind x402 or the frames token before documenting it.
+    """
+    from gecko_core.telemetry import telemetry_summary
+
+    return await telemetry_summary()
+
+
+@app.get("/robots.txt")
+async def robots_txt() -> Response:
+    """Disallow all crawlers. The API surface is for agents via x402, not
+    indexers — this just quiets the scanner 404 noise in the access log."""
+    return Response(content="User-agent: *\nDisallow: /\n", media_type="text/plain")
 
 
 @app.get("/metrics")

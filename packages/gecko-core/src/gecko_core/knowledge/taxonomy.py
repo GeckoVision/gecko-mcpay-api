@@ -131,6 +131,7 @@ KnowledgeSource = Literal[
     "user_query",
     "enriched_output",
     "market_data",
+    # S31-#50 — free, public protocol-native API + docs content.
     "protocol_native",
 ]
 """Static type alias. Keep in sync with KNOWLEDGE_SOURCES manually.

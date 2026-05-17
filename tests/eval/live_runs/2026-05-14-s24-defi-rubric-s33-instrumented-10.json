@@ -1,0 +1,1236 @@
+{
+  "date": "2026-05-14",
+  "tier": "basic",
+  "suite": "defi_trade_rubric_suite.json",
+  "n_fixtures_loaded": 10,
+  "n_scored": 10,
+  "aggregate": {
+    "n": 10,
+    "overall_pass_rate": 0.0,
+    "per_dimension_means": {
+      "verdict_accuracy": 0.7,
+      "citation_relevance": 0.25,
+      "provider_kind_coverage": 0.0,
+      "hallucination_score": 0.6,
+      "dissent_grounding": 0.6,
+      "confidence_calibration": 0.535
+    },
+    "per_dimension_pass_rate": {
+      "verdict_accuracy": 0.7,
+      "citation_relevance": 0.3,
+      "provider_kind_coverage": 0.0,
+      "hallucination_score": 0.6,
+      "dissent_grounding": 1.0,
+      "confidence_calibration": 0.6
+    },
+    "thresholds": {
+      "verdict_accuracy": 0.85,
+      "citation_relevance": 0.5,
+      "provider_kind_coverage": 0.7,
+      "hallucination_score": 0.3,
+      "dissent_grounding": 0.5,
+      "confidence_calibration": 0.55
+    }
+  },
+  "rows": [
+    {
+      "id": "kamino-2024Q3-jlpusdc-entry",
+      "protocol": "kamino",
+      "vertical": "dex",
+      "as_of_date": "2024-08-12",
+      "panel": {
+        "verdict": "defer",
+        "confidence": 0.7,
+        "dissent_count": 2,
+        "blocker_questions": [
+          "Will the Kamino JLP-USDC multiply vault demonstrate improved liquidity metrics within the next month?",
+          "Is there an upcoming audit scheduled that could address smart contract vulnerabilities?"
+        ],
+        "n_citations": 15,
+        "provider_kinds_present": [
+          "protocol_native"
+        ],
+        "citations": [
+          {
+            "id": 1,
+            "chunk_id": "6a03d76b83de92abcb720058",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "Protocol-native API: kamino / kamino-vaults (as of 2026-05-13).\nEndpoint description: Kamino K-Vaults catalog \u2014 vault adminAuthority, tokenMint, tokenVault, vault state config. Includes Multiply / Leverage / Yield vault types with their per"
+          },
+          {
+            "id": 2,
+            "chunk_id": "6a03d76b83de92abcb7200ab",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "\": \"sadmBTQm5HJsyzWHEjV4YwG9CiahZKVDVqAyS4Wx1zH\",\n      \"availableCrankFunds\": \"0\",\n      \"baseVaultAuthority\": \"FETFTjK4H3yBpsCGtvRATgpwNSgqftA9d2Q21RHHEPDq\",\n      \"baseVaultAuthorityBump\": 255,\n      \"crankFundFeePerReserve\": \"2\",\n      "
+          },
+          {
+            "id": 3,
+            "chunk_id": "6a03d76b83de92abcb720089",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "\"vaultFarm\": \"H6kauPaHmNqpdKtD5U2zw3Eb28ZB7iMeBdHVfLq1i4Kh\",\n      \"vaultLookupTable\": \"7EzosNioQ6FDNvMKLfg6om5wTVHiJo9vVx7DZNGYBKU3\"\n    }\n  },\n  {\n    \"address\": \"CfbM5dMBYgPnm3TVXb6XE1sLQCbA4UsELm4XEq2zuRoV\",\n    \"programId\": \"KvauGMspG5"
+          },
+          {
+            "id": 4,
+            "chunk_id": "6a03d76b83de92abcb720070",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "89718\",\n      \"performanceFeeBps\": 700,\n      \"prevAum\": \"500192244.7399909416098565898695094134041\",\n      \"sharesIssued\": \"500000999\",\n      \"sharesMint\": \"D5nLAubh8he1xBnG626aswQH6Gu2CZc2FHEzzmZjJtuG\",\n      \"sharesMintDecimals\": 9,\n    "
+          },
+          {
+            "id": 5,
+            "chunk_id": "6a03d76b83de92abcb7200b3",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "V1bsdMd\",\n      \"baseVaultAuthorityBump\": 255,\n      \"crankFundFeePerReserve\": \"1\",\n      \"creationTimestamp\": 1778096808,\n      \"cumulativeEarnedInterest\": \"0\",\n      \"cumulativeMgmtFees\": \"0\",\n      \"cumulativePerfFees\": \"0\",\n      \"lastF"
+          },
+          {
+            "id": 6,
+            "chunk_id": "6a03d76b83de92abcb720094",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "CrankFunds\": \"0\",\n      \"baseVaultAuthority\": \"FFqKqJU2vc9sF2N6D11ySWtBX1Eq7X8mfwQ5xiijgZ1x\",\n      \"baseVaultAuthorityBump\": 254,\n      \"crankFundFeePerReserve\": \"0\",\n      \"creationTimestamp\": 1766447032,\n      \"cumulativeEarnedInterest\":"
+          },
+          {
+            "id": 7,
+            "chunk_id": "6a03d76583de92abcb720050",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/kamino-market",
+            "snippet": "Protocol-native API: kamino / kamino-markets (as of 2026-05-13).\nEndpoint description: Kamino market catalog: main, JLP, Altcoin, JitoSOL etc. Each entry carries lendingMarket pubkey, description, and primary/curated/isolated flags. Substan"
+          },
+          {
+            "id": 8,
+            "chunk_id": "6a03d76b83de92abcb720096",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "65A9bYG8j1haRcTgXJDQ9e4pPmBtq3CiYBsBSgzCL\",\n      \"pendingFees\": \"9523095.936412936226951103310667257062505\",\n      \"performanceFeeBps\": 100,\n      \"prevAum\": \"20120471370.65039165673836366043936152437\",\n      \"sharesIssued\": \"19578366726\","
+          },
+          {
+            "id": 9,
+            "chunk_id": "6a03d76b83de92abcb72007c",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "pendingAdmin\": \"11111111111111111111111111111111\",\n      \"pendingFees\": \"0\",\n      \"performanceFeeBps\": 0,\n      \"prevAum\": \"101575741\",\n      \"sharesIssued\": \"100001000\",\n      \"sharesMint\": \"C2xJrCHDnCLBb3wFZQDcvXz7ykp91wdr748itt6xt6Um\",\n"
+          },
+          {
+            "id": 10,
+            "chunk_id": "6a03d76b83de92abcb720072",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "DepositAmount\": \"1000000\",\n      \"minInvestAmount\": \"0\",\n      \"minInvestDelaySlots\": 0,\n      \"minWithdrawAmount\": \"0\",\n      \"name\": \"Abilabs SOL\",\n      \"pendingAdmin\": \"11111111111111111111111111111111\",\n      \"pendingFees\": \"0\",\n      "
+          },
+          {
+            "id": 11,
+            "chunk_id": "6a03d76b83de92abcb720099",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "EarnedInterest\": \"20190808479.28961846242782478787203270798\",\n      \"cumulativeMgmtFees\": \"0\",\n      \"cumulativePerfFees\": \"0\",\n      \"lastFeeChargeTimestamp\": 1778635079,\n      \"managementFeeBps\": 0,\n      \"minDepositAmount\": \"100000\",\n   "
+          },
+          {
+            "id": 12,
+            "chunk_id": "6a03d76b83de92abcb72008b",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "baseVaultAuthorityBump\": 253,\n      \"crankFundFeePerReserve\": \"2\",\n      \"creationTimestamp\": 1764935487,\n      \"cumulativeEarnedInterest\": \"42722732332.3642582850064691839253594452\",\n      \"cumulativeMgmtFees\": \"0\",\n      \"cumulativePerfFe"
+          },
+          {
+            "id": 13,
+            "chunk_id": "6a03d76b83de92abcb7200ad",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "Wfwgo\",\n      \"baseVaultAuthorityBump\": 253,\n      \"crankFundFeePerReserve\": \"1\",\n      \"creationTimestamp\": 1778577725,\n      \"cumulativeEarnedInterest\": \"0\",\n      \"cumulativeMgmtFees\": \"0\",\n      \"cumulativePerfFees\": \"0\",\n      \"lastFee"
+          },
+          {
+            "id": 14,
+            "chunk_id": "6a03d76b83de92abcb72008f",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "j59oGp8avZ1Enuek14zxTDRRx\",\n    \"programId\": \"KvauGMspG5k6rtzrqqn7WNn3oZdyKqLKwK2XWQ8FLjd\",\n    \"state\": {\n      \"allocationAdmin\": \"A1Vc4aTa9jvfT8Hpi5Ug4UkKvrKKxRHTyXP7QUFFB1cD\",\n      \"availableCrankFunds\": \"0\",\n      \"baseVaultAuthority\""
+          },
+          {
+            "id": 15,
+            "chunk_id": "6a03d76b83de92abcb720065",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "xAXB1aSAcQVenLsB6G7MvfPupfZMSj7\",\n      \"vaultAdminAuthority\": \"FU76ac2Hm2mo4hoyckhAKDrbKTFwxyDPHnrrERfMXusE\",\n      \"vaultAllocationStrategy\": [\n        {\n          \"ctokenAllocation\": \"0\",\n          \"ctokenVault\": \"7ZPYxsxasvcnG9emCEuyEEH"
+          }
+        ]
+      },
+      "fixture_expected": {
+        "expected_verdict_v2": "ACT",
+        "expected_verdict_v2_set": [
+          "ACT",
+          "DEFER"
+        ],
+        "must_cite_provider_kinds": [
+          "paysh_live",
+          "market_data",
+          "canon_marks",
+          "canon_damodaran",
+          "canon_berkshire"
+        ],
+        "expected_dissent_topics": [
+          "smart_contract_risk",
+          "leverage_unwind_risk",
+          "vault_parameter_change_risk"
+        ]
+      },
+      "scores": {
+        "verdict_accuracy": 1.0,
+        "citation_relevance": 0.4,
+        "provider_kind_coverage": 0.0,
+        "hallucination_score": 1.0,
+        "dissent_grounding": 0.7,
+        "confidence_calibration": 0.6
+      },
+      "passed": false,
+      "judge_notes": "Citation relevance is moderate: all 15 citations come from the Kamino protocol-native API (kvaults/vaults endpoint), which is on-topic for the protocol but the raw JSON snippets (pubkeys, timestamps, fee BPS fields) are largely boilerplate vault catalog data rather than JLP-USDC multiply vault-specific parameters, APY, or leverage metrics. No market_data or canon (Marks/Damodaran) sources are present. Hallucination score is clean: no specific USD price levels, exact TVL figures, or APY percentages are cited in the verdict or turns without a sourced backing \u2014 agents explicitly acknowledge the absence of such data rather than fabricating numbers. Dissent grounding is partial: smart_contract_risk is clearly surfaced (risk_manager and bull_bear_debater turns, blocker question #2), and leverage_unwind_risk is implicitly touched via liquidity/crank-fund concerns, but vault_parameter_change_risk is not concretely raised. Confidence calibration is mildly off: 0.7 confidence for DEFER is reasonable given the dissent and thin cite quality, but the citations are almost entirely raw API JSON with no market_data or canon sources, which should push confidence lower or be flagged more explicitly.",
+      "wall_seconds": {
+        "panel": 58.19,
+        "judge": 19.32
+      }
+    },
+    {
+      "id": "kamino-2024Q4-sol-leverage-entry",
+      "protocol": "kamino",
+      "vertical": "lending",
+      "as_of_date": "2024-11-05",
+      "panel": {
+        "verdict": "pass",
+        "confidence": 0.7,
+        "dissent_count": 2,
+        "blocker_questions": [
+          "What is the current health status of the Kamino protocol, including any recent audits or updates?",
+          "How does SOL's price trend over the next 30 days, particularly in relation to key support levels?"
+        ],
+        "n_citations": 0,
+        "provider_kinds_present": [],
+        "citations": []
+      },
+      "fixture_expected": {
+        "expected_verdict_v2": "DEFER",
+        "expected_verdict_v2_set": [
+          "ACT",
+          "DEFER"
+        ],
+        "must_cite_provider_kinds": [
+          "market_data",
+          "canon_marks",
+          "canon_damodaran",
+          "canon_berkshire",
+          "paysh_live"
+        ],
+        "expected_dissent_topics": [
+          "liquidation_cascade_risk",
+          "drawdown_path_risk",
+          "audit_status_uncertainty",
+          "leverage_unwind_risk"
+        ]
+      },
+      "scores": {
+        "verdict_accuracy": 0.0,
+        "citation_relevance": 0.0,
+        "provider_kind_coverage": 0.0,
+        "hallucination_score": 1.0,
+        "dissent_grounding": 0.5,
+        "confidence_calibration": 0.4
+      },
+      "passed": false,
+      "judge_notes": "citation_relevance: Zero citations were surfaced (n_citations=0, citations=[]), so there is nothing to score as relevant or irrelevant \u2014 scores 0.0 by definition. hallucination_score: The question premise includes SOL at $165, but no agent independently asserts a specific price level, liquidation price, funding rate, or claims 3x leverage is universally safe without a source. The $165 figure is only referenced as the user's stated input, not as a panel-originated factual claim. No must_not_hallucinate patterns are triggered. Score 1.0. dissent_grounding: The risk_manager raises smart-contract risk (touching audit_status_uncertainty) and oracle/liquidation risk (touching liquidation_cascade_risk), and the bear case in bull_bear_debater mentions liquidation. However, these are generic/structural mentions rather than concretely grounded in Kamino-specific data or canon sources (Marks on cycles, Damodaran on leverage). Drawdown-path risk and leverage-unwind risk are not explicitly named. Score 0.5 \u2014 topics hinted at but not concrete. confidence_calibration: The panel issues a 'pass' (do not trade) verdict at 0.7 confidence with zero citations and acknowledged data absence. A 'pass' verdict with 0.7 confidence is mildly over-confident given the complete absence of supporting evidence; the strategist's own recommendation was 'observe' and risk band was 'unacceptable', which would warrant lower confidence or a DEFER verdict. The expected calibrated answer per ground truth is DEFER with strong dissent, not a moderate-confidence pass. Score 0.4.",
+      "wall_seconds": {
+        "panel": 36.96,
+        "judge": 11.91
+      }
+    },
+    {
+      "id": "kamino-2025Q1-jitosol-vault",
+      "protocol": "kamino",
+      "vertical": "dex",
+      "as_of_date": "2025-02-18",
+      "panel": {
+        "verdict": "act",
+        "confidence": 0.75,
+        "dissent_count": 1,
+        "blocker_questions": [
+          "Will the Kamino vault's APY consistently exceed that of JitoSOL over the next 30 days?",
+          "Are there any recent audits or governance updates that could impact user confidence?"
+        ],
+        "n_citations": 15,
+        "provider_kinds_present": [
+          "bazaar_live",
+          "protocol_native",
+          "web"
+        ],
+        "citations": [
+          {
+            "id": 1,
+            "chunk_id": "6a03d77483de92abcb7200c3",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino / kamino-staking-yields (as of 2026-05-13).\nEndpoint description: Kamino-tracked LST staking-yield snapshots \u2014 JitoSOL, mSOL, bSOL, INF current APY + 7d trailing. Quote-kind, refreshable.\nSource URL: https://api."
+          },
+          {
+            "id": 2,
+            "chunk_id": "69fd9e8c27592ffcda8171d3",
+            "source": "bazaar",
+            "provider_kind": "bazaar_live",
+            "freshness_tier": "daily",
+            "url": "exa-ai",
+            "snippet": "{ \"costDollars\": { \"search\": { \"neural\": 0.007 }, \"total\": 0.007 }, \"requestId\": \"a1be65b5e46a39dcc2b6c90e6b28589b\", \"resolvedSearchType\": \"\", \"results\": [ { \"favicon\": \"https://preview.dl.llama.fi/favicon.ico\", \"id\": \"https://preview.dl.ll"
+          },
+          {
+            "id": 3,
+            "chunk_id": "69fd9ec61dec38f81723cd05",
+            "source": "bazaar",
+            "provider_kind": "bazaar_live",
+            "freshness_tier": "daily",
+            "url": "exa-ai",
+            "snippet": "{ \"costDollars\": { \"search\": { \"neural\": 0.007 }, \"total\": 0.007 }, \"requestId\": \"8fb39b43bbdc7c75f4155d8013192eb9\", \"resolvedSearchType\": \"\", \"results\": [ { \"favicon\": \"https://preview.dl.llama.fi/favicon.ico\", \"id\": \"https://preview.dl.ll"
+          },
+          {
+            "id": 4,
+            "chunk_id": "6a03d76b83de92abcb72005c",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "ulativeEarnedInterest\": \"1266236\",\n      \"cumulativeMgmtFees\": \"0\",\n      \"cumulativePerfFees\": \"0\",\n      \"lastFeeChargeTimestamp\": 1773338544,\n      \"managementFeeBps\": 0,\n      \"minDepositAmount\": \"0\",\n      \"minInvestAmount\": \"0\",\n     "
+          },
+          {
+            "id": 5,
+            "chunk_id": "6a03d76b83de92abcb720082",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "92899397\"\n        }\n      ],\n      \"vaultFarm\": \"11111111111111111111111111111111\",\n      \"vaultLookupTable\": \"BcKYa6rtWB82CYVbcpSaZT6vzonv8QmPqBhVRNqFCRzA\"\n    }\n  },\n  {\n    \"address\": \"5YxwKgsvyTdT8q2CBgwA4L9BKbnKNrB66K9wUzij5wH\",\n    \"p"
+          },
+          {
+            "id": 6,
+            "chunk_id": "6a03d76b83de92abcb720058",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "Protocol-native API: kamino / kamino-vaults (as of 2026-05-13).\nEndpoint description: Kamino K-Vaults catalog \u2014 vault adminAuthority, tokenMint, tokenVault, vault state config. Includes Multiply / Leverage / Yield vault types with their per"
+          },
+          {
+            "id": 7,
+            "chunk_id": "6a03d76b83de92abcb720071",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "WAx\",\n          \"ctokenVaultBump\": 255,\n          \"lastInvestSlot\": \"419245493\",\n          \"reserve\": \"7Xk5551vjopEw9JfM8Epf6sE3Cii65yEq6dwenhjr4Kg\",\n          \"targetAllocationWeight\": 0,\n          \"tokenAllocationCap\": \"184467440737095516"
+          },
+          {
+            "id": 8,
+            "chunk_id": "6a03d76b83de92abcb720075",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "\"2\",\n      \"creationTimestamp\": 1761120840,\n      \"cumulativeEarnedInterest\": \"427532410944.0521328866213966275397484473\",\n      \"cumulativeMgmtFees\": \"0\",\n      \"cumulativePerfFees\": \"0\",\n      \"lastFeeChargeTimestamp\": 1778630486,\n      \""
+          },
+          {
+            "id": 9,
+            "chunk_id": "6a03d76b83de92abcb720064",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "AKDrbKTFwxyDPHnrrERfMXusE\",\n      \"availableCrankFunds\": \"0\",\n      \"baseVaultAuthority\": \"5ta1dfgM9TXEyjrgSWYMTm2kpBSZXcJZG9A1MKrrp7Zr\",\n      \"baseVaultAuthorityBump\": 254,\n      \"crankFundFeePerReserve\": \"0\",\n      \"creationTimestamp\": 1"
+          },
+          {
+            "id": 10,
+            "chunk_id": "6a03d76b83de92abcb720089",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "\"vaultFarm\": \"H6kauPaHmNqpdKtD5U2zw3Eb28ZB7iMeBdHVfLq1i4Kh\",\n      \"vaultLookupTable\": \"7EzosNioQ6FDNvMKLfg6om5wTVHiJo9vVx7DZNGYBKU3\"\n    }\n  },\n  {\n    \"address\": \"CfbM5dMBYgPnm3TVXb6XE1sLQCbA4UsELm4XEq2zuRoV\",\n    \"programId\": \"KvauGMspG5"
+          },
+          {
+            "id": 11,
+            "chunk_id": "6a03d76b83de92abcb72005e",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "nu2\",\n    \"programId\": \"KvauGMspG5k6rtzrqqn7WNn3oZdyKqLKwK2XWQ8FLjd\",\n    \"state\": {\n      \"allocationAdmin\": \"SMB6JY59jr4JJCDdSt5uBD6DPEYX7VFKKJbCubvHV91\",\n      \"availableCrankFunds\": \"0\",\n      \"baseVaultAuthority\": \"3NJNRMzZpJSKFNs2CWcy"
+          },
+          {
+            "id": 12,
+            "chunk_id": "6a03d76583de92abcb720050",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/kamino-market",
+            "snippet": "Protocol-native API: kamino / kamino-markets (as of 2026-05-13).\nEndpoint description: Kamino market catalog: main, JLP, Altcoin, JitoSOL etc. Each entry carries lendingMarket pubkey, description, and primary/curated/isolated flags. Substan"
+          },
+          {
+            "id": 13,
+            "chunk_id": "6a03da9b0e9ef846d43f819c",
+            "source": "market_data",
+            "provider_kind": "web",
+            "freshness_tier": "static",
+            "url": "https://hermes.pyth.network/api/get_price_feed?id=0x67be9f519b95cf24338801051f9a808eff0a578ccb388db73b7f6fe1de019ffb&publish_time=1753142400",
+            "snippet": "Pyth historical close for jitoSOL/USD on 2025-07-22.\nAs-of date: 2025-07-22.\nClosing price USD: $238.4672\nPyth publish_time (UTC): 2025-07-22T00:00:00Z\nSource: Pyth Hermes /api/get_price_feed historical lookup.\nProvider: market_data. Use th"
+          },
+          {
+            "id": 14,
+            "chunk_id": "6a03d76b83de92abcb720069",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "Y64V6fviRVrt5\",\n      \"baseVaultAuthorityBump\": 253,\n      \"crankFundFeePerReserve\": \"0\",\n      \"creationTimestamp\": 1745852624,\n      \"cumulativeEarnedInterest\": \"81587281968.90111848242658542252475628587\",\n      \"cumulativeMgmtFees\": \"0\","
+          },
+          {
+            "id": 15,
+            "chunk_id": "6a03d76b83de92abcb720061",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "\"availableCrankFunds\": \"0\",\n      \"baseVaultAuthority\": \"4v2K8MN6qNFWiLH6jLaN4XP9NrZWCBKG6J4MXMMqprWh\",\n      \"baseVaultAuthorityBump\": 255,\n      \"crankFundFeePerReserve\": \"1\",\n      \"creationTimestamp\": 1776078204,\n      \"cumulativeEarned"
+          }
+        ]
+      },
+      "fixture_expected": {
+        "expected_verdict_v2": "DEFER",
+        "expected_verdict_v2_set": [
+          "PASS",
+          "DEFER"
+        ],
+        "must_cite_provider_kinds": [
+          "paysh_live",
+          "market_data",
+          "canon_damodaran",
+          "canon_marks"
+        ],
+        "expected_dissent_topics": [
+          "marginal_yield_uplift_risk",
+          "peg_deviation_risk",
+          "transaction_cost_overhead"
+        ]
+      },
+      "scores": {
+        "verdict_accuracy": 0.0,
+        "citation_relevance": 0.55,
+        "provider_kind_coverage": 0.0,
+        "hallucination_score": 0.0,
+        "dissent_grounding": 0.5,
+        "confidence_calibration": 0.3
+      },
+      "passed": false,
+      "judge_notes": "Citation relevance: Most citations are Kamino protocol-native API endpoints (kvaults, staking-yields, markets) which are on-topic for the vault question, but several are raw JSON blobs with no clear relevance to the JitoSOL-SOL vault specifically, and the Pyth price feed (cite 13) is dated 2025-07-22 vs. the as_of_date of 2025-02-18 \u2014 temporally mismatched. Bazaar citations (2,3) are opaque exa-ai blobs. Roughly half are genuinely useful. Hallucination: The sentiment_analyst cites JitoSOL APY at \"approximately 5.6%\" and the fundamental_analyst cites TVL at \"$3.164 billion\" and the bull_bear_debater repeats both figures \u2014 these are specific numeric claims. The 5.6% APY figure appears to reference chunk [1] from the staking-yields API (cite 1), and the TVL figure references chunk [2] (bazaar/exa-ai). However, the bazaar sources are opaque blobs with no verifiable snippet content, and the Pyth price feed is future-dated. The APY differential claim (the core must_not_hallucinate item) is not explicitly cited with a paysh_live or market_data source \u2014 the staking-yields API is protocol_native, not paysh_live. The TVL figure lacks a clean market_data source. These constitute hallucination violations per the strict must_not_hallucinate rules. Dissent grounding: The risk manager raises smart contract risk and regulatory exposure, and the bear case touches on yield underperformance, which hints at marginal_yield_uplift_risk and transaction_cost_overhead but does not concretely name peg_deviation_risk. Only partially grounded. Confidence calibration: The panel issues ACT at 0.75 confidence despite thin/opaque citations, a must_not_hallucinate violation on APY figures, and the ground truth indicating PASS or DEFER is correct given the thin yield differential. This is severely over-confident.",
+      "wall_seconds": {
+        "panel": 56.22,
+        "judge": 15.31
+      }
+    },
+    {
+      "id": "kamino-2025Q3-usdc-pyusd-exit",
+      "protocol": "kamino",
+      "vertical": "dex",
+      "as_of_date": "2025-07-22",
+      "panel": {
+        "verdict": "defer",
+        "confidence": 0.7,
+        "dissent_count": 2,
+        "blocker_questions": [
+          "Will USDC maintain its peg above $0.9990 over the next 30 days?",
+          "Are there any upcoming audits or governance changes that could impact the protocol's risk profile?"
+        ],
+        "n_citations": 15,
+        "provider_kinds_present": [
+          "protocol_native",
+          "web"
+        ],
+        "citations": [
+          {
+            "id": 1,
+            "chunk_id": "6a03da1b0e9ef846d43f8168",
+            "source": "market_data",
+            "provider_kind": "web",
+            "freshness_tier": "static",
+            "url": "https://hermes.pyth.network/api/get_price_feed?id=0xeaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a&publish_time=1725840000",
+            "snippet": "Pyth historical close for USDC/USD on 2024-09-09.\nAs-of date: 2024-09-09.\nClosing price USD: $1.0000\nPyth publish_time (UTC): 2024-09-09T00:00:00Z\nSource: Pyth Hermes /api/get_price_feed historical lookup.\nProvider: market_data. Use this fo"
+          },
+          {
+            "id": 2,
+            "chunk_id": "6a02e48e5fd7b227d635b398",
+            "source": "market_data",
+            "provider_kind": "web",
+            "freshness_tier": "static",
+            "url": "https://gecko.local/market_data/kamino/2026-05-12T08:00:00Z",
+            "snippet": "Pyth daily candles for USDC/USD (last 30 days, as of 2026-05-12T08:00:00Z).\nFormat: date,open,high,low,close,volume_proxy\ndate,open,high,low,close,volume_proxy\n2026-05-12,0.999860,0.999860,0.999860,0.999860,n/a\nSource: Pyth Network Hermes A"
+          },
+          {
+            "id": 3,
+            "chunk_id": "6a03da940e9ef846d43f8199",
+            "source": "market_data",
+            "provider_kind": "web",
+            "freshness_tier": "static",
+            "url": "https://hermes.pyth.network/api/get_price_feed?id=0xeaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a&publish_time=1753142400",
+            "snippet": "Pyth historical close for USDC/USD on 2025-07-22.\nAs-of date: 2025-07-22.\nClosing price USD: $0.9999\nPyth publish_time (UTC): 2025-07-22T00:00:00Z\nSource: Pyth Hermes /api/get_price_feed historical lookup.\nProvider: market_data. Use this fo"
+          },
+          {
+            "id": 4,
+            "chunk_id": "6a03d76b83de92abcb7200ab",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "\": \"sadmBTQm5HJsyzWHEjV4YwG9CiahZKVDVqAyS4Wx1zH\",\n      \"availableCrankFunds\": \"0\",\n      \"baseVaultAuthority\": \"FETFTjK4H3yBpsCGtvRATgpwNSgqftA9d2Q21RHHEPDq\",\n      \"baseVaultAuthorityBump\": 255,\n      \"crankFundFeePerReserve\": \"2\",\n      "
+          },
+          {
+            "id": 5,
+            "chunk_id": "6a03d77483de92abcb7200c3",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/v2/staking-yields",
+            "snippet": "Protocol-native API: kamino / kamino-staking-yields (as of 2026-05-13).\nEndpoint description: Kamino-tracked LST staking-yield snapshots \u2014 JitoSOL, mSOL, bSOL, INF current APY + 7d trailing. Quote-kind, refreshable.\nSource URL: https://api."
+          },
+          {
+            "id": 6,
+            "chunk_id": "6a03da670e9ef846d43f8184",
+            "source": "market_data",
+            "provider_kind": "web",
+            "freshness_tier": "static",
+            "url": "https://hermes.pyth.network/api/get_price_feed?id=0xeaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a&publish_time=1741046400",
+            "snippet": "Pyth historical close for USDC/USD on 2025-03-04.\nAs-of date: 2025-03-04.\nClosing price USD: $0.9999\nPyth publish_time (UTC): 2025-03-04T00:00:00Z\nSource: Pyth Hermes /api/get_price_feed historical lookup.\nProvider: market_data. Use this fo"
+          },
+          {
+            "id": 7,
+            "chunk_id": "6a03daa70e9ef846d43f81a0",
+            "source": "market_data",
+            "provider_kind": "web",
+            "freshness_tier": "static",
+            "url": "https://hermes.pyth.network/api/get_price_feed?id=0xeaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a&publish_time=1754352000",
+            "snippet": "Pyth historical close for USDC/USD on 2025-08-05.\nAs-of date: 2025-08-05.\nClosing price USD: $0.9999\nPyth publish_time (UTC): 2025-08-05T00:00:00Z\nSource: Pyth Hermes /api/get_price_feed historical lookup.\nProvider: market_data. Use this fo"
+          },
+          {
+            "id": 8,
+            "chunk_id": "6a03d76b83de92abcb720058",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "Protocol-native API: kamino / kamino-vaults (as of 2026-05-13).\nEndpoint description: Kamino K-Vaults catalog \u2014 vault adminAuthority, tokenMint, tokenVault, vault state config. Includes Multiply / Leverage / Yield vault types with their per"
+          },
+          {
+            "id": 9,
+            "chunk_id": "6a03da4c0e9ef846d43f8176",
+            "source": "market_data",
+            "provider_kind": "web",
+            "freshness_tier": "static",
+            "url": "https://hermes.pyth.network/api/get_price_feed?id=0xeaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a&publish_time=1733097600",
+            "snippet": "Pyth historical close for USDC/USD on 2024-12-02.\nAs-of date: 2024-12-02.\nClosing price USD: $0.9999\nPyth publish_time (UTC): 2024-12-02T00:00:00Z\nSource: Pyth Hermes /api/get_price_feed historical lookup.\nProvider: market_data. Use this fo"
+          },
+          {
+            "id": 10,
+            "chunk_id": "6a03da070e9ef846d43f8161",
+            "source": "market_data",
+            "provider_kind": "web",
+            "freshness_tier": "static",
+            "url": "https://hermes.pyth.network/api/get_price_feed?id=0xeaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a&publish_time=1723420800",
+            "snippet": "Pyth historical close for USDC/USD on 2024-08-12.\nAs-of date: 2024-08-12.\nClosing price USD: $0.9999\nPyth publish_time (UTC): 2024-08-12T00:00:00Z\nSource: Pyth Hermes /api/get_price_feed historical lookup.\nProvider: market_data. Use this fo"
+          },
+          {
+            "id": 11,
+            "chunk_id": "6a03d76b83de92abcb7200ad",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "Wfwgo\",\n      \"baseVaultAuthorityBump\": 253,\n      \"crankFundFeePerReserve\": \"1\",\n      \"creationTimestamp\": 1778577725,\n      \"cumulativeEarnedInterest\": \"0\",\n      \"cumulativeMgmtFees\": \"0\",\n      \"cumulativePerfFees\": \"0\",\n      \"lastFee"
+          },
+          {
+            "id": 12,
+            "chunk_id": "6a03da2e0e9ef846d43f816a",
+            "source": "market_data",
+            "provider_kind": "web",
+            "freshness_tier": "static",
+            "url": "https://hermes.pyth.network/api/get_price_feed?id=0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace&publish_time=1725840000",
+            "snippet": "Pyth historical close for ETH/USD on 2024-09-09.\nAs-of date: 2024-09-09.\nClosing price USD: $2,297.3057\nPyth publish_time (UTC): 2024-09-09T00:00:00Z\nSource: Pyth Hermes /api/get_price_feed historical lookup.\nProvider: market_data. Use this"
+          },
+          {
+            "id": 13,
+            "chunk_id": "6a03da360e9ef846d43f816d",
+            "source": "market_data",
+            "provider_kind": "web",
+            "freshness_tier": "static",
+            "url": "https://hermes.pyth.network/api/get_price_feed?id=0xf51570985c642c49c2d6e50156390fdba80bb6d5f7fa389d2f012ced4f7d208f&publish_time=1725840000",
+            "snippet": "Pyth historical close for INF/USD on 2024-09-09.\nAs-of date: 2024-09-09.\nClosing price USD: $160.1655\nPyth publish_time (UTC): 2024-09-09T00:00:00Z\nSource: Pyth Hermes /api/get_price_feed historical lookup.\nProvider: market_data. Use this f"
+          },
+          {
+            "id": 14,
+            "chunk_id": "6a03d76b83de92abcb720089",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "\"vaultFarm\": \"H6kauPaHmNqpdKtD5U2zw3Eb28ZB7iMeBdHVfLq1i4Kh\",\n      \"vaultLookupTable\": \"7EzosNioQ6FDNvMKLfg6om5wTVHiJo9vVx7DZNGYBKU3\"\n    }\n  },\n  {\n    \"address\": \"CfbM5dMBYgPnm3TVXb6XE1sLQCbA4UsELm4XEq2zuRoV\",\n    \"programId\": \"KvauGMspG5"
+          },
+          {
+            "id": 15,
+            "chunk_id": "6a03d76b83de92abcb7200ae",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://api.kamino.finance/kvaults/vaults",
+            "snippet": "YL839szzGJuSddcQCGCo778QZr\",\n      \"vaultLookupTable\": \"7WWtDcJsdXdWV5jJKYMXnSduqUVnGqngKw1XqxfP7haB\"\n    }\n  },\n  {\n    \"address\": \"A2wsxhA7pF4B2UKVfXocb6TAAP9ipfPJam6oMKgDE5BK\",\n    \"programId\": \"KvauGMspG5k6rtzrqqn7WNn3oZdyKqLKwK2XWQ8FLj"
+          }
+        ]
+      },
+      "fixture_expected": {
+        "expected_verdict_v2": "PASS",
+        "expected_verdict_v2_set": [
+          "PASS",
+          "DEFER"
+        ],
+        "must_cite_provider_kinds": [
+          "paysh_live",
+          "market_data",
+          "canon_marks",
+          "canon_damodaran"
+        ],
+        "expected_dissent_topics": [
+          "yield_trap_risk",
+          "stablecoin_peg_risk",
+          "opportunity_cost"
+        ]
+      },
+      "scores": {
+        "verdict_accuracy": 1.0,
+        "citation_relevance": 0.55,
+        "provider_kind_coverage": 0.0,
+        "hallucination_score": 0.0,
+        "dissent_grounding": 0.8,
+        "confidence_calibration": 0.6
+      },
+      "passed": false,
+      "judge_notes": "Citation relevance is mixed: USDC/USD Pyth feeds (cites 1,3,6,7,9,10) are marginally relevant for peg-risk monitoring but are largely boilerplate historical snapshots from various dates (some future-dated, e.g. 2026-05-12 and 2025-08-05 which post-date the as_of_date of 2025-07-22), and the Kamino vault API snippets (4,8,11,14,15) are raw config data with no yield/APY content. Cites 12 (ETH/USD) and 13 (INF/USD) are entirely off-topic for a USDC-PYUSD stablecoin vault question. Hallucination: the +0.9% total return figure and the +0.3%/30d realized yield from the ground truth are referenced in the question framing but the panel does not independently assert specific APY figures from canon-only sources \u2014 however, cite 2 is dated 2026-05-12 (future date relative to as_of 2025-07-22), which is a data integrity red flag but not strictly a must_not_hallucinate pattern. The panel does not cite a guaranteed roll-forward yield or fabricate a peg deviation figure. Hallucination score: 0.0 (at least one problematic pattern \u2014 future-dated market_data cited as evidence, and the panel never surfaces the realized +0.3%/30d figure which is the core yield-trap signal). Dissent grounding: opportunity_cost and yield_trap_risk are hinted at (low yield concerns, rotation discussion, cautious sentiment) and stablecoin_peg_risk is explicitly surfaced in blocker questions and bull-bear debate. At least two of three expected dissent topics are present, though yield_trap framing is weak. Confidence calibration: 0.7 confidence for DEFER is mildly over-confident given thin on-topic citations, future-dated data, no live APY data for the vault, and the ground truth indicating PASS/rotate is the correct call.",
+      "wall_seconds": {
+        "panel": 51.66,
+        "judge": 15.26
+      }
+    },
+    {
+      "id": "drift-2024Q4-sol-perp-long",
+      "protocol": "drift",
+      "vertical": "perps",
+      "as_of_date": "2024-12-02",
+      "panel": {
+        "verdict": "defer",
+        "confidence": 0.7,
+        "dissent_count": 0,
+        "blocker_questions": [
+          "What is the current health status of the Drift protocol, including any recent audits or governance changes?",
+          "How is SOL performing relative to key support and resistance levels ahead of the FOMC meeting?"
+        ],
+        "n_citations": 0,
+        "provider_kinds_present": [],
+        "citations": []
+      },
+      "fixture_expected": {
+        "expected_verdict_v2": "PASS",
+        "expected_verdict_v2_set": [
+          "PASS",
+          "DEFER"
+        ],
+        "must_cite_provider_kinds": [
+          "market_data",
+          "canon_marks",
+          "canon_macro",
+          "canon_damodaran",
+          "paysh_live"
+        ],
+        "expected_dissent_topics": [
+          "macro_event_risk",
+          "leverage_unwind_risk",
+          "funding_rate_risk",
+          "liquidation_cascade_risk"
+        ]
+      },
+      "scores": {
+        "verdict_accuracy": 1.0,
+        "citation_relevance": 0.0,
+        "provider_kind_coverage": 0.0,
+        "hallucination_score": 1.0,
+        "dissent_grounding": 0.5,
+        "confidence_calibration": 0.4
+      },
+      "passed": false,
+      "judge_notes": "citation_relevance: Zero citations were provided (n_citations=0, citations=[]), so there are no on-topic or off-topic cites to score \u2014 floor of 0.0 applies. hallucination_score: No specific USD price levels, funding rates, OI figures, or FOMC outcome predictions were asserted as facts without sourcing; the $230 figure is from the user's own question framing, not a panel claim. No must_not_hallucinate patterns detected \u2014 score is 1.0. dissent_grounding: The panel does not explicitly surface macro_event_risk, funding_rate_risk, leverage_unwind_risk, or liquidation_cascade_risk as named topics. The bull_bear_debater hints at FOMC binary outcome risk and leverage downside, and the risk_manager mentions liquidity risk, but none of the four expected dissent topics are concretely named or developed (e.g., no mention of funding rate bleed, no liquidation cascade scenario). Partial credit at 0.5 for the FOMC uncertainty hint and leverage amplification mention. confidence_calibration: Panel states 0.7 confidence on a defer verdict with zero citations and no on-chain data. With no supporting evidence, 0.7 is moderately over-confident; a well-calibrated panel with empty corpus should be closer to 0.5 or lower. Mild miscalibration warrants 0.4.",
+      "wall_seconds": {
+        "panel": 39.98,
+        "judge": 10.06
+      }
+    },
+    {
+      "id": "drift-2025Q2-jto-perp-short",
+      "protocol": "drift",
+      "vertical": "perps",
+      "as_of_date": "2025-05-14",
+      "panel": {
+        "verdict": "pass",
+        "confidence": 0.6,
+        "dissent_count": 3,
+        "blocker_questions": [
+          "What is the outcome of the next token unlock event for JTO-PERP?",
+          "Are there any upcoming audits or improvements to the protocol's smart contracts?",
+          "How does the market react to the unlock supply in terms of trading volume and price movement?"
+        ],
+        "n_citations": 0,
+        "provider_kinds_present": [],
+        "citations": []
+      },
+      "fixture_expected": {
+        "expected_verdict_v2": "ACT",
+        "expected_verdict_v2_set": [
+          "ACT",
+          "DEFER"
+        ],
+        "must_cite_provider_kinds": [
+          "market_data",
+          "paysh_live",
+          "canon_damodaran",
+          "canon_marks"
+        ],
+        "expected_dissent_topics": [
+          "short_squeeze_risk",
+          "funding_rate_risk",
+          "narrative_reversal_risk"
+        ]
+      },
+      "scores": {
+        "verdict_accuracy": 0.0,
+        "citation_relevance": 0.0,
+        "provider_kind_coverage": 0.0,
+        "hallucination_score": 1.0,
+        "dissent_grounding": 0.5,
+        "confidence_calibration": 0.5
+      },
+      "passed": false,
+      "judge_notes": "citation_relevance: Zero citations were provided (n_citations=0, citations=[]), so there are no cites to evaluate \u2014 score is 0.0. hallucination_score: No specific price targets, APY figures, TVL numbers, funding rates, or unlock schedule figures were cited without a source; the panel explicitly acknowledged data absence throughout. No must_not_hallucinate patterns triggered \u2014 score is 1.0. dissent_grounding: The bull_bear_debater turn hints at short-squeeze / narrative-reversal risk (\"market reacts positively to the unlock, with demand outpacing supply and driving prices higher\") and the blocker questions touch on market reaction to unlock supply, but funding_rate_risk and short_squeeze_risk are not concretely named or quantified. Narrative reversal is partially surfaced. Score 0.5 \u2014 hinted but not concrete. confidence_calibration: Confidence 0.6 with zero citations and 3 dissenters is mildly reasonable (low-ish confidence matches thin evidence), but the panel's data vacuum arguably warrants even lower confidence; the strategist recommended \"observe\" yet coordinator settled on 0.6 \u2014 mild over-confidence given complete absence of on-topic data. Score 0.5.",
+      "wall_seconds": {
+        "panel": 34.04,
+        "judge": 9.6
+      }
+    },
+    {
+      "id": "jupiter-2024Q3-jlp-vs-jitosol",
+      "protocol": "jupiter",
+      "vertical": "dex",
+      "as_of_date": "2024-09-09",
+      "panel": {
+        "verdict": "defer",
+        "confidence": 0.7,
+        "dissent_count": 2,
+        "blocker_questions": [
+          "Will JitoSOL maintain its price above $104 over the next 30 days?",
+          "What measures can be taken to mitigate the concentration risk associated with JitoSOL?"
+        ],
+        "n_citations": 15,
+        "provider_kinds_present": [
+          "protocol_native",
+          "web"
+        ],
+        "citations": [
+          {
+            "id": 1,
+            "chunk_id": "6a04bfd0257a849f8e1c097a",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=verified",
+            "snippet": "95,\n    \"website\": \"https://jito.network\"\n  },\n  {\n    \"apy\": {},\n    \"audit\": {\n      \"devMints\": 1,\n      \"freezeAuthorityDisabled\": true,\n      \"topHoldersPercentage\": 46.28561122347944\n    },\n    \"circSupply\": 4318222.494763257,\n    \"cr"
+          },
+          {
+            "id": 2,
+            "chunk_id": "6a04bfd8257a849f8e1c09a6",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "896637003.8979714,\n    \"firstPool\": {\n      \"createdAt\": \"2024-05-28T07:19:22.813Z\",\n      \"id\": \"Jito4APyf642JPZPx3hGc6WWJ8zPKtRbRs4P815Awbb\"\n    },\n    \"holderCount\": 189183,\n    \"icon\": \"https://storage.googleapis.com/token-metadata/Jito"
+          },
+          {
+            "id": 3,
+            "chunk_id": "6a04bfd8257a849f8e1c09a8",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "3.648467687491794,\n      \"sellOrganicVolume\": 62770.781137501595,\n      \"sellVolume\": 972093.9483275913,\n      \"volumeChange\": 410.15208440853775\n    },\n    \"symbol\": \"JitoSOL\",\n    \"tags\": [\n      \"verified\",\n      \"community\",\n      \"lst\""
+          },
+          {
+            "id": 4,
+            "chunk_id": "6a04bfd8257a849f8e1c09ab",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "05-13T18:15:11.157853063Z\",\n    \"usdPrice\": 107.86991364104423,\n    \"website\": \"https://jup.ag/\"\n  },\n  {\n    \"apy\": {},\n    \"audit\": {\n      \"devBalancePercentage\": 7.351598467980668e-05,\n      \"devMints\": 3,\n      \"freezeAuthorityDisabled"
+          },
+          {
+            "id": 5,
+            "chunk_id": "6a04bfd0257a849f8e1c0977",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=verified",
+            "snippet": "[\n      \"moonshot-verified\",\n      \"verified\"\n    ],\n    \"telegram\": \"https://t.me/+BZlUSV42IgowZjE8\",\n    \"tokenProgram\": \"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\",\n    \"totalSupply\": 999857396.605739,\n    \"updatedAt\": \"2026-05-13T18:1"
+          },
+          {
+            "id": 6,
+            "chunk_id": "6a04bfd0257a849f8e1c0979",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=verified",
+            "snippet": "75177755,\n      \"holderChange\": -0.005814137869065615,\n      \"liquidityChange\": 0.09637380026114051,\n      \"numBuys\": 104,\n      \"numNetBuyers\": 4,\n      \"numOrganicBuyers\": 3,\n      \"numSells\": 96,\n      \"numTraders\": 46,\n      \"priceChang"
+          },
+          {
+            "id": 7,
+            "chunk_id": "6a04bfd0257a849f8e1c0978",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=verified",
+            "snippet": "3bZMotVkW6beNZz5CPAkiwvgV2CTje9pVSS\",\n    \"name\": \"Jito Staked SOL\",\n    \"organicScore\": 98.13865936025346,\n    \"organicScoreLabel\": \"high\",\n    \"priceBlockId\": 419522396,\n    \"stats1h\": {\n      \"buyOrganicVolume\": 120178.24825556563,\n     "
+          },
+          {
+            "id": 8,
+            "chunk_id": "6a04bfd8257a849f8e1c09a3",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Protocol-native API: jupiter / jupiter-tokens-lst-list (as of 2026-05-13).\nEndpoint description: Jupiter LST-tagged tokens \u2014 JitoSOL, mSOL, bSOL, INF, hSOL et al with metadata.\nSource URL: https://lite-api.jup.ag/tokens/v2/tag?query=lst\nCon"
+          },
+          {
+            "id": 9,
+            "chunk_id": "6a04bfb2257a849f8e1c0927",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://dev.jup.ag/docs/lend/advanced/unwind",
+            "snippet": "use a pre-built swap transaction. For example, to unwind a SOL/USDC position: Flashloan collateral (SOL) from Jupiter Lend. Swap SOL \u2192 USDC using Jupiter Lite API (you need USDC to repay debt). Use getOperateIx to repay debt and withdraw co"
+          },
+          {
+            "id": 10,
+            "chunk_id": "6a04bfd8257a849f8e1c09b1",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "958.2737644489,\n      \"holderChange\": 0.18172806872625144,\n      \"liquidityChange\": -1.853086593202196,\n      \"numBuys\": 107,\n      \"numNetBuyers\": 72,\n      \"numOrganicBuyers\": 20,\n      \"numSells\": 121,\n      \"numTraders\": 116,\n      \"pri"
+          },
+          {
+            "id": 11,
+            "chunk_id": "6a04bfd0257a849f8e1c0936",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=verified",
+            "snippet": "Protocol-native API: jupiter / jupiter-tokens-verified-list (as of 2026-05-13).\nEndpoint description: Jupiter verified-token list \u2014 canonical Solana mints curated for routing.\nSource URL: https://lite-api.jup.ag/tokens/v2/tag?query=verified"
+          },
+          {
+            "id": 12,
+            "chunk_id": "6a04bfad257a849f8e1c091f",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://dev.jup.ag/docs/lend/advanced/multiply",
+            "snippet": "instructions. For example, to multiply your SOL exposure using USDC debt: You have 1 SOL (collateral). Flashloan 100 USDC from Jupiter Lend (debt asset). Swap 100 USDC \u2192 SOL using Jupiter Lite API. Deposit your SOL + swapped SOL into the va"
+          },
+          {
+            "id": 13,
+            "chunk_id": "6a04bfc8257a849f8e1c0934",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/price/v3?ids=J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn,mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So,bSo13r4TkiE4KumL71LsHTPpL2euBYLFx6h9HP3piy1,5oVNBeEEQvYi1cX3ir8Dx5n1P7pdxydbGF2X4TxVusJm",
+            "snippet": "Protocol-native API: jupiter / jupiter-lst-prices (as of 2026-05-13).\nEndpoint description: Jupiter Lite-API LST snapshot \u2014 JitoSOL, mSOL, bSOL, INF prices for LST rotation analysis.\nSource URL: https://lite-api.jup.ag/price/v3?ids=J1toso1u"
+          },
+          {
+            "id": 14,
+            "chunk_id": "6a04bfd8257a849f8e1c09a9",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Fm8f6sZdosWBjx93v\",\n    \"isVerified\": true,\n    \"liquidity\": 465806287.5929271,\n    \"mcap\": 465806287.5929271,\n    \"mintAuthority\": \"EMjuABxELpYWYEwjkKmQKBNCwdaFAy4QYAs6W9bDQDNw\",\n    \"name\": \"Jupiter Staked SOL\",\n    \"organicScore\": 93.213"
+          },
+          {
+            "id": 15,
+            "chunk_id": "6a02e49d5fd7b227d635b39f",
+            "source": "market_data",
+            "provider_kind": "web",
+            "freshness_tier": "static",
+            "url": "https://gecko.local/market_data/jupiter/2026-05-12T08:00:00Z",
+            "snippet": "Pyth daily candles for jitoSOL/USD (last 30 days, as of 2026-05-12T08:00:00Z).\nFormat: date,open,high,low,close,volume_proxy\ndate,open,high,low,close,volume_proxy\n2026-05-12,122.042523,122.042523,122.042523,122.042523,n/a\nSource: Pyth Netwo"
+          }
+        ]
+      },
+      "fixture_expected": {
+        "expected_verdict_v2": "DEFER",
+        "expected_verdict_v2_set": [
+          "ACT",
+          "DEFER"
+        ],
+        "must_cite_provider_kinds": [
+          "paysh_live",
+          "market_data",
+          "canon_marks",
+          "canon_damodaran"
+        ],
+        "expected_dissent_topics": [
+          "concentration_risk",
+          "jlp_drawdown_risk",
+          "rotation_timing_risk"
+        ]
+      },
+      "scores": {
+        "verdict_accuracy": 1.0,
+        "citation_relevance": 0.45,
+        "provider_kind_coverage": 0.0,
+        "hallucination_score": 0.0,
+        "dissent_grounding": 1.0,
+        "confidence_calibration": 0.75
+      },
+      "passed": false,
+      "judge_notes": "Citation relevance is mediocre: most citations are generic Jupiter token-list API endpoints (verified/LST tag queries) not specific to JLP yield, JitoSOL APY, or the rotation decision. Citation 15 is a market_data source but dated 2026-05-12 (mismatched to as_of_date 2024-09-09) and covers JitoSOL price candles, not JLP. Citations 9 and 12 cover Jupiter Lend unwind/multiply docs, tangential to the question. Only a handful (2,3,7,13,14) are even loosely on-topic for the LST/JLP comparison. Hallucination: the technical analyst cites specific price figures (~$104.17 to $116.32, ~11.33% gain) and the fundamental analyst cites TVL of ~$896.64M \u2014 these numbers appear to come from the citation snippets (chunks [2],[6]) which are protocol_native daily sources, so they are grounded in cited sources rather than fabricated. However, the market_data citation 15 is from 2026-05-12 (future date relative to as_of_date), raising data integrity concerns. The TVL figure and price figures are attributed to chunks from the corpus. No explicit JLP yield figure or JitoSOL APY is cited without a source. No claim of guaranteed JLP outperformance appears. Hallucination score: 0.0 (fail) because the market_data source is dated 2026-05-12 while the question is as_of 2024-09-09 \u2014 this is a temporal hallucination/fabrication of future data presented as current, and specific price levels ($104.17, $116.32) are cited from this mismatched source. Dissent grounding: concentration_risk is clearly and repeatedly surfaced (risk manager, bull-bear debater, coordinator, blocker questions). JLP drawdown risk is hinted at but not explicitly named. Rotation timing risk is partially addressed via the 'observe' recommendation. At least one expected dissent topic (concentration_risk) is strongly present. Confidence calibration: 0.7 confidence with 2 dissenters, thin on-topic citations, and a mismatched data source is mildly over-confident but not severely so \u2014 0.75 score.",
+      "wall_seconds": {
+        "panel": 51.29,
+        "judge": 15.87
+      }
+    },
+    {
+      "id": "jupiter-2025Q1-lst-rotation-msol",
+      "protocol": "jupiter",
+      "vertical": "dex",
+      "as_of_date": "2025-03-04",
+      "panel": {
+        "verdict": "defer",
+        "confidence": 0.65,
+        "dissent_count": 1,
+        "blocker_questions": [
+          "What measures can be taken to mitigate the concentration risk associated with top holders of bSOL?",
+          "Are there any recent developments in the audit status of the Jupiter protocol that could affect its security posture?"
+        ],
+        "n_citations": 15,
+        "provider_kinds_present": [
+          "protocol_native",
+          "web"
+        ],
+        "citations": [
+          {
+            "id": 1,
+            "chunk_id": "6a04bfd8257a849f8e1c09ab",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "05-13T18:15:11.157853063Z\",\n    \"usdPrice\": 107.86991364104423,\n    \"website\": \"https://jup.ag/\"\n  },\n  {\n    \"apy\": {},\n    \"audit\": {\n      \"devBalancePercentage\": 7.351598467980668e-05,\n      \"devMints\": 3,\n      \"freezeAuthorityDisabled"
+          },
+          {
+            "id": 2,
+            "chunk_id": "6a04bfad257a849f8e1c091f",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://dev.jup.ag/docs/lend/advanced/multiply",
+            "snippet": "instructions. For example, to multiply your SOL exposure using USDC debt: You have 1 SOL (collateral). Flashloan 100 USDC from Jupiter Lend (debt asset). Swap 100 USDC \u2192 SOL using Jupiter Lite API. Deposit your SOL + swapped SOL into the va"
+          },
+          {
+            "id": 3,
+            "chunk_id": "6a04bfb2257a849f8e1c0927",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://dev.jup.ag/docs/lend/advanced/unwind",
+            "snippet": "use a pre-built swap transaction. For example, to unwind a SOL/USDC position: Flashloan collateral (SOL) from Jupiter Lend. Swap SOL \u2192 USDC using Jupiter Lite API (you need USDC to repay debt). Use getOperateIx to repay debt and withdraw co"
+          },
+          {
+            "id": 4,
+            "chunk_id": "6a04bfd0257a849f8e1c097a",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=verified",
+            "snippet": "95,\n    \"website\": \"https://jito.network\"\n  },\n  {\n    \"apy\": {},\n    \"audit\": {\n      \"devMints\": 1,\n      \"freezeAuthorityDisabled\": true,\n      \"topHoldersPercentage\": 46.28561122347944\n    },\n    \"circSupply\": 4318222.494763257,\n    \"cr"
+          },
+          {
+            "id": 5,
+            "chunk_id": "6a04bfd0257a849f8e1c0995",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=verified",
+            "snippet": "\"7Q42pBSxR8bbWJkhSQZLDqpcR9xCv9z3zBSGPc7PdXkt\",\n    \"fdv\": 287626702.5673427,\n    \"firstPool\": {\n      \"createdAt\": \"2022-07-13T04:40:36.317Z\",\n      \"id\": \"8szGkuLTAux9XMgZ2vtY39jVSowEcpBfFfD8hXSEqdGC\"\n    },\n    \"holderCount\": 149898,\n   "
+          },
+          {
+            "id": 6,
+            "chunk_id": "6a04bfd0257a849f8e1c0936",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=verified",
+            "snippet": "Protocol-native API: jupiter / jupiter-tokens-verified-list (as of 2026-05-13).\nEndpoint description: Jupiter verified-token list \u2014 canonical Solana mints curated for routing.\nSource URL: https://lite-api.jup.ag/tokens/v2/tag?query=verified"
+          },
+          {
+            "id": 7,
+            "chunk_id": "6a04bfb2257a849f8e1c0928",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://dev.jup.ag/docs/lend/advanced/unwind",
+            "snippet": "= new BN ( 1_179_026_156 ); // collateral to withdraw (base units) const FULL_UNWIND = true ; 3 Get Flashloan Instructions Use getFlashBorrowIx and getFlashPaybackIx to flashloan the collateral asset (e.g. SOL). const flashParams = { connec"
+          },
+          {
+            "id": 8,
+            "chunk_id": "6a04bfc8257a849f8e1c0934",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/price/v3?ids=J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn,mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So,bSo13r4TkiE4KumL71LsHTPpL2euBYLFx6h9HP3piy1,5oVNBeEEQvYi1cX3ir8Dx5n1P7pdxydbGF2X4TxVusJm",
+            "snippet": "Protocol-native API: jupiter / jupiter-lst-prices (as of 2026-05-13).\nEndpoint description: Jupiter Lite-API LST snapshot \u2014 JitoSOL, mSOL, bSOL, INF prices for LST rotation analysis.\nSource URL: https://lite-api.jup.ag/price/v3?ids=J1toso1u"
+          },
+          {
+            "id": 9,
+            "chunk_id": "6a03d77c83de92abcb7200cf",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/price/v3?ids=So11111111111111111111111111111111111111112",
+            "snippet": "Protocol-native API: jupiter / jupiter-sol-price (as of 2026-05-13).\nEndpoint description: Jupiter Lite-API SOL price + 24h liquidity + priceChange24h. Quote-kind, refreshable. Grounds Jupiter-context price discussions in real numbers.\nSour"
+          },
+          {
+            "id": 10,
+            "chunk_id": "6a04bfd8257a849f8e1c09a3",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Protocol-native API: jupiter / jupiter-tokens-lst-list (as of 2026-05-13).\nEndpoint description: Jupiter LST-tagged tokens \u2014 JitoSOL, mSOL, bSOL, INF, hSOL et al with metadata.\nSource URL: https://lite-api.jup.ag/tokens/v2/tag?query=lst\nCon"
+          },
+          {
+            "id": 11,
+            "chunk_id": "6a04bfc5257a849f8e1c0933",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/price/v3?ids=So11111111111111111111111111111111111111112",
+            "snippet": "Protocol-native API: jupiter / jupiter-sol-price (as of 2026-05-13).\nEndpoint description: Jupiter Lite-API SOL price + 24h liquidity + priceChange24h. Quote-kind.\nSource URL: https://lite-api.jup.ag/price/v3?ids=So1111111111111111111111111"
+          },
+          {
+            "id": 12,
+            "chunk_id": "6a04bfd8257a849f8e1c09ac",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Marinade staked SOL (mSOL)\",\n    \"organicScore\": 94.2007119363,\n    \"organicScoreLabel\": \"high\",\n    \"priceBlockId\": 419522491,\n    \"stats1h\": {\n      \"buyOrganicVolume\": 11828.516305401545,\n      \"buyVolume\": 45575.35598295434,\n      \"hold"
+          },
+          {
+            "id": 13,
+            "chunk_id": "6a04bfd8257a849f8e1c09a9",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://lite-api.jup.ag/tokens/v2/tag?query=lst",
+            "snippet": "Fm8f6sZdosWBjx93v\",\n    \"isVerified\": true,\n    \"liquidity\": 465806287.5929271,\n    \"mcap\": 465806287.5929271,\n    \"mintAuthority\": \"EMjuABxELpYWYEwjkKmQKBNCwdaFAy4QYAs6W9bDQDNw\",\n    \"name\": \"Jupiter Staked SOL\",\n    \"organicScore\": 93.213"
+          },
+          {
+            "id": 14,
+            "chunk_id": "6a03da450e9ef846d43f8173",
+            "source": "market_data",
+            "provider_kind": "web",
+            "freshness_tier": "static",
+            "url": "https://hermes.pyth.network/api/get_price_feed?id=0xc2289a6a43d2ce91c6f55caec370f4acc38a2ed477f58813334c6d03749ff2a4&publish_time=1730764800",
+            "snippet": "Pyth historical close for mSOL/USD on 2024-11-05.\nAs-of date: 2024-11-05.\nClosing price USD: $194.2483\nPyth publish_time (UTC): 2024-11-05T00:00:00Z\nSource: Pyth Hermes /api/get_price_feed historical lookup.\nProvider: market_data. Use this "
+          },
+          {
+            "id": 15,
+            "chunk_id": "6a04bf83257a849f8e1c08e6",
+            "source": "protocol_native",
+            "provider_kind": "protocol_native",
+            "freshness_tier": "daily",
+            "url": "https://dev.jup.ag/docs/swap/advanced/slippage",
+            "snippet": "memecoins or exiting a position as quickly as possible You are building a UI that lets users set their own slippage You need deterministic behaviour for testing or simulation \u200b Related Routing impact matrix : how parameters like slippageBps"
+          }
+        ]
+      },
+      "fixture_expected": {
+        "expected_verdict_v2": "PASS",
+        "expected_verdict_v2_set": [
+          "PASS",
+          "DEFER"
+        ],
+        "must_cite_provider_kinds": [
+          "paysh_live",
+          "market_data",
+          "canon_marks",
+          "canon_damodaran"
+        ],
+        "expected_dissent_topics": [
+          "points_narrative_risk",
+          "peg_deviation_risk",
+          "rotation_cost_overhead"
+        ]
+      },
+      "scores": {
+        "verdict_accuracy": 1.0,
+        "citation_relevance": 0.55,
+        "provider_kind_coverage": 0.0,
+        "hallucination_score": 0.0,
+        "dissent_grounding": 0.5,
+        "confidence_calibration": 0.6
+      },
+      "passed": false,
+      "judge_notes": "Citation relevance: Several citations are on-topic (LST list, LST prices, mSOL/bSOL token metadata, slippage docs) but many are tangential Jupiter Lend/multiply/unwind docs irrelevant to an LST rotation swap question; Pyth cite is stale (Nov 2024) and used for a different date context. Roughly half are genuinely relevant. Hallucination: The fundamental analyst cites TVL of ~$465.8M and buy/sell volumes as specific figures sourced from chunk references, and the risk manager cites specific top-holder percentages (22.61% mSOL, 46.29% bSOL) \u2014 these specific figures appear in the citation snippets (citation 4/5 show topHoldersPercentage 46.28%), so they are grounded in protocol_native sources. However, no specific bSOL APY figure is cited as a cash-equivalent, and no points-program valuation is cited as cash-equivalent. The claim that TVL is ~$465.8M appears to be sourced from citation 13 (liquidity: 465806287). No clear must_not_hallucinate pattern is triggered with certainty, but it's borderline \u2014 scoring 0.0 because the specific figures cited (TVL $465.8M, volume ~$45,886/$40,743) lack explicit paysh_live/market_data sourcing and appear to be from protocol_native token metadata endpoints not designed as TVL/volume feeds, constituting hallucination risk on specific numeric claims. Dissent grounding: Concentration risk (peg_deviation_risk adjacent) and smart contract risk are raised, but the critical expected dissent topics \u2014 points_narrative_risk (points are non-cash, not guaranteed outperformance) and rotation_cost_overhead \u2014 are not concretely surfaced. No Marks/Damodaran canon on narrative pricing appears. Only hinted at via concentration risk. Confidence calibration: 0.65 defer with thin on-topic cites and missing key dissent topics (points-as-non-cash) is mildly under-confident relative to what the data supports, but the missing dissent topics mean the panel hasn't fully justified even this moderate confidence level \u2014 mild miscalibration.",
+      "wall_seconds": {
+        "panel": 59.6,
+        "judge": 16.21
+      }
+    },
+    {
+      "id": "jito-2025Q2-mev-tip-band",
+      "protocol": "jito",
+      "vertical": "infra",
+      "as_of_date": "2025-04-21",
+      "panel": {
+        "verdict": "defer",
+        "confidence": 0.4,
+        "dissent_count": 0,
+        "blocker_questions": [
+          "Does Jito's transaction volume remain above the current average while maintaining low network congestion over the next seven days?"
+        ],
+        "n_citations": 0,
+        "provider_kinds_present": [],
+        "citations": []
+      },
+      "fixture_expected": {
+        "expected_verdict_v2": "ACT",
+        "expected_verdict_v2_set": [
+          "ACT",
+          "DEFER"
+        ],
+        "must_cite_provider_kinds": [
+          "paysh_live",
+          "market_data",
+          "canon_mauboussin",
+          "canon_damodaran"
+        ],
+        "expected_dissent_topics": [
+          "mempool_depth_volatility",
+          "tip_inflation_risk",
+          "bot_competition_risk"
+        ]
+      },
+      "scores": {
+        "verdict_accuracy": 1.0,
+        "citation_relevance": 0.0,
+        "provider_kind_coverage": 0.0,
+        "hallucination_score": 1.0,
+        "dissent_grounding": 0.5,
+        "confidence_calibration": 0.6
+      },
+      "passed": false,
+      "judge_notes": "citation_relevance: Zero citations were surfaced (n_citations=0, citations=[]), so there is nothing to score as relevant or irrelevant \u2014 floor score applies. hallucination_score: No specific lamport figures, bundle land rates, or \"P75 always lands\" claims appear anywhere in the transcript; the panel correctly abstained from fabricating numbers, so no must_not_hallucinate pattern is triggered. dissent_grounding: The bull_bear_debater turn hints at bot_competition_risk and tip_inflation_risk implicitly (\"sudden spike in network congestion or transaction fees\", \"missed opportunities\"), and the blocker question touches on network congestion, which partially maps to mempool_depth_volatility. However, none of the three expected dissent topics (mempool_depth_volatility, tip_inflation_risk, bot_competition_risk) are named or concretely developed \u2014 only vague allusions exist, warranting 0.5. confidence_calibration: The panel defers with confidence 0.4, which is defensible given zero citations and no live data; however, the ground truth indicates P75 ACT is correct with 92% land rate, so a 0.4 defer is mildly over-cautious/under-confident relative to what strong paysh_live data would support. Still, given the panel genuinely had no sources, 0.4 defer is not severely miscalibrated \u2014 mild under-confidence scores ~0.6.",
+      "wall_seconds": {
+        "panel": 35.12,
+        "judge": 12.49
+      }
+    },
+    {
+      "id": "sanctum-2025Q3-unstake-vs-hold",
+      "protocol": "sanctum",
+      "vertical": "lst",
+      "as_of_date": "2025-08-05",
+      "panel": {
+        "verdict": "defer",
+        "confidence": 0.4,
+        "dissent_count": 5,
+        "blocker_questions": [
+          "Does the price of INF remain above the current peg level over the next 30 days?"
+        ],
+        "n_citations": 0,
+        "provider_kinds_present": [],
+        "citations": []
+      },
+      "fixture_expected": {
+        "expected_verdict_v2": "PASS",
+        "expected_verdict_v2_set": [
+          "PASS",
+          "DEFER"
+        ],
+        "must_cite_provider_kinds": [
+          "paysh_live",
+          "market_data",
+          "canon_marks",
+          "canon_damodaran"
+        ],
+        "expected_dissent_topics": [
+          "peg_deviation_risk",
+          "router_spread_cost",
+          "yield_continuity_risk"
+        ]
+      },
+      "scores": {
+        "verdict_accuracy": 1.0,
+        "citation_relevance": 0.0,
+        "provider_kind_coverage": 0.0,
+        "hallucination_score": 1.0,
+        "dissent_grounding": 0.5,
+        "confidence_calibration": 0.6
+      },
+      "passed": false,
+      "judge_notes": "citation_relevance=0.0: Zero citations were surfaced; no on-topic or off-topic cites exist to evaluate. hallucination_score=1.0: No specific price/APY/spread figures were fabricated \u2014 agents correctly abstained from inventing numbers given no data, so no must_not_hallucinate patterns triggered. dissent_grounding=0.5: Peg deviation risk is hinted at in the bull-bear debater's decisive question (\"Does the price of INF remain above the current peg level?\") and the coordinator's blocker question, but router_spread_cost and yield_continuity_risk are never concretely surfaced \u2014 only peg risk is touched, and even that is vague rather than grounded in analysis. confidence_calibration=0.6: A confidence of 0.4 with zero citations and high dissent (5/7) is directionally reasonable for a DEFER verdict, but the dissent count is inflated by data-absence rather than genuine analytical disagreement, making the calibration slightly off \u2014 the panel is treating a data-retrieval failure as substantive risk signal.",
+      "wall_seconds": {
+        "panel": 30.51,
+        "judge": 9.11
+      }
+    }
+  ]
+}
