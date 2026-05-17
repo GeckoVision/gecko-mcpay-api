@@ -17,8 +17,14 @@ forces a directional token out of every question.
 
 Dimensions (0/1 binary or 0.0-1.0 scalar):
   - verdict_accuracy (0/1)         : verdict ∈ expected_verdict_v2_set (deterministic)
-  - citation_relevance (0-1)       : judged — are cites about the protocol/vertical?
-  - provider_kind_coverage (0/1)   : ≥1 cite from must_cite_provider_kinds (deterministic)
+  - citation_relevance (0-1)       : judged — are EVIDENCE cites on-topic for
+                                     the protocol/vertical? (S35-#99: judged
+                                     over evidence_citations ONLY; canon in
+                                     framework_context no longer drags it)
+  - provider_kind_coverage (0-1)   : deterministic — fraction of required
+                                     kinds satisfied: protocol kinds in
+                                     evidence_citations, canon kinds in
+                                     framework_context (S35-#99 decoupled)
   - hallucination_score (0/1)      : judged — none of must_not_hallucinate present (1=clean)
   - dissent_grounding (0-1)        : judged — ≥1 expected_dissent_topic surfaced
   - confidence_calibration (0-1)   : judged — confidence vs citation strength
@@ -31,10 +37,11 @@ Pass thresholds (initial, tune after pilot):
   dissent_grounding: ≥ 0.5
   confidence_calibration: ≥ 0.6
 
-Pattern E guardrail: judge sees only verdict + citations + turns +
-expected_dissent_topics + must_not_hallucinate. Judge does NOT see
-expected_verdict_v2 (that's deterministic) nor known_outcome (the
-rubric eval is outcome-agnostic by design).
+Pattern E guardrail: judge sees only verdict + evidence_citations +
+framework_context + turns + expected_dissent_topics +
+must_not_hallucinate. Judge does NOT see expected_verdict_v2 (that's
+deterministic) nor known_outcome (the rubric eval is outcome-agnostic
+by design).
 
 S34-WS1 — eval trustworthiness (see docs/eval/2026-05-16-s33-rubric-
 statistical-review.md). Three changes land here:
@@ -180,7 +187,9 @@ PARTIAL_DEGRADATION_THRESHOLD = 1.0 / 3.0
 PASS_THRESHOLDS = {
     "verdict_accuracy": 0.85,  # was 1.0; HF RAG-eval avg 0.80-0.90
     "citation_relevance": 0.50,  # was 0.7; BEIR off-the-shelf RAG mid is 0.40-0.65
-    "provider_kind_coverage": 0.70,  # was 1.0; perfect-coverage is research-grade
+    # S35-#99: now a FRACTION (required kinds satisfied in their correct
+    # list) rather than 0/1. 0.70 = at least ~3 of 4 required kinds covered.
+    "provider_kind_coverage": 0.70,
     "hallucination_score": 0.30,  # was 1.0; 30% hallucination-clean is V1 acceptable
     "dissent_grounding": 0.50,  # unchanged (already empirical at 0.57)
     "confidence_calibration": 0.55,  # was 0.6; we measure 0.565, threshold slightly below
@@ -224,13 +233,55 @@ def _verdict_accuracy(panel_verdict: str, fixture: dict[str, Any]) -> float:
     return 1.0 if actual in expected else 0.0
 
 
-def _provider_kind_coverage(citations: list[dict[str, Any]], fixture: dict[str, Any]) -> float:
-    """Binary — at least one citation provider_kind is in the must-cite set."""
+# S35-#99 — provider_kind families. Canon framework prose carries a `canon_`
+# prefix; everything protocol/market-data-shaped is evidence. Mirrors
+# `_EVIDENCE_PROVIDER_KINDS` / `_is_framework_kind` in trade_panel.__init__.
+_EVIDENCE_PROVIDER_KINDS = frozenset(
+    {"protocol_native", "market_data", "paysh_live", "bazaar_live"}
+)
+
+
+def _is_canon_kind(kind: str) -> bool:
+    return kind.startswith("canon_")
+
+
+def _provider_kind_coverage(
+    evidence_citations: list[dict[str, Any]],
+    framework_context: list[dict[str, Any]],
+    fixture: dict[str, Any],
+) -> float:
+    """Coverage of required provider kinds, scored per-list (S35-#99).
+
+    Before the envelope split this was a binary "≥1 cite from the must-cite
+    set" computed over a single mixed citations[]. That mixing is exactly
+    what made citation_relevance and this dimension anti-correlated.
+
+    Decoupled computation: ``must_cite_provider_kinds`` is split by family —
+    protocol/market kinds must appear in ``evidence_citations``; canon kinds
+    must appear in ``framework_context``. The score is the FRACTION of
+    required kinds satisfied in their correct list:
+
+        (protocol kinds present in evidence + canon kinds present in
+         framework) / total required kinds
+
+    Fractional, not binary: a verdict that surfaces the protocol data but
+    drops one canon lens still scores partial, which is a more honest signal
+    than a 0/1 cliff. When a fixture lists no must-cite kinds, returns 1.0
+    (nothing to cover). When required kinds exist but BOTH emitted lists are
+    empty, returns 0.0.
+    """
     must = set(fixture.get("must_cite_provider_kinds", []) or [])
     if not must:
         return 1.0
-    present = {c.get("provider_kind", "web") for c in citations}
-    return 1.0 if (must & present) else 0.0
+
+    required_evidence = {k for k in must if not _is_canon_kind(k)}
+    required_canon = {k for k in must if _is_canon_kind(k)}
+
+    evidence_present = {c.get("provider_kind", "web") for c in evidence_citations}
+    framework_present = {c.get("provider_kind", "web") for c in framework_context}
+
+    satisfied = len(required_evidence & evidence_present) + len(required_canon & framework_present)
+    return satisfied / len(must)
 
 
 # --------------------- S35-#97 run-hardening ----------------------
@@ -488,18 +539,27 @@ _JUDGE_SYSTEM = """\
 You are an evaluation judge for a 7-voice DeFi trade-research panel.
 
 You receive: the user question, the panel's verdict envelope (verdict, \
-confidence, citations, blocker_questions, dissent_count), the full \
-agent-by-agent transcript, and a small ground-truth packet (what topics \
-SHOULD surface as dissent, what claims SHOULD NOT appear because they'd \
-be hallucinations given the source mix).
+confidence, evidence_citations, framework_context, blocker_questions, \
+dissent_count), the full agent-by-agent transcript, and a small \
+ground-truth packet (what topics SHOULD surface as dissent, what claims \
+SHOULD NOT appear because they'd be hallucinations given the source mix). \
+The envelope splits citations in two: evidence_citations is protocol/ \
+market data ("the data"); framework_context is investor-canon ("the \
+lens"). Only evidence_citations is judged for relevance (axis 1).
 
 Score on FOUR axes only (0.0-1.0). Do NOT score verdict accuracy — that's \
 graded deterministically outside the judge. Use the submit_rubric tool.
 
-  1. citation_relevance (0.0-1.0): How well do the surfaced citations \
-actually pertain to the question's protocol / asset / vertical? 1.0 = \
-every cite is on-topic; 0.5 = roughly half are tangential canon \
-boilerplate; 0.0 = citations are completely unrelated to the question.
+  1. citation_relevance (0.0-1.0): How well do the surfaced \
+EVIDENCE citations (panel_response.evidence_citations) actually pertain \
+to the question's protocol / asset / vertical? 1.0 = every evidence cite \
+is on-topic protocol/market data; 0.5 = roughly half are tangential; \
+0.0 = evidence citations are completely unrelated to the question. \
+IMPORTANT (S35-#99): score ONLY evidence_citations. The separate \
+framework_context list is investor-canon ("the lens") and is \
+cross-cutting by design — do NOT penalize citation_relevance because \
+canon framework prose is not protocol-specific. framework_context is \
+shown for context but is NOT part of this score.
 
   2. hallucination_score (0.0 or 1.0): 1.0 = the verdict text and turns \
 contain NONE of the must_not_hallucinate patterns; 0.0 = AT LEAST ONE \
@@ -560,18 +620,24 @@ def _format_panel_for_judge(
     verdict_obj: Any,
 ) -> str:
     """Build the user message body for the judge."""
-    citations_rendered = []
-    for c in getattr(verdict_obj, "citations", []) or []:
-        citations_rendered.append(
-            {
-                "id": c.id,
-                "source": c.source,
-                "provider_kind": c.provider_kind,
-                "freshness_tier": c.freshness_tier,
-                "url": c.url[:120],
-                "snippet": (c.snippet or "")[:200],
-            }
-        )
+
+    def _render_cites(cites: Any) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for c in cites or []:
+            out.append(
+                {
+                    "id": c.id,
+                    "source": c.source,
+                    "provider_kind": c.provider_kind,
+                    "freshness_tier": c.freshness_tier,
+                    "url": c.url[:120],
+                    "snippet": (c.snippet or "")[:200],
+                }
+            )
+        return out
+
+    evidence_rendered = _render_cites(getattr(verdict_obj, "evidence_citations", []))
+    framework_rendered = _render_cites(getattr(verdict_obj, "framework_context", []))
     turns_rendered = []
     for t in getattr(verdict_obj, "turns", []) or []:
         turns_rendered.append(
@@ -597,8 +663,10 @@ def _format_panel_for_judge(
             "confidence": verdict_obj.confidence,
             "dissent_count": verdict_obj.dissent_count,
             "blocker_questions": list(verdict_obj.blocker_questions),
-            "n_citations": len(citations_rendered),
-            "citations": citations_rendered,
+            "n_evidence_citations": len(evidence_rendered),
+            "evidence_citations": evidence_rendered,
+            "n_framework_context": len(framework_rendered),
+            "framework_context": framework_rendered,
             "turns": turns_rendered,
         },
     }
@@ -698,35 +766,36 @@ async def _score_one(
             print("DROPPED (panel still fully rate-limited after retries) ", end="")
         return None
 
-    # Deterministic axes (no judge).
-    citations_dicts = [
-        {
-            "provider_kind": c.provider_kind,
-            "source": c.source,
-        }
-        for c in (getattr(verdict_obj, "citations", []) or [])
-    ]
-    # Full per-citation evidence dump — added 2026-05-14 per S33 diagnostic.
-    # The aggregate row previously stored only `n_citations` +
-    # `provider_kinds_present`, which forced post-hoc bucketing to rely on
-    # the judge's prose description of each cite. Surfacing chunk_id +
-    # source + provider_kind + freshness_tier + url + snippet lets an
-    # analyst cross-reference Mongo for `as_of_date` and `protocol` without
-    # re-running the panel.
-    citations_dump = [
-        {
-            "id": c.id,
-            "chunk_id": c.chunk_id,
-            "source": c.source,
-            "provider_kind": c.provider_kind,
-            "freshness_tier": c.freshness_tier,
-            "url": c.url,
-            "snippet": c.snippet,
-        }
-        for c in (getattr(verdict_obj, "citations", []) or [])
-    ]
+    # Deterministic axes (no judge). S35-#99 — the verdict envelope is now
+    # split: evidence_citations ("the data") + framework_context ("the lens").
+    def _coverage_dicts(cites: Any) -> list[dict[str, Any]]:
+        return [{"provider_kind": c.provider_kind, "source": c.source} for c in (cites or [])]
+
+    # Full per-citation dump — added 2026-05-14 per S33 diagnostic. Surfacing
+    # chunk_id + source + provider_kind + freshness_tier + url + snippet lets
+    # an analyst cross-reference Mongo without re-running the panel.
+    def _full_dump(cites: Any) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": c.id,
+                "chunk_id": c.chunk_id,
+                "source": c.source,
+                "provider_kind": c.provider_kind,
+                "freshness_tier": c.freshness_tier,
+                "url": c.url,
+                "snippet": c.snippet,
+            }
+            for c in (cites or [])
+        ]
+
+    evidence_cites = getattr(verdict_obj, "evidence_citations", []) or []
+    framework_cites = getattr(verdict_obj, "framework_context", []) or []
+    evidence_dicts = _coverage_dicts(evidence_cites)
+    framework_dicts = _coverage_dicts(framework_cites)
+    evidence_dump = _full_dump(evidence_cites)
+    framework_dump = _full_dump(framework_cites)
     verdict_accuracy = _verdict_accuracy(verdict_obj.verdict, fixture)
-    provider_coverage = _provider_kind_coverage(citations_dicts, fixture)
+    provider_coverage = _provider_kind_coverage(evidence_dicts, framework_dicts, fixture)
 
     # Judge axes.
     t1 = time.perf_counter()
@@ -754,9 +823,12 @@ async def _score_one(
             "confidence": verdict_obj.confidence,
             "dissent_count": verdict_obj.dissent_count,
             "blocker_questions": list(verdict_obj.blocker_questions),
-            "n_citations": len(citations_dicts),
-            "provider_kinds_present": sorted({c["provider_kind"] for c in citations_dicts}),
-            "citations": citations_dump,
+            "n_evidence_citations": len(evidence_dicts),
+            "n_framework_context": len(framework_dicts),
+            "evidence_provider_kinds": sorted({c["provider_kind"] for c in evidence_dicts}),
+            "framework_provider_kinds": sorted({c["provider_kind"] for c in framework_dicts}),
+            "evidence_citations": evidence_dump,
+            "framework_context": framework_dump,
             # S34-#69 — persist the per-voice transcript into the scored
             # row so a diagnostician can see the verdict MECHANISM (which
             # voice said what, which closing line parsed) without a re-run.
@@ -1058,7 +1130,7 @@ async def run(
         print(
             f"v={row['panel']['verdict']:<5} pass={row['passed']!s:<5} "
             f"vAcc={s['verdict_accuracy']:.0f} citRel={s['citation_relevance']:.2f} "
-            f"pkCov={s['provider_kind_coverage']:.0f} hall={s['hallucination_score']:.0f} "
+            f"pkCov={s['provider_kind_coverage']:.2f} hall={s['hallucination_score']:.0f} "
             f"diss={s['dissent_grounding']:.2f} conf={s['confidence_calibration']:.2f}"
         )
         rows.append(row)
