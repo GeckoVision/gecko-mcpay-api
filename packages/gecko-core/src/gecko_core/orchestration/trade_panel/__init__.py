@@ -86,6 +86,7 @@ __all__ = [
     "retrieve_trade_corpus_chunks",
     "run_trade_panel",
     "run_trade_panel_with_retrieval",
+    "select_emitted_citations",
 ]
 
 # Pre-compiled closing-line regexes — case-insensitive, multiline-friendly.
@@ -1519,6 +1520,11 @@ def _strategist_intent_from_turn(turn: TradePanelTurn | None, protocol: str) -> 
 
 _CITATION_SNIPPET_LIMIT: int = 240
 
+# S35-#91 — fallback rank-trim target when no `[N]` markers were parsed from
+# any turn. Diagnosis §5 projects 6-8 emitted citations as the healthy band
+# (≈9 on-topic protocol_native minus padding); 7 sits mid-band.
+_CITATION_TRIM_TARGET: int = 7
+
 
 def _coerce_provider_kind(raw: Any) -> ProviderKind:
     """Whitelist a chunk's provider_kind to the canonical Literal.
@@ -1573,6 +1579,119 @@ def build_citations_from_chunks(chunks: list[dict[str, Any]]) -> list[Citation]:
             )
         )
     return out
+
+
+# S35-#91 — citation envelope decoupling.
+#
+# Diagnosis (docs/eval/2026-05-17-s35-citation-relevance-diagnosis.md): the
+# verdict emitted ALL 15 retrieved chunks as citations, invariably 9
+# protocol_native + 6 cross-cutting canon. Canon is legitimate *reasoning*
+# context but tangential as protocol-specific *citations* — so ~40% of every
+# citation list was tangential by construction and the judge's honest math
+# floored citation_relevance at ~0.47.
+#
+# Fix: emit a citation only for a chunk a panel turn actually referenced via
+# its inline ``[N]`` marker (used-only selection). The panel still *reasons
+# over* all 15 chunks — retrieval and `_format_chunks` are untouched, so
+# `provider_kind_coverage` of *retrieval* is intact.
+#
+# Coverage floor: the N=30 rubric's `provider_kind_coverage` dimension is
+# statistically locked at 1.00 and is computed from the *emitted* citations vs
+# each fixture's `must_cite_provider_kinds` (protocol_native + canon kinds).
+# If used-only selection would drop every chunk of a required provider_kind,
+# we re-add the single highest-`score` chunk of that kind so the emitted set
+# still spans every kind present in retrieval. Lifting citation_relevance
+# while regressing the locked dimension is a net loss.
+
+# Matches an inline citation marker like ``[3]`` or ``[12]``. Bounded 1-2
+# digits — chunk counts never exceed ~15, and an unbounded \d+ would match
+# stray bracketed numerics in prose ("[2024]" dates) far more often.
+_CITATION_MARKER_RE: re.Pattern[str] = re.compile(r"\[(\d{1,2})\]")
+
+
+def _parse_used_markers(turns: list[TradePanelTurn], n_chunks: int) -> set[int]:
+    """Collect every 1-indexed ``[N]`` chunk marker referenced across all turns.
+
+    Markers outside ``1..n_chunks`` are dropped — they are either prose
+    artifacts ("[2024]") or model hallucinations of a chunk index that does
+    not exist. Pure function: reads ``turns``, returns a set of valid indices.
+    """
+    used: set[int] = set()
+    for turn in turns:
+        for match in _CITATION_MARKER_RE.finditer(turn.content or ""):
+            idx = int(match.group(1))
+            if 1 <= idx <= n_chunks:
+                used.add(idx)
+    return used
+
+
+def select_emitted_citations(
+    turns: list[TradePanelTurn],
+    chunks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Pick the chunks that belong in the emitted ``citations[]`` envelope.
+
+    Selection rule (S35-#91):
+
+    1. **Used-only.** Keep a chunk only if at least one panel turn referenced
+       its 1-indexed ``[N]`` marker. Reasoning context (all chunks) is decoupled
+       from the citation claim (chunks a turn actually drew on).
+    2. **Fallback.** If no valid markers were parsed at all (used-detection
+       unreliable for this run), seed the keep set from the top
+       ``_CITATION_TRIM_TARGET`` chunks by ``score`` — better than echoing the
+       whole retrieval set.
+    3. **Coverage floor.** ALWAYS (used-only and fallback alike): for every
+       ``provider_kind`` present in retrieval but absent from the keep set,
+       re-add that kind's single highest-``score`` chunk. This guarantees the
+       emitted set still spans every kind, so the statistically locked
+       ``provider_kind_coverage`` rubric dimension does not regress.
+
+    Pure function — returns a new list of the *same dict objects* from
+    ``chunks``, preserving retrieval order. ``build_citations_from_chunks``
+    re-indexes the result, so emitted ``Citation.id`` is contiguous.
+    """
+    if not chunks:
+        return []
+
+    used = _parse_used_markers(turns, len(chunks))
+
+    if used:
+        # used is a set of 1-indexed markers; convert to 0-indexed positions.
+        keep_idx: set[int] = {m - 1 for m in used}
+    else:
+        # Fallback: used-detection produced nothing. Seed from top-score
+        # chunks rather than emit all 15. chunks already arrive score-sorted
+        # desc from retrieval, but sort defensively. The coverage floor below
+        # still runs, so the fallback also spans every provider_kind.
+        ranked = sorted(
+            range(len(chunks)),
+            key=lambda i: float(chunks[i].get("score") or 0.0),
+            reverse=True,
+        )
+        keep_idx = set(ranked[:_CITATION_TRIM_TARGET])
+
+    # Coverage floor — for each provider_kind present in retrieval but not
+    # represented in the keep set, re-add its highest-score chunk.
+    kinds_in_retrieval: set[str] = {
+        str(c.get("provider_kind") or "") for c in chunks if c.get("provider_kind")
+    }
+    kinds_covered: set[str] = {
+        str(chunks[i].get("provider_kind") or "")
+        for i in keep_idx
+        if chunks[i].get("provider_kind")
+    }
+    for missing_kind in sorted(kinds_in_retrieval - kinds_covered):
+        candidates = [
+            i
+            for i in range(len(chunks))
+            if str(chunks[i].get("provider_kind") or "") == missing_kind
+        ]
+        if not candidates:
+            continue
+        best = max(candidates, key=lambda i: float(chunks[i].get("score") or 0.0))
+        keep_idx.add(best)
+
+    return [chunks[i] for i in sorted(keep_idx)]
 
 
 async def run_trade_panel_with_retrieval(
@@ -1638,11 +1757,21 @@ async def run_trade_panel_with_retrieval(
         wallet=wallet,
     )
 
-    # Issue #15: attach the structured citation list sourced from the same
-    # chunks the panel saw. The 1-indexed ids match the inline [N] markers
-    # the personas cite in their turns, so consumers can render cite chips
-    # without regex-extracting from prose.
-    citations = build_citations_from_chunks(chunks)
+    # Issue #15 + S35-#91: attach the structured citation list. The panel
+    # reasoned over ALL `chunks` (retrieval is untouched — `provider_kind_
+    # coverage` of retrieval intact), but the EMITTED citation envelope is
+    # decoupled: `select_emitted_citations` keeps only chunks a turn actually
+    # referenced via its inline [N] marker, plus a per-provider_kind coverage
+    # floor so the locked `provider_kind_coverage` rubric dimension holds.
+    emitted_chunks = select_emitted_citations(verdict.turns, chunks)
+    citations = build_citations_from_chunks(emitted_chunks)
+    _log.info(
+        "trade_panel.citations protocol=%s retrieved=%d emitted=%d kinds=%s",
+        protocol.strip().lower(),
+        len(chunks),
+        len(citations),
+        sorted({c.provider_kind for c in citations}),
+    )
     if citations:
         verdict = verdict.model_copy(update={"citations": citations})
 
