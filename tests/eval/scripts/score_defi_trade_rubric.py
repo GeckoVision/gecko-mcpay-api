@@ -36,9 +36,31 @@ expected_dissent_topics + must_not_hallucinate. Judge does NOT see
 expected_verdict_v2 (that's deterministic) nor known_outcome (the
 rubric eval is outcome-agnostic by design).
 
+S34-WS1 — eval trustworthiness (see docs/eval/2026-05-16-s33-rubric-
+statistical-review.md). Three changes land here:
+  A. Statistical pass-gate. A dimension no longer "passes" because its
+     point mean clears the threshold — it passes when a bootstrap 95%
+     CI lower bound clears the threshold (mean - CI_halfwidth >= bar).
+     A 0.52 mean with CI [0.43, 0.61] does NOT clear a 0.50 gate.
+  C. Retrieval pre-gate. Before any LLM-rubric spend, the deterministic
+     retrieval eval (retrieval_eval.py, no LLM, ~$0) runs first. If
+     canon_floor or provider_kind_coverage is below target, the rubric
+     run ABORTS — a rubric run on broken retrieval is uninformative.
+     Skip with --skip-retrieval-pregate (CI / offline dev only).
+
+N policy (S34-WS1-A): the statistical review showed N=10 cannot certify
+a 0.02 margin (needs N≈236). The ship-gate default is N=30 — a
+practical confirmation run that tightens CI half-widths by ~1.7x vs
+N=10 (sqrt(30/10)). It does NOT fully certify a 0.02 margin; the
+residual uncertainty is documented in the run artifact's
+`n_policy` block and in the statistical review §5. Use --limit to
+shrink for cheap smoke runs (the gate stays honest: a sub-30 run is
+flagged `ship_gate_eligible: false` in the artifact).
+
 Usage:
     uv run python -m tests.eval.scripts.score_defi_trade_rubric --limit 3
-    uv run python -m tests.eval.scripts.score_defi_trade_rubric
+    uv run python -m tests.eval.scripts.score_defi_trade_rubric        # ship-gate: N=30
+    uv run python -m tests.eval.scripts.score_defi_trade_rubric --skip-retrieval-pregate
 """
 
 from __future__ import annotations
@@ -47,6 +69,7 @@ import argparse
 import asyncio
 import json
 import os
+import random
 import statistics
 import sys
 import time
@@ -59,6 +82,33 @@ LIVE_RUNS_DIR = REPO_ROOT / "tests" / "eval" / "live_runs"
 
 JUDGE_MODEL = "claude-sonnet-4-6"
 
+# S34-WS1-A — ship-gate sample-size policy.
+# The statistical review (docs/eval/2026-05-16-s33-rubric-statistical-
+# review.md §5) showed N=10 cannot certify a 0.02 margin (needs N≈236).
+# N=30 is the defensible practical confirmation run: it shrinks the
+# bootstrap CI half-width by ~sqrt(30/10)≈1.7x vs N=10 while staying
+# affordable (~$3/run at ~$0.10/idea). A run with N<30 is still useful
+# for iteration but is flagged `ship_gate_eligible: false`.
+#
+# IMPORTANT — reaching N=30 with a 10-fixture suite: the rubric suite
+# currently holds 10 fixtures. Two honest paths to N=30, both supported
+# by this scorer:
+#   (1) expand defi_trade_rubric_suite.json toward 30 distinct fixtures
+#       (preferred long-term — 30 *distinct* trades, real spread); or
+#   (2) pool 3 independent runs of the 10-fixture suite. Each run is a
+#       fresh panel + judge draw, so 30 pooled rows is a valid N=30
+#       sample of (panel,judge) noise — concatenate the `rows` arrays of
+#       3 artifacts and feed to `_aggregate`. The judge temperature=0 so
+#       most variance is panel-side; pooling captures it.
+# Path (2) is the immediate ship-gate route; path (1) is the S35 fixture
+# work. Either way, ship_gate_eligible only flips true at n>=30.
+SHIP_GATE_N = 30
+
+# Bootstrap config for the statistical pass-gate (S34-WS1-A).
+BOOTSTRAP_RESAMPLES = 10_000
+BOOTSTRAP_SEED = 4242  # fixed → reproducible CI bounds for a given row set
+CI_ALPHA = 0.05  # 95% CI
+
 # Pass thresholds — HIS (Honest Industry-Standard) rebaseline 2026-05-14.
 # Rationale per `docs/strategy/2026-05-14-rubric-rebaseline.md`:
 # pilot thresholds were perfect-system targets ("tune post-pilot" per original
@@ -68,12 +118,12 @@ JUDGE_MODEL = "claude-sonnet-4-6"
 # These are intellectually honest, not vanity-tuned — they would still gate
 # the V1 ship as RED at current measured numbers.
 PASS_THRESHOLDS = {
-    "verdict_accuracy": 0.85,         # was 1.0; HF RAG-eval avg 0.80-0.90
-    "citation_relevance": 0.50,       # was 0.7; BEIR off-the-shelf RAG mid is 0.40-0.65
-    "provider_kind_coverage": 0.70,   # was 1.0; perfect-coverage is research-grade
-    "hallucination_score": 0.30,      # was 1.0; 30% hallucination-clean is V1 acceptable
-    "dissent_grounding": 0.50,        # unchanged (already empirical at 0.57)
-    "confidence_calibration": 0.55,   # was 0.6; we measure 0.565, threshold slightly below
+    "verdict_accuracy": 0.85,  # was 1.0; HF RAG-eval avg 0.80-0.90
+    "citation_relevance": 0.50,  # was 0.7; BEIR off-the-shelf RAG mid is 0.40-0.65
+    "provider_kind_coverage": 0.70,  # was 1.0; perfect-coverage is research-grade
+    "hallucination_score": 0.30,  # was 1.0; 30% hallucination-clean is V1 acceptable
+    "dissent_grounding": 0.50,  # unchanged (already empirical at 0.57)
+    "confidence_calibration": 0.55,  # was 0.6; we measure 0.565, threshold slightly below
 }
 
 
@@ -149,7 +199,12 @@ must_not_hallucinate pattern is present (e.g. a specific price level / \
 APY / TVL figure cited without a market_data or paysh_live source, or \
 any claim listed in must_not_hallucinate). Be strict: zero tolerance. \
 A specific number in the verdict with no matching source citation is a \
-hallucination.
+hallucination. IMPORTANT (S34-#77): the question is an as-of-now \
+question and the as_of_date matches the corpus ingest window. Do NOT \
+score a hallucination merely because the panel cites current market \
+conditions — that is correct behavior. Score a hallucination only for \
+an UNGROUNDED specific figure (a number with no matching citation) or \
+a must_not_hallucinate pattern, NOT for a timeframe mismatch.
 
   3. dissent_grounding (0.0-1.0): Did the panel surface at least one of \
 the expected_dissent_topics (in blocker_questions, surviving dissent, \
@@ -369,6 +424,19 @@ async def _score_one(
             "n_citations": len(citations_dicts),
             "provider_kinds_present": sorted({c["provider_kind"] for c in citations_dicts}),
             "citations": citations_dump,
+            # S34-#69 — persist the per-voice transcript into the scored
+            # row so a diagnostician can see the verdict MECHANISM (which
+            # voice said what, which closing line parsed) without a re-run.
+            # Stored as the panel returns them — no truncation here; the
+            # judge-facing `_format_panel_for_judge` clips separately.
+            "turns": [
+                {
+                    "agent": t.agent,
+                    "content": t.content,
+                    "parsed_verdict": t.parsed_verdict,
+                }
+                for t in (getattr(verdict_obj, "turns", []) or [])
+            ],
         },
         "fixture_expected": {
             "expected_verdict_v2": fixture.get("expected_verdict_v2"),
@@ -386,31 +454,238 @@ async def _score_one(
     }
 
 
+def _bootstrap_ci(values: list[float]) -> tuple[float, float, float]:
+    """Bootstrap (BOOTSTRAP_RESAMPLES resamples, fixed seed) the mean of
+    ``values``. Returns (mean, ci_low, ci_high) for a 95% percentile CI.
+
+    Deterministic for a given input: a fixed RNG seed makes the CI a
+    reproducible property of the row set, not a per-invocation draw.
+    """
+    n = len(values)
+    if n == 0:
+        return 0.0, 0.0, 0.0
+    mean = statistics.mean(values)
+    if n == 1:
+        return mean, mean, mean
+    rng = random.Random(BOOTSTRAP_SEED)
+    resampled_means: list[float] = []
+    for _ in range(BOOTSTRAP_RESAMPLES):
+        sample = [values[rng.randrange(n)] for _ in range(n)]
+        resampled_means.append(sum(sample) / n)
+    resampled_means.sort()
+    lo_idx = int((CI_ALPHA / 2) * BOOTSTRAP_RESAMPLES)
+    hi_idx = int((1 - CI_ALPHA / 2) * BOOTSTRAP_RESAMPLES) - 1
+    return mean, resampled_means[lo_idx], resampled_means[hi_idx]
+
+
+def _statistical_pass(dim: str, values: list[float]) -> dict[str, Any]:
+    """S34-WS1-A — a dimension passes only when the bootstrap 95% CI
+    LOWER BOUND clears the threshold. A 0.52 mean with CI [0.43, 0.61]
+    does NOT pass a 0.50 gate: the lower bound 0.43 is below 0.50, so
+    a re-run could plausibly land a fail.
+
+    "point_pass" (mean >= threshold) is retained for backward-compat
+    visibility and to show the gap the statistical gate closes.
+    """
+    threshold = PASS_THRESHOLDS[dim]
+    mean, ci_low, ci_high = _bootstrap_ci(values)
+    ci_halfwidth = (ci_high - ci_low) / 2
+    return {
+        "mean": round(mean, 4),
+        "ci_low": round(ci_low, 4),
+        "ci_high": round(ci_high, 4),
+        "ci_halfwidth": round(ci_halfwidth, 4),
+        "threshold": threshold,
+        "point_pass": mean >= threshold,
+        # The statistical gate: CI lower bound must clear the bar.
+        "statistical_pass": ci_low >= threshold,
+        "margin_to_threshold": round(mean - threshold, 4),
+    }
+
+
 def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     n = len(rows)
     if n == 0:
         return {"n": 0}
     dims = list(PASS_THRESHOLDS.keys())
     means = {d: round(statistics.mean(r["scores"][d] for r in rows), 3) for d in dims}
-    pass_rate = round(sum(1 for r in rows if r["passed"]) / n, 3)
+
+    # S34-WS1-A — statistical pass-gate per dimension (bootstrap 95% CI).
+    statistical: dict[str, dict[str, Any]] = {
+        d: _statistical_pass(d, [r["scores"][d] for r in rows]) for d in dims
+    }
+    # Point-based per-fixture pass rate (legacy, kept for visibility).
     per_dim_pass = {
         d: round(sum(1 for r in rows if r["scores"][d] >= PASS_THRESHOLDS[d]) / n, 3) for d in dims
     }
+    pass_rate = round(sum(1 for r in rows if r["passed"]) / n, 3)
+
+    # The honest ship verdict: every dimension's CI lower bound clears
+    # its threshold. This is what a "6/6 GREEN" claim must mean.
+    dims_statistically_green = sorted(d for d in dims if statistical[d]["statistical_pass"])
+    dims_point_green = sorted(d for d in dims if statistical[d]["point_pass"])
+    ship_gate_pass = len(dims_statistically_green) == len(dims)
+    ship_gate_eligible = n >= SHIP_GATE_N
+
     return {
         "n": n,
         "overall_pass_rate": pass_rate,
         "per_dimension_means": means,
         "per_dimension_pass_rate": per_dim_pass,
         "thresholds": PASS_THRESHOLDS,
+        # --- S34-WS1-A statistical gate ---
+        "statistical_gate": {
+            "method": f"bootstrap percentile 95% CI, {BOOTSTRAP_RESAMPLES} resamples, "
+            f"seed={BOOTSTRAP_SEED}; pass = CI_low >= threshold",
+            "per_dimension": statistical,
+            "dims_statistically_green": dims_statistically_green,
+            "dims_point_green": dims_point_green,
+            "n_dims": len(dims),
+            "n_statistically_green": len(dims_statistically_green),
+            "ship_gate_pass": ship_gate_pass,
+        },
+        "n_policy": {
+            "ship_gate_n": SHIP_GATE_N,
+            "this_run_n": n,
+            "ship_gate_eligible": ship_gate_eligible,
+            "note": (
+                "N=30 tightens CI half-widths ~1.7x vs N=10 but does NOT "
+                "fully certify a 0.02 margin (needs N≈236, see statistical "
+                "review §5). A '6/6 green' claim is only ship-gradeable when "
+                "ship_gate_eligible=true AND statistical_gate.ship_gate_pass=true."
+            )
+            if ship_gate_eligible
+            else (
+                f"N={n} < {SHIP_GATE_N}: iteration run only. NOT ship-gate "
+                f"eligible — CIs too wide to certify a pass."
+            ),
+        },
     }
 
 
-async def run(*, limit: int | None, tier: str, tag: str) -> int:
+async def _retrieval_pregate(limit: int | None) -> dict[str, Any]:
+    """S34-WS1-C — deterministic, no-LLM retrieval pre-gate.
+
+    Runs ``retrieval_eval.py`` (seconds, ~$0) BEFORE any LLM-rubric spend.
+    If canon_floor or provider_kind_coverage is below target, an
+    expensive rubric run would be uninformative — a panel that never
+    sees canon literature cannot be fairly judged on citation_relevance
+    or hallucination. This guard ends the fix→blind-rubric loop.
+
+    Raises SystemExit on a failed pre-gate. Returns the retrieval
+    aggregate on pass (embedded into the rubric run artifact).
+    """
+    from tests.eval.scripts.retrieval_eval import (
+        CANON_FLOOR_TARGET,
+        PK_COVERAGE_TARGET,
+    )
+    from tests.eval.scripts.retrieval_eval import (
+        _aggregate as _retrieval_aggregate,
+    )
+    from tests.eval.scripts.retrieval_eval import (
+        _load_fixtures as _load_retrieval_fixtures,
+    )
+    from tests.eval.scripts.retrieval_eval import (
+        _score_one as _score_retrieval_one,
+    )
+
+    print("=" * 64)
+    print("S34-WS1-C — retrieval pre-gate (deterministic, no LLM, ~$0)")
+    print("=" * 64)
+
+    fixtures = _load_retrieval_fixtures(limit)
+    if not fixtures:
+        raise SystemExit(
+            "retrieval pre-gate: no fixtures carry retrieval_expectations — "
+            "cannot certify retrieval; aborting rubric run."
+        )
+
+    rows: list[dict[str, Any]] = []
+    for fx in fixtures:
+        print(f"  [{fx['id']}] ... ", end="")
+        sys.stdout.flush()
+        try:
+            row = await _score_retrieval_one(fx)
+        except Exception as exc:
+            print(f"FAIL ({type(exc).__name__}: {exc})")
+            continue
+        s = row["scores"]
+        print(f"canon_floor={s['canon_floor']!s:<5} pkCov={s['provider_kind_coverage']:.2f}")
+        rows.append(row)
+
+    agg = _retrieval_aggregate(rows)
+    print(
+        f"\nretrieval pre-gate: canon_floor_rate={agg.get('canon_floor_rate')} "
+        f"(target {CANON_FLOOR_TARGET}) | "
+        f"pk_coverage={agg.get('per_dimension_means', {}).get('provider_kind_coverage')} "
+        f"(target {PK_COVERAGE_TARGET})"
+    )
+
+    decision = evaluate_retrieval_pregate(agg)
+    if not decision["pass"]:
+        raise SystemExit(decision["message"])
+
+    print("retrieval pre-gate PASSED — proceeding to LLM-rubric run.\n")
+    return agg
+
+
+def evaluate_retrieval_pregate(retrieval_agg: dict[str, Any]) -> dict[str, Any]:
+    """S34-WS1-C — pure decision: should the rubric run proceed?
+
+    Takes a retrieval-eval aggregate (the dict ``retrieval_eval._aggregate``
+    returns) and decides pass/abort. Pure + deterministic → unit-testable
+    without Mongo or a network call.
+
+    A rubric run on broken retrieval is uninformative — the panel cannot
+    cite chunks it never received — so a failed pre-gate aborts.
+    """
+    gate = retrieval_agg.get("gate", {})
+    canon_ok = bool(gate.get("canon_floor_pass"))
+    pkcov_ok = bool(gate.get("pk_coverage_pass"))
+    if canon_ok and pkcov_ok:
+        return {"pass": True, "failed_dims": [], "message": "retrieval pre-gate OK"}
+    failed: list[str] = []
+    if not canon_ok:
+        failed.append("canon_floor")
+    if not pkcov_ok:
+        failed.append("provider_kind_coverage")
+    message = (
+        f"RETRIEVAL PRE-GATE FAILED ({', '.join(failed)}). "
+        f"Retrieval is broken — an LLM-rubric run would be uninformative "
+        f"(the panel cannot cite chunks it never received). "
+        f"Fix retrieval first, then re-run. "
+        f"To override (CI / offline only): --skip-retrieval-pregate."
+    )
+    return {"pass": False, "failed_dims": failed, "message": message}
+
+
+async def run(
+    *,
+    limit: int | None,
+    tier: str,
+    tag: str,
+    skip_retrieval_pregate: bool,
+) -> int:
     fixtures = _load_fixtures(limit)
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise SystemExit("OPENAI_API_KEY required for live trade-panel runs.")
     llm_config = _build_llm_config(api_key, tier)
+
+    # S34-WS1-C — deterministic retrieval pre-gate. Cheap, fast, mandatory
+    # unless explicitly skipped. Aborts the (expensive) rubric run if
+    # retrieval is broken.
+    retrieval_pregate: dict[str, Any] | None = None
+    if skip_retrieval_pregate:
+        print("WARN: --skip-retrieval-pregate set — retrieval NOT verified before rubric run.")
+    else:
+        retrieval_pregate = await _retrieval_pregate(limit)
+
+    if limit is not None and limit < SHIP_GATE_N:
+        print(
+            f"NOTE: N={limit} < ship-gate N={SHIP_GATE_N} — this run is "
+            f"iteration-only, NOT ship-gate eligible."
+        )
 
     print(f"S24 task#11 rubric scorer | n={len(fixtures)} | tier={tier} | suite={SUITE_PATH.name}")
     rows: list[dict[str, Any]] = []
@@ -442,6 +717,24 @@ async def run(*, limit: int | None, tier: str, tag: str) -> int:
     agg = _aggregate(rows)
     print(f"\nAggregate: {json.dumps(agg, indent=2)}")
 
+    sg = agg.get("statistical_gate", {})
+    if sg:
+        print("\n--- S34-WS1-A statistical gate (bootstrap 95% CI; pass = CI_low >= bar) ---")
+        for dim, st in sg["per_dimension"].items():
+            mark = (
+                "PASS" if st["statistical_pass"] else ("point-only" if st["point_pass"] else "FAIL")
+            )
+            print(
+                f"  {dim:<24} mean={st['mean']:.3f} "
+                f"CI=[{st['ci_low']:.3f},{st['ci_high']:.3f}] "
+                f"thr={st['threshold']:.2f}  {mark}"
+            )
+        print(
+            f"  => {sg['n_statistically_green']}/{sg['n_dims']} statistically green | "
+            f"ship_gate_pass={sg['ship_gate_pass']} | "
+            f"ship_gate_eligible={agg['n_policy']['ship_gate_eligible']}"
+        )
+
     LIVE_RUNS_DIR.mkdir(parents=True, exist_ok=True)
     date = time.strftime("%Y-%m-%d")
     base = LIVE_RUNS_DIR / f"{date}-s24-defi-rubric-{tag}-{len(rows)}.json"
@@ -456,6 +749,7 @@ async def run(*, limit: int | None, tier: str, tag: str) -> int:
         "suite": SUITE_PATH.name,
         "n_fixtures_loaded": len(fixtures),
         "n_scored": len(rows),
+        "retrieval_pregate": retrieval_pregate,
         "aggregate": agg,
         "rows": rows,
     }
@@ -469,15 +763,39 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="python -m tests.eval.scripts.score_defi_trade_rubric",
         description="S24 task#11 — rubric scorer (panel call + Sonnet 4.6 judge).",
     )
-    p.add_argument("--limit", type=int, default=None, help="cap at first N fixtures")
+    p.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help=(
+            f"cap at first N fixtures. Omit for a ship-gate run "
+            f"(N={SHIP_GATE_N} recommended; the suite caps at its fixture count). "
+            f"A run with N<{SHIP_GATE_N} is flagged ship_gate_eligible=false."
+        ),
+    )
     p.add_argument("--tier", choices=("basic", "pro"), default="basic")
     p.add_argument("--tag", default="pilot", help="run tag (e.g. 'pilot' / 'full')")
+    p.add_argument(
+        "--skip-retrieval-pregate",
+        action="store_true",
+        help=(
+            "skip the deterministic retrieval pre-gate (S34-WS1-C). "
+            "CI / offline dev only — a real ship-gate run must NOT skip it."
+        ),
+    )
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
-    return asyncio.run(run(limit=args.limit, tier=args.tier, tag=args.tag))
+    return asyncio.run(
+        run(
+            limit=args.limit,
+            tier=args.tier,
+            tag=args.tag,
+            skip_retrieval_pregate=args.skip_retrieval_pregate,
+        )
+    )
 
 
 if __name__ == "__main__":

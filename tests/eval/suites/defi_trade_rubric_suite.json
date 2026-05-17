@@ -1,7 +1,7 @@
 [
   {
-    "id": "kamino-2024Q3-jlpusdc-entry",
-    "as_of_date": "2024-08-12",
+    "id": "kamino-jlpusdc-entry",
+    "as_of_date": "2026-05-16",
     "protocol": "kamino",
     "vertical": "dex",
     "text": "I'm considering depositing $5k into the Kamino JLP-USDC multiply vault at current parameters. Entry now or wait?",
@@ -26,7 +26,7 @@
       "leverage_unwind_risk",
       "vault_parameter_change_risk"
     ],
-    "why": "JLP-USDC multiply is a structured-yield product. An honest panel should cite Kamino's manifest (paysh_live) for current params, market_data for JLP/SOL price context, and at least one canon source on leverage prudence (Marks on liquidity / Damodaran on yield-vs-risk). ACT is defensible at +4.8% / -3.1% realized. DEFER is also acceptable if the panel flags param uncertainty.",
+    "why": "JLP-USDC multiply is a structured-yield product. S34-#77: question is now as-of-now (no historical price anchor) so the live corpus and the question share a timeframe — hallucination is judged on cite-grounding, not a fixture-induced date contradiction. An honest panel should cite Kamino's manifest (protocol_native) for current params and at least one canon source on leverage prudence (Marks on liquidity / Damodaran on yield-vs-risk). ACT or DEFER both defensible; DEFER if the panel flags param uncertainty.",
     "retrieval_expectations": {
       "required_provider_kinds": {
         "protocol_native": 1,
@@ -71,11 +71,11 @@
     }
   },
   {
-    "id": "kamino-2024Q4-sol-leverage-entry",
-    "as_of_date": "2024-11-05",
+    "id": "kamino-sol-leverage-entry",
+    "as_of_date": "2026-05-16",
     "protocol": "kamino",
     "vertical": "dex",
-    "text": "Open a 3x SOL-long leveraged position on Kamino Multiply with SOL at $165. 30d horizon. Sensible?",
+    "text": "Open a 3x SOL-long leveraged position on Kamino Multiply at the current SOL price. 30d horizon. Sensible?",
     "expected_verdict_v2": "DEFER",
     "expected_verdict_v2_set": [
       "ACT",
@@ -99,7 +99,7 @@
       "audit_status_uncertainty",
       "leverage_unwind_risk"
     ],
-    "why": "3x leverage on a 30d horizon is structurally high-risk even if the realized outcome was +52% / -8.2%. An honest panel must surface liquidation/cascade risk \u2014 canon (Marks on cycles, Damodaran on leverage) must show up. If the panel says ACT here without strong dissent, it's a hallucination of safety. DEFER with strong dissent is the most calibrated answer.",
+    "why": "3x leverage on a 30d horizon is structurally high-risk. S34-#77: as-of-now framing (no $165 anchor) — the panel must reason about leverage prudence from canon, not contradict a stale price. An honest panel must surface liquidation/cascade risk; canon (Marks on cycles, Damodaran on leverage) must show up. ACT without strong dissent here is a hallucination of safety. DEFER with strong dissent is the most calibrated answer.",
     "retrieval_expectations": {
       "required_provider_kinds": {
         "protocol_native": 1,
@@ -144,8 +144,8 @@
     }
   },
   {
-    "id": "kamino-2025Q1-jitosol-vault",
-    "as_of_date": "2025-02-18",
+    "id": "kamino-jitosol-vault",
+    "as_of_date": "2026-05-16",
     "protocol": "kamino",
     "vertical": "dex",
     "text": "Park idle SOL into the Kamino JitoSOL-SOL vault for 30d. Outperform straight JitoSOL holding?",
@@ -169,7 +169,7 @@
       "peg_deviation_risk",
       "transaction_cost_overhead"
     ],
-    "why": "Realized was +1.9% / -1.2% \u2014 marginal yield over straight JitoSOL. PASS or DEFER is correct. ACT would be over-confident given the thin yield differential. Must cite Kamino manifest for vault params and at least one canon source on yield-trap prudence.",
+    "why": "JitoSOL-SOL vaults typically yield a thin differential over straight JitoSOL holding. PASS or DEFER is correct; ACT would be over-confident given the thin yield. Must cite Kamino manifest for vault params and at least one canon source on yield-trap prudence.",
     "retrieval_expectations": {
       "required_provider_kinds": {
         "protocol_native": 1,
@@ -214,11 +214,11 @@
     }
   },
   {
-    "id": "kamino-2025Q3-usdc-pyusd-exit",
-    "as_of_date": "2025-07-22",
+    "id": "kamino-usdc-pyusd-roll",
+    "as_of_date": "2026-05-16",
     "protocol": "kamino",
     "vertical": "dex",
-    "text": "Holding the Kamino USDC-PYUSD vault since June at +0.9%. Roll forward 30 more days or rotate?",
+    "text": "Considering the Kamino USDC-PYUSD stablecoin vault for the next 30 days. Worth entering, or is the yield too thin to bother?",
     "expected_verdict_v2": "PASS",
     "expected_verdict_v2_set": [
       "PASS",
@@ -239,7 +239,7 @@
       "stablecoin_peg_risk",
       "opportunity_cost"
     ],
-    "why": "Yield trap \u2014 realized was +0.3% over 30d. PASS (rotate out) is the correct call. DEFER is acceptable if the panel surfaces opportunity-cost reasoning. ACT is wrong.",
+    "why": "Stablecoin-pair vaults are a classic yield trap — thin nominal yield against real peg + opportunity cost. PASS (don't bother / rotate elsewhere) is the correct call; DEFER is acceptable if the panel surfaces opportunity-cost reasoning. ACT is wrong.",
     "retrieval_expectations": {
       "required_provider_kinds": {
         "protocol_native": 1,
@@ -284,11 +284,11 @@
     }
   },
   {
-    "id": "drift-2024Q4-sol-perp-long",
-    "as_of_date": "2024-12-02",
+    "id": "drift-sol-perp-long",
+    "as_of_date": "2026-05-16",
     "protocol": "drift",
     "vertical": "dex",
-    "text": "Open 2x SOL-PERP long on Drift at $230 ahead of the Dec FOMC. 14d horizon. Sensible?",
+    "text": "Open a 2x SOL-PERP long on Drift at the current price ahead of the next FOMC meeting. 14d horizon. Sensible?",
     "expected_verdict_v2": "PASS",
     "expected_verdict_v2_set": [
       "PASS",
@@ -303,7 +303,7 @@
     "must_not_hallucinate": [
       "specific USD price level for SOL cited without market_data",
       "specific funding rate cited without on-chain/market_data source",
-      "claim that FOMC outcome is predictable",
+      "claim that the FOMC outcome is predictable",
       "specific Drift OI figure cited without a paysh_live or market_data source"
     ],
     "expected_dissent_topics": [
@@ -312,7 +312,7 @@
       "funding_rate_risk",
       "liquidation_cascade_risk"
     ],
-    "why": "Levered long ahead of a known macro event with binary outcome. Realized -22.6% / -27.4% dd. PASS is correct. DEFER acceptable if panel surfaces FOMC uncertainty strongly. ACT here would indicate the panel is missing macro-event-risk awareness entirely.",
+    "why": "Levered long ahead of a known macro event with a binary outcome. PASS is correct; DEFER acceptable if the panel surfaces FOMC uncertainty strongly. ACT here would indicate the panel is missing macro-event-risk awareness entirely. S34-#77: as-of-now framing keeps the FOMC reference forward-looking, not anchored to a stale 2024 meeting.",
     "retrieval_expectations": {
       "required_provider_kinds": {
         "protocol_native": 1,
@@ -355,11 +355,11 @@
     }
   },
   {
-    "id": "drift-2025Q2-jto-perp-short",
-    "as_of_date": "2025-05-14",
+    "id": "drift-jto-perp-short",
+    "as_of_date": "2026-05-16",
     "protocol": "drift",
     "vertical": "dex",
-    "text": "Short JTO-PERP at $2.40 on Drift, 1x size, 21d horizon \u2014 unlock-supply thesis. Take it?",
+    "text": "Short JTO-PERP on Drift, 1x size, 21d horizon — unlock-supply thesis. Take it?",
     "expected_verdict_v2": "ACT",
     "expected_verdict_v2_set": [
       "ACT",
@@ -380,7 +380,7 @@
       "funding_rate_risk",
       "narrative_reversal_risk"
     ],
-    "why": "Realized +14.1% / -6% dd \u2014 directionally correct unlock-supply thesis. ACT is justified. DEFER acceptable if panel flags short-squeeze concern strongly. Must cite tokenomics/market data for the unlock thesis to be grounded.",
+    "why": "An unlock-supply short thesis at 1x size on a 21d horizon is a defensible directional call. ACT is justified; DEFER acceptable if the panel flags short-squeeze concern strongly. Must cite tokenomics/market data for the unlock thesis to be grounded. S34-#77: price anchor removed — the thesis stands on the unlock schedule, not a stale entry price.",
     "retrieval_expectations": {
       "required_provider_kinds": {
         "protocol_native": 1,
@@ -425,11 +425,11 @@
     }
   },
   {
-    "id": "jupiter-2024Q3-jlp-vs-jitosol",
-    "as_of_date": "2024-09-09",
+    "id": "jupiter-jlp-vs-jitosol",
+    "as_of_date": "2026-05-16",
     "protocol": "jupiter",
     "vertical": "dex",
-    "text": "Rotate 100% of JitoSOL stack into JLP for 30d? Or stay in JitoSOL?",
+    "text": "Rotate 100% of a JitoSOL stack into JLP for 30d? Or stay in JitoSOL?",
     "expected_verdict_v2": "DEFER",
     "expected_verdict_v2_set": [
       "ACT",
@@ -450,7 +450,7 @@
       "jlp_drawdown_risk",
       "rotation_timing_risk"
     ],
-    "why": "100% rotation is a concentration call. Realized +6.7% favors ACT, but DEFER is calibrated given the all-in framing \u2014 an honest panel should flag concentration risk. Both ACT and DEFER are acceptable; PASS would be wrong.",
+    "why": "A 100% rotation is a concentration call. DEFER is calibrated given the all-in framing — an honest panel should flag concentration risk. Both ACT and DEFER are acceptable; PASS would be wrong.",
     "retrieval_expectations": {
       "required_provider_kinds": {
         "protocol_native": 1,
@@ -495,11 +495,11 @@
     }
   },
   {
-    "id": "jupiter-2025Q1-lst-rotation-msol",
-    "as_of_date": "2025-03-04",
+    "id": "jupiter-lst-rotation-msol",
+    "as_of_date": "2026-05-16",
     "protocol": "jupiter",
     "vertical": "dex",
-    "text": "Rotate 50% of mSOL position into bSOL via Jupiter for next 30d? bSOL yield+points narrative active.",
+    "text": "Rotate 50% of an mSOL position into bSOL via Jupiter for the next 30d? bSOL yield+points narrative active.",
     "expected_verdict_v2": "PASS",
     "expected_verdict_v2_set": [
       "PASS",
@@ -513,14 +513,14 @@
     "must_not_hallucinate": [
       "specific bSOL APY figure cited without paysh_live or market_data",
       "specific points-program valuation cited as cash-equivalent",
-      "claim that points narrative guarantees outperformance"
+      "claim that the points narrative guarantees outperformance"
     ],
     "expected_dissent_topics": [
       "points_narrative_risk",
       "peg_deviation_risk",
       "rotation_cost_overhead"
     ],
-    "why": "Realized -1.2% / -4.8% dd. Points-narrative rotation underperformed. PASS is correct. Must call out points-as-non-cash explicitly \u2014 canon (Marks on speculation, Damodaran on narrative pricing) should appear.",
+    "why": "A points-narrative rotation is speculative — points are not cash. PASS is correct. The panel must call out points-as-non-cash explicitly; canon (Marks on speculation, Damodaran on narrative pricing) should appear.",
     "retrieval_expectations": {
       "required_provider_kinds": {
         "protocol_native": 1,
@@ -565,11 +565,11 @@
     }
   },
   {
-    "id": "jito-2025Q2-mev-tip-band",
-    "as_of_date": "2025-04-21",
+    "id": "jito-mev-tip-band",
+    "as_of_date": "2026-05-16",
     "protocol": "jito",
     "vertical": "dex",
-    "text": "Setting tip strategy for a high-frequency arb bot on Jito. P75 tip band reasonable, or P90 needed for next 7d?",
+    "text": "Setting tip strategy for a high-frequency arb bot on Jito. Is a P75 tip band reasonable, or is P90 needed for the next 7d?",
     "expected_verdict_v2": "ACT",
     "expected_verdict_v2_set": [
       "ACT",
@@ -590,7 +590,7 @@
       "tip_inflation_risk",
       "bot_competition_risk"
     ],
-    "why": "P75 landed 92% of bundles over the 7d window \u2014 ACT on P75 is correct. DEFER acceptable if panel flags mempool-depth uncertainty. Must ground in Jito tip-floor archive (paysh_live) \u2014 without that, any specific band claim is a hallucination.",
+    "why": "A P75 tip band is a defensible default for a 7d window if grounded in Jito tip-floor data; ACT is correct, DEFER acceptable if the panel flags mempool-depth uncertainty. Must ground in the Jito tip-floor archive (protocol_native) — without that, any specific band claim is a hallucination.",
     "retrieval_expectations": {
       "required_provider_kinds": {
         "protocol_native": 1,
@@ -633,11 +633,11 @@
     }
   },
   {
-    "id": "sanctum-2025Q3-unstake-vs-hold",
-    "as_of_date": "2025-08-05",
+    "id": "sanctum-unstake-vs-hold",
+    "as_of_date": "2026-05-16",
     "protocol": "sanctum",
     "vertical": "dex",
-    "text": "Holding 200 INF (Sanctum infinity LST). Unstake now for 1.001 SOL on Sanctum router, or hold 30d? Yield-vs-peg-risk call.",
+    "text": "Holding 200 INF (Sanctum infinity LST). Unstake now via the Sanctum router, or hold 30d? Yield-vs-peg-risk call.",
     "expected_verdict_v2": "PASS",
     "expected_verdict_v2_set": [
       "PASS",
@@ -658,7 +658,7 @@
       "router_spread_cost",
       "yield_continuity_risk"
     ],
-    "why": "Hold won marginally (+2.1% staking yield over 30d vs 0.1% unstake spread cost). PASS (hold, don't unstake) is correct given the question framing \u2014 'unstake or hold' where PASS = decline-to-act = hold. DEFER acceptable if peg uncertainty is strong.",
+    "why": "Staking yield on an LST typically beats the router spread cost of unstaking, so PASS (hold, don't unstake) is correct given the question framing — PASS = decline-to-act = hold. DEFER acceptable if peg uncertainty is strong.",
     "retrieval_expectations": {
       "required_provider_kinds": {
         "protocol_native": 1,

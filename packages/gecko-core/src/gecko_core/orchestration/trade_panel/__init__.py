@@ -361,6 +361,76 @@ def _coerce_confidence(raw: Any) -> float:
     return max(0.0, min(1.0, val))
 
 
+# S34-#70 — confidence parity. The coordinator turn carries TWO
+# confidence-bearing surfaces: the ```json``` fenced block (a `confidence`
+# field) and the prose body (the coordinator prompt asks the model to
+# *state* its confidence inline, e.g. "Confidence: 0.70"). gpt-4o-mini
+# does not reliably keep the two numbers in sync — a prod smoke returned
+# envelope confidence 0.4 while the turn prose said 0.70. Two numbers for
+# one verdict is a trust bug. We extract the prose number here so
+# `_build_verdict_from_coordinator` can reconcile both surfaces in CODE
+# (per repo memory feedback_prompt_iteration_plateau: confidence
+# reconciliation belongs in code, not a prompt instruction — gpt-4o-mini
+# rounds toward caution on any prompt directive).
+_PROSE_CONFIDENCE_RE = re.compile(
+    r"confidence[\s:=]*(?:is|of|at|=)?\s*([01](?:\.\d+)?|0?\.\d+|\d{1,3})\s*(%?)",
+    re.IGNORECASE,
+)
+# Two surfaces "agree" within this tolerance — below it, no reconciliation
+# (0.70 vs 0.72 is rounding noise, not a disagreement).
+_CONF_PARITY_EPSILON = 0.05
+
+
+def _extract_prose_confidence(text: str) -> float | None:
+    """Pull a stated confidence number from the coordinator's prose body.
+
+    Returns the value normalized to [0,1], or ``None`` when the prose
+    states no confidence. Tolerates both fraction form ("0.70") and
+    percentage form ("70%"). Pure + deterministic — unit-testable with a
+    plain string, no panel run required.
+    """
+    last: float | None = None
+    for m in _PROSE_CONFIDENCE_RE.finditer(text):
+        num_s, pct = m.group(1), m.group(2)
+        try:
+            val = float(num_s)
+        except ValueError:  # pragma: no cover - regex guarantees numeric
+            continue
+        if pct == "%" or val > 1.0:
+            val = val / 100.0
+        if 0.0 <= val <= 1.0:
+            last = val  # last stated confidence wins (closing summary)
+    return last
+
+
+def _reconcile_confidence(
+    block_confidence: float,
+    prose_confidence: float | None,
+) -> tuple[float, bool]:
+    """S34-#70 — collapse two confidence surfaces into ONE deterministic value.
+
+    Parity rule:
+      - No prose confidence stated → trust the JSON block (the structured
+        contract surface).
+      - Surfaces agree within ``_CONF_PARITY_EPSILON`` → JSON block value
+        (the canonical structured field; rounding noise is not a conflict).
+      - Surfaces DISAGREE → take ``min(block, prose)``. A disagreement is
+        itself evidence the model is not converged on its own conviction;
+        a low-conviction verdict must not inherit the higher of two
+        self-reports. We pick the lower surface (conservative) rather than
+        always-JSON because the bug we are fixing is an *inflated* envelope
+        number — the lower value is the safe deterministic choice.
+
+    Returns ``(confidence, disagreed)``. ``disagreed`` lets the caller log
+    the parity event without a schema change.
+    """
+    if prose_confidence is None:
+        return block_confidence, False
+    if abs(block_confidence - prose_confidence) <= _CONF_PARITY_EPSILON:
+        return block_confidence, False
+    return min(block_confidence, prose_confidence), True
+
+
 def _coerce_str_list(raw: Any) -> list[str]:
     if not isinstance(raw, list):
         return []
@@ -391,7 +461,24 @@ def _build_verdict_from_coordinator(
     closing = coord_turn.parsed_verdict or {}
 
     verdict = _coerce_verdict_token(block.get("verdict") or closing.get("verdict"))
-    raw_confidence = _coerce_confidence(block.get("confidence", 0.5))
+
+    # S34-#70 — confidence parity. The JSON block and the prose body can
+    # state two different confidence numbers for the same verdict. Collapse
+    # them to ONE deterministic value here (in code), then feed the result
+    # into the existing S24 band-normalization. min(block, prose) on a
+    # disagreement: a split self-report is a low-conviction signal, so the
+    # envelope must not inherit the higher number.
+    block_confidence = _coerce_confidence(block.get("confidence", 0.5))
+    prose_confidence = _extract_prose_confidence(coord_turn.content)
+    raw_confidence, _conf_disagreed = _reconcile_confidence(block_confidence, prose_confidence)
+    if _conf_disagreed:
+        _log.warning(
+            "trade_panel.confidence_parity_conflict block=%.2f prose=%.2f resolved=%.2f",
+            block_confidence,
+            prose_confidence,
+            raw_confidence,
+        )
+
     key_drivers = _coerce_str_list(block.get("key_drivers"))
     blocker_questions = _coerce_str_list(block.get("blocker_questions"))
 
@@ -618,7 +705,7 @@ async def run_trade_panel(
 # trade-research surface.
 # ---------------------------------------------------------------------------
 
-_DEFAULT_TRADE_TOP_K: int = 5  # S29 #34 — ablation: revert top_k bump (10→5) while keeping the quota-before-rerank order swap. Hypothesis: pkCov win is from the order swap; the top_k=10 bump diluted dissent_grounding/calibration via wider-slate attention spread. See docs/strategy/2026-05-14-s29-34-ablation-handoff.md.
+_DEFAULT_TRADE_TOP_K: int = 15  # S34 #87 — raised 5→15. The S34-#86 retrieval eval found provider_kind_coverage=0.567 at top_k=5 (fails the 0.8 gate) vs 0.967 at top_k=15; the canon-floor quota starves protocol_native at the narrow k. Per-call cost delta is ~$0.0038 (gpt-4o-mini basic tier) — _RAG_CONTEXT_CHAR_CAP (60k chars) does NOT bind at k=15 (~24k chars), so the 3× chunk slate is real. See docs/eval/2026-05-17-s34-topk-cost-model.md.
 
 # S25 #13 — scoring boost terms. Empirical: Atlas vectorSearchScore on the
 # corpus sits in [0.69, 0.78] for typical queries; a +0.15 boost pushes a
@@ -887,6 +974,7 @@ def _provider_quota_floor(
 
     picked.sort(key=lambda r: float(r.get("score") or 0.0), reverse=True)
     return picked
+
 
 # S33-#82 — canon retrieval floor. The trade-idea query embeds ~0.55 cosine
 # to protocol_native API text and only ~0.38-0.41 to canon investor-canon
@@ -1283,7 +1371,25 @@ async def retrieve_trade_corpus_chunks(
     # true query relevance. Flag-gated on GECKO_RERANKER=voyage; graceful-
     # degrades to the vector-order slate on flag-off, missing key, timeout,
     # or any API error — retrieval never breaks on a rerank failure.
-    canon_quota = min(_CANON_FLOOR_COUNT, top_k) if canon_rows else 0
+    # S34-#85 — canon quota must never starve the protocol head.
+    # _CANON_FLOOR_COUNT (6) was sized for the eval's top_k=15 (6/15 = a
+    # 40% canon floor, protocol_native keeps the majority).
+    # S34-#87 raised production top_k (_DEFAULT_TRADE_TOP_K) 5 -> 15, so
+    # production and the eval now share top_k=15 -> canon_quota=6,
+    # protocol_slots=9: the 40%-canon split the floor was designed for.
+    # The `min(_CANON_FLOOR_COUNT, top_k // 2)` clamp below is kept anyway
+    # — it is the load-bearing guard against the S34-#85 regression. At the
+    # old top_k=5 the naive `min(6, top_k)` yielded canon_quota=5,
+    # protocol_slots=0 — the canon FLOOR silently became a CEILING that
+    # consumed the entire slate, and the panel saw 0 protocol_native
+    # chunks for a protocol-specific question. That was the 2026-05-16 live
+    # finding: 5/5 canon citations on a Kamino vault question, the
+    # fundamental_analyst fabricating a "$150M TVL" figure and misciting a
+    # BIS canon_macro paper because no protocol chunk was in scope.
+    # Fix: clamp canon to at most half the slate so protocol_native always
+    # retains a >=ceil(top_k/2) majority. At top_k=5 -> canon_quota=2,
+    # protocol_slots=3; at top_k=15 -> canon_quota=6, protocol_slots=9.
+    canon_quota = min(_CANON_FLOOR_COUNT, top_k // 2) if canon_rows else 0
     protocol_slots = max(0, top_k - canon_quota)
     protocol_reranked = await voyage_rerank_dicts(idea, rows, top_n=top_k)
     canon_reranked: list[dict[str, Any]] = []
