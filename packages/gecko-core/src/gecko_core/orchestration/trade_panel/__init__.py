@@ -888,6 +888,7 @@ def _provider_quota_floor(
     picked.sort(key=lambda r: float(r.get("score") or 0.0), reverse=True)
     return picked
 
+
 # S33-#82 — canon retrieval floor. The trade-idea query embeds ~0.55 cosine
 # to protocol_native API text and only ~0.38-0.41 to canon investor-canon
 # prose, so canon loses the single-pool ANN race outright (0/75 every
@@ -1283,7 +1284,22 @@ async def retrieve_trade_corpus_chunks(
     # true query relevance. Flag-gated on GECKO_RERANKER=voyage; graceful-
     # degrades to the vector-order slate on flag-off, missing key, timeout,
     # or any API error — retrieval never breaks on a rerank failure.
-    canon_quota = min(_CANON_FLOOR_COUNT, top_k) if canon_rows else 0
+    # S34-#85 — canon quota must never starve the protocol head.
+    # _CANON_FLOOR_COUNT (6) was sized for the eval's top_k=15 (6/15 = a
+    # 40% canon floor, protocol_native keeps the majority). Production
+    # (run_trade_panel_with_retrieval) runs top_k=_DEFAULT_TRADE_TOP_K=5.
+    # At top_k=5 the old `min(6, top_k)` yielded canon_quota=5,
+    # protocol_slots=0 — the canon FLOOR silently became a CEILING that
+    # consumed the entire slate, and the panel saw 0 protocol_native
+    # chunks for a protocol-specific question. That is exactly the
+    # 2026-05-16 live finding: 5/5 canon citations on a Kamino vault
+    # question, the fundamental_analyst fabricating a "$150M TVL" figure
+    # and misciting a BIS canon_macro paper because no protocol chunk was
+    # in scope. The retrieval_eval (#82) runs top_k=15 and never saw it.
+    # Fix: clamp canon to at most half the slate so protocol_native always
+    # retains a >=ceil(top_k/2) majority. At top_k=5 -> canon_quota=2,
+    # protocol_slots=3; at top_k=15 -> canon_quota=6 (unchanged).
+    canon_quota = min(_CANON_FLOOR_COUNT, top_k // 2) if canon_rows else 0
     protocol_slots = max(0, top_k - canon_quota)
     protocol_reranked = await voyage_rerank_dicts(idea, rows, top_n=top_k)
     canon_reranked: list[dict[str, Any]] = []
