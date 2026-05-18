@@ -210,6 +210,23 @@ def _load_fixtures(limit: int | None) -> list[dict[str, Any]]:
 
 
 def _build_llm_config(api_key: str, tier: str) -> dict[str, Any]:
+    """Build the AG2 ``llm_config`` for the trade panel.
+
+    S35-#101 — the API endpoints route the panel through ``LLM_ROUTER`` via
+    ``_trade_panel_llm_config()`` in ``gecko_api.main``. A ship-gate eval must
+    exercise the SAME provider the production endpoint uses, or the run does
+    not verify the shipped path. When ``LLM_ROUTER`` is set this resolves the
+    router (OpenRouter in prod) exactly as the endpoint does; otherwise it
+    falls back to the legacy OpenAI-direct hand-wired config.
+    """
+    if os.environ.get("LLM_ROUTER"):
+        from gecko_core.orchestration.pro.router import resolve_router
+
+        rc = resolve_router()
+        model_base = "gpt-4o-mini" if tier == "basic" else "gpt-4o"
+        model = f"openai/{model_base}" if rc.router == "openrouter" else model_base
+        cfg = rc.llm_config_for_model(model, temperature=0.2)
+        return cfg
     model = "gpt-4o-mini" if tier == "basic" else "gpt-4o"
     return {
         "config_list": [{"model": model, "api_key": api_key}],
