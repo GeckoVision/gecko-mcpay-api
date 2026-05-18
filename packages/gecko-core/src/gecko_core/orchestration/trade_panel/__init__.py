@@ -148,6 +148,16 @@ def _opening_prompt(idea: str, protocol: str, chunks: list[dict[str, Any]]) -> s
     only (see canary 2026-05-13-canary-postfix). This is a persona-
     structure directive, not a coordinator verdict-shape edit, and is
     safe under the plateau-memory caveat.
+
+    S36-#108: the QUANTITATIVE GROUNDING block was sharpened from the
+    S29-#33 ``unsourced:``-prefix phrasing into an explicit "say there
+    is no figure in the corpus" instruction with a verbatim model
+    template. This is belt-and-suspenders only — the load-bearing fix
+    is the code-side ``grounding_gate`` (S36-#106), which deterministically
+    converts ungrounded numerics into honest abstains regardless of
+    whether the model obeys this prompt. Per
+    ``memory/feedback_prompt_iteration_plateau`` the prompt is not
+    expected to bind reliably on gpt-4o-mini; do not tune it further.
     """
     n_chunks = len(chunks)
     # S28 #25 — softened from the S26 #19 "cite-broadly" directive. With
@@ -171,19 +181,23 @@ def _opening_prompt(idea: str, protocol: str, chunks: list[dict[str, Any]]) -> s
             "  Phantom citation (claiming a chunk you did not read in body "
             "text) is a panel failure mode and disqualifies the turn.\n"
             "\nQUANTITATIVE GROUNDING (mandatory for every non-coordinator voice):\n"
-            "  When you write a specific number — TVL, APR/APY, price, volume, "
-            "ratio, percentage, dollar figure — you MUST either:\n"
-            "    (a) QUOTE the exact substring from the cited chunk that "
-            "contains that number, in the same line — "
-            "e.g. `TVL is $1,505,498,759 [3: 'tvl: 1505498759']`, OR\n"
-            "    (b) Write the claim WITHOUT a citation and prefix it "
-            "`unsourced:` — e.g. `unsourced: yields appear competitive vs peers`.\n"
-            "  Do NOT cite a chunk number for a figure that does not appear "
-            "verbatim in that chunk. Inferring a plausible TVL/APR/price from "
-            "field names, related magnitudes, or surrounding context is a "
-            "hallucination and disqualifies the turn. When in doubt, write "
-            "the qualitative claim with `unsourced:` rather than fabricate a "
-            "specific number.\n"
+            "  Rule: every specific number you write — TVL, APR/APY, price, "
+            "volume, ratio, percentage, dollar figure — must appear VERBATIM "
+            "in a chunk you cite on the same line. Two cases, no third:\n"
+            "    (a) The number IS in a chunk — quote the exact substring "
+            "inline: `TVL is $1,505,498,759 [3: 'tvl: 1505498759']`.\n"
+            "    (b) The number is NOT in any chunk — do NOT write the "
+            "number at all. Instead say plainly that the corpus has no "
+            "figure: `No TVL figure for Kamino in the retrieved corpus.` or "
+            "`I don't know the current APY — no chunk reports it.` Then make "
+            "your point qualitatively.\n"
+            "  An honest 'no figure in the corpus for X' is a CORRECT, "
+            "expected answer and never penalizes your turn. A fabricated or "
+            "guessed number — inferred from a field name, a related "
+            "magnitude, a canon/macro chunk, or prior knowledge — is a "
+            "hallucination and disqualifies the entire turn. When you cannot "
+            "ground a number, state the gap; never invent a value to sound "
+            "decisive.\n"
         )
     )
     return (
