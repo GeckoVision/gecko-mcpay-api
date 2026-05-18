@@ -443,15 +443,20 @@ _MAX_ENTITIES: Final[int] = 40
 
 
 def _provenance_header(ep: ProtocolEndpoint, as_of_iso: str) -> str:
-    """The mandatory first line every protocol_native chunk carries.
+    """The provenance clause every protocol_native chunk carries.
 
-    The rubric judge sees only ``snippet[:240]`` of each citation, so the
-    protocol + endpoint + as-of date must lead. Note: contains no ``{`` /
-    ``}`` — the whole point of S33-#61.
+    S36-#106 — this clause used to LEAD every chunk. The S36-WS1
+    hallucination diagnosis found that a leading provenance header plus an
+    endpoint description exhausts the rubric judge's ~200-char snippet
+    window *before any number appears*, so the panel cites a real API
+    figure the judge never sees → ``hallucination_score`` false-negatives.
+    The fix: the numeric payload now LEADS the chunk and this provenance
+    clause TRAILS it (see :func:`_render_entity_list` et al). It still
+    carries no ``{`` / ``}`` — the S33-#61 invariant holds.
 
-    S33-#80 — this header is part of every chunk's DISPLAY text (the panel
+    S33-#80 — this clause is part of every chunk's DISPLAY text (the panel
     cites it for provenance) but is deliberately STRIPPED from the EMBEDDED
-    text by :func:`render_chunk_pairs`. The header is identical across
+    text by :func:`render_chunk_pairs`. The clause is identical across
     hundreds of chunks; including it in the embedding vector pulls every
     short ``protocol_native`` chunk toward a shared centroid and compresses
     the cosine spread that ranking depends on (S33 retrieval-quality
@@ -461,18 +466,28 @@ def _provenance_header(ep: ProtocolEndpoint, as_of_iso: str) -> str:
 
 
 def _strip_provenance_header(chunk: str, header: str) -> str:
-    """Return ``chunk`` with a leading provenance ``header`` removed.
+    """Return ``chunk`` with the provenance ``header`` clause removed.
 
-    Pure helper for S33-#80. The renderers below emit chunks as
-    ``f"{header} {body}"``; this peels the header (and the single joining
-    space) back off so the embedder sees signal-only text. If the chunk
-    does not start with the header — e.g. a docs-prose chunk the chunker
-    re-split so a later segment carries no header — it is returned
-    unchanged. Whitespace-collapsed on the way out so an empty residue is
-    caught by the caller's empty guard.
+    Pure helper for S33-#80. S36-#106 moved the provenance clause out of
+    the LEAD. The number-first entity renderers emit
+    ``"{sentence} {header} Source: {url}."`` — the header is now an
+    interior clause sitting between the body and the trailing ``Source:``.
+    This peels it wherever it sits: a leading match (legacy / fallback docs
+    chunks), an interior match (the new entity renderers), or a trailing
+    match. If the chunk carries the header nowhere — e.g. a docs-prose
+    chunk the chunker re-split — it is returned unchanged. Whitespace-
+    collapsed on the way out so an empty residue is caught by the caller's
+    empty guard.
     """
-    if header and chunk.startswith(header):
+    if not header:
+        return chunk.strip()
+    if chunk.startswith(header):
         return chunk[len(header) :].strip()
+    idx = chunk.find(header)
+    if idx != -1:
+        # Splice the header out, collapsing the joining whitespace.
+        spliced = (chunk[:idx].rstrip() + " " + chunk[idx + len(header) :].lstrip()).strip()
+        return spliced
     return chunk.strip()
 
 
@@ -516,33 +531,41 @@ def _render_entity_list(
 ) -> list[str]:
     """Emit ONE prose chunk per entity in a list payload.
 
-    Each chunk: ``<provenance header>`` + a sentence naming the entity and
-    its salient fields. Caps at ``_MAX_ENTITIES`` to bound corpus cost.
+    S36-#106 — chunk shape is **number-first**: the salient numeric/value
+    fields (``clause``) lead, then the entity name, then the provenance
+    header, then ``Source:``. The rubric judge's ~200-char snippet window
+    must contain the citable figure; a leading provenance header used to
+    push the numbers past char 200 and trigger false hallucination flags.
+    Caps at ``_MAX_ENTITIES`` to bound corpus cost.
     """
     header = _provenance_header(ep, as_of_iso)
     chunks: list[str] = []
     for entity in entities[:_MAX_ENTITIES]:
         if not isinstance(entity, dict):
-            chunks.append(f"{header} {_compact_scalar(entity)}")
+            chunks.append(f"{_compact_scalar(entity)} {header}")
             continue
         name = next(
             (str(entity[k]) for k in name_keys if entity.get(k)),
             ep.slug,
         )
         clause = _kv_sentence(entity, fields)
-        sentence = f"{ep.protocol.title()} {name}"
+        # Number-first: lead with the value clause when present, then name.
         if clause:
-            sentence += f" — {clause}"
-        sentence += "."
-        chunks.append(f"{header} {sentence} Source: {ep.url}.")
+            sentence = f"{ep.protocol.title()} {name}: {clause}."
+        else:
+            sentence = f"{ep.protocol.title()} {name}."
+        chunks.append(f"{sentence} {header} Source: {ep.url}.")
     return chunks
 
 
 # Per-endpoint field maps — (json_key, human label). Order = sentence order.
-_KAMINO_MARKET_FIELDS: Final[tuple[tuple[str, str], ...]] = (
-    ("description", "described as"),
-    ("lendingMarket", "lending-market pubkey"),
-)
+#
+# S36-#106 — NUMERIC FIELDS LEAD. The number-first invariant (the rubric
+# judge's snippet window must contain the citable figure) is enforced both
+# by the renderer (clause-before-name) AND by ordering the value-bearing
+# keys ahead of any long prose key inside each field map. The Kamino vault
+# numerics (APY/TVL) precede the prose ``description`` so a vault chunk
+# leads with its yield, not its blurb.
 _KAMINO_VAULT_FIELDS: Final[tuple[tuple[str, str], ...]] = (
     ("apy", "APY"),
     ("apy7d", "7d APY"),
@@ -550,12 +573,16 @@ _KAMINO_VAULT_FIELDS: Final[tuple[tuple[str, str], ...]] = (
     ("tokenMint", "token mint"),
     ("depositCap", "deposit cap"),
 )
+_KAMINO_MARKET_FIELDS: Final[tuple[tuple[str, str], ...]] = (
+    ("lendingMarket", "lending-market pubkey"),
+    ("description", "described as"),
+)
 _JUPITER_TOKEN_FIELDS: Final[tuple[tuple[str, str], ...]] = (
-    ("symbol", "symbol"),
     ("usdPrice", "price $"),
     ("mcap", "market cap $"),
     ("fdv", "FDV $"),
     ("holderCount", "holders"),
+    ("symbol", "symbol"),
     ("decimals", "decimals"),
 )
 
@@ -568,7 +595,8 @@ def _render_kamino_payload(ep: ProtocolEndpoint, body: Any, as_of_iso: str) -> l
             body,
             as_of_iso,
             name_keys=("name", "label", "tokenSymbol", "shareMint", "lendingMarket"),
-            fields=_KAMINO_MARKET_FIELDS + _KAMINO_VAULT_FIELDS,
+            # S36-#106 — vault numerics (APY/TVL) lead; market prose trails.
+            fields=_KAMINO_VAULT_FIELDS + _KAMINO_MARKET_FIELDS,
         )
     return _render_fallback(ep, body, as_of_iso)
 
@@ -618,8 +646,9 @@ def _render_tip_floor_payload(ep: ProtocolEndpoint, body: Any, as_of_iso: str) -
         return _render_fallback(ep, body, as_of_iso)
     ema = snapshot.get("ema_landed_tips_50th_percentile")
     ema_clause = f" EMA 50th pct {_fmt_num(ema)} SOL." if ema is not None else ""
+    # S36-#106 — number-first: the percentile ladder leads, header trails.
     sentence = "Jito bundle tip floor — " + "; ".join(rungs) + "."
-    return [f"{header} {sentence}{ema_clause} Source: {ep.url}."]
+    return [f"{sentence}{ema_clause} {header} Source: {ep.url}."]
 
 
 def _render_drift_funding_payload(ep: ProtocolEndpoint, body: Any, as_of_iso: str) -> list[str]:
@@ -675,12 +704,15 @@ def _render_drift_funding_payload(ep: ProtocolEndpoint, body: Any, as_of_iso: st
         ]
         parts += [f"{label} {rec[key]}" for key, label in _ID_FIELDS if rec.get(key) is not None]
         clause = ", ".join(parts)
-        lead = f"{interp} " if i == 0 else ""
-        sentence = f"Drift {market} funding record"
+        # S36-#106 — number-first: the funding record numbers lead the
+        # chunk; the interpretation note + provenance header trail so the
+        # judge's snippet window always opens on a citable figure.
+        trail = f" {interp}" if i == 0 else ""
         if clause:
-            sentence += f" — {clause}"
-        sentence += "."
-        chunks.append(f"{header} {lead}{sentence} Source: {ep.url}.")
+            sentence = f"Drift {market} funding record — {clause}."
+        else:
+            sentence = f"Drift {market} funding record."
+        chunks.append(f"{sentence}{trail} {header} Source: {ep.url}.")
     return chunks
 
 
