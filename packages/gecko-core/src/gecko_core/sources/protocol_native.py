@@ -577,8 +577,11 @@ _KAMINO_MARKET_FIELDS: Final[tuple[tuple[str, str], ...]] = (
     ("lendingMarket", "lending-market pubkey"),
     ("description", "described as"),
 )
+# S37-WS1b — ``priceChange24h`` added so the price/v3 payload's 24h move
+# is a citable figure too; numeric fields still lead the prose clause.
 _JUPITER_TOKEN_FIELDS: Final[tuple[tuple[str, str], ...]] = (
     ("usdPrice", "price $"),
+    ("priceChange24h", "24h change"),
     ("mcap", "market cap $"),
     ("fdv", "FDV $"),
     ("holderCount", "holders"),
@@ -602,11 +605,40 @@ def _render_kamino_payload(ep: ProtocolEndpoint, body: Any, as_of_iso: str) -> l
 
 
 def _render_jupiter_payload(ep: ProtocolEndpoint, body: Any, as_of_iso: str) -> list[str]:
-    """Jupiter token-tag / price payloads → per-token prose."""
+    """Jupiter token-tag / price payloads → per-token prose.
+
+    S37-WS1b — the ``jupiter-tokens-*`` tag endpoints return a bare list
+    (handled by ``_render_entity_list``, already number-first). The
+    ``jupiter-sol-price`` / ``jupiter-lst-prices`` price/v3 endpoints
+    instead return a **dict keyed by mint address** —
+    ``{"<mint>": {"usdPrice": ..., "priceChange24h": ...}}`` — which is
+    not a list, so it previously fell through to ``_render_fallback`` and
+    led every chunk with the provenance header + endpoint description. That
+    header pushed the price figure past the rubric judge's ~320-char
+    snippet window, so the Jupiter LST-rotation fixtures cited a price
+    chunk whose number the judge never saw (S36-#112). The mint-keyed dict
+    is now flattened into one number-first per-token chunk.
+    """
     if isinstance(body, list) and body:
         return _render_entity_list(
             ep,
             body,
+            as_of_iso,
+            name_keys=("name", "symbol", "id"),
+            fields=_JUPITER_TOKEN_FIELDS,
+        )
+    # price/v3 — dict keyed by mint address → per-mint number-first chunks.
+    if isinstance(body, dict) and body and all(isinstance(v, dict) for v in body.values()):
+        entities: list[Any] = []
+        for mint, payload in body.items():
+            entity = dict(payload)
+            # Carry the mint as the entity id so name resolution succeeds
+            # even when the price payload omits a symbol/name field.
+            entity.setdefault("id", mint)
+            entities.append(entity)
+        return _render_entity_list(
+            ep,
+            entities,
             as_of_iso,
             name_keys=("name", "symbol", "id"),
             fields=_JUPITER_TOKEN_FIELDS,
@@ -770,6 +802,11 @@ _RENDERERS: Final[dict[str, Any]] = {
     "kamino-staking-yields": _render_kamino_payload,
     "jupiter-tokens-verified-list": _render_jupiter_payload,
     "jupiter-tokens-lst-list": _render_jupiter_payload,
+    # S37-WS1b — the price/v3 endpoints return a dict keyed by mint, not a
+    # list. Registered here so they reach the number-first _render_jupiter_
+    # payload mint-keyed branch instead of header-first _render_fallback.
+    "jupiter-sol-price": _render_jupiter_payload,
+    "jupiter-lst-prices": _render_jupiter_payload,
     "jito-tip-floor": _render_tip_floor_payload,
     # S33-#75 — Drift Data API. Funding-rate history is a dict-wrapping-list
     # ({"records":[...]}); market prices is {"markets":[...]}. Both need a

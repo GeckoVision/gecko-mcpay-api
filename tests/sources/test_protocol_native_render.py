@@ -128,6 +128,42 @@ class TestNumberFirstInvariant:
         # interpretation note no longer pushes it out.
         assert "0.000575916" in truncated
 
+    def test_jupiter_price_payload_leads_with_price(self) -> None:
+        """S37-WS1b — the jupiter price/v3 endpoints return a dict keyed by
+        mint address, not a list. Before WS1b that shape fell through to
+        ``_render_fallback`` (header-first), so the price figure sat past
+        the snippet window. The mint-keyed dict is now number-first."""
+        from gecko_core.sources.protocol_native import render_chunks
+
+        ep = ProtocolEndpoint(
+            protocol="jupiter",
+            slug="jupiter-lst-prices",
+            url="https://lite-api.jup.ag/price/v3?ids=mSoL",
+            description="Jupiter Lite-API LST snapshot for LST rotation analysis.",
+            content_kind="quote",
+        )
+        # price/v3 — dict keyed by mint, value carries usdPrice/priceChange24h.
+        body = json.dumps(
+            {
+                "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So": {
+                    "usdPrice": 211.47,
+                    "priceChange24h": -1.83,
+                    "decimals": 9,
+                }
+            }
+        )
+        chunks = render_chunks(ep, body, "2026-05-16")
+        assert chunks, "mint-keyed price dict must render at least one chunk"
+        chunk = chunks[0]
+        assert "{" not in chunk and "}" not in chunk, "price chunk leaked a brace"
+        truncated = chunk[:200]
+        # The price figure lands inside the truncation window — the
+        # provenance header no longer leads.
+        assert "211.47" in truncated, "price figure must land in the snippet window"
+        header = _provenance_header(ep, "2026-05-16")
+        assert not chunk.startswith(header), "price chunk must be number-first"
+        assert header in chunk, "provenance must still trail the figure"
+
 
 # ---------------------------------------------------------------------------
 # §3 — degenerate-chunk guard
