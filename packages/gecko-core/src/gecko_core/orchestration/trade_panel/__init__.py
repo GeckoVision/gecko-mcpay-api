@@ -38,6 +38,7 @@ from gecko_core.observability import emit_event
 from gecko_core.orchestration.trade_panel.agents import build_groupchat
 from gecko_core.orchestration.trade_panel.grounding_gate import apply_grounding_gate
 from gecko_core.orchestration.trade_panel.models import (
+    CITATION_SNIPPET_MAX_LEN,
     Citation,
     TradePanelTurn,
     TradePanelVerdict,
@@ -1543,7 +1544,10 @@ def _strategist_intent_from_turn(turn: TradePanelTurn | None, protocol: str) -> 
 # (score_defi_trade_rubric.py) is reconciled to NOT truncate a second
 # time — it grades the exact snippet text the panel emits, so the
 # grounding gate and the judge read identical text by construction.
-_CITATION_SNIPPET_LIMIT: int = 320
+# S36-#111 — sourced from the canonical constant in models.py so the
+# truncation window and Citation.snippet's max_length validator cannot
+# drift (the 240-vs-320 mismatch that scored the #110 N=50 run as N=0).
+_CITATION_SNIPPET_LIMIT: int = CITATION_SNIPPET_MAX_LEN
 
 
 def _coerce_provider_kind(raw: Any) -> ProviderKind:

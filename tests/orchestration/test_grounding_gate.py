@@ -182,3 +182,34 @@ class TestAbstain:
         # The gate signals distrust via confidence + blocker, never by
         # rewriting the panel's KILL/REFINE/BUILD decision.
         assert adjusted.verdict == verdict.verdict
+
+
+class TestSnippetCapDoesNotDrift:
+    """S36-#111 regression — the panel truncates a citation snippet to
+    ``_CITATION_SNIPPET_LIMIT`` and then constructs a ``Citation``. If the
+    field's ``max_length`` validator is below that limit, every snippet in
+    the gap raises ``ValidationError`` at construction — which scored the
+    #110 N=50 ship-gate as N=0. Both must derive from one constant.
+    """
+
+    def test_truncation_limit_equals_validator_max(self) -> None:
+        from gecko_core.orchestration.trade_panel import _CITATION_SNIPPET_LIMIT
+        from gecko_core.orchestration.trade_panel.models import (
+            CITATION_SNIPPET_MAX_LEN,
+        )
+
+        # Pattern A — one source of truth, so they cannot drift again.
+        assert _CITATION_SNIPPET_LIMIT == CITATION_SNIPPET_MAX_LEN
+
+    def test_citation_accepts_snippet_at_truncation_limit(self) -> None:
+        from gecko_core.orchestration.trade_panel import _CITATION_SNIPPET_LIMIT
+
+        # A snippet truncated to the exact limit must construct cleanly.
+        cite = _cite(1, "x" * _CITATION_SNIPPET_LIMIT)
+        assert len(cite.snippet) == _CITATION_SNIPPET_LIMIT
+
+    def test_citation_accepts_snippet_in_old_dead_zone(self) -> None:
+        # 300 chars — inside the old (240, 320] gap that raised
+        # ValidationError before #111 unified the cap.
+        cite = _cite(2, "y" * 300)
+        assert len(cite.snippet) == 300
