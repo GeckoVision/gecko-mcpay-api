@@ -2275,6 +2275,30 @@ async def precedents_call(req: dict[str, Any], request: Request) -> list[dict[st
 # ---------------------------------------------------------------------------
 
 
+def _trade_panel_llm_config() -> dict[str, Any]:
+    """Build the AutoGen ``llm_config`` for the trade panel via the router.
+
+    S35-#101 — the trade panel previously hand-wired ``config_list`` against
+    ``GECKO_LLM_ENDPOINT`` (api.openai.com), ignoring ``LLM_ROUTER``. With the
+    OpenAI quota exhausted and OpenRouter funded, the panel must honor the
+    same router abstraction the Pro debate + basic/pro research already use.
+
+    ``resolve_router`` returns base_url / api_key / extra_headers for the
+    selected router; ``llm_config_for_model`` assembles the single-config-list
+    AG2 dict (incl. ``default_headers`` for OpenRouter attribution and an
+    explicit ``price`` so cost stays accurate under router-prefixed names).
+
+    Model id namespacing: OpenRouter requires ``openai/gpt-4o-mini``;
+    OpenAI-direct + ClawRouter use the bare ``gpt-4o-mini``. The router knows
+    which surface it resolved to, so the namespacing is decided here.
+    """
+    from gecko_core.orchestration.pro.router import resolve_router
+
+    rc = resolve_router()
+    model = "openai/gpt-4o-mini" if rc.router == "openrouter" else "gpt-4o-mini"
+    return rc.llm_config_for_model(model, temperature=0.3)
+
+
 @app.post(
     "/trade_research",
     response_model=TradeResearchResponse,
@@ -2290,7 +2314,6 @@ async def trade_research(req: TradeResearchRequest, request: Request) -> TradeRe
     """
     from uuid import uuid4
 
-    from gecko_core.orchestration.settings import get_orchestration_settings
     from gecko_core.orchestration.trade_panel import run_trade_panel_with_retrieval
 
     _ = getattr(request.state, "payment_payload", None)
@@ -2309,17 +2332,9 @@ async def trade_research(req: TradeResearchRequest, request: Request) -> TradeRe
         len(req.idea),
     )
 
-    orch = get_orchestration_settings()
-    llm_config: dict[str, Any] = {
-        "config_list": [
-            {
-                "model": "gpt-4o-mini",
-                "api_key": orch.llm_api_key,
-                "base_url": orch.llm_endpoint,
-            }
-        ],
-        "temperature": 0.3,
-    }
+    # S35-#101 — route the panel through LLM_ROUTER (OpenRouter in prod)
+    # instead of the legacy hand-wired api.openai.com config.
+    llm_config: dict[str, Any] = _trade_panel_llm_config()
 
     import time as _time
 
@@ -2393,7 +2408,6 @@ async def trade_research_pro(req: TradeResearchRequest, request: Request) -> Tra
     """
     from uuid import uuid4
 
-    from gecko_core.orchestration.settings import get_orchestration_settings
     from gecko_core.orchestration.trade_panel import run_trade_panel_with_retrieval
 
     _ = getattr(request.state, "payment_payload", None)
@@ -2410,17 +2424,8 @@ async def trade_research_pro(req: TradeResearchRequest, request: Request) -> Tra
         len(req.idea),
     )
 
-    orch = get_orchestration_settings()
-    llm_config: dict[str, Any] = {
-        "config_list": [
-            {
-                "model": "gpt-4o-mini",
-                "api_key": orch.llm_api_key,
-                "base_url": orch.llm_endpoint,
-            }
-        ],
-        "temperature": 0.3,
-    }
+    # S35-#101 — route the panel through LLM_ROUTER (OpenRouter in prod).
+    llm_config: dict[str, Any] = _trade_panel_llm_config()
 
     import time as _time
 
