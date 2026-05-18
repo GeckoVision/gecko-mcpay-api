@@ -143,13 +143,16 @@ class TestGrounding:
 
 
 # ---------------------------------------------------------------------------
-# abstain action
+# redaction action — S37-WS1a: ungrounded figures are SCRUBBED from the
+# verdict text (rephrase when a direction can be grounded, else drop the
+# clause), and confidence is NOT multiplied down.
 # ---------------------------------------------------------------------------
 
 
-class TestAbstain:
-    def test_weak_grounding_abstains_and_floors_confidence(self) -> None:
-        # Both figures ungrounded → grounded_fraction 0.0 → abstain.
+class TestRedaction:
+    def test_ungrounded_figure_is_removed_from_key_drivers(self) -> None:
+        # The fabricated number must not survive in the verdict text — the
+        # judge reads turns[]/key_drivers and penalizes any figure it sees.
         verdict = _verdict(
             key_drivers=["TVL $500M", "APY 99%"],
             evidence=[_cite(1, "endpoint description, no figures")],
@@ -157,20 +160,89 @@ class TestAbstain:
         )
         adjusted, report = apply_grounding_gate(verdict)
         assert report.abstained
-        assert adjusted.confidence < 0.8
-        # An explicit blocker names the ungrounded figures.
+        joined = " ".join(adjusted.key_drivers)
+        assert "$500M" not in joined
+        assert "99%" not in joined
+
+    def test_groundable_direction_rephrases_the_number(self) -> None:
+        # The snippet says "elevated" — so the ungrounded 26.12% may become
+        # a grounded qualitative descriptor rather than being dropped.
+        verdict = _verdict(
+            key_drivers=["APY of 26.12% looks attractive"],
+            evidence=[_cite(1, "Kamino vault note: yields are currently elevated.")],
+            confidence=0.7,
+        )
+        adjusted, report = apply_grounding_gate(verdict)
+        assert report.abstained
+        joined = " ".join(adjusted.key_drivers)
+        assert "26.12%" not in joined
+        # The grounded descriptor replaced the number; the driver survives.
+        assert "elevated" in joined
+        assert adjusted.key_drivers, "rephrased driver should not be dropped"
+
+    def test_no_groundable_direction_drops_the_clause(self) -> None:
+        # No directional word in any snippet → never invent an adjective →
+        # the clause carrying the ungrounded figure is dropped entirely.
+        verdict = _verdict(
+            key_drivers=["APY of 26.12% looks attractive, and liquidity is deep"],
+            evidence=[_cite(1, "Sanctum reserve endpoint — describes instant unstake.")],
+            confidence=0.7,
+        )
+        adjusted, report = apply_grounding_gate(verdict)
+        assert report.abstained
+        joined = " ".join(adjusted.key_drivers)
+        assert "26.12%" not in joined
+        # No invented adjective — neither "elevated" nor "high" appears.
+        assert "elevated" not in joined
+        assert "high" not in joined
+        # The clause WITHOUT the figure ("liquidity is deep") survives.
+        assert "liquidity is deep" in joined
+
+    def test_ungrounded_figure_removed_from_turn_content(self) -> None:
+        verdict = _verdict(
+            turns=[TradePanelTurn(agent="strategist", content="The vault holds $999M TVL")],
+            evidence=[_cite(1, "endpoint description with no numbers")],
+        )
+        adjusted, report = apply_grounding_gate(verdict)
+        assert report.abstained
+        assert all("$999M" not in t.content for t in adjusted.turns)
+
+    def test_confidence_is_not_floored_post_redaction(self) -> None:
+        # #116 — the old gate multiplied confidence × grounded_fraction,
+        # manufacturing "confidence 0.00 but verdict ACT". Once the figure
+        # is scrubbed the text is honest, so confidence is left intact.
+        verdict = _verdict(
+            key_drivers=["TVL $500M", "APY 99%"],
+            evidence=[_cite(1, "endpoint description, no figures")],
+            confidence=0.8,
+        )
+        adjusted, report = apply_grounding_gate(verdict)
+        assert report.abstained
+        assert adjusted.confidence == 0.8
+
+    def test_blocker_question_still_names_the_redacted_figures(self) -> None:
+        # The blocker append is a legitimate audit signal — kept.
+        verdict = _verdict(
+            key_drivers=["TVL $500M", "APY 99%"],
+            evidence=[_cite(1, "endpoint description, no figures")],
+            confidence=0.8,
+        )
+        adjusted, _report = apply_grounding_gate(verdict)
         assert any("Grounding gate" in q for q in adjusted.blocker_questions)
         assert any("$500M" in q for q in adjusted.blocker_questions)
 
     def test_fully_grounded_verdict_is_untouched(self) -> None:
         verdict = _verdict(
             key_drivers=["APY 7.42%"],
+            turns=[TradePanelTurn(agent="strategist", content="APY 7.42% is fair")],
             evidence=[_cite(1, "Kamino vault: APY 7.42%.")],
             confidence=0.8,
         )
         adjusted, report = apply_grounding_gate(verdict)
         assert not report.abstained
         assert adjusted.confidence == 0.8
+        assert adjusted.key_drivers == verdict.key_drivers
+        assert [t.content for t in adjusted.turns] == [t.content for t in verdict.turns]
         assert adjusted.blocker_questions == verdict.blocker_questions
 
     def test_abstain_does_not_flip_the_verdict_literal(self) -> None:
@@ -179,8 +251,8 @@ class TestAbstain:
             evidence=[_cite(1, "no figures here")],
         )
         adjusted, _report = apply_grounding_gate(verdict)
-        # The gate signals distrust via confidence + blocker, never by
-        # rewriting the panel's KILL/REFINE/BUILD decision.
+        # The gate scrubs figures + appends a blocker, never rewrites the
+        # panel's act/pass/defer decision.
         assert adjusted.verdict == verdict.verdict
 
 

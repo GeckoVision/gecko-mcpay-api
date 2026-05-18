@@ -111,6 +111,28 @@ class NumericClaim:
     surface: str  # e.g. "key_drivers" or "turn:fundamental_analyst"
 
 
+# ---------------------------------------------------------------------------
+# Redaction — S37-WS1a. Detection is unchanged; this is the *mutation* step.
+# An ungrounded numeric span is removed from the verdict text. The number is
+# replaced by a qualitative descriptor ONLY when that descriptor's direction
+# is itself grounded in a cited snippet; otherwise the clause is dropped.
+# Never substitute an ungrounded adjective for an ungrounded number.
+# ---------------------------------------------------------------------------
+
+# Directional words the gate may emit, paired with the regex that proves the
+# direction appears in a citation snippet. Ordered high-confidence first.
+_DIRECTION_WORDS: list[tuple[str, re.Pattern[str]]] = [
+    ("an elevated", re.compile(r"\b(?:elevated|elevate)\b", re.IGNORECASE)),
+    ("a high", re.compile(r"\bhigh(?:er|est)?\b", re.IGNORECASE)),
+    ("a low", re.compile(r"\blow(?:er|est)?\b", re.IGNORECASE)),
+    ("a modest", re.compile(r"\bmodest\b", re.IGNORECASE)),
+    ("a substantial", re.compile(r"\b(?:substantial|sizeable|sizable|large)\b", re.IGNORECASE)),
+]
+
+# Clause boundary — a span is removed back to the nearest of these.
+_CLAUSE_SPLIT = re.compile(r"[.;,\n]|(?:\s+(?:and|but|while|whereas|though)\s+)", re.IGNORECASE)
+
+
 @dataclass(frozen=True)
 class GroundingReport:
     """Outcome of the grounding gate over one verdict."""
@@ -289,43 +311,158 @@ def check_grounding(
     return report
 
 
+def _grounded_direction(raws: list[str], snippets: list[str]) -> str | None:
+    """Return a grounded directional descriptor for an ungrounded number.
+
+    HARD GUARDRAIL: a directional word is emitted ONLY when that exact
+    direction appears in a cited snippet — i.e. the qualitative claim is
+    itself grounded. If no direction can be grounded, returns ``None`` and
+    the caller drops the clause. We never substitute an ungrounded
+    adjective for an ungrounded number; that just relocates the
+    hallucination.
+
+    The check is intentionally crude: presence of the directional token in
+    *any* snippet. We do not try to bind the direction to the specific
+    metric — that would need NLP the gate deliberately avoids. The cost of
+    the crude check is an occasionally vague descriptor; the benefit is it
+    can never invent a direction the corpus does not contain.
+    """
+    if not snippets:
+        return None
+    blob = " ".join(snippets)
+    for descriptor, pat in _DIRECTION_WORDS:
+        if pat.search(blob):
+            return descriptor
+    return None
+
+
+def _redact_span(text: str, raw: str, descriptor: str | None) -> str:
+    """Replace one ungrounded numeric span in ``text``.
+
+    ``descriptor`` not None -> qualitative rephrase: the number (and any
+    immediately-trailing ``%`` / magnitude word) is swapped for
+    ``"<descriptor> figure"``, e.g. ``"APY of 26.12%"`` -> ``"APY of an
+    elevated figure"``. The trailing ``" figure"`` noun keeps the sentence
+    grammatical in both the ``"X of <n>"`` and ``"<n> X"`` frames without
+    needing to parse the metric word.
+
+    ``descriptor`` None -> drop the enclosing clause back to the nearest
+    clause boundary.
+
+    Whitespace-insensitive: matches the span even when the panel inserted
+    spaces (``"$ 949 M"``). Idempotent on text that no longer contains the
+    span.
+    """
+    # Build a whitespace-tolerant pattern for the raw span, allowing a
+    # trailing magnitude word so "26.12% APY"-style suffixes are absorbed.
+    span_pat = re.compile(
+        re.sub(r"\s+", r"\\s*", re.escape(raw.strip())),
+        re.IGNORECASE,
+    )
+    m = span_pat.search(text)
+    if m is None:
+        return text
+
+    if descriptor is not None:
+        # Qualitative rephrase: number -> "<descriptor> figure". The noun
+        # keeps it grammatical without parsing the surrounding metric word.
+        rephrased = text[: m.start()] + descriptor + " figure" + text[m.end() :]
+        return re.sub(r"\s{2,}", " ", rephrased).strip()
+
+    # Drop the whole clause containing the span. Find the clause bounds by
+    # walking out to the nearest clause separators on each side.
+    starts = [b.end() for b in _CLAUSE_SPLIT.finditer(text) if b.end() <= m.start()]
+    ends = [b.start() for b in _CLAUSE_SPLIT.finditer(text) if b.start() >= m.end()]
+    clause_start = max(starts) if starts else 0
+    clause_end = min(ends) if ends else len(text)
+    cleaned = (text[:clause_start] + text[clause_end:]).strip()
+    # Tidy doubled separators / leading punctuation left by the excision.
+    cleaned = re.sub(r"\s*([.;,])\s*\1+", r"\1 ", cleaned)
+    cleaned = re.sub(r"^\s*[.;,]\s*", "", cleaned).strip()
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    return cleaned
+
+
+def _redact_text(text: str, ungrounded_raws: list[str], snippets: list[str]) -> str:
+    """Redact every ungrounded numeric span from one text surface.
+
+    For each span: rephrase if a direction can be grounded, else drop the
+    clause. Longest raw first so ``$1.5B`` is handled before a bare ``1.5``.
+    """
+    if not text:
+        return text
+    out = text
+    for raw in sorted(ungrounded_raws, key=len, reverse=True):
+        descriptor = _grounded_direction([raw], snippets)
+        # descriptor not None -> "<descriptor> figure" rephrase;
+        # descriptor None -> the enclosing clause is dropped entirely.
+        out = _redact_span(out, raw, descriptor)
+    return out
+
+
 def apply_grounding_gate(verdict: TradePanelVerdict) -> tuple[TradePanelVerdict, GroundingReport]:
-    """Run the gate and abstain on the verdict when grounding is weak.
+    """Run the gate and scrub ungrounded figures from the verdict text.
 
-    Abstain action is deliberately conservative and verdict-shape-safe:
-    when :func:`check_grounding` reports ``abstained``, the verdict's
-    ``confidence`` is floored toward 0.0 by the ungrounded fraction and a
-    blocker question is appended naming the ungrounded figures. The
-    ``verdict`` literal (KILL/REFINE/BUILD) is NOT flipped — that is a
-    panel decision, not a grounding-gate decision; the gate only signals
-    "do not trust the numbers" via confidence + an explicit blocker.
+    S37-WS1a — the gate no longer flag-without-scrub. When
+    :func:`check_grounding` reports ``abstained``, every ungrounded numeric
+    span is **removed** from ``turns[].content`` and ``key_drivers``:
 
-    Returns the (possibly adjusted) verdict and the report. Pure: no
-    model call, no DB, no env flag — runs unconditionally on the panel
-    path so production and eval read identical behaviour.
+      - rephrased to a qualitative descriptor when that descriptor's
+        direction is itself grounded in a cited snippet, or
+      - the enclosing clause is dropped entirely when no direction can be
+        grounded (the conservative fallback — never swap an ungrounded
+        number for an ungrounded adjective).
+
+    A blocker question naming the redacted figures is still appended (a
+    legitimate audit signal). The ``confidence × grounded_fraction``
+    mutation is **removed** (#116): once the text is scrubbed the verdict
+    is honest, so confidence reflects the cleaned verdict rather than being
+    driven toward 0.0 — that multiplication is what manufactured the
+    ``confidence_calibration`` contradiction (judge saw "confidence 0.00
+    but verdict ACT").
+
+    The ``verdict`` literal (act/pass/defer) is NOT flipped — that is a
+    panel decision. Pure: no model call, no DB, no env flag.
     """
     report = check_grounding(verdict)
     if not report.abstained or not report.ungrounded:
         return verdict, report
 
+    snippets = _snippet_corpus(verdict)
     ungrounded_raws = sorted({u.raw for u in report.ungrounded})
+
+    new_key_drivers = [_redact_text(d, ungrounded_raws, snippets) for d in verdict.key_drivers]
+    # A driver redacted down to nothing is dropped — an empty bullet is noise.
+    new_key_drivers = [d for d in new_key_drivers if d.strip()]
+
+    new_turns = [
+        t.model_copy(update={"content": _redact_text(t.content, ungrounded_raws, snippets)})
+        for t in verdict.turns
+    ]
+
     note = (
-        "Grounding gate: the following figures are not confirmed by any "
-        "cited snippet and should be treated as unverified — " + ", ".join(ungrounded_raws) + "."
+        "Grounding gate: the following figures could not be confirmed by any "
+        "cited snippet and were removed from the verdict text as unverified — "
+        + ", ".join(ungrounded_raws)
+        + "."
     )
-    # Confidence floored by the ungrounded fraction: a verdict half of
-    # whose numbers are unsourced cannot keep its full confidence.
-    penalty = 1.0 - report.grounded_fraction
-    new_confidence = round(max(0.0, verdict.confidence * (1.0 - penalty)), 4)
     new_blockers = [*verdict.blocker_questions, note]
+
+    # S37-WS1a — confidence is NOT multiplied down. The text is now honest;
+    # the coordinator's reported confidence stands. Removing the multiplier
+    # is what closes confidence_calibration (#116).
     adjusted = verdict.model_copy(
-        update={"confidence": new_confidence, "blocker_questions": new_blockers}
+        update={
+            "key_drivers": new_key_drivers,
+            "turns": new_turns,
+            "blocker_questions": new_blockers,
+        }
     )
     _log.info(
-        "grounding_gate.abstain confidence %.3f -> %.3f ungrounded=%d",
-        verdict.confidence,
-        new_confidence,
+        "grounding_gate.redact ungrounded=%d confidence_unchanged=%.3f figures=%s",
         len(report.ungrounded),
+        verdict.confidence,
+        ungrounded_raws,
     )
     return adjusted, report
 
