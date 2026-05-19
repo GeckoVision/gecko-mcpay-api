@@ -49,6 +49,7 @@ docs/external/
 # Pitch deck working files (Notion exports + .pptx; tracked separately if needed)
 gecko_pitch/
 apps/
+apps/*
 
 # Context-mode local session telemetry
 .github/context-mode/sessions/
