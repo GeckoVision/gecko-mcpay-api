@@ -22,9 +22,12 @@ not agree by construction — the verdict is what survives the argument.
 | **Quality / compounding** (Berkshire letters) | Is the underlying protocol a durable franchise, or a yield farm with a roadmap? Would you hold this for years? |
 
 The panel debates, voices dissent, and a synthesis step produces the final
-verdict. **One dissent line survives into the envelope** — the single
-strongest counter-argument the verdict had to overcome. That line is not
-decoration; render it.
+verdict. The envelope does NOT carry a single "surviving dissent" string
+(that field was never built). Dissent surfaces two ways: the integer
+`dissent_count` (how many of the five non-debater analysts pointed the
+other way) and the full per-voice transcript in `turns[]`. To render a
+dissent line, lift one opposing analyst's closing sentence from `turns[]`
+— see "What dissent looks like in the envelope" below.
 
 ## Verdict values
 
@@ -37,22 +40,37 @@ decoration; render it.
 `confidence` is a 0–1 number. Render it as-is. Low confidence on an `act`
 verdict is itself a signal — say so, do not round it up.
 
-## What "surviving dissent" means
+## What dissent looks like in the envelope
 
 In a normal panel, weaker arguments get answered and drop out. The
-*surviving* dissent is the objection that was raised, argued, and **still
-stands** after the debate. A verdict of `act` with a sharp surviving
-dissent is honest: the panel landed on yes, but here is the real risk it
-could not fully dismiss. Always render the surviving-dissent line next to
-the verdict — a verdict without its dissent is half the product.
+dissent that *still stands* after the debate is the objection that was
+raised, argued, and not fully dismissed. A verdict of `act` with real
+dissent is honest: the panel landed on yes, but here is the risk it could
+not fully dismiss. Dissent without it is half the product — always
+surface it next to the verdict.
+
+The envelope exposes dissent as **`dissent_count`** — an integer counting
+how many of the five non-debater analyst voices (`technical_analyst`,
+`sentiment_analyst`, `fundamental_analyst`, `risk_manager`, `strategist`)
+pointed opposite the coordinator's verdict. There is **no top-level
+`surviving_dissent` string**. To render a concrete dissent line:
+
+1. Read `dissent_count`. If `0`, state "no analyst voice dissented".
+2. If `> 0`, scan `turns[]` for a non-coordinator analyst whose
+   `parsed_verdict` opposes the coordinator's `verdict`, and quote one
+   closing sentence from that turn's `content`.
+
+A turn is `{agent, content, parsed_verdict}`; the coordinator's turn is
+always last.
 
 ## What "abstain" means — the differentiator
 
 The Gecko panel **abstains rather than fabricates.** If the investor-canon
 corpus contains no basis for a confident statement about a pool, the panel
-returns a `defer` verdict and citations that are empty or explicitly note
-"no figure in corpus" — it does **not** invent an APY threshold, a risk
-score, or a fake citation to look decisive.
+returns a `defer` verdict with empty `key_drivers` and empty citation
+lists (`evidence_citations` + `framework_context`, or a legacy empty
+`citations[]`) — it does **not** invent an APY threshold, a risk score,
+or a fake citation to look decisive.
 
 This is the proven differentiator: the S37 statistical ship-gate
 (N=57) verified the panel hits a 6/6 honesty score — it does not
@@ -67,18 +85,33 @@ Never reframe an abstain as a soft yes or a soft no. Abstain is a verdict.
 
 ## Reading citations
 
-Each citation carries `author`, `work`, and a `locator` (memo date,
-chapter, page). Citations are the audit trail — they let the user check
-the reasoning against the source. Render them verbatim. Rules:
+> **Verified S38-#130.** A citation item is
+> `{id, source, url, chunk_id, provider_kind, freshness_tier, snippet}`.
+> It does **not** carry `author`, `work`, or `locator` — those were
+> fabricated in the pre-S38 skill draft. Confirmed against `Citation` in
+> `gecko-core/orchestration/trade_panel/models.py` and a live probe.
 
-- **Never add a citation the envelope did not return.** If `citations` is
-  empty, render "no canon citations — see abstain note", not a guess.
-- **Never alter a locator.** If the oracle says "memo 2006-01", render
-  exactly that. Do not "improve" it to a page number.
-- The corpus is free + public-domain only in v0.1: Howard Marks (Oaktree
-  memos), Aswath Damodaran (NYU Stern materials), Berkshire Hathaway
-  shareholder letters. A citation outside this set in a v0.1 envelope is a
-  bug — surface it, do not hide it.
+The verdict splits citations into two lists (post-S35-#99 code):
+
+- **`evidence_citations`** — "the data". Protocol/market chunks a panel
+  turn referenced (e.g. `provider_kind` of `protocol_native`,
+  `bazaar_live`, `paysh_live`, `market_data`).
+- **`framework_context`** — "the lens". Investor-canon chunks the panel
+  reasoned over (`provider_kind` of `canon_*`).
+
+The deployed API may still emit a single legacy `citations[]` list (same
+item shape) — merge whichever lists are present. Citations are the audit
+trail; render them verbatim. Rules:
+
+- Render each as `[{provider_kind}] {source} — {snippet} ({url})`.
+- **Never add a citation the envelope did not return.** If the merged
+  list is empty, render "no citations — see abstain note", not a guess.
+- **Never alter the `snippet` or `url`.** Trim the snippet for length
+  only; do not paraphrase it.
+- The canon corpus is free + public-domain only in v0.1: Howard Marks
+  (Oaktree memos), Aswath Damodaran (NYU Stern materials), Berkshire
+  Hathaway shareholder letters — these surface as `canon_*` provider
+  kinds in `framework_context`.
 
 ## Grounded, not fabricated — the principle
 

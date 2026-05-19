@@ -164,22 +164,91 @@ curl -sS -X POST https://api.geckovision.tech/trade_research \
 - Timeout 45s. On timeout / non-200 / non-JSON → fall back to baseline
   mode for this run (see Modes).
 
-The oracle returns a verdict envelope:
+The oracle returns the verdict envelope below.
+
+> **Verdict envelope (verified S38-#130).** The shape below was confirmed
+> two ways: (a) read off the source — `TradeResearchResponse` in
+> `gecko-api/main.py`, which mirrors `TradePanelVerdict` /
+> `Citation` in `gecko-core/orchestration/trade_panel/models.py`; and
+> (b) a live stub-mode probe of `https://api.geckovision.tech/trade_research`.
+> There is **no** top-level `surviving_dissent` string and **no**
+> `{author, work, locator}` citation shape — both were fabricated from
+> strategy docs in the pre-S38 draft of this skill. Render the REAL fields
+> below. The S39 backtest engine parses this same envelope — reuse this
+> contract, do not re-guess it.
 
 ```json
 {
   "verdict": "pass",
   "confidence": 0.62,
-  "surviving_dissent": "Marks would note an 8% stablecoin yield in a low-rate environment implies a risk being paid for — depeg or smart-contract risk, not free carry.",
-  "citations": [
-    {"author": "Howard Marks", "work": "Oaktree memo — Risk", "locator": "memo 2006-01"},
-    {"author": "Aswath Damodaran", "work": "Country/Default Risk premia notes", "locator": "ch. 3"}
-  ]
+  "key_drivers": [
+    "Risk manager flagged an 8% stable yield as compensation for a priced risk",
+    "Fundamental analyst: TVL trend rising, protocol health stable"
+  ],
+  "dissent_count": 1,
+  "blocker_questions": [
+    "What backs the yield — lending spread, incentives, or leverage recursion?"
+  ],
+  "turns": [
+    {"agent": "technical_analyst",  "content": "...", "parsed_verdict": {"trend_verdict": "neutral"}},
+    {"agent": "risk_manager",       "content": "...", "parsed_verdict": {"risk_band": "elevated"}},
+    {"agent": "coordinator",        "content": "...", "parsed_verdict": {"verdict": "pass"}}
+  ],
+  "evidence_citations": [
+    {"id": 1, "source": "bazaar", "url": "https://...", "chunk_id": "69fd...",
+     "provider_kind": "bazaar_live", "freshness_tier": "daily",
+     "snippet": "Kamino USDC reserve current supply APY ..."}
+  ],
+  "framework_context": [
+    {"id": 4, "source": "canon", "url": "https://...", "chunk_id": "a1b2...",
+     "provider_kind": "canon_marks", "freshness_tier": "static",
+     "snippet": "An above-market yield is the market quoting you a risk ..."}
+  ],
+  "settlement_mode": "stub"
 }
 ```
 
+**Field-by-field — what the skill reads:**
+
+- `verdict` — `act` / `pass` / `defer`. Render uppercased.
+- `confidence` — float `0.0–1.0`. Render as-is, never round up.
+- `key_drivers` — string list, the reasons behind the call. May be empty.
+- `dissent_count` — integer: how many of the five non-debater analyst
+  voices pointed the OTHER way. **This is how dissent surfaces** — there
+  is no `surviving_dissent` string. The dissenting voices themselves live
+  in `turns[]` (look for analyst turns whose `parsed_verdict` opposes the
+  coordinator). Render the count; optionally surface one opposing
+  analyst's closing line lifted from `turns[]`.
+- `blocker_questions` — string list: open questions that would change the
+  verdict. On a `defer`, these are the "why it abstained" items.
+- `turns` — 7 items, one per voice (`technical_analyst`,
+  `sentiment_analyst`, `fundamental_analyst`, `risk_manager`,
+  `strategist`, `bull_bear_debater`, `coordinator`). Each is
+  `{agent, content, parsed_verdict}`.
+- `evidence_citations` — "the data". Protocol/market chunks a turn cited.
+  Each item: `{id, source, url, chunk_id, provider_kind, freshness_tier,
+  snippet}`. **No `author`/`work`/`locator` fields.**
+- `framework_context` — "the lens". Investor-canon chunks. Same item
+  shape as `evidence_citations`; `provider_kind` is a `canon_*` value.
+- `settlement_mode` — `stub` / `live`. `tx_signature` / `solscan_url` may
+  also appear (null in stub mode).
+
+**Deployed-shape drift — render tolerantly.** As of S38-#130 the live API
+at `api.geckovision.tech` still emits a single legacy `citations[]` list
+(the pre-S35-#99 build) instead of the split `evidence_citations` +
+`framework_context`. The citation *item* shape is identical
+(`{id, source, url, chunk_id, provider_kind, freshness_tier, snippet}`),
+so render defensively:
+
+1. Collect citations from `evidence_citations` **and** `framework_context`
+   if either is present; **else** fall back to a top-level `citations[]`.
+2. Treat `key_drivers`, `blocker_questions`, `dissent_count` as optional —
+   default to `[]` / `0` if absent.
+3. Never read `surviving_dissent`, `author`, `work`, or `locator` — those
+   fields do not exist in either the code or the deployed envelope.
+
 See `references/verdict-doctrine.md` for what the 7 voices are, what
-surviving dissent means, what abstain means, and how to read citations.
+dissent means, what abstain means, and how to read citations.
 
 ## Step 3 — Render the verdict honestly
 
@@ -194,20 +263,48 @@ confidence, do NOT invent citations, do NOT soften a `pass`/abstain.
 **Pool:** APY {current_apy}% · TVL ${tvl} · APY 30d {trend} · TVL 30d {trend}
 _Source: onchainOS `defi detail` / `rate-chart` / `tvl-chart`_
 
-**Verdict: {ACT | PASS | DEFER}**  ·  confidence {0-1}
-> Surviving dissent: {the one dissent line — the strongest case the
-> verdict had to survive}
+**Verdict: {ACT | PASS | DEFER}**  ·  confidence {confidence}
+> Dissent: {dissent_count} of 5 analyst voices pointed the other way.
+> {If dissent_count > 0, lift the strongest opposing analyst's closing
+> line from turns[] and quote it here. If dissent_count == 0, write
+> "No analyst voice dissented from the verdict."}
+
+**Why:** {key_drivers — one bullet each, verbatim}
+
+**Open questions:** {blocker_questions — one bullet each, if any}
 
 **Grounded in:**
-- {Author} — {Work} ({locator})
-- {Author} — {Work} ({locator})
+- [{provider_kind}] {source} — {snippet, trimmed} ({url})
+- [{provider_kind}] {source} — {snippet, trimmed} ({url})
 
 _Verdict by the Gecko 7-voice adversarial panel. If a claim has no basis
 in the corpus, the panel abstains rather than inventing a figure._
 ```
 
-If the panel **abstained** (verdict `defer` with a "no basis in corpus"
-note, or empty citations on a corpus-thin pool), say so verbatim:
+**Rendering the envelope fields:**
+
+- **Verdict line** — `verdict` uppercased + `confidence` printed as the
+  raw float (e.g. `0.62`). Never round up a low confidence.
+- **Dissent line** — read `dissent_count` (integer). There is no
+  `surviving_dissent` string to render. If `dissent_count > 0`, scan
+  `turns[]` for a non-coordinator analyst whose `parsed_verdict` opposes
+  the coordinator's `verdict` and quote one closing sentence from its
+  `content`. If `dissent_count == 0`, say so plainly.
+- **Why** — render `key_drivers` verbatim, one bullet each. Omit the
+  block if the list is empty.
+- **Open questions** — render `blocker_questions` verbatim. Omit if empty.
+- **Grounded in** — merge `evidence_citations` + `framework_context`
+  (or the legacy `citations[]` fallback — see the drift note in Step 2).
+  Each citation renders as `[{provider_kind}] {source} — {snippet}
+  ({url})`. The fields are `provider_kind`, `source`, `snippet`, `url` —
+  **not** `author` / `work` / `locator`. Trim `snippet` to ~160 chars.
+  If the merged citation list is empty, render
+  "no citations returned — see abstain note below" instead of inventing
+  one.
+
+If the panel **abstained** (verdict `defer` with empty `key_drivers` and
+empty citation lists, or `blocker_questions` noting a corpus gap), say so
+verbatim:
 *"The panel found no canon basis for a confident call on this pool — it
 abstained. Treat this as 'insufficient grounding', not 'safe'."*
 
