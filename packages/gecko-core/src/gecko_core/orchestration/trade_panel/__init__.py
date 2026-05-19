@@ -1970,6 +1970,7 @@ async def run_trade_panel_with_retrieval(
     wallet: str | None = None,
     as_of_date: str | None = None,
     as_of: str | date | datetime | None = None,
+    pool: str | None = None,
 ) -> TradePanelVerdict:
     """Convenience wrapper — fetch corpus chunks, then run the 7-agent panel.
 
@@ -1987,6 +1988,15 @@ async def run_trade_panel_with_retrieval(
     S39-#133 addendum: ``as_of`` is the backtest point-in-time gate, passed
     straight through to :func:`retrieve_trade_corpus_chunks`. ``None`` (the
     default) is a strict no-op — production callers are unaffected.
+
+    S39-#134 addendum: when both ``as_of`` AND ``pool`` are set, point-in-time
+    market chunks for ``pool`` at ``as_of`` are reconstructed in-memory via
+    :func:`reconstruct_pool_chunks` and appended to the gated retrieval slate
+    before the panel call. Reconstructed chunks are NEVER persisted to the
+    production ``chunks`` corpus and never vector-indexed
+    (see docs/strategy/2026-05-19-backtest-phase2-reconstruction-design.md).
+    Either parameter missing = no reconstruction; production callers (neither
+    set) are byte-identical to the pre-Phase-2 path.
     """
     chunks = await retrieve_trade_corpus_chunks(
         idea=idea,
@@ -1997,6 +2007,36 @@ async def run_trade_panel_with_retrieval(
         as_of=as_of,
     )
 
+    # S39-#134 — backtest Phase 2 reconstruction merge.
+    #
+    # Pattern E boundary: this wrapper composes existing pieces — the same
+    # production retrieval call above, the same `run_trade_panel` contract
+    # below — plus an in-memory injection of point-in-time market chunks.
+    # It does NOT fork retrieval and it does NOT write to the chunks
+    # collection. The reconstructed chunks live for one panel call and die.
+    recon_count = 0
+    as_of_norm = _normalize_as_of(as_of)
+    if pool and as_of_norm:
+        # Lazy import keeps the backtest sub-package off the hot path when
+        # callers leave ``pool`` at its default.
+        from gecko_core.orchestration.trade_panel.backtest.reconstruction import (
+            reconstruct_pool_chunks,
+        )
+
+        try:
+            recon_chunks = await reconstruct_pool_chunks(pool, as_of=as_of_norm, protocol=protocol)
+        except Exception as exc:  # pragma: no cover - defensive
+            _log.warning(
+                "trade_panel.reconstruction.error pool=%s as_of=%s err=%s",
+                pool,
+                as_of_norm,
+                exc,
+            )
+            recon_chunks = []
+        if recon_chunks:
+            chunks = list(chunks) + list(recon_chunks)
+            recon_count = len(recon_chunks)
+
     # Issue #12 — panel kickoff log. Truthy chunks here but empty
     # `citations` on the response would point at hypothesis 3 (prompt-drop):
     # retrieval landed rows but the panel's _format_chunks / opening prompt
@@ -2005,11 +2045,12 @@ async def run_trade_panel_with_retrieval(
     chunk_ids = [c.get("id", "") for c in chunks]
     _log.info(
         "trade_panel.kickoff protocol=%s vertical=%s tier=%s "
-        "chunks_passed_to_panel=%d chunk_ids=%s",
+        "chunks_passed_to_panel=%d reconstructed=%d chunk_ids=%s",
         protocol.strip().lower(),
         vertical,
         tier,
         len(chunks),
+        recon_count,
         chunk_ids,
     )
 
