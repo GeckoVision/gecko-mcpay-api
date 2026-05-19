@@ -142,6 +142,29 @@ forward-demo claim.
 **Effort:** ~12–17 days across phases; P0 is genuinely cheap, P2 is the cost
 center.
 
+## 6. Strategic intent — a public trust benchmark, not internal telemetry
+
+Founder direction (2026-05-19): the backtest is a **credibility instrument**.
+"Gecko builds skills people rely on because it works" — the benchmark is how
+that is *shown*, publicly and verifiably. Two refinements to this plan:
+
+- **The performance comparison (Gecko vs baseline) is public-benchmark-grade**,
+  not internal-only. (Only the inference-cost economics in §4 stay internal.)
+  The methodology must be **pre-registered** and the result ledger **immutable
+  + auditable** — a benchmark people rely on is one a skeptic cannot quietly
+  re-cut.
+- **A backtest alone is NOT the headline trust claim.** An LLM-verdict
+  backtest is attackable on its face — "the panel was trained through 2025, of
+  course it 'called' a 2024 event." The bulletproof, un-game-able benchmark is
+  the **forward audited track record**: every verdict timestamped, outcomes
+  recorded, nothing editable (the S38-#128 forward demo, run as a permanent
+  public ledger). The backtest is the *fast directional companion* to that
+  record — never the claim that stands alone.
+
+**Trust stack, strongest first:** (1) the forward immutable track record;
+(2) the S37 6/6 ship-gate — verdict *quality*, proven at N=57, publishable
+today; (3) the contamination-controlled backtest — fast, caveated.
+
 ## Sources
 
 - Backtrader Community — "Is Backtrader dead?"; `backtrader2` Snyk health (inactive 2025)
