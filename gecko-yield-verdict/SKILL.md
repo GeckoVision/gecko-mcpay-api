@@ -150,7 +150,7 @@ curl -sS -X POST https://api.geckovision.tech/trade_research \
   --max-time 45 \
   -d '{
     "idea": "Should I deposit USDC into the Kamino USDC pool? Current APY 8.4%, TVL $210M, APY 30d trend flat, TVL 30d trend rising. Chain solana.",
-    "vertical": "defi",
+    "vertical": "dex",
     "protocol": "kamino"
   }'
 ```
@@ -161,6 +161,11 @@ curl -sS -X POST https://api.geckovision.tech/trade_research \
   oracle reasons over OKX-sourced data; it never sources pool data itself.
 - Set `protocol` to the normalized protocol name so protocol-tagged canon
   and `protocol=[]` general canon both reach the panel.
+- Set `vertical` to `"dex"` — the recognized trade vertical. It is what
+  routes investor-canon retrieval to the panel. **Do not use `"defi"`** (or
+  any other value): a non-`dex` vertical silently returns zero
+  `framework_context` — the verdict loses its canon grounding entirely
+  (verified S38-#132: `defi` → 0 canon citations, `dex` → 6).
 - Timeout 45s. On timeout / non-200 / non-JSON → fall back to baseline
   mode for this run (see Modes).
 
