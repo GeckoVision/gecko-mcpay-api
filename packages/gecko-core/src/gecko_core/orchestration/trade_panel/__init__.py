@@ -31,7 +31,7 @@ import json
 import logging
 import re
 from collections.abc import Callable
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Protocol, cast
 
 from gecko_core.observability import emit_event
@@ -1138,11 +1138,76 @@ _CANON_FLOOR_COUNT: int = 6
 _CANON_PER_KIND_CAP: int = 4
 
 
+# S39-#133 (backtest Phase 1) — point-in-time retrieval gate.
+#
+# A backtest at time T must see only chunks that existed at T (no
+# lookahead). The chunk doc carries a top-level ``as_of_date`` string day
+# bucket (S33-#68): protocol_native / market_data chunks set it to the
+# data's as-of date; investor-canon chunks (canon_*) leave it ``None``
+# because canon is TIMELESS — a Marks/Damodaran/Berkshire passage is valid
+# at any T (#129 doc §2a, §2c).
+#
+# Pattern F (gates silently exclude): a naive ``{as_of_date: {$lte: T}}``
+# predicate would drop EVERY canon chunk, because Mongo's ``$lte`` does not
+# match documents where the field is null/missing. The gate MUST admit
+# null / missing ``as_of_date`` — only chunks that carry a real date are
+# time-gated. Canon stays reachable at any backtest T by construction.
+#
+# When ``as_of`` is None (the production default) this returns None and
+# the caller appends NOTHING — production retrieval is byte-identical.
+def _as_of_match_clause(as_of: str | None) -> dict[str, Any] | None:
+    """Return a ``$match`` body that gates chunks to ``as_of_date <= as_of``.
+
+    ``as_of`` is a ``YYYY-MM-DD`` day-bucket string (the same shape the
+    chunk's ``as_of_date`` field carries). Returns ``None`` when ``as_of``
+    is falsy — the caller MUST then append nothing, so production
+    (``as_of=None``) retrieval is unchanged.
+
+    The clause admits, via ``$or``:
+      * chunks whose ``as_of_date`` is ``<= as_of`` (existed at T), and
+      * chunks whose ``as_of_date`` is ``null`` or missing — timeless
+        investor-canon (Pattern F: never let the gate drop canon).
+    """
+    if not as_of:
+        return None
+    return {
+        "$or": [
+            {"as_of_date": {"$lte": as_of}},
+            {"as_of_date": None},
+            {"as_of_date": {"$exists": False}},
+        ]
+    }
+
+
+def _normalize_as_of(as_of: str | date | datetime | None) -> str | None:
+    """Coerce an ``as_of`` argument to a ``YYYY-MM-DD`` day-bucket string.
+
+    Accepts a date, a datetime (date portion taken), or an already-ISO
+    string (truncated to 10 chars). Returns ``None`` for ``None`` so the
+    no-op production path is preserved. Raises ``ValueError`` on an
+    unparseable string so a malformed backtest date fails loud, not silent.
+    """
+    if as_of is None:
+        return None
+    if isinstance(as_of, datetime):
+        return as_of.date().isoformat()
+    if isinstance(as_of, date):
+        return as_of.isoformat()
+    text = str(as_of).strip()
+    if not text:
+        return None
+    # Validate: a backtest date that does not parse is a caller bug, and a
+    # silently-dropped gate is exactly the Pattern F failure mode.
+    date.fromisoformat(text[:10])
+    return text[:10]
+
+
 async def _retrieve_canon_floor(
     *,
     query_vector: list[float],
     vertical: str,
     floor: int,
+    as_of: str | None = None,
 ) -> list[dict[str, Any]]:
     """Second $vectorSearch leg, pre-filtered to canon ``provider_kind``s.
 
@@ -1157,6 +1222,13 @@ async def _retrieve_canon_floor(
     so they need no protocol ``$match`` — they are cross-cutting frameworks
     valid for every protocol. Degrades to ``[]`` on any error; a canon-leg
     failure must never break retrieval.
+
+    S39-#133 — ``as_of`` is the point-in-time backtest gate. Canon is
+    timeless (``as_of_date`` is null), so the gate's null/missing-admitting
+    clause is a structural no-op here — every canon chunk passes at any T.
+    The clause is still spliced in for defence-in-depth and so the leakage
+    probe holds even if a canon chunk ever carries a stray date. When
+    ``as_of`` is None nothing is spliced — byte-identical to production.
     """
     if floor <= 0 or not _CANON_PROVIDER_KINDS:
         return []
@@ -1177,6 +1249,8 @@ async def _retrieve_canon_floor(
             "freshness_tier": doc.get("freshness_tier") or "static",
             "protocol": doc.get("protocol") or [],
             "vertical": doc.get("vertical") or vertical,
+            # S39-#133 — observable point-in-time date (None for canon).
+            "as_of_date": doc.get("as_of_date"),
             "score": float(doc.get("score") or 0.0),
         }
 
@@ -1191,6 +1265,7 @@ async def _retrieve_canon_floor(
             "freshness_tier": 1,
             "source": 1,
             "metadata": 1,
+            "as_of_date": 1,
             "score": {"$meta": "vectorSearchScore"},
         }
     }
@@ -1221,6 +1296,11 @@ async def _retrieve_canon_floor(
             },
             project_stage,
         ]
+        # S39-#133 — splice the point-in-time gate after $vectorSearch (0)
+        # and before $project (1). No-op when `as_of` is None.
+        canon_as_of_clause = _as_of_match_clause(as_of)
+        if canon_as_of_clause is not None:
+            pipeline.insert(1, {"$match": canon_as_of_clause})
         kind_rows: list[dict[str, Any]] = []
         try:
             async for doc in coll.aggregate(pipeline):
@@ -1260,6 +1340,7 @@ async def retrieve_trade_corpus_chunks(
     vertical: str = "dex",
     top_k: int = _DEFAULT_TRADE_TOP_K,
     as_of_date: str | None = None,
+    as_of: str | date | datetime | None = None,
 ) -> list[dict[str, Any]]:
     """Embed ``idea`` and read top-K chunks scoped to ``(vertical, protocol)``.
 
@@ -1268,9 +1349,24 @@ async def retrieve_trade_corpus_chunks(
     store is not configured for Mongo, when the embedder yields no vector,
     or when the corpus has no matching rows. Production-only — no Supabase
     fallback because the trading-oracle corpus is Mongo-native.
+
+    ``as_of_date`` is the *fixture-window* date used for the date-alignment
+    scoring boost (S25 #13) — it re-RANKS, it never filters.
+
+    ``as_of`` (S39-#133, backtest Phase 1) is the *point-in-time gate*: when
+    set, both $vectorSearch legs additionally $match chunks to
+    ``as_of_date <= as_of``, so a backtest at time T sees only chunks that
+    existed at T (no lookahead). Investor-canon (canon_*) chunks carry no
+    ``as_of_date`` and are timeless — the gate admits null/missing so canon
+    stays reachable at any T (Pattern F). When ``as_of`` is None (the
+    production default) the gate is a strict no-op: nothing is appended to
+    either pipeline and retrieval is byte-identical to today.
     """
     if top_k <= 0 or not idea.strip():
         return []
+    # S39-#133 — normalize the backtest gate up front. None stays None (the
+    # no-op production path); a malformed date string raises here, loud.
+    as_of_norm = _normalize_as_of(as_of)
     proto_norm = protocol.strip().lower()
     if not proto_norm:
         return []
@@ -1428,10 +1524,26 @@ async def retrieve_trade_corpus_chunks(
                 "freshness_tier": 1,
                 "source": 1,
                 "metadata": 1,
+                # S39-#133 — project the gate's filter field so it is
+                # observable on returned rows (the leakage probe asserts on
+                # it; Phase 2 reconstruction will key provenance on it).
+                "as_of_date": 1,
                 "score": {"$meta": "vectorSearchScore"},
             }
         },
     ]
+
+    # S39-#133 — point-in-time backtest gate. When `as_of` is set, splice an
+    # extra $match AFTER the protocol $match (index 1) and BEFORE the
+    # rerank-window $limit, so future-dated chunks are dropped before the
+    # limit truncates the slate. `_as_of_match_clause` returns None when
+    # `as_of` is unset — the splice is skipped entirely and `pipeline` is
+    # the exact production list. Inserting at index 2 keeps the $vectorSearch
+    # (0) and protocol $match (1) untouched.
+    as_of_clause = _as_of_match_clause(as_of_norm)
+    if as_of_clause is not None:
+        pipeline.insert(2, {"$match": as_of_clause})
+        _log.info("trade_panel.retrieve.as_of_gate active as_of=%s", as_of_norm)
 
     rows: list[dict[str, Any]] = []
     try:
@@ -1452,6 +1564,10 @@ async def retrieve_trade_corpus_chunks(
                     # crediting canon chunks with a protocol-exact match.
                     "protocol": doc.get("protocol"),
                     "vertical": doc.get("vertical") or vertical,
+                    # S39-#133 — carry the point-in-time date through so
+                    # backtest callers / probes can observe what the gate
+                    # filtered on. None for timeless canon.
+                    "as_of_date": doc.get("as_of_date"),
                     "score": float(doc.get("score") or 0.0),
                 }
             )
@@ -1493,6 +1609,7 @@ async def retrieve_trade_corpus_chunks(
         query_vector=query_vector,
         vertical=vertical,
         floor=_CANON_FLOOR_COUNT,
+        as_of=as_of_norm,
     )
     seen_ids = {r["id"] for r in rows if r.get("id")}
     canon_rows = [r for r in canon_rows if r.get("id") not in seen_ids]
@@ -1852,6 +1969,7 @@ async def run_trade_panel_with_retrieval(
     agent_id: str | None = None,
     wallet: str | None = None,
     as_of_date: str | None = None,
+    as_of: str | date | datetime | None = None,
 ) -> TradePanelVerdict:
     """Convenience wrapper — fetch corpus chunks, then run the 7-agent panel.
 
@@ -1865,6 +1983,10 @@ async def run_trade_panel_with_retrieval(
     :func:`backtest_intent`. The resulting :class:`BacktestReport` is
     attached to the returned verdict. Default False keeps existing callers
     on the Phase 8 contract.
+
+    S39-#133 addendum: ``as_of`` is the backtest point-in-time gate, passed
+    straight through to :func:`retrieve_trade_corpus_chunks`. ``None`` (the
+    default) is a strict no-op — production callers are unaffected.
     """
     chunks = await retrieve_trade_corpus_chunks(
         idea=idea,
@@ -1872,6 +1994,7 @@ async def run_trade_panel_with_retrieval(
         vertical=vertical,
         top_k=top_k,
         as_of_date=as_of_date,
+        as_of=as_of,
     )
 
     # Issue #12 — panel kickoff log. Truthy chunks here but empty
