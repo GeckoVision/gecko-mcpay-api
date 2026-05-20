@@ -14,11 +14,22 @@ write the observation in the journal and wait for clearer signal.
 
 ```bash
 cd contest_bot
-kill <pid>; sleep 1
+# ⚠️ kill ALL bot processes (not just the bash wrapper) — nohup leaks the python child
+pgrep -f jto_breakout | xargs -r kill
+sleep 2
+pgrep -f jto_breakout || echo "(clear)"  # verify gone
+ss -tlnp | grep 8265 || echo "(port free)"  # verify port released
+
 set -a; . ../.env; set +a    # source OPENROUTER_API_KEY
-nohup python3 -u jto_breakout_gecko_gated_contest_bot.py > bot_iter3.log 2>&1 &
+
+# LIVE mode needs CONFIRM piped on stdin (interactive input() blocks nohup)
+nohup bash -c 'echo CONFIRM | python3 -u jto_breakout_gecko_gated_contest_bot.py' > bot_live.log 2>&1 &
 echo "PID: $!"
+sleep 20
+pgrep -f jto_breakout  # should show bash + python child
 ```
+
+**Why `pgrep | xargs kill` not `kill <pid>`:** `nohup bash -c '...python3...'` spawns a bash wrapper that forks a python child. Killing the wrapper PID leaves the python orphan, which keeps port 8265 bound and crashes the next restart with `Address already in use`. Always sweep by name.
 
 **What survives the reboot:**
 

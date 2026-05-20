@@ -79,12 +79,12 @@ except Exception as exc:  # broad — any wiring failure should not crash the bo
     print(f"[lab] local panel disabled: {type(exc).__name__}: {exc}")
 
 # ── Config ─────────────────────────────────────────────────────────
-PAPER_TRADE = True
+PAPER_TRADE = False  # 🔴 LIVE 2026-05-20: paper-validated 6h+ across 4 closes (MEW/RAY/PYTH paper). Iter-3.2 mixed-slots ran clean for 1.5h before flip. OKX contest 113 registered (joinStatus=1). Policy seatbelts active: singleTxLimit=$50, dailyTradeTxLimit=$150. Funded wallet $99.64 USDC on Solana.
 CHAIN = "solana"
 POLL_SEC = 30
 TIMEFRAME = "5m"
 ENTRY_TYPE = "price_breakout"
-USD_PER_TRADE = 50  # iter-3 2026-05-20: $25 → $50 (concentrate per trade-strategist). With MAX_CONCURRENT=1, deploys full $100 across 2 sequential trades.
+USD_PER_TRADE = 45  # iter-3.2 live 2026-05-20: $50 → $45. With MAX_CONCURRENT=2 and $99.64 live budget, $45 × 2 = $90 deployed leaves $9.64 for slippage + tx fees. Below singleTxLimit ($50) policy cap with room.
 STOP_LOSS_PCT = 3
 TAKE_PROFIT_PCT = 8  # iter-3 2026-05-20: +5% → +8% (let memes run; +5% TP was capping winners on POPCAT/WIF-class vol).
 TRAIL_STOP_PCT = 1
@@ -134,10 +134,7 @@ VOL_SPIKE_AVG_BARS = 24
 # Runs ONCE per tick before iterating INSTRUMENTS. If BTC fails the
 # condition, NO instrument is evaluated this tick. Fail-open on data
 # outage so onchainos hiccups don't silently halt all trading.
-BTC_OVERLAY = {
-    "condition": "green_candle",
-    "ma_period": 20,
-}  # iter-3.1 2026-05-20: reverted uptrend → green_candle. uptrend (close>EMA8 AND EMA8>lagged-MA) was hard-blocking 100% of ticks in BTC chop — voices never got to vote. green_candle is permissive enough to let real moves through (it gave us PYTH 11:37 UTC entry on iter-2). The 0.85 chart floor + risk + memory are the real wedge; this is a coarse safety belt only.
+BTC_OVERLAY = None  # iter-3.3 live 2026-05-20: green_candle disabled. Binary-cruel on -0.05% red bars during chop; blocked ~9 min of contest time on statistical noise. Voices remain the real gate — chart_analyst @ 0.85 floor + risk_voice + memory_voice already decline cleanly when setups aren't right (observed 6 WIF declines in 4 min just before this flip). Coarse BTC belt was preventing voices from even voting. Trade-off accepted: if BTC crashes >3%, no coarse-stop — but risk_voice + memory_voice would see the tape and turn bearish anyway. founder call.
 BTC_WBTC_MINT = "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh"
 
 SAFETY = {"honeypot_check": True, "phishing_exclude": True}
@@ -523,6 +520,16 @@ def btc_overlay_passes() -> tuple[bool, str]:
     trading silently.
     """
     global _BTC_SNAPSHOT_TS, _BTC_SNAPSHOT, _BTC_SNAPSHOT_TICK_ID
+    # iter-3.3 live 2026-05-20: BTC_OVERLAY = None disables the coarse
+    # BTC safety belt. Voices remain the real gate (chart_analyst @ 0.85
+    # floor + risk + memory). green_candle was binary-cruel on -0.05%
+    # red bars during chop, blocking entries on statistical noise.
+    if BTC_OVERLAY is None:
+        snap = {"ok": True, "reason": "btc_overlay_disabled", "close": 0.0, "ma": 0.0}
+        _BTC_SNAPSHOT = snap
+        _BTC_SNAPSHOT_TS = time.time()
+        _BTC_SNAPSHOT_TICK_ID = _BTC_CURRENT_TICK_ID
+        return True, "btc_overlay_disabled"
     if _BTC_SNAPSHOT_TICK_ID == _BTC_CURRENT_TICK_ID and _BTC_SNAPSHOT:
         return bool(_BTC_SNAPSHOT["ok"]), str(_BTC_SNAPSHOT["reason"])
 

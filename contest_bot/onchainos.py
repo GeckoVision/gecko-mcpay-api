@@ -527,8 +527,10 @@ class OnchainOS:
             "--readable-amount", readable_amount,
             "--chain", self.chain,
             "--wallet", wallet,
-            "--biz-type", "dex",
-            "--strategy", "starter-coach",
+            # iter-3.4 live 2026-05-20: removed --biz-type / --strategy
+            # args. Current OnchainOS CLI doesn't accept them; swap CLI
+            # rejects with "unexpected argument '--biz-type' found".
+            # Wrapper was carrying flags from a prior CLI version.
         ]
         if slippage is not None:
             args.extend(["--slippage", str(slippage)])
@@ -684,8 +686,7 @@ class OnchainOS:
             "--chain", self.chain_id,
             "--to", to,
             "--unsigned-tx", unsigned_tx,
-            "--biz-type", "dex",
-            "--strategy", "starter-coach",
+            # iter-3.4 live 2026-05-20: removed stale --biz-type / --strategy args.
         )
 
     # ── Portfolio ─────────────────────────────────────────────────
