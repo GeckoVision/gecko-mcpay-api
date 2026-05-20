@@ -22,7 +22,7 @@ import os
 import sys
 import threading
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -30,17 +30,31 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import asyncio
 
+from fundamentals_oracle import FundamentalsOracle
 from gecko_wrap import ArtifactLogger, GeckoGate, HourlyCircuitBreaker
 from local_memory import LocalMemory
 from local_panel import LocalPanel
 from onchainos import OnchainOS
 
-# ── Gecko wrap layer (verdict gate + circuit breaker + ledger) ──────
-_GATE = GeckoGate(
-    stub_mode=True, shadow_mode=True
-)  # S39-#143: Gecko is shadow-only for the OKX momentum-spot contest (out of canon scope per docs/strategy/2026-05-20-panel-act-rate-on-momentum-spot.md)
+# ── Gecko wrap layer (circuit breaker + ledger) ─────────────────────
+# NOTE (s40-lab-#7): the per-candidate `GeckoGate` shadow call was
+# replaced by the `FundamentalsOracle` preload + cache lookup below.
+# `_GATE` stays imported as dead code in the open_position path so the
+# class remains exercised by tests; do NOT remove it without a separate
+# refactor pass.
+_GATE = GeckoGate(stub_mode=True, shadow_mode=True)
 _BREAKER = HourlyCircuitBreaker()
 _LOGGER = ArtifactLogger()
+
+# ── Fundamentals oracle (s40-lab-#7) ────────────────────────────────
+# Slow-cadence PRD verdict per instrument. Preloaded at startup, looked
+# up sync per-candidate, informational only (never gates the trade).
+# Replaces the per-candidate GeckoGate shadow call that was timing out
+# on a 45s budget for a ~76s PRD panel. See
+# docs/strategy/2026-05-20-panel-act-rate-on-momentum-spot.md and the
+# project-local-lab-strategy-2026-05-20 memory for the structural
+# diagnosis.
+_FUNDAMENTALS = FundamentalsOracle(stub_mode=True, ttl_seconds=21_600, timeout_s=120.0)
 
 # ── Local-lab panel (s40-lab #2) ───────────────────────────────────
 # The local panel runs BEFORE the Gecko shadow gate. It stays None
@@ -74,7 +88,7 @@ STOP_LOSS_PCT = 3
 TAKE_PROFIT_PCT = 5
 TRAIL_STOP_PCT = None
 MAX_DAILY_TRADES = 3
-MAX_CONCURRENT = 1  # GLOBAL across all INSTRUMENTS (not per-instrument)
+MAX_CONCURRENT = 2  # GLOBAL across all INSTRUMENTS (not per-instrument) — raised from 1 to allow a second uncorrelated entry while one is open; $25 ticket × 2 = $50 of $100 budget, leaves room for SL on both
 SESSION_LOSS_PAUSE = 2
 MAX_BUDGET_USD = 100  # total budget cap — GLOBAL across all INSTRUMENTS
 DASHBOARD_PORT = int(os.environ.get("DASHBOARD_PORT", "8265"))
@@ -86,9 +100,17 @@ DASHBOARD_PORT = int(os.environ.get("DASHBOARD_PORT", "8265"))
 # Same $100 wallet — positions compete for budget. MAX_CONCURRENT,
 # daily_trades, and total_spent_usd remain GLOBAL counters.
 INSTRUMENTS: list[dict] = [
+    # DeFi infra
     {"symbol": "JTO", "mint": "jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL", "chain": "solana"},
     {"symbol": "JUP", "mint": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN", "chain": "solana"},
     {"symbol": "PYTH", "mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3", "chain": "solana"},
+    {"symbol": "RAY", "mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", "chain": "solana"},
+    {"symbol": "ORCA", "mint": "orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE", "chain": "solana"},
+    # Memes (highest volume on Solana)
+    {"symbol": "BONK", "mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", "chain": "solana"},
+    {"symbol": "WIF", "mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", "chain": "solana"},
+    # DePIN
+    {"symbol": "HNT", "mint": "hntyVP6YFm1Hg25TN9WGLqM12b8TQmcknKrdu1oxWux", "chain": "solana"},
 ]
 
 ENTRY_PARAMS = {
@@ -107,7 +129,10 @@ VOL_SPIKE_AVG_BARS = 24
 # Runs ONCE per tick before iterating INSTRUMENTS. If BTC fails the
 # condition, NO instrument is evaluated this tick. Fail-open on data
 # outage so onchainos hiccups don't silently halt all trading.
-BTC_OVERLAY = {"condition": "above_ma", "ma_period": 20}
+BTC_OVERLAY = {
+    "condition": "green_candle",
+    "ma_period": 20,
+}  # green_candle: BTC's last 5m bar closes above its open. More permissive than above_ma. Matches starter-coach btc_overlay spec.
 BTC_WBTC_MINT = "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh"
 
 SAFETY = {"honeypot_check": True, "phishing_exclude": True}
@@ -115,6 +140,29 @@ SAFETY = {"honeypot_check": True, "phishing_exclude": True}
 # ── OnchainOS client ───────────────────────────────────────────────
 oc = OnchainOS(chain=CHAIN)
 WALLET_ADDRESS = ""
+
+
+def _spot_from_price_response(resp: object) -> float:
+    """Extract spot price from onchainos market.price[s] response.
+
+    `oc.get_price_info(mint)` may return `{data: <dict>}` (single-token shape)
+    OR `{data: [<dict>, ...]}` (batch shape that the multi-instrument path can
+    accidentally hit). Tolerate both, plus malformed/empty responses. Returns
+    0.0 on any parse failure — caller falls back to last candle close.
+    """
+    if not isinstance(resp, dict):
+        return 0.0
+    raw = resp.get("data")
+    entry: dict[str, object] = {}
+    if isinstance(raw, list) and raw and isinstance(raw[0], dict):
+        entry = raw[0]
+    elif isinstance(raw, dict):
+        entry = raw
+    try:
+        return float(entry.get("price") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
 
 # ── State ──────────────────────────────────────────────────────────
 positions: list[dict] = []
@@ -199,7 +247,7 @@ class _DashHandler(BaseHTTPRequestHandler):
                 snap = dict(p)
                 if p["status"] == "open":
                     pd = oc.get_price_info(p["token"])
-                    snap["current_price"] = float((pd.get("data") or {}).get("price", 0) or 0)
+                    snap["current_price"] = _spot_from_price_response(pd)
                 state_positions.append(snap)
             payload = {
                 "mode": "paper" if PAPER_TRADE else "live",
@@ -407,6 +455,30 @@ def btc_overlay_passes() -> tuple[bool, str]:
     if condition == "above_ma":
         ok = current_close >= ma
         reason = "BTC above 20-MA" if ok else f"BTC below {ma_period}-MA"
+    elif condition == "green_candle":
+        last_open = float(candles[-1]["open"])
+        ok = current_close > last_open
+        delta_pct = (current_close - last_open) / last_open * 100 if last_open else 0.0
+        reason = (
+            f"BTC last bar green ({delta_pct:+.2f}%)"
+            if ok
+            else f"BTC last bar red ({delta_pct:+.2f}%)"
+        )
+    elif condition == "uptrend":
+        # Heuristic: current close above its 8-bar EMA AND 8-bar EMA above
+        # its lagged value 4 bars ago. Light, momentum-flavoured.
+        if len(closes) < 12:
+            ok = True
+            reason = "uptrend_insufficient_data_fail_open"
+        else:
+            recent = closes[-8:]
+            ema = recent[0]
+            k = 2 / (8 + 1)
+            for v in recent[1:]:
+                ema = ema * (1 - k) + v * k
+            lagged = sum(closes[-12:-4]) / 8
+            ok = current_close > ema and ema > lagged
+            reason = "BTC in uptrend" if ok else "BTC not in uptrend"
     else:
         # Default policy: unknown conditions pass through. Add support
         # explicitly when starter-coach surfaces new conditions.
@@ -469,7 +541,9 @@ def evaluate_breakout(inst: dict) -> dict | None:
 
     candles = oc.get_candles(mint, TIMEFRAME, limit=max(lookback + 4, 24))
     price_data = oc.get_price_info(mint)
-    spot = float((price_data.get("data") or {}).get("price", 0) or 0)
+    spot = _spot_from_price_response(price_data)
+    if spot == 0.0 and candles:
+        spot = float(candles[-1].get("close") or 0)
 
     snap = {
         "symbol": sym,
@@ -611,7 +685,7 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
         return
 
     price_data = oc.get_price_info(token)
-    entry_price = float((price_data.get("data") or {}).get("price", 0) or 0)
+    entry_price = _spot_from_price_response(price_data)
     if entry_price <= 0:
         print(f"[SKIP] No price for {symbol_str or token[:12]}")
         return
@@ -623,14 +697,56 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
         _LOGGER.log("breaker_trip", {"token": token, "reason": reason})
         return
 
-    market_state = {
-        "spot_price": entry_price,
-        "change_24h_pct": float((signal_data or {}).get("priceChange24h") or 0.0),
-        "change_1h_pct": float((signal_data or {}).get("priceChange1h") or 0.0),
-        "range_24h_pct": float((signal_data or {}).get("range24h") or 0.0),
-        "volume_24h": float((signal_data or {}).get("volume24h") or 0.0),
-    }
     instrument = symbol_str.split("-")[0] if symbol_str else token[:8]
+
+    # Fetch fresh candles for chart_analyst — the voice's load-bearing
+    # input. Without this, chart_analyst sees market_state["candles"]
+    # as empty and abstains with "Fewer than 24 bars provided" — which
+    # silently bottlenecks every panel decision into chart_below_threshold.
+    # ~50ms call; only fires on candidate entries (not every poll).
+    try:
+        ms_candles = oc.get_candles(token, TIMEFRAME, limit=30)
+    except Exception as exc:
+        print(f"[market_state] candle fetch failed for {symbol_str}: {exc}")
+        ms_candles = []
+
+    # Compute deltas + range from the fresh candles. The signal_data dict
+    # doesn't carry these (evaluate_breakout / evaluate_volume_spike don't
+    # populate priceChange24h / range24h / volume24h), so reading from it
+    # always returned 0.0 — chart_analyst then read "range 0.00%" and
+    # abstained as "range-bound chop." Compute authoritatively from candles.
+    chg_24h, chg_1h, range_24h, vol_total = 0.0, 0.0, 0.0, 0.0
+    if ms_candles and len(ms_candles) >= 2:
+        closes = [float(c.get("close") or c.get("c") or 0) for c in ms_candles]
+        highs = [float(c.get("high") or c.get("h") or 0) for c in ms_candles]
+        lows = [float(c.get("low") or c.get("l") or 0) for c in ms_candles]
+        vols = [float(c.get("volume") or c.get("vol") or 0) for c in ms_candles]
+        anchor = closes[0] if closes and closes[0] > 0 else 0
+        spot_close = closes[-1] if closes else 0
+        if anchor > 0:
+            chg_24h = (spot_close - anchor) / anchor * 100
+            range_24h = (max(highs) - min(lows)) / anchor * 100
+        if len(closes) >= 12 and closes[-12] > 0:
+            chg_1h = (spot_close - closes[-12]) / closes[-12] * 100
+        vol_total = sum(vols)
+
+    market_state = {
+        "instrument": instrument,
+        "spot_price": entry_price,
+        "change_24h_pct": chg_24h,
+        "change_1h_pct": chg_1h,
+        "range_24h_pct": range_24h,
+        "volume_24h": vol_total,
+        # chart_analyst input — the actual OHLCV bars the voice grades.
+        "candles": ms_candles,
+        # risk_voice deterministic-only context (post-2026-05-20 patch):
+        "open_positions": sum(1 for p in positions if p["status"] == "open"),
+        "daily_trades": daily_trades,
+        "total_spent_usd": total_spent_usd,
+        "hourly_pnl_delta": 0.0,
+        "max_daily_trades": MAX_DAILY_TRADES,
+        "max_budget_usd": MAX_BUDGET_USD,
+    }
 
     # ── Local-lab panel (runs BEFORE the Gecko shadow gate) ─────────
     # Lazy `is not None` lets the bot run before ai-ml-engineer's
@@ -658,46 +774,37 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
             _log("filter", f"[LOCAL] ✗ {local_decision.reason}")
             return
 
-    decision = asyncio.run(_GATE.check_entry(instrument, market_state))
-    # S39-#143 — event_type encodes shadow-vs-strict so the artifact log
-    # distinguishes "Gecko would have blocked but we proceeded anyway" from
-    # "Gecko allowed it."  In strict mode, behavior is unchanged.
-    if decision.shadow_mode and decision.would_have_blocked:
-        event_type = "gate_shadow_block"  # bot proceeds, but strict gate would have declined
-    elif decision.shadow_mode:
-        event_type = "gate_shadow_concur"  # bot proceeds; strict gate would have allowed too
-    elif decision.allow:
-        event_type = "gate_allow"
-    elif decision.verdict == "error":
-        event_type = "gate_error"
-    else:
-        event_type = "gate_block"
-    _LOGGER.log(
-        event_type,
-        {
-            "instrument": instrument,
-            "verdict": decision.verdict,
-            "confidence": decision.confidence,
-            "key_drivers": decision.key_drivers,
-            "citations_count": decision.citations_count,
-            "cached": decision.cached,
-            "error": decision.error,
-            "shadow_mode": decision.shadow_mode,
-            "would_have_blocked": decision.would_have_blocked,
-        },
-        decision_id=decision.decision_id,
-    )
-    if not decision.allow:
-        _log(
-            "filter",
-            f"[GATE] ✗ {instrument} verdict={decision.verdict} conf={decision.confidence:.2f}",
+    # ── Fundamentals oracle: cached PRD verdict lookup (s40-lab-#7) ──
+    # Informational only — NEVER gates the trade. Local panel above has
+    # already decided. The fundamentals side-note is logged so the
+    # artifact ledger carries a slow value-investor read alongside the
+    # local fast TA decision. Cache may be empty (preload failed,
+    # degraded mode, or instrument unknown) — that's fine, we proceed.
+    fund_verdict = _FUNDAMENTALS.get_for_instrument(instrument)
+    fund_decision_id: str | None = None
+    if fund_verdict is not None:
+        cache_age_s = (datetime.now(UTC) - fund_verdict.ts).total_seconds()
+        fund_decision_id = _LOGGER.log(
+            "fundamentals_check",
+            {
+                "instrument": instrument,
+                "verdict": fund_verdict.verdict,
+                "confidence": fund_verdict.confidence,
+                "key_drivers": fund_verdict.key_drivers,
+                "blocker_questions": fund_verdict.blocker_questions,
+                "citations_count": fund_verdict.citations_count,
+                "cache_age_s": cache_age_s,
+                "protocol": fund_verdict.protocol,
+            },
+            decision_id=local_decision.decision_id if _LOCAL_PANEL is not None else None,
         )
-        return
-    if decision.would_have_blocked:
         _log(
             "info",
-            f"[GATE-SHADOW] proceeding despite {decision.verdict}@{decision.confidence:.2f} — strict gate would have blocked",
+            f"[FUND] {instrument}: {fund_verdict.verdict}@{fund_verdict.confidence:.2f} "
+            f"({fund_verdict.citations_count} cites, age {cache_age_s / 60:.0f}m)",
         )
+    else:
+        _log("info", f"[FUND] {instrument}: no cached verdict (degraded)")
 
     ts = datetime.utcnow().isoformat()
     pos = {
@@ -710,7 +817,7 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
         "peak_price": entry_price,
         "signal_data": signal_data,
         "mode": "paper",
-        "gate_decision_id": decision.decision_id,
+        "fundamentals_decision_id": fund_decision_id,
     }
 
     if PAPER_TRADE:
@@ -746,7 +853,7 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
             "usd": USD_PER_TRADE,
             "mode": pos["mode"],
         },
-        decision_id=decision.decision_id,
+        decision_id=fund_decision_id,
     )
 
 
@@ -801,7 +908,7 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
 def monitor_positions() -> None:
     for pos in [p for p in positions if p["status"] == "open"]:
         price_data = oc.get_price_info(pos["token"])
-        current_price = float((price_data.get("data") or {}).get("price", 0) or 0)
+        current_price = _spot_from_price_response(price_data)
         if not current_price:
             continue
 
@@ -926,6 +1033,25 @@ def main() -> None:
         print("\n✅ Live mode confirmed. Starting bot...\n")
 
     _start_dashboard()
+
+    # ── Fundamentals preload (s40-lab-#7) ──────────────────────────
+    # Fire ~80-100s of parallel PRD calls before the trade loop starts.
+    # Failures degrade gracefully — bot still runs without the cached
+    # side notes. SKIP if the env var is set (smoke tests, dev runs).
+    if not os.environ.get("GECKO_FUND_PRELOAD_SKIP"):
+        print(
+            f"[fundamentals] preloading verdicts for {len(INSTRUMENTS)} "
+            f"instruments (parallel, ~80-100s)..."
+        )
+        try:
+            _cache = asyncio.run(_FUNDAMENTALS.preload_for_instruments(INSTRUMENTS))
+            print(f"[fundamentals] preloaded {len(_cache)} verdicts")
+            for _sym, _v in _cache.items():
+                print(f"  {_sym:6s}: {_v.verdict}@{_v.confidence:.2f}  {_v.citations_count} cites")
+        except Exception as _exc:
+            print(f"[fundamentals] preload failed (degraded mode): {_exc}")
+    else:
+        print("[fundamentals] preload skipped (GECKO_FUND_PRELOAD_SKIP set)")
 
     print(f"Scanning every {POLL_SEC}s — Ctrl+C to stop\n")
 
