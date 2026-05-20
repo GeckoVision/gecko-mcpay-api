@@ -324,14 +324,31 @@ def _count_dissent(turns: list[TradePanelTurn], final_verdict: str) -> int:
     return count
 
 
-# Tokens that mean "this voice did not pick a direction" — S24 night-shift.
-# Used by both the abstain-count defer rule AND the confidence-penalty
-# normalization in _build_verdict_from_coordinator.
+# Tokens that mean "this voice did not pick a direction" — S24 night-shift,
+# narrowed S39-#140 per ai-ml-engineer diagnosis at commit 6da037a
+# (docs/strategy/2026-05-19-skill-side-trading-improvements.md §1).
+#
+# Source of truth: the persona prompts in `_default_prompts.json`. The
+# `sentiment_analyst` prompt (line 6) explicitly states *"'neutral' is the
+# honest default when the corpus is muted or mixed. It is NOT an abstain
+# signal."* The `risk_manager` prompt (line 8) treats `elevated` as a real
+# directional read ("above-baseline named risks; require smaller size or
+# tighter stops") — only `unacceptable` is a structural veto. Counting
+# these tokens here as abstentions was a CODE/prompt disagreement that
+# code was winning, mis-classifying intentional reads as non-reads and
+# rewriting coordinator `pass` → `defer` via the abstain-floor rule
+# (2026-05-19 JTO/JUP demo polls came back `defer × 3` over `pass × 3`).
+#
+# What stays: `technical: mixed` and `fundamental: stable` — both are
+# genuine "no directional call" tokens in their respective prompts'
+# abstain protocols.
+#
+# Used only by `_count_abstains` below (single consumer); the
+# `_CONF_PENALTY_PER_ABSTAIN` confidence penalty is applied off the same
+# count, so narrowing the set also un-double-jeopardies elevated-risk.
 _ABSTAIN_TOKENS: dict[str, set[str]] = {
     TECHNICAL_ANALYST: {"mixed"},
-    SENTIMENT_ANALYST: {"neutral"},
     FUNDAMENTAL_ANALYST: {"stable"},
-    RISK_MANAGER: {"elevated"},
 }
 
 
