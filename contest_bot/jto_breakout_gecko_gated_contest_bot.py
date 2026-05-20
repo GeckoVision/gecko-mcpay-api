@@ -33,7 +33,7 @@ from gecko_wrap import ArtifactLogger, GeckoGate, HourlyCircuitBreaker
 from onchainos import OnchainOS
 
 # ── Gecko wrap layer (verdict gate + circuit breaker + ledger) ──────
-_GATE = GeckoGate(stub_mode=True)
+_GATE = GeckoGate(stub_mode=True, shadow_mode=True)  # S39-#143: Gecko is shadow-only for the OKX momentum-spot contest (out of canon scope per docs/strategy/2026-05-20-panel-act-rate-on-momentum-spot.md)
 _BREAKER = HourlyCircuitBreaker()
 _LOGGER = ArtifactLogger()
 
@@ -302,10 +302,21 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
     }
     instrument = symbol_str.split("-")[0] if symbol_str else SYMBOL.split("-")[0]
     decision = asyncio.run(_GATE.check_entry(instrument, market_state))
+    # S39-#143 — event_type encodes shadow-vs-strict so the artifact log
+    # distinguishes "Gecko would have blocked but we proceeded anyway" from
+    # "Gecko allowed it."  In strict mode, behavior is unchanged.
+    if decision.shadow_mode and decision.would_have_blocked:
+        event_type = "gate_shadow_block"  # bot proceeds, but strict gate would have declined
+    elif decision.shadow_mode:
+        event_type = "gate_shadow_concur"  # bot proceeds; strict gate would have allowed too
+    elif decision.allow:
+        event_type = "gate_allow"
+    elif decision.verdict == "error":
+        event_type = "gate_error"
+    else:
+        event_type = "gate_block"
     _LOGGER.log(
-        "gate_allow"
-        if decision.allow
-        else ("gate_error" if decision.verdict == "error" else "gate_block"),
+        event_type,
         {
             "instrument": instrument,
             "verdict": decision.verdict,
@@ -314,6 +325,8 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
             "citations_count": decision.citations_count,
             "cached": decision.cached,
             "error": decision.error,
+            "shadow_mode": decision.shadow_mode,
+            "would_have_blocked": decision.would_have_blocked,
         },
         decision_id=decision.decision_id,
     )
@@ -323,6 +336,11 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
             f"[GATE] ✗ {instrument} verdict={decision.verdict} conf={decision.confidence:.2f}",
         )
         return
+    if decision.would_have_blocked:
+        _log(
+            "info",
+            f"[GATE-SHADOW] proceeding despite {decision.verdict}@{decision.confidence:.2f} — strict gate would have blocked",
+        )
 
     ts = datetime.utcnow().isoformat()
     pos = {

@@ -92,6 +92,12 @@ class GateDecision(BaseModel):
     cached: bool = False
     error: str | None = None
     raw_envelope: dict[str, Any] = Field(default_factory=dict)
+    # S39-#143: shadow-mode counterfactual. True when `allow=True` was
+    # forced by `shadow_mode=True` and the strict gate would otherwise
+    # have blocked. Always False in strict mode. Preserves the wedge
+    # signal in the artifact log without blocking the bot.
+    would_have_blocked: bool = False
+    shadow_mode: bool = False
 
 
 # ── Helpers ────────────────────────────────────────────────────────────
@@ -161,6 +167,7 @@ class GeckoGate:
         self,
         *,
         stub_mode: bool = True,
+        shadow_mode: bool = False,
         api_base: str = DEFAULT_API_BASE,
         timeout_s: float = DEFAULT_GATE_TIMEOUT_S,
         min_confidence: float = DEFAULT_GATE_MIN_CONFIDENCE,
@@ -175,6 +182,14 @@ class GeckoGate:
                 "is not wired in the contest wrap (founder-only flip)."
             )
         self._stub_mode = stub_mode
+        # S39-#143 — shadow_mode: when True, the oracle is still called and
+        # the verdict still logged, but allow=True is always returned. Used
+        # for the OKX contest where Gecko's panel is structurally unable to
+        # grade short-horizon momentum spot (ai-ml-engineer diagnosis at
+        # docs/strategy/2026-05-20-panel-act-rate-on-momentum-spot.md).
+        # Gecko comments without blocking; the artifact log preserves the
+        # counterfactual via GateDecision.would_have_blocked.
+        self._shadow_mode = shadow_mode
         self._api_base = api_base.rstrip("/")
         self._timeout_s = timeout_s
         self._min_confidence = min_confidence
@@ -226,9 +241,13 @@ class GeckoGate:
         try:
             envelope = self._call_oracle(url, body)
         except _OracleCallError as exc:
-            logger.warning("gecko_gate: oracle call failed (%s); blocking entry", exc)
+            logger.warning("gecko_gate: oracle call failed (%s)", exc)
+            # Strict gate blocks on error; shadow gate passes through with
+            # would_have_blocked=True so the counterfactual is preserved.
             return GateDecision(
-                allow=False,
+                allow=self._shadow_mode,
+                would_have_blocked=self._shadow_mode,
+                shadow_mode=self._shadow_mode,
                 verdict="error",
                 confidence=0.0,
                 key_drivers=[],
@@ -247,10 +266,15 @@ class GeckoGate:
         cites = envelope.get("evidence_citations") or envelope.get("citations") or []
         citations_count = len(cites) if isinstance(cites, list) else 0
 
-        allow = verdict == "act" and confidence >= self._min_confidence
+        strict_allow = verdict == "act" and confidence >= self._min_confidence
+        # In shadow mode the bot always proceeds; the strict verdict is
+        # recorded for the artifact ledger via would_have_blocked.
+        effective_allow = True if self._shadow_mode else strict_allow
 
         decision = GateDecision(
-            allow=allow,
+            allow=effective_allow,
+            would_have_blocked=(not strict_allow) if self._shadow_mode else False,
+            shadow_mode=self._shadow_mode,
             verdict=verdict,
             confidence=confidence,
             key_drivers=key_drivers,
