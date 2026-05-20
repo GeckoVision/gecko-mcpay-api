@@ -13,56 +13,71 @@ Chain    : solana
     Requires: onchainos CLI installed, wallet logged in.
     Run    : python3 jto_breakout_gecko_gated_contest_bot.py
 """
+
 from __future__ import annotations
 
-import argparse, json, sys, time, threading
-from datetime import datetime, timezone
+import argparse
+import json
+import sys
+import threading
+import time
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 # ── Import OnchainOS from the same skill directory ─────────────────
 sys.path.insert(0, str(Path(__file__).parent))
+import asyncio
+
+from gecko_wrap import ArtifactLogger, GeckoGate, HourlyCircuitBreaker
 from onchainos import OnchainOS
 
+# ── Gecko wrap layer (verdict gate + circuit breaker + ledger) ──────
+_GATE = GeckoGate(stub_mode=True)
+_BREAKER = HourlyCircuitBreaker()
+_LOGGER = ArtifactLogger()
+
 # ── Config ─────────────────────────────────────────────────────────
-PAPER_TRADE      = True
-CHAIN            = 'solana'
-POLL_SEC         = 30
-SYMBOL           = 'JTO-USDC'
-TIMEFRAME        = '5m'
-ENTRY_TYPE       = 'price_breakout'
-USD_PER_TRADE    = 25
-STOP_LOSS_PCT    = 3
-TAKE_PROFIT_PCT  = 5
-TRAIL_STOP_PCT   = None
+PAPER_TRADE = True
+CHAIN = "solana"
+POLL_SEC = 30
+SYMBOL = "JTO-USDC"
+TIMEFRAME = "5m"
+ENTRY_TYPE = "price_breakout"
+USD_PER_TRADE = 25
+STOP_LOSS_PCT = 3
+TAKE_PROFIT_PCT = 5
+TRAIL_STOP_PCT = None
 MAX_DAILY_TRADES = 3
-MAX_CONCURRENT   = 1
+MAX_CONCURRENT = 1
 SESSION_LOSS_PAUSE = 2
-MAX_BUDGET_USD   = 100   # total budget cap — bot stops spending beyond this
-DASHBOARD_PORT   = 8265
+MAX_BUDGET_USD = 100  # total budget cap — bot stops spending beyond this
+DASHBOARD_PORT = 8265
 
 TOKEN_ADDRESS = "jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL"  # JTO mint on Solana
 
-ENTRY_PARAMS = {'direction': 'up', 'lookback_bars': 24, 'confirm_pct': 1.0}
+ENTRY_PARAMS = {"direction": "up", "lookback_bars": 24, "confirm_pct": 1.0}
 
-SAFETY = {'honeypot_check': True, 'phishing_exclude': True}
+SAFETY = {"honeypot_check": True, "phishing_exclude": True}
 
 # ── OnchainOS client ───────────────────────────────────────────────
 oc = OnchainOS(chain=CHAIN)
 WALLET_ADDRESS = ""
 
 # ── State ──────────────────────────────────────────────────────────
-positions:      list[dict] = []
-daily_trades    = 0
-consec_losses   = 0
-last_reset_day  = ""
-signal_feed:    list[dict] = []
-total_spent_usd = 0.0   # tracks cumulative live spend against MAX_BUDGET_USD
-DASHBOARD_HTML  = '<!DOCTYPE html><html><head><meta charset=\'utf-8\'><title>My Strategy Dashboard</title><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#0a0e14;color:#ccd6f6;font-family:\'SF Mono\',\'Fira Code\',monospace;font-size:13px;padding:16px}h2{color:#00e676;margin-bottom:10px;font-size:15px}.panel{background:#12171f;border:1px solid #252d3a;border-radius:8px;padding:14px;margin-bottom:12px}.row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #1a2030}.row:last-child{border-bottom:none}.label{color:#8892b0}.green{color:#00e676}.red{color:#ff5252}.yellow{color:#ffd740}.blue{color:#448aff}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}table{width:100%;border-collapse:collapse}th{color:#448aff;text-align:left;padding:6px 8px;border-bottom:1px solid #252d3a;font-weight:normal}td{padding:5px 8px;border-bottom:1px solid #1a2030}.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px}.badge-paper{background:#1a2a4a;color:#448aff}.badge-live{background:#2a1a1a;color:#ff5252}.feed-item{padding:3px 0;border-bottom:1px solid #1a2030;font-size:12px}.ts{color:#4a5568;margin-right:8px}</style></head><body><div class=\'panel\'><div style=\'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px\'><h2>&#x1F40B; My Strategy</h2><span id=\'mode-badge\' class=\'badge\'></span></div><div class=\'grid2\'><div><div class=\'row\'><span class=\'label\'>Entry</span><span id=\'entry-type\'></span></div><div class=\'row\'><span class=\'label\'>Stop Loss</span><span class=\'red\' id=\'sl\'></span></div><div class=\'row\'><span class=\'label\'>Take Profit</span><span class=\'green\' id=\'tp\'></span></div><div class=\'row\'><span class=\'label\'>Poll</span><span id=\'poll\'></span></div></div><div><div class=\'row\'><span class=\'label\'>Wallet</span><span class=\'blue\' id=\'wallet\'></span></div><div class=\'row\'><span class=\'label\'>Session PnL</span><span id=\'session-pnl\'></span></div><div class=\'row\'><span class=\'label\'>Trades</span><span id=\'trades\'></span></div><div class=\'row\'><span class=\'label\'>Win Rate</span><span id=\'winrate\'></span></div></div></div></div><div class=\'panel\'><h2>Open Positions (<span id=\'open-count\'>0</span>)</h2><table><thead><tr><th>Symbol</th><th>Entry</th><th>Current</th><th>PnL</th><th>Since</th></tr></thead><tbody id=\'pos-body\'></tbody></table></div><div class=\'panel\'><h2>Signal Feed</h2><div id=\'feed\'></div></div><script>async function refresh(){try{const r=await fetch(\'/api/state\');const d=await r.json();const mb=document.getElementById(\'mode-badge\');mb.textContent=d.mode===\'paper\'?\'PAPER 📄\':\'LIVE 🔴\';mb.className=\'badge badge-\'+(d.mode===\'paper\'?\'paper\':\'live\');document.getElementById(\'entry-type\').textContent=d.entry_type||\'\';document.getElementById(\'sl\').textContent=\'-\'+d.sl_pct+\'%\';document.getElementById(\'tp\').textContent=\'+\'+d.tp_pct+\'%\';document.getElementById(\'poll\').textContent=d.poll_sec+\'s\';document.getElementById(\'wallet\').textContent=d.wallet||\'—\';const s=d.stats||{};const pnl=s.pnl_usd||0;const pe=document.getElementById(\'session-pnl\');pe.textContent=(pnl>=0?\'+\':\'\')+\'$\'+pnl.toFixed(2);pe.className=pnl>=0?\'green\':\'red\';document.getElementById(\'trades\').textContent=(s.daily_trades||0)+\'/\'+(s.daily_limit||0)+\' today\';const wr=(s.wins&&s.total_trades)?Math.round(s.wins/s.total_trades*100):0;document.getElementById(\'winrate\').textContent=s.total_trades?(wr+\'% (\'+s.wins+\'W/\'+s.losses+\'L)\'):\'—\';const open=(d.positions||[]).filter(p=>p.status===\'open\');document.getElementById(\'open-count\').textContent=open.length;document.getElementById(\'pos-body\').innerHTML=open.map(p=>{const pct=p.pnl_pct||0;const cl=pct>=0?\'green\':\'red\';const since=(p.entry_ts||\'\').slice(11,19);return \'<tr><td>\'+(p.symbol||p.token.slice(0,12))+\'</td><td>\'+(p.entry_price||0).toFixed(6)+\'</td><td>\'+(p.current_price||0).toFixed(6)+\'</td><td class="\'+cl+\'">\'+(pct>=0?\'+\':\'\')+pct.toFixed(1)+\'%</td><td>\'+since+\'</td></tr>\';}).join(\'\');const feed=document.getElementById(\'feed\');feed.innerHTML=(d.signal_feed||[]).slice(-30).reverse().map(e=>{const cl=e.type===\'buy\'?\'green\':e.type===\'sell\'?\'red\':e.type===\'filter\'?\'yellow\':\'\';return \'<div class="feed-item"><span class="ts">\'+(e.ts||\'\').slice(11,19)+\'</span><span class="\'+cl+\'">\'+e.msg+\'</span></div>\';}).join(\'\');}catch(err){console.error(err);}}setInterval(refresh,5000);refresh();</script></body></html>'
+positions: list[dict] = []
+daily_trades = 0
+consec_losses = 0
+last_reset_day = ""
+signal_feed: list[dict] = []
+total_spent_usd = 0.0  # tracks cumulative live spend against MAX_BUDGET_USD
+DASHBOARD_HTML = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>My Strategy Dashboard</title><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#0a0e14;color:#ccd6f6;font-family:'SF Mono','Fira Code',monospace;font-size:13px;padding:16px}h2{color:#00e676;margin-bottom:10px;font-size:15px}.panel{background:#12171f;border:1px solid #252d3a;border-radius:8px;padding:14px;margin-bottom:12px}.row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #1a2030}.row:last-child{border-bottom:none}.label{color:#8892b0}.green{color:#00e676}.red{color:#ff5252}.yellow{color:#ffd740}.blue{color:#448aff}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}table{width:100%;border-collapse:collapse}th{color:#448aff;text-align:left;padding:6px 8px;border-bottom:1px solid #252d3a;font-weight:normal}td{padding:5px 8px;border-bottom:1px solid #1a2030}.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px}.badge-paper{background:#1a2a4a;color:#448aff}.badge-live{background:#2a1a1a;color:#ff5252}.feed-item{padding:3px 0;border-bottom:1px solid #1a2030;font-size:12px}.ts{color:#4a5568;margin-right:8px}</style></head><body><div class='panel'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><h2>&#x1F40B; My Strategy</h2><span id='mode-badge' class='badge'></span></div><div class='grid2'><div><div class='row'><span class='label'>Entry</span><span id='entry-type'></span></div><div class='row'><span class='label'>Stop Loss</span><span class='red' id='sl'></span></div><div class='row'><span class='label'>Take Profit</span><span class='green' id='tp'></span></div><div class='row'><span class='label'>Poll</span><span id='poll'></span></div></div><div><div class='row'><span class='label'>Wallet</span><span class='blue' id='wallet'></span></div><div class='row'><span class='label'>Session PnL</span><span id='session-pnl'></span></div><div class='row'><span class='label'>Trades</span><span id='trades'></span></div><div class='row'><span class='label'>Win Rate</span><span id='winrate'></span></div></div></div></div><div class='panel'><h2>Open Positions (<span id='open-count'>0</span>)</h2><table><thead><tr><th>Symbol</th><th>Entry</th><th>Current</th><th>PnL</th><th>Since</th></tr></thead><tbody id='pos-body'></tbody></table></div><div class='panel'><h2>Signal Feed</h2><div id='feed'></div></div><script>async function refresh(){try{const r=await fetch('/api/state');const d=await r.json();const mb=document.getElementById('mode-badge');mb.textContent=d.mode==='paper'?'PAPER 📄':'LIVE 🔴';mb.className='badge badge-'+(d.mode==='paper'?'paper':'live');document.getElementById('entry-type').textContent=d.entry_type||'';document.getElementById('sl').textContent='-'+d.sl_pct+'%';document.getElementById('tp').textContent='+'+d.tp_pct+'%';document.getElementById('poll').textContent=d.poll_sec+'s';document.getElementById('wallet').textContent=d.wallet||'—';const s=d.stats||{};const pnl=s.pnl_usd||0;const pe=document.getElementById('session-pnl');pe.textContent=(pnl>=0?'+':'')+'$'+pnl.toFixed(2);pe.className=pnl>=0?'green':'red';document.getElementById('trades').textContent=(s.daily_trades||0)+'/'+(s.daily_limit||0)+' today';const wr=(s.wins&&s.total_trades)?Math.round(s.wins/s.total_trades*100):0;document.getElementById('winrate').textContent=s.total_trades?(wr+'% ('+s.wins+'W/'+s.losses+'L)'):'—';const open=(d.positions||[]).filter(p=>p.status==='open');document.getElementById('open-count').textContent=open.length;document.getElementById('pos-body').innerHTML=open.map(p=>{const pct=p.pnl_pct||0;const cl=pct>=0?'green':'red';const since=(p.entry_ts||'').slice(11,19);return '<tr><td>'+(p.symbol||p.token.slice(0,12))+'</td><td>'+(p.entry_price||0).toFixed(6)+'</td><td>'+(p.current_price||0).toFixed(6)+'</td><td class=\"'+cl+'\">'+(pct>=0?'+':'')+pct.toFixed(1)+'%</td><td>'+since+'</td></tr>';}).join('');const feed=document.getElementById('feed');feed.innerHTML=(d.signal_feed||[]).slice(-30).reverse().map(e=>{const cl=e.type==='buy'?'green':e.type==='sell'?'red':e.type==='filter'?'yellow':'';return '<div class=\"feed-item\"><span class=\"ts\">'+(e.ts||'').slice(11,19)+'</span><span class=\"'+cl+'\">'+e.msg+'</span></div>';}).join('');}catch(err){console.error(err);}}setInterval(refresh,5000);refresh();</script></body></html>"
+
 
 # ── TA helpers ─────────────────────────────────────────────────────
 def _ema(vals: list[float], n: int) -> list[float | None]:
-    if len(vals) < n: return [None] * len(vals)
+    if len(vals) < n:
+        return [None] * len(vals)
     k = 2 / (n + 1)
     seed = sum(vals[:n]) / n
     out: list[float | None] = [None] * (n - 1) + [seed]
@@ -70,17 +85,20 @@ def _ema(vals: list[float], n: int) -> list[float | None]:
         out.append(out[-1] * (1 - k) + v * k)  # type: ignore[operator]
     return out
 
+
 def _rsi_last(closes: list[float], period: int = 14) -> float | None:
-    if len(closes) < period + 1: return None
+    if len(closes) < period + 1:
+        return None
     deltas = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
-    gains  = [max(0.0, d) for d in deltas]
+    gains = [max(0.0, d) for d in deltas]
     losses = [max(0.0, -d) for d in deltas]
-    ag = sum(gains[:period])  / period
+    ag = sum(gains[:period]) / period
     al = sum(losses[:period]) / period
     for i in range(period, len(gains)):
-        ag = (ag * (period - 1) + gains[i])  / period
+        ag = (ag * (period - 1) + gains[i]) / period
         al = (al * (period - 1) + losses[i]) / period
     return 100.0 if al == 0 else 100.0 - 100.0 / (1.0 + ag / al)
+
 
 # ── Event logger ───────────────────────────────────────────────────
 def _log(event_type: str, msg: str, data: dict | None = None) -> None:
@@ -93,30 +111,35 @@ def _log(event_type: str, msg: str, data: dict | None = None) -> None:
         signal_feed.pop(0)
     print(f"[{ts[11:19]}] {msg}")
 
+
 # ── USDC address helper ────────────────────────────────────────────
 def _usdc_address() -> str:
     return {
-        "solana":   "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "solana": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
         "ethereum": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-        "base":     "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-        "bsc":      "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+        "base": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "bsc": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
         "arbitrum": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
     }.get(CHAIN, "")
 
+
 # ── Dashboard server ───────────────────────────────────────────────
 class _DashHandler(BaseHTTPRequestHandler):
-    def log_message(self, *args): pass  # silence access logs
+    def log_message(self, *args):
+        pass  # silence access logs
+
     def _send(self, code: int, ctype: str, body: bytes) -> None:
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
     def do_GET(self) -> None:
         if self.path == "/api/state":
             closed = [p for p in positions if p["status"] == "closed"]
             total_pnl = sum(p.get("pnl_usd", 0) for p in closed)
-            wins  = sum(1 for p in closed if p.get("pnl_usd", 0) > 0)
+            wins = sum(1 for p in closed if p.get("pnl_usd", 0) > 0)
             losses = len(closed) - wins
             # Add current_price snapshot for open positions
             state_positions = []
@@ -127,22 +150,24 @@ class _DashHandler(BaseHTTPRequestHandler):
                     snap["current_price"] = float((pd.get("data") or {}).get("price", 0) or 0)
                 state_positions.append(snap)
             payload = {
-                "mode":       "paper" if PAPER_TRADE else "live",
-                "strategy":   'jto_breakout_gecko_gated_contest',
+                "mode": "paper" if PAPER_TRADE else "live",
+                "strategy": "jto_breakout_gecko_gated_contest",
                 "entry_type": ENTRY_TYPE,
-                "sl_pct":     STOP_LOSS_PCT,
-                "tp_pct":     TAKE_PROFIT_PCT,
-                "poll_sec":   POLL_SEC,
-                "wallet":     WALLET_ADDRESS[:8] + "..." + WALLET_ADDRESS[-4:] if WALLET_ADDRESS else "",
-                "positions":  state_positions,
+                "sl_pct": STOP_LOSS_PCT,
+                "tp_pct": TAKE_PROFIT_PCT,
+                "poll_sec": POLL_SEC,
+                "wallet": WALLET_ADDRESS[:8] + "..." + WALLET_ADDRESS[-4:]
+                if WALLET_ADDRESS
+                else "",
+                "positions": state_positions,
                 "signal_feed": signal_feed[-50:],
                 "stats": {
                     "total_trades": len(closed),
-                    "wins":         wins,
-                    "losses":       losses,
-                    "pnl_usd":      round(total_pnl, 2),
+                    "wins": wins,
+                    "losses": losses,
+                    "pnl_usd": round(total_pnl, 2),
                     "daily_trades": daily_trades,
-                    "daily_limit":  MAX_DAILY_TRADES,
+                    "daily_limit": MAX_DAILY_TRADES,
                 },
             }
             body = json.dumps(payload).encode()
@@ -174,8 +199,11 @@ def preflight() -> bool:
     WALLET_ADDRESS = addr
     balances = oc.get_all_balances()
     usdc_bal = next(
-        (float(b.get("balanceUsd", 0) or 0) for b in balances
-         if "USDC" in (b.get("symbol") or "").upper()),
+        (
+            float(b.get("balanceUsd", 0) or 0)
+            for b in balances
+            if "USDC" in (b.get("symbol") or "").upper()
+        ),
         0.0,
     )
     print(f"✅  Wallet : {WALLET_ADDRESS[:8]}...{WALLET_ADDRESS[-4:]}")
@@ -186,12 +214,13 @@ def preflight() -> bool:
         print(f"⚠️   USDC address not mapped for chain {CHAIN} — live swaps will fail")
     return True
 
+
 # ── Safety filters ─────────────────────────────────────────────────
 def passes_safety(token: str) -> tuple[bool, list[str]]:
     """Run safety filters derived from the spec. Returns (passed, [failed_reasons])."""
     if not SAFETY:
         return True, []
-    tags   = oc.get_safety_tags(token)
+    tags = oc.get_safety_tags(token)
     failed: list[str] = []
     if SAFETY.get("honeypot_check") and tags.honeypot:
         failed.append("HONEYPOT")
@@ -223,12 +252,17 @@ def passes_safety(token: str) -> tuple[bool, list[str]]:
         failed.append(f"mcap ${tags.mcap_usd:.0f}>${v}")
     return len(failed) == 0, failed
 
+
 # ── Signal detection ───────────────────────────────────────────────
 def find_candidates() -> list[dict]:
     # Entry type: price_breakout
     signals = oc.get_signals(wallet_type=2)  # wallet_type 2 = dev/deployer
-    return [{"token": s.get("tokenAddress", ""), "symbol": "", "signal_data": s}
-            for s in signals if s.get("tokenAddress")]
+    return [
+        {"token": s.get("tokenAddress", ""), "symbol": "", "signal_data": s}
+        for s in signals
+        if s.get("tokenAddress")
+    ]
+
 
 # ── Position lifecycle ─────────────────────────────────────────────
 def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
@@ -240,57 +274,146 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
     if any(p["token"] == token and p["status"] == "open" for p in positions):
         return  # already in this token
     if not PAPER_TRADE and total_spent_usd + USD_PER_TRADE > MAX_BUDGET_USD:
-        _log("guard", f"[BUDGET CAP] ${total_spent_usd:.2f} spent — max budget ${MAX_BUDGET_USD} reached")
+        _log(
+            "guard",
+            f"[BUDGET CAP] ${total_spent_usd:.2f} spent — max budget ${MAX_BUDGET_USD} reached",
+        )
         return
 
-    price_data  = oc.get_price_info(token)
+    price_data = oc.get_price_info(token)
     entry_price = float((price_data.get("data") or {}).get("price", 0) or 0)
     if entry_price <= 0:
         print(f"[SKIP] No price for {symbol_str or token[:12]}")
         return
 
-    ts  = datetime.utcnow().isoformat()
+    # ── Gecko wrap: circuit-breaker check, then verdict-gated entry ──
+    paused, reason = _BREAKER.check()
+    if paused:
+        _log("guard", f"[BREAKER] {reason}")
+        _LOGGER.log("breaker_trip", {"token": token, "reason": reason})
+        return
+
+    market_state = {
+        "spot_price": entry_price,
+        "change_24h_pct": float((signal_data or {}).get("priceChange24h") or 0.0),
+        "change_1h_pct": float((signal_data or {}).get("priceChange1h") or 0.0),
+        "range_24h_pct": float((signal_data or {}).get("range24h") or 0.0),
+        "volume_24h": float((signal_data or {}).get("volume24h") or 0.0),
+    }
+    instrument = symbol_str.split("-")[0] if symbol_str else SYMBOL.split("-")[0]
+    decision = asyncio.run(_GATE.check_entry(instrument, market_state))
+    _LOGGER.log(
+        "gate_allow"
+        if decision.allow
+        else ("gate_error" if decision.verdict == "error" else "gate_block"),
+        {
+            "instrument": instrument,
+            "verdict": decision.verdict,
+            "confidence": decision.confidence,
+            "key_drivers": decision.key_drivers,
+            "citations_count": decision.citations_count,
+            "cached": decision.cached,
+            "error": decision.error,
+        },
+        decision_id=decision.decision_id,
+    )
+    if not decision.allow:
+        _log(
+            "filter",
+            f"[GATE] ✗ {instrument} verdict={decision.verdict} conf={decision.confidence:.2f}",
+        )
+        return
+
+    ts = datetime.utcnow().isoformat()
     pos = {
-        "token": token, "symbol": symbol_str, "entry_price": entry_price,
-        "usd": USD_PER_TRADE, "entry_ts": ts, "status": "open",
-        "peak_price": entry_price, "signal_data": signal_data, "mode": "paper",
+        "token": token,
+        "symbol": symbol_str,
+        "entry_price": entry_price,
+        "usd": USD_PER_TRADE,
+        "entry_ts": ts,
+        "status": "open",
+        "peak_price": entry_price,
+        "signal_data": signal_data,
+        "mode": "paper",
+        "gate_decision_id": decision.decision_id,
     }
 
     if PAPER_TRADE:
-        _log("buy", f"[PAPER] BUY {symbol_str or token[:12]} @ ${entry_price:.6f} | ${USD_PER_TRADE} | SL -{STOP_LOSS_PCT}%")
+        _log(
+            "buy",
+            f"[PAPER] BUY {symbol_str or token[:12]} @ ${entry_price:.6f} | ${USD_PER_TRADE} | SL -{STOP_LOSS_PCT}%",
+        )
     else:
         usdc = _usdc_address()
         if not usdc:
-            _log("error", f"[ERROR] USDC address not mapped for {CHAIN}"); return
+            _log("error", f"[ERROR] USDC address not mapped for {CHAIN}")
+            return
         result = oc.swap_execute(usdc, token, str(USD_PER_TRADE), WALLET_ADDRESS)
         if not result.ok:
-            _log("error", f"[ERROR] Swap failed: {result.error}"); return
-        pos["mode"]    = "live"
+            _log("error", f"[ERROR] Swap failed: {result.error}")
+            return
+        pos["mode"] = "live"
         pos["tx_hash"] = result.tx_hash
         total_spent_usd += USD_PER_TRADE
-        _log("buy", f"[LIVE] BUY {symbol_str} @ ${entry_price:.6f} | tx: {result.tx_hash[:16]}... | total spent ${total_spent_usd:.2f}/${MAX_BUDGET_USD}")
+        _log(
+            "buy",
+            f"[LIVE] BUY {symbol_str} @ ${entry_price:.6f} | tx: {result.tx_hash[:16]}... | total spent ${total_spent_usd:.2f}/${MAX_BUDGET_USD}",
+        )
 
     positions.append(pos)
     daily_trades += 1
+    _LOGGER.log(
+        "position_open",
+        {
+            "token": token,
+            "symbol": symbol_str,
+            "entry_price": entry_price,
+            "usd": USD_PER_TRADE,
+            "mode": pos["mode"],
+        },
+        decision_id=decision.decision_id,
+    )
 
 
 def close_position(pos: dict, reason: str, current_price: float) -> None:
     global consec_losses
-    ep  = pos["entry_price"]
+    ep = pos["entry_price"]
     pnl_pct = (current_price - ep) / ep * 100 if ep else 0.0
     pnl_usd = pos["usd"] * pnl_pct / 100
-    pos.update({
-        "status": "closed", "exit_ts": datetime.utcnow().isoformat(),
-        "exit_price": current_price, "exit_reason": reason,
-        "pnl_pct": round(pnl_pct, 2), "pnl_usd": round(pnl_usd, 2),
-    })
+    pos.update(
+        {
+            "status": "closed",
+            "exit_ts": datetime.utcnow().isoformat(),
+            "exit_price": current_price,
+            "exit_reason": reason,
+            "pnl_pct": round(pnl_pct, 2),
+            "pnl_usd": round(pnl_usd, 2),
+        }
+    )
     consec_losses = consec_losses + 1 if pnl_pct < 0 else 0
     icon = "📗" if pnl_pct >= 0 else "📕"
-    _log("sell", f"{icon} CLOSE {pos['symbol'] or pos['token'][:12]} | {reason} | {pnl_pct:+.1f}% | ${pnl_usd:+.2f}")
+    _log(
+        "sell",
+        f"{icon} CLOSE {pos['symbol'] or pos['token'][:12]} | {reason} | {pnl_pct:+.1f}% | ${pnl_usd:+.2f}",
+    )
+
+    # ── Gecko wrap: feed realized PnL into the breaker + ledger ─────
+    _BREAKER.record_pnl_delta(float(pnl_usd))
+    _LOGGER.log(
+        "position_close",
+        {
+            "token": pos["token"],
+            "symbol": pos.get("symbol"),
+            "exit_reason": reason,
+            "pnl_pct": round(pnl_pct, 2),
+            "pnl_usd": round(pnl_usd, 2),
+        },
+        decision_id=pos.get("gate_decision_id"),
+    )
 
     if not PAPER_TRADE and pos.get("mode") == "live":
         usdc = _usdc_address()
-        bal  = oc.get_token_balance(pos["token"])
+        bal = oc.get_token_balance(pos["token"])
         if bal > 0 and usdc:
             result = oc.swap_execute(pos["token"], usdc, str(bal), WALLET_ADDRESS)
             if result.ok:
@@ -302,21 +425,18 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
 # ── Monitor open positions ─────────────────────────────────────────
 def monitor_positions() -> None:
     for pos in [p for p in positions if p["status"] == "open"]:
-        price_data    = oc.get_price_info(pos["token"])
+        price_data = oc.get_price_info(pos["token"])
         current_price = float((price_data.get("data") or {}).get("price", 0) or 0)
         if not current_price:
             continue
 
         pos["peak_price"] = max(pos.get("peak_price", 0), current_price)
-        ep      = pos["entry_price"]
+        ep = pos["entry_price"]
         pnl_pct = (current_price - ep) / ep * 100 if ep else 0.0
-
-
-
 
         # Trailing stop
         if TRAIL_STOP_PCT is not None:
-            peak  = pos["peak_price"]
+            peak = pos["peak_price"]
             trail = (peak - current_price) / peak * 100 if peak else 0.0
             if trail >= TRAIL_STOP_PCT:
                 close_position(pos, "trailing_stop", current_price)
@@ -329,13 +449,14 @@ def monitor_positions() -> None:
 
         # Tiered take profit
 
-
         # Flat take profit
         if pnl_pct >= TAKE_PROFIT_PCT:
             close_position(pos, "take_profit", current_price)
             continue
 
-        print(f"[POS] {pos['symbol'] or pos['token'][:12]} | ${ep:.6f} → ${current_price:.6f} | {pnl_pct:+.1f}%")
+        print(
+            f"[POS] {pos['symbol'] or pos['token'][:12]} | ${ep:.6f} → ${current_price:.6f} | {pnl_pct:+.1f}%"
+        )
 
 
 # ── Risk guards ────────────────────────────────────────────────────
@@ -343,7 +464,7 @@ def reset_daily() -> None:
     global daily_trades, last_reset_day
     today = datetime.utcnow().strftime("%Y-%m-%d")
     if today != last_reset_day:
-        daily_trades   = 0
+        daily_trades = 0
         last_reset_day = today
 
 
@@ -357,7 +478,9 @@ def should_pause() -> bool:
 # ── Main loop ──────────────────────────────────────────────────────
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--smoke-test", action="store_true", help="Verify dashboard endpoints then exit")
+    ap.add_argument(
+        "--smoke-test", action="store_true", help="Verify dashboard endpoints then exit"
+    )
     args = ap.parse_args()
 
     print(f"""
@@ -373,6 +496,7 @@ def main() -> None:
 
     if args.smoke_test:
         import urllib.request as _ureq
+
         _start_dashboard()
         time.sleep(1.5)
         try:
@@ -392,10 +516,10 @@ def main() -> None:
 
     # ── Live mode gate ─────────────────────────────────────────────
     if not PAPER_TRADE:
-        print("\n" + "="*50)
+        print("\n" + "=" * 50)
         print("🔴  LIVE MODE — REAL FUNDS AT RISK")
-        print("="*50)
-        print(f"  Strategy   : My Strategy")
+        print("=" * 50)
+        print("  Strategy   : My Strategy")
         print(f"  Per trade  : ${25} USD")
         print(f"  Budget cap : ${MAX_BUDGET_USD} USD")
         print(f"  Stop loss  : -{STOP_LOSS_PCT}%")
@@ -414,9 +538,14 @@ def main() -> None:
         # Log acknowledgment
         import json as _json
         from pathlib import Path as _P
-        _ack = {"ts": datetime.utcnow().isoformat(), "strategy": 'jto_breakout_gecko_gated_contest',
-                 "confirmation": "CONFIRM", "budget_cap": MAX_BUDGET_USD}
-        _ack_path = _P(__file__).parent / f"jto_breakout_gecko_gated_contest_live_ack.jsonl"
+
+        _ack = {
+            "ts": datetime.utcnow().isoformat(),
+            "strategy": "jto_breakout_gecko_gated_contest",
+            "confirmation": "CONFIRM",
+            "budget_cap": MAX_BUDGET_USD,
+        }
+        _ack_path = _P(__file__).parent / "jto_breakout_gecko_gated_contest_live_ack.jsonl"
         with open(_ack_path, "a") as _f:
             _f.write(_json.dumps(_ack) + "\n")
         print("\n✅ Live mode confirmed. Starting bot...\n")
@@ -441,7 +570,9 @@ def main() -> None:
                         continue
                     ok, failed = passes_safety(cand["token"])
                     if ok:
-                        open_position(cand["token"], cand.get("symbol", ""), cand.get("signal_data", {}))
+                        open_position(
+                            cand["token"], cand.get("symbol", ""), cand.get("signal_data", {})
+                        )
                     else:
                         sym = cand.get("symbol") or cand["token"][:8]
                         _log("filter", f"[FILTER] {sym} ✗ {', '.join(failed)}")
@@ -449,12 +580,12 @@ def main() -> None:
             time.sleep(POLL_SEC)
 
     except KeyboardInterrupt:
-        closed    = [p for p in positions if p["status"] == "closed"]
-        open_pos  = sum(1 for p in positions if p["status"] == "open")
+        closed = [p for p in positions if p["status"] == "closed"]
+        open_pos = sum(1 for p in positions if p["status"] == "open")
         total_pnl = sum(p.get("pnl_usd", 0) for p in closed)
-        wins      = sum(1 for p in closed if p.get("pnl_usd", 0) > 0)
-        print(f"\n👋 Bot stopped.")
-        print(f"   {len(closed)} trades | {wins}W / {len(closed)-wins}L | PnL: ${total_pnl:+.2f}")
+        wins = sum(1 for p in closed if p.get("pnl_usd", 0) > 0)
+        print("\n👋 Bot stopped.")
+        print(f"   {len(closed)} trades | {wins}W / {len(closed) - wins}L | PnL: ${total_pnl:+.2f}")
         if open_pos:
             print(f"   ⚠️  {open_pos} position(s) still open — close manually if live")
 
