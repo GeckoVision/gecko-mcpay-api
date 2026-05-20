@@ -86,7 +86,9 @@ TIMEFRAME = "5m"
 ENTRY_TYPE = "price_breakout"
 USD_PER_TRADE = 45  # iter-3.2 live 2026-05-20: $50 → $45. With MAX_CONCURRENT=2 and $99.64 live budget, $45 × 2 = $90 deployed leaves $9.64 for slippage + tx fees. Below singleTxLimit ($50) policy cap with room.
 STOP_LOSS_PCT = 3
-TAKE_PROFIT_PCT = 8  # iter-3 2026-05-20: +5% → +8% (let memes run; +5% TP was capping winners on POPCAT/WIF-class vol).
+TAKE_PROFIT_PCT = 4  # iter-3.5 live 2026-05-20: 8 → 4. Founder observation + live peaks confirm: these memes oscillate ~2% naturally; +8% requires a 4x-of-normal move that almost never happens in chop. PYTH peak was +1.53% (just 0.47% short of trail activation) before drifting back. With trail-activate-at-2% catching pokes and TP-at-4% catching real momentum, 3 × +2-4% trades outperforms 1 × +8% miracle.
+STALL_GREEN_EXIT_AGE_MIN = 60  # iter-3.5 live 2026-05-20: stall-exit overlay (founder rule). If a position is open ≥60min AND pnl ≥STALL_GREEN_EXIT_MIN_PCT, force-close at market. Catches the "drifted +2-3% then died" failure mode that neither trail (no peak retracement) nor TP (never hit 4%) catches.
+STALL_GREEN_EXIT_MIN_PCT = 2.0  # see STALL_GREEN_EXIT_AGE_MIN above.
 TRAIL_STOP_PCT = 1
 TRAIL_ACTIVATE_AFTER_PCT = 2  # iter-3.1 E-LITE 2026-05-20: 5 → 2. Founder + analyst-pair call: in a 14h contest window with N=1-2 trades, the stall failure mode (position drifts +1-4% then dies, hits time-stop near $0 PnL) dominates the upside-clip risk. Trail at activate=+2% + give-back=1% converts modal stalls into +1-1.5% realized wins. Real momentum still rides — the trail tracks peak, never gives back >1%, so a +2%→+12% runner closes at ~+11%. Trade-off accepted: some wigglers that go +2% → +1% → +5% will exit at +1% instead of riding to +5%. At N=1, quant says lift is statistically indistinguishable from baseline; founder's call is "we need to actually book something."  # 2026-05-20 autonomous iter-2 (was 2 → 1 per quant analysis): tighter trail captures more of the peak. On meme-class vol (1-5%/h), 2% trail was getting swept on noise before TP; 1% trail locks in profits closer to peak. Highest-EV single-param change per quant — expected +1.3% [+0.4, +2.1] lift over 20h.
 MAX_DAILY_TRADES = 3
@@ -1067,6 +1069,24 @@ def monitor_positions() -> None:
         # Flat take profit
         if pnl_pct >= TAKE_PROFIT_PCT:
             close_position(pos, "take_profit", current_price)
+            continue
+
+        # iter-3.5 stall-green exit (founder rule, 2026-05-20):
+        # If position has been open ≥60min AND is green by ≥2%, book the win
+        # rather than waiting indefinitely for TP. Catches the modal failure
+        # mode where price drifts to +2-3% then stalls — neither trail (no
+        # retracement) nor TP (never hits 4%) fire, and the position bleeds
+        # the 12h time-stop near $0.
+        entry_ts_iso = pos.get("entry_ts", "")
+        try:
+            entry_dt = datetime.fromisoformat(entry_ts_iso.replace("Z", "+00:00"))
+            if entry_dt.tzinfo is None:
+                entry_dt = entry_dt.replace(tzinfo=UTC)
+            age_min = (datetime.now(UTC) - entry_dt).total_seconds() / 60
+        except Exception:
+            age_min = 0.0
+        if age_min >= STALL_GREEN_EXIT_AGE_MIN and pnl_pct >= STALL_GREEN_EXIT_MIN_PCT:
+            close_position(pos, "stall_green_exit", current_price)
             continue
 
         print(
