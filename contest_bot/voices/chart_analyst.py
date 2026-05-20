@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
+from collections import Counter
 from typing import Any
 
 from llm_client import LLMResponse, OpenRouterClient
@@ -28,6 +30,11 @@ from voices.base import MemoryReader, VoiceOpinion, VoiceVerdict, safe_parse_voi
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "openai/gpt-4o-mini"
+
+# Corpus-lens budget. Per-snippet 250 chars; total section soft-capped
+# at ~1500 chars to keep the gpt-4o-mini context predictable.
+_CORPUS_SNIPPET_MAX_CHARS = 250
+_CORPUS_SECTION_MAX_CHARS = 1500
 
 # Tightened from spec §3.1: ``>4 zero-vol bars → abstain``. Re-checked
 # server-side because gpt-4o-mini occasionally rounds toward "bullish"
@@ -109,9 +116,14 @@ class ChartAnalystVoice:
         self,
         client: OpenRouterClient,
         model: str = DEFAULT_MODEL,
+        *,
+        corpus_top_k: int = 5,
+        corpus_enabled: bool = True,
     ) -> None:
         self._client = client
         self._model = model
+        self._corpus_top_k = corpus_top_k
+        self._corpus_enabled = corpus_enabled
 
     async def grade(
         self,
@@ -123,7 +135,15 @@ class ChartAnalystVoice:
         del memory
 
         started = time.monotonic()
-        user_prompt = _build_user_prompt(market_state)
+
+        # PRD-corpus lens — best-effort, never blocking. If anything goes
+        # wrong (no MONGO_URI, import error, mongo down, embedder fails,
+        # empty result) we proceed with the original prompt shape so the
+        # voice degrades to its pre-corpus behavior.
+        corpus_chunks = await self._fetch_corpus_chunks(market_state)
+        corpus_observation = _format_corpus_observation(corpus_chunks)
+
+        user_prompt = _build_user_prompt(market_state, corpus_chunks)
         messages = [
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
@@ -182,11 +202,13 @@ class ChartAnalystVoice:
                 verdict="abstain",
                 confidence=0.0,
                 reasoning=f"thin_liquidity_override:{zero_vol_count}_zero_vol_bars",
-                observations=observations,
+                observations=_append_observation(observations, corpus_observation),
                 raw_response=response.content,
                 elapsed_ms=elapsed_ms,
                 cost_usd=response.cost_usd,
             )
+
+        observations = _append_observation(observations, corpus_observation)
 
         return VoiceOpinion(
             voice_name=self.voice_name,
@@ -199,8 +221,65 @@ class ChartAnalystVoice:
             cost_usd=response.cost_usd,
         )
 
+    async def _fetch_corpus_chunks(
+        self,
+        market_state: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Best-effort PRD-corpus retrieval. Returns ``[]`` on any failure.
 
-def _build_user_prompt(market_state: dict[str, Any]) -> str:
+        The voice MUST keep working when Mongo is unreachable, gecko_core is
+        not importable, or the corpus has no rows for this instrument. We
+        catch broadly on purpose — the corpus is a lens, not a dependency.
+        """
+        if not self._corpus_enabled:
+            return []
+        if not os.environ.get("MONGO_URI"):
+            return []
+
+        instrument_raw = market_state.get("instrument") or market_state.get("symbol") or ""
+        protocol = str(instrument_raw).strip().lower()
+        if not protocol:
+            return []
+        # Strip a trailing "-usdc" / "-usdt" pair suffix if the caller handed
+        # us the symbol instead of the bare instrument (e.g. ``JTO-USDC``
+        # → ``jto``). The corpus is tagged on the bare token symbol.
+        for suffix in ("-usdc", "-usdt", "/usdc", "/usdt"):
+            if protocol.endswith(suffix):
+                protocol = protocol[: -len(suffix)]
+                break
+
+        idea = (
+            f"Should I open a long position in {instrument_raw} on Solana? "
+            "Chart shows recent breakout/volume; grade the technical setup."
+        )
+
+        try:
+            from gecko_core.orchestration.trade_panel import (
+                retrieve_trade_corpus_chunks,
+            )
+
+            chunks = await retrieve_trade_corpus_chunks(
+                idea=idea,
+                protocol=protocol,
+                vertical="dex",
+                top_k=self._corpus_top_k,
+            )
+        except Exception as exc:
+            logger.warning(
+                "chart_analyst: corpus retrieval failed (%s); proceeding without lens",
+                type(exc).__name__,
+            )
+            return []
+
+        if not isinstance(chunks, list):
+            return []
+        return chunks
+
+
+def _build_user_prompt(
+    market_state: dict[str, Any],
+    corpus_chunks: list[dict[str, Any]] | None = None,
+) -> str:
     """Build the chart prompt from the snapshot the bot hands us.
 
     The bot's current ``market_state`` shape carries spot + deltas +
@@ -219,15 +298,77 @@ def _build_user_prompt(market_state: dict[str, Any]) -> str:
     bars = bars if isinstance(bars, list) else []
     ohlcv_table = _format_ohlcv_table(bars)
 
-    return (
+    base = (
         f"Instrument: {instrument}\n"
         f"Spot: ${spot_price:.6f}\n"
         f"1h delta: {change_1h:+.2f}%\n"
         f"24h delta: {change_24h:+.2f}%\n"
         f"24h range: {range_24h:.2f}%\n\n"
         f"Last 30 5m bars (oldest first):\n{ohlcv_table}\n\n"
-        f"Grade the setup."
     )
+    lens = _format_corpus_lens(corpus_chunks or [])
+    return base + lens + "Grade the setup."
+
+
+def _format_corpus_lens(chunks: list[dict[str, Any]]) -> str:
+    """Render up to N corpus chunks as a "Corpus lens" section.
+
+    Returns "" when ``chunks`` is empty — we do NOT emit an empty
+    "--- Corpus lens ---" block (per spec: silent when retrieval is off
+    or returns nothing).
+    """
+    if not chunks:
+        return ""
+    lines: list[str] = [
+        "--- Corpus lens (background — do not over-weight, grade the chart on its merits) ---",
+    ]
+    running = len(lines[0])
+    for chunk in chunks:
+        if not isinstance(chunk, dict):
+            continue
+        provider_kind = str(chunk.get("provider_kind") or "unknown")
+        source = str(chunk.get("source") or chunk.get("url") or "?")
+        text = str(chunk.get("snippet") or chunk.get("text") or "").strip()
+        if not text:
+            continue
+        snippet = text[:_CORPUS_SNIPPET_MAX_CHARS].replace("\n", " ")
+        line = f'[provider_kind: {provider_kind}] source: {source} — "{snippet}"'
+        if running + len(line) + 1 > _CORPUS_SECTION_MAX_CHARS:
+            break
+        lines.append(line)
+        running += len(line) + 1
+    if len(lines) == 1:
+        # All chunks were malformed/empty; don't render an empty header.
+        return ""
+    lines.append("--- End corpus lens ---\n")
+    return "\n".join(lines) + "\n"
+
+
+def _format_corpus_observation(chunks: list[dict[str, Any]]) -> str | None:
+    """Compact one-liner for the artifact log.
+
+    Returns e.g. ``"corpus: 3 chunks (canon_marks×2, protocol_native×1)"``
+    or ``None`` when no chunks were consulted (so we don't pollute the
+    observations list with a noisy zero-count line).
+    """
+    if not chunks:
+        return None
+    kinds: list[str] = []
+    for chunk in chunks:
+        if isinstance(chunk, dict):
+            kinds.append(str(chunk.get("provider_kind") or "unknown"))
+    if not kinds:
+        return None
+    counter = Counter(kinds)
+    parts = [f"{kind}×{count}" for kind, count in counter.most_common()]  # noqa: RUF001
+    return f"corpus: {len(kinds)} chunks ({', '.join(parts)})"
+
+
+def _append_observation(observations: list[str], extra: str | None) -> list[str]:
+    """Append the corpus-observation line without mutating the input list."""
+    if not extra:
+        return observations
+    return [*observations, extra]
 
 
 def _format_ohlcv_table(bars: list[Any]) -> str:
