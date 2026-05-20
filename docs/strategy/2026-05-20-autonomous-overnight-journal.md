@@ -76,6 +76,19 @@ What we will NOT do (because they burn the wedge OR are negative-EV):
 - Size up to $40+ ticket without selectivity matching
 - Force chart_analyst to be more bullish
 
+### Iter-2 60-min outcome (08:15 UTC — monitor timeout)
+
+**Bot state after 60 min running iter-2 config:**
+- RAY-USDC: entry $0.736817 → current $0.75344 (+2.26%) → **peak hit $0.75543 (+2.47%)** → trail-stop armed at $0.7479 (=$peak × 0.99), only $0.0055 above trigger
+- MEW-USDC: entry $0.000558 → current $0.000553 (-0.92%) → peak hit $0.000558 (+0.06% briefly)
+- **Zero new panel decisions in 60 min** — both slots filled (MAX_CONCURRENT=2), so even if BTC overlay had passed (it didn't — BTC stuck on red bars), no candidates could fire
+
+**Key learning:** the binding constraint isn't chart confidence anymore — it's the **slot saturation + BTC chop combo**. We cannot test iter-2's momentum-acceleration lens until a slot opens, because no new candidates can be evaluated.
+
+**Honest market diagnosis:** BTC has been chopping in a -0.1% to +0.1% band for 4+ hours. Altcoins follow on average. This is a **low-vol regime** in which the realistic outcomes are heavily compressed. Quant's median +0.6% is converging on what's actually playing out.
+
+**Trail-stop validation, partial:** RAY hit +2.47%, then receded to +2.26%. With the 1% trail in place, the system has *locked in* a $0.7479 floor. Even if RAY now drops back to entry, we exit at +1.47% net (~$0.37 paper PnL on $25 ticket). **The trail change is already paying.**
+
 ### Iteration 3 plan (queued, fires after RAY or MEW closes)
 
 When one of the open positions resolves (TP/SL/trail/time-stop), I'll have a free slot. At that point, evaluate:
