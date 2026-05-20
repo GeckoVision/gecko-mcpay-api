@@ -122,9 +122,15 @@ def test_poll_iterates_all_three_instruments(bot, monkeypatch: pytest.MonkeyPatc
 
     bot.poll_instruments()
 
-    # One candle fetch per instrument per poll.
-    called_mints = [c.args[0] for c in fake.get_candles.call_args_list]
-    assert called_mints == [i["mint"] for i in bot.INSTRUMENTS]
+    # Per instrument: at least one candle fetch (price_breakout +
+    # volume_spike may each fetch). BTC overlay also adds one fetch
+    # for the WBTC mint, which we filter out here.
+    instrument_mints = {i["mint"] for i in bot.INSTRUMENTS}
+    called_mints = [
+        c.args[0] for c in fake.get_candles.call_args_list if c.args[0] in instrument_mints
+    ]
+    for inst in bot.INSTRUMENTS:
+        assert inst["mint"] in called_mints, f"{inst['symbol']} mint not fetched"
     # Snapshot recorded for each.
     for inst in bot.INSTRUMENTS:
         assert inst["symbol"] in bot._LAST_SNAPSHOTS

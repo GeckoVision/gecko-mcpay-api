@@ -97,6 +97,19 @@ ENTRY_PARAMS = {
     "confirm_pct": 0.2,
 }  # ⚠ TEST-MODE LOOSEN (was 24, 1.0) — feed voices more candidate signals; voices are the real gate now. REVERT before live flip
 
+# ── volume_spike entry primitive (s40-lab-#5) ──────────────────────
+# Fires when the most recent bar's volume exceeds median(last N bars) * mult.
+# Loose enough to surface real volume events but not floor-noise; voices grade.
+VOL_SPIKE_MULTIPLIER = 1.5
+VOL_SPIKE_AVG_BARS = 24
+
+# ── btc_overlay poll-level filter (s40-lab-#5) ─────────────────────
+# Runs ONCE per tick before iterating INSTRUMENTS. If BTC fails the
+# condition, NO instrument is evaluated this tick. Fail-open on data
+# outage so onchainos hiccups don't silently halt all trading.
+BTC_OVERLAY = {"condition": "above_ma", "ma_period": 20}
+BTC_WBTC_MINT = "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh"
+
 SAFETY = {"honeypot_check": True, "phishing_exclude": True}
 
 # ── OnchainOS client ───────────────────────────────────────────────
@@ -205,9 +218,20 @@ class _DashHandler(BaseHTTPRequestHandler):
                         "mint": inst["mint"],
                         "chain": inst["chain"],
                         **(_LAST_SNAPSHOTS.get(inst["symbol"]) or {}),
+                        "last_signal_check": _LAST_SIGNAL_CHECK.get(
+                            inst["symbol"], {"breakout": False, "volume_spike": False}
+                        ),
                     }
                     for inst in INSTRUMENTS
                 ],
+                "btc_overlay": {
+                    "ok": _BTC_SNAPSHOT.get("ok"),
+                    "reason": _BTC_SNAPSHOT.get("reason"),
+                    "close": _BTC_SNAPSHOT.get("close"),
+                    "ma": _BTC_SNAPSHOT.get("ma"),
+                }
+                if _BTC_SNAPSHOT
+                else None,
                 "signal_feed": signal_feed[-50:],
                 "stats": {
                     "total_trades": len(closed),
@@ -305,6 +329,130 @@ def passes_safety(token: str) -> tuple[bool, list[str]]:
 # Per-instrument kline snapshot, cached for the dashboard.
 _LAST_SNAPSHOTS: dict[str, dict] = {}
 
+# Per-instrument last-tick signal-fire booleans, surfaced via /api/state.
+_LAST_SIGNAL_CHECK: dict[str, dict[str, bool]] = {}
+
+# ── BTC overlay snapshot (poll-level cache) ────────────────────────
+# We fetch BTC candles at most once per tick. The tuple is
+# (epoch_ts_of_fetch, {ok, reason, close, ma}). poll_instruments()
+# bumps the ts each tick; helper functions read the cached snapshot
+# inside the same tick if called more than once.
+_BTC_SNAPSHOT_TS: float = 0.0
+_BTC_SNAPSHOT: dict[str, object] = {}
+# Tick-id sentinel — bumped at the top of every poll_instruments().
+# Cached snapshot is reused within a single tick; recomputed otherwise.
+_BTC_CURRENT_TICK_ID: int = 0
+_BTC_SNAPSHOT_TICK_ID: int = -1
+
+
+def _median(vals: list[float]) -> float:
+    if not vals:
+        return 0.0
+    s = sorted(vals)
+    n = len(s)
+    mid = n // 2
+    if n % 2:
+        return float(s[mid])
+    return float((s[mid - 1] + s[mid]) / 2.0)
+
+
+def btc_overlay_passes() -> tuple[bool, str]:
+    """Poll-level BTC market filter. Returns (ok, reason).
+
+    Cached per tick via ``_BTC_SNAPSHOT_TICK_ID``: even if called twice in
+    the same tick we only fetch once. Fail-open on data error — we'd
+    rather take a candidate during an onchainos hiccup than freeze all
+    trading silently.
+    """
+    global _BTC_SNAPSHOT_TS, _BTC_SNAPSHOT, _BTC_SNAPSHOT_TICK_ID
+    if _BTC_SNAPSHOT_TICK_ID == _BTC_CURRENT_TICK_ID and _BTC_SNAPSHOT:
+        return bool(_BTC_SNAPSHOT["ok"]), str(_BTC_SNAPSHOT["reason"])
+
+    ma_period = int(BTC_OVERLAY.get("ma_period", 20))
+    condition = str(BTC_OVERLAY.get("condition", "above_ma"))
+
+    try:
+        candles = oc.get_candles(BTC_WBTC_MINT, "5m", limit=max(ma_period, 24))
+    except Exception as exc:  # broad — never let an RPC blip halt the bot
+        snap = {
+            "ok": True,
+            "reason": "btc_data_unavailable_fail_open",
+            "close": None,
+            "ma": None,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+        _BTC_SNAPSHOT = snap
+        _BTC_SNAPSHOT_TS = time.time()
+        _BTC_SNAPSHOT_TICK_ID = _BTC_CURRENT_TICK_ID
+        _log("warn", f"[BTC] data fetch raised {type(exc).__name__} — fail open")
+        return True, "btc_data_unavailable_fail_open"
+
+    if not candles or len(candles) < ma_period:
+        snap = {
+            "ok": True,
+            "reason": "btc_data_unavailable_fail_open",
+            "close": None,
+            "ma": None,
+        }
+        _BTC_SNAPSHOT = snap
+        _BTC_SNAPSHOT_TS = time.time()
+        _BTC_SNAPSHOT_TICK_ID = _BTC_CURRENT_TICK_ID
+        _log("warn", "[BTC] insufficient candle data — fail open")
+        return True, "btc_data_unavailable_fail_open"
+
+    closes = [float(c["close"]) for c in candles[-ma_period:]]
+    ma = sum(closes) / len(closes)
+    current_close = float(candles[-1]["close"])
+
+    if condition == "above_ma":
+        ok = current_close >= ma
+        reason = "BTC above 20-MA" if ok else f"BTC below {ma_period}-MA"
+    else:
+        # Default policy: unknown conditions pass through. Add support
+        # explicitly when starter-coach surfaces new conditions.
+        ok = True
+        reason = f"unknown_condition_pass:{condition}"
+
+    snap = {"ok": ok, "reason": reason, "close": current_close, "ma": ma}
+    _BTC_SNAPSHOT = snap
+    _BTC_SNAPSHOT_TS = time.time()
+    _BTC_SNAPSHOT_TICK_ID = _BTC_CURRENT_TICK_ID
+    return ok, reason
+
+
+def evaluate_volume_spike(
+    inst: dict, candles: list[dict] | None = None
+) -> tuple[bool, dict | None]:
+    """volume_spike entry primitive.
+
+    Fires when ``volumes[-1] >= VOL_SPIKE_MULTIPLIER * median(volumes[-N:])``
+    AND median > 0. The caller MAY pass pre-fetched candles to save a
+    network round-trip; if omitted we refetch.
+    """
+    mint = inst["mint"]
+    if candles is None:
+        candles = oc.get_candles(mint, TIMEFRAME, limit=max(VOL_SPIKE_AVG_BARS + 1, 24))
+    if not candles or len(candles) < 2:
+        return False, None
+    window = candles[-VOL_SPIKE_AVG_BARS:]
+    vols = [float(c.get("volume", 0) or 0) for c in window]
+    if not vols:
+        return False, None
+    last_vol = vols[-1]
+    median_vol = _median(vols)
+    if median_vol <= 0:
+        return False, None
+    ratio = last_vol / median_vol
+    if last_vol >= VOL_SPIKE_MULTIPLIER * median_vol:
+        return True, {
+            "signal": "volume_spike",
+            "instrument": inst["symbol"],
+            "multiplier_observed": round(ratio, 3),
+            "last_vol": last_vol,
+            "median_vol": median_vol,
+        }
+    return False, None
+
 
 def evaluate_breakout(inst: dict) -> dict | None:
     """Evaluate price_breakout on a single instrument's 5m klines.
@@ -380,7 +528,22 @@ def poll_instruments() -> None:
     """Iterate INSTRUMENTS once per poll. MAX_CONCURRENT / daily_trades /
     total_spent_usd guards are checked PER ITERATION so a fill on JTO
     blocks JUP/PYTH in the same tick (global invariants).
+
+    BTC overlay runs ONCE at the top of each tick. price_breakout and
+    volume_spike fire in parallel with OR semantics — either firing
+    produces a candidate. Voices grade what crosses the bar.
     """
+    global _BTC_CURRENT_TICK_ID
+    _BTC_CURRENT_TICK_ID += 1  # invalidate prior tick's BTC cache
+
+    btc_ok, btc_reason = btc_overlay_passes()
+    if not btc_ok:
+        _log(
+            "filter",
+            f"[BTC] ✗ {btc_reason} — skipping all instruments this tick",
+        )
+        return
+
     for inst in INSTRUMENTS:
         # GLOBAL guards re-checked every instrument — a fill on the
         # previous iteration must block subsequent ones in this tick.
@@ -389,14 +552,46 @@ def poll_instruments() -> None:
         if daily_trades >= MAX_DAILY_TRADES:
             return
 
-        cand = evaluate_breakout(inst)
-        if cand is None:
+        bo_cand = evaluate_breakout(inst)
+        # Reuse the candles evaluate_breakout already fetched (via the
+        # snapshot side-channel would be cleaner, but a single refetch
+        # keeps the call sites independent and avoids hidden coupling
+        # between primitives — onchainos has its own short cache).
+        vs_fires, vs_signal = evaluate_volume_spike(inst)
+        bo_fires = bo_cand is not None
+
+        _LAST_SIGNAL_CHECK[inst["symbol"]] = {
+            "breakout": bo_fires,
+            "volume_spike": vs_fires,
+        }
+
+        if not (bo_fires or vs_fires):
             continue
-        ok, failed = passes_safety(cand["token"])
+
+        if bo_fires and vs_fires:
+            primitive = "breakout+volume"
+        elif bo_fires:
+            primitive = "breakout"
+        else:
+            primitive = "volume_spike"
+
+        # Build a unified signal_data carrying BOTH signal types if both fired.
+        signal_data: dict = {"primitive": primitive, "instrument": inst["symbol"]}
+        if bo_cand is not None:
+            signal_data.update(bo_cand["signal_data"])
+        if vs_signal is not None:
+            signal_data.update(vs_signal)
+
+        token = bo_cand["token"] if bo_cand else inst["mint"]
+        symbol = bo_cand["symbol"] if bo_cand else f"{inst['symbol']}-USDC"
+
+        ok, failed = passes_safety(token)
         if not ok:
             _log("filter", f"[{inst['symbol']}] ✗ safety: {', '.join(failed)}")
             continue
-        open_position(cand["token"], cand["symbol"], cand["signal_data"])
+
+        _log("info", f"[{inst['symbol']}] ✓ candidate via {primitive}")
+        open_position(token, symbol, signal_data)
 
 
 # ── Position lifecycle ─────────────────────────────────────────────
