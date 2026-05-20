@@ -62,6 +62,8 @@ docs/superpowers/falsifier-results/
 # want every artifact-log day to dirty the tree, and the local-lab JSONL
 # is operator-private telemetry that should never enter the repo.
 contest_bot/circuit_breaker_state.json
+contest_bot/bot_state.json
+contest_bot/bot_state.json.tmp
 contest_bot/artifact_*.jsonl
 contest_bot/local_memory.jsonl
 contest_bot/jto_breakout_gecko_gated_contest_live_ack.jsonl

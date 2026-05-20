@@ -30,6 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import asyncio
 
+from bot_state import BotState, BotStateStore
 from fundamentals_oracle import FundamentalsOracle
 from gecko_wrap import ArtifactLogger, GeckoGate, HourlyCircuitBreaker
 from local_memory import LocalMemory
@@ -165,13 +166,74 @@ def _spot_from_price_response(resp: object) -> float:
 
 
 # ── State ──────────────────────────────────────────────────────────
-positions: list[dict] = []
-daily_trades = 0
-consec_losses = 0
-last_reset_day = ""
+# Persisted to bot_state.json on every mutation (open/close/daily_reset)
+# so a restart doesn't orphan an open live position on-chain. Recovery
+# hatch: if bot_state.json is missing on startup but today's artifact
+# log exists, rebuild positions/daily_trades/total_spent_usd from the
+# immutable JSONL ledger. See bot_state.py for the correlation rules.
+_STATE_STORE = BotStateStore()
+# --rebuild-state CLI flag forces artifact replay even if bot_state.json
+# exists. argparse runs later in main(), so check sys.argv directly here.
+_REBUILD_STATE = "--rebuild-state" in sys.argv
+# Recovery from artifact fires when:
+#   - --rebuild-state was passed (explicit operator request), OR
+#   - bot_state.json doesn't exist yet (first run / state lost / pre-S40 boot).
+# We deliberately do NOT fall back to artifact when bot_state.json exists
+# but is empty — that's a legitimate "fresh-but-saved" state (e.g. after a
+# clean daily-reset). Auto-recovering then would re-resurrect already-
+# closed positions from yesterday's ledger.
+_state_file_exists = _STATE_STORE.path.exists()
+_loaded = BotState() if _REBUILD_STATE else _STATE_STORE.load()
+if _REBUILD_STATE or not _state_file_exists:
+    artifact_path = Path(__file__).parent / f"artifact_{datetime.now(UTC).strftime('%Y%m%d')}.jsonl"
+    if artifact_path.exists():
+        rebuilt = _STATE_STORE.rebuild_from_artifact(artifact_path)
+        if rebuilt.positions or rebuilt.daily_trades:
+            print(
+                f"[state] recovered {len(rebuilt.positions)} open position(s) "
+                f"+ daily_trades={rebuilt.daily_trades} from artifact log"
+            )
+            _loaded = rebuilt
+positions: list[dict] = _loaded.positions
+daily_trades = _loaded.daily_trades
+consec_losses = _loaded.consec_losses
+last_reset_day = _loaded.last_reset_day
 signal_feed: list[dict] = []
-total_spent_usd = 0.0  # tracks cumulative live spend against MAX_BUDGET_USD
-DASHBOARD_HTML = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>My Strategy Dashboard</title><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#0a0e14;color:#ccd6f6;font-family:'SF Mono','Fira Code',monospace;font-size:13px;padding:16px}h2{color:#00e676;margin-bottom:10px;font-size:15px}.panel{background:#12171f;border:1px solid #252d3a;border-radius:8px;padding:14px;margin-bottom:12px}.row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #1a2030}.row:last-child{border-bottom:none}.label{color:#8892b0}.green{color:#00e676}.red{color:#ff5252}.yellow{color:#ffd740}.blue{color:#448aff}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}table{width:100%;border-collapse:collapse}th{color:#448aff;text-align:left;padding:6px 8px;border-bottom:1px solid #252d3a;font-weight:normal}td{padding:5px 8px;border-bottom:1px solid #1a2030}.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px}.badge-paper{background:#1a2a4a;color:#448aff}.badge-live{background:#2a1a1a;color:#ff5252}.feed-item{padding:3px 0;border-bottom:1px solid #1a2030;font-size:12px}.ts{color:#4a5568;margin-right:8px}</style></head><body><div class='panel'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><h2>&#x1F40B; My Strategy</h2><span id='mode-badge' class='badge'></span></div><div class='grid2'><div><div class='row'><span class='label'>Entry</span><span id='entry-type'></span></div><div class='row'><span class='label'>Stop Loss</span><span class='red' id='sl'></span></div><div class='row'><span class='label'>Take Profit</span><span class='green' id='tp'></span></div><div class='row'><span class='label'>Poll</span><span id='poll'></span></div></div><div><div class='row'><span class='label'>Wallet</span><span class='blue' id='wallet'></span></div><div class='row'><span class='label'>Session PnL</span><span id='session-pnl'></span></div><div class='row'><span class='label'>Trades</span><span id='trades'></span></div><div class='row'><span class='label'>Win Rate</span><span id='winrate'></span></div></div></div></div><div class='panel'><h2>Open Positions (<span id='open-count'>0</span>)</h2><table><thead><tr><th>Symbol</th><th>Entry</th><th>Current</th><th>PnL</th><th>Since</th></tr></thead><tbody id='pos-body'></tbody></table></div><div class='panel'><h2>Signal Feed</h2><div id='feed'></div></div><script>async function refresh(){try{const r=await fetch('/api/state');const d=await r.json();const mb=document.getElementById('mode-badge');mb.textContent=d.mode==='paper'?'PAPER 📄':'LIVE 🔴';mb.className='badge badge-'+(d.mode==='paper'?'paper':'live');document.getElementById('entry-type').textContent=d.entry_type||'';document.getElementById('sl').textContent='-'+d.sl_pct+'%';document.getElementById('tp').textContent='+'+d.tp_pct+'%';document.getElementById('poll').textContent=d.poll_sec+'s';document.getElementById('wallet').textContent=d.wallet||'—';const s=d.stats||{};const pnl=s.pnl_usd||0;const pe=document.getElementById('session-pnl');pe.textContent=(pnl>=0?'+':'')+'$'+pnl.toFixed(2);pe.className=pnl>=0?'green':'red';document.getElementById('trades').textContent=(s.daily_trades||0)+'/'+(s.daily_limit||0)+' today';const wr=(s.wins&&s.total_trades)?Math.round(s.wins/s.total_trades*100):0;document.getElementById('winrate').textContent=s.total_trades?(wr+'% ('+s.wins+'W/'+s.losses+'L)'):'—';const open=(d.positions||[]).filter(p=>p.status==='open');document.getElementById('open-count').textContent=open.length;document.getElementById('pos-body').innerHTML=open.map(p=>{const pct=p.pnl_pct||0;const cl=pct>=0?'green':'red';const since=(p.entry_ts||'').slice(11,19);return '<tr><td>'+(p.symbol||p.token.slice(0,12))+'</td><td>'+(p.entry_price||0).toFixed(6)+'</td><td>'+(p.current_price||0).toFixed(6)+'</td><td class=\"'+cl+'\">'+(pct>=0?'+':'')+pct.toFixed(1)+'%</td><td>'+since+'</td></tr>';}).join('');const feed=document.getElementById('feed');feed.innerHTML=(d.signal_feed||[]).slice(-30).reverse().map(e=>{const cl=e.type==='buy'?'green':e.type==='sell'?'red':e.type==='filter'?'yellow':'';return '<div class=\"feed-item\"><span class=\"ts\">'+(e.ts||'').slice(11,19)+'</span><span class=\"'+cl+'\">'+e.msg+'</span></div>';}).join('');}catch(err){console.error(err);}}setInterval(refresh,5000);refresh();</script></body></html>"
+total_spent_usd = _loaded.total_spent_usd  # tracks cumulative live spend against MAX_BUDGET_USD
+
+# Persist the loaded snapshot immediately so subsequent boots see a
+# canonical bot_state.json (rather than re-replaying the artifact every
+# time and re-resurrecting closed positions that share decision_id="stub").
+if not _state_file_exists or _REBUILD_STATE:
+    _STATE_STORE.save(
+        BotState(
+            positions=positions,
+            daily_trades=daily_trades,
+            consec_losses=consec_losses,
+            total_spent_usd=total_spent_usd,
+            last_reset_day=last_reset_day,
+            saved_at=datetime.now(UTC).isoformat(),
+        )
+    )
+
+
+def _persist_state() -> None:
+    """Snapshot module-level state into bot_state.json. Called from every
+    mutation site (open_position / close_position / reset_daily). NOT a
+    hot-path write — only fires on state-changing events."""
+    _STATE_STORE.save(
+        BotState(
+            positions=positions,
+            daily_trades=daily_trades,
+            consec_losses=consec_losses,
+            total_spent_usd=total_spent_usd,
+            last_reset_day=last_reset_day,
+            saved_at=datetime.now(UTC).isoformat(),
+        )
+    )
+
+
+DASHBOARD_HTML = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>My Strategy Dashboard</title><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#0a0e14;color:#ccd6f6;font-family:'SF Mono','Fira Code',monospace;font-size:13px;padding:16px}h2{color:#00e676;margin-bottom:10px;font-size:15px}.panel{background:#12171f;border:1px solid #252d3a;border-radius:8px;padding:14px;margin-bottom:12px}.row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #1a2030}.row:last-child{border-bottom:none}.label{color:#8892b0}.green{color:#00e676}.red{color:#ff5252}.yellow{color:#ffd740}.blue{color:#448aff}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}table{width:100%;border-collapse:collapse}th{color:#448aff;text-align:left;padding:6px 8px;border-bottom:1px solid #252d3a;font-weight:normal}td{padding:5px 8px;border-bottom:1px solid #1a2030}.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px}.badge-paper{background:#1a2a4a;color:#448aff}.badge-live{background:#2a1a1a;color:#ff5252}.feed-item{padding:3px 0;border-bottom:1px solid #1a2030;font-size:12px}.ts{color:#4a5568;margin-right:8px}</style></head><body><div class='panel'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><h2>&#x1F40B; My Strategy</h2><span id='mode-badge' class='badge'></span></div><div class='grid2'><div><div class='row'><span class='label'>Entry</span><span id='entry-type'></span></div><div class='row'><span class='label'>Stop Loss</span><span class='red' id='sl'></span></div><div class='row'><span class='label'>Take Profit</span><span class='green' id='tp'></span></div><div class='row'><span class='label'>Poll</span><span id='poll'></span></div></div><div><div class='row'><span class='label'>Wallet</span><span class='blue' id='wallet'></span></div><div class='row'><span class='label'>Session PnL</span><span id='session-pnl'></span></div><div class='row'><span class='label'>Trades</span><span id='trades'></span></div><div class='row'><span class='label'>Win Rate</span><span id='winrate'></span></div></div></div></div><div class='panel'><h2>Open Positions (<span id='open-count'>0</span>)</h2><table><thead><tr><th>Symbol</th><th>Entry</th><th>Current</th><th>PnL</th><th>TP target</th><th>SL trigger</th><th>Time-stop</th><th>Since</th></tr></thead><tbody id='pos-body'></tbody></table></div><div class='panel'><h2>Signal Feed</h2><div id='feed'></div></div><script>async function refresh(){try{const r=await fetch('/api/state');const d=await r.json();const mb=document.getElementById('mode-badge');mb.textContent=d.mode==='paper'?'PAPER 📄':'LIVE 🔴';mb.className='badge badge-'+(d.mode==='paper'?'paper':'live');document.getElementById('entry-type').textContent=d.entry_type||'';document.getElementById('sl').textContent='-'+d.sl_pct+'%';document.getElementById('tp').textContent='+'+d.tp_pct+'%';document.getElementById('poll').textContent=d.poll_sec+'s';document.getElementById('wallet').textContent=d.wallet||'—';const s=d.stats||{};const pnl=s.pnl_usd||0;const pe=document.getElementById('session-pnl');pe.textContent=(pnl>=0?'+':'')+'$'+pnl.toFixed(2);pe.className=pnl>=0?'green':'red';document.getElementById('trades').textContent=(s.daily_trades||0)+'/'+(s.daily_limit||0)+' today';const wr=(s.wins&&s.total_trades)?Math.round(s.wins/s.total_trades*100):0;document.getElementById('winrate').textContent=s.total_trades?(wr+'% ('+s.wins+'W/'+s.losses+'L)'):'—';const open=(d.positions||[]).filter(p=>p.status==='open');document.getElementById('open-count').textContent=open.length;document.getElementById('pos-body').innerHTML=open.map(p=>{const pct=p.pnl_pct||0;const cl=pct>=0?'green':'red';const since=(p.entry_ts||'').slice(11,19);const tpStr=(p.tp_price||0).toFixed(6);const slStr=(p.sl_price||0).toFixed(6);const tse=(p.time_stop_eta||'').slice(11,19);return '<tr><td>'+(p.symbol||p.token.slice(0,12))+'</td><td>'+(p.entry_price||0).toFixed(6)+'</td><td>'+(p.current_price||0).toFixed(6)+'</td><td class=\"'+cl+'\">'+(pct>=0?'+':'')+pct.toFixed(1)+'%</td><td class=\"green\">'+tpStr+'</td><td class=\"red\">'+slStr+'</td><td>'+tse+'</td><td>'+since+'</td></tr>';}).join('');const feed=document.getElementById('feed');feed.innerHTML=(d.signal_feed||[]).slice(-30).reverse().map(e=>{const cl=e.type==='buy'?'green':e.type==='sell'?'red':e.type==='filter'?'yellow':'';return '<div class=\"feed-item\"><span class=\"ts\">'+(e.ts||'').slice(11,19)+'</span><span class=\"'+cl+'\">'+e.msg+'</span></div>';}).join('');}catch(err){console.error(err);}}setInterval(refresh,5000);refresh();</script></body></html>"
 
 
 # ── TA helpers ─────────────────────────────────────────────────────
@@ -241,13 +303,31 @@ class _DashHandler(BaseHTTPRequestHandler):
             total_pnl = sum(p.get("pnl_usd", 0) for p in closed)
             wins = sum(1 for p in closed if p.get("pnl_usd", 0) > 0)
             losses = len(closed) - wins
-            # Add current_price snapshot for open positions
+            # Add current_price + threshold prices for open positions so
+            # the dashboard surfaces TP / SL / time-stop ETA explicitly.
             state_positions = []
             for p in positions:
                 snap = dict(p)
+                ep = float(p.get("entry_price") or 0)
+                if ep > 0:
+                    snap["tp_price"] = ep * (1 + TAKE_PROFIT_PCT / 100)
+                    snap["sl_price"] = ep * (1 - STOP_LOSS_PCT / 100)
                 if p["status"] == "open":
                     pd = oc.get_price_info(p["token"])
                     snap["current_price"] = _spot_from_price_response(pd)
+                    # Time-stop: 12h from entry (matches the strategy spec).
+                    entry_ts = p.get("entry_ts") or ""
+                    try:
+                        entry_dt = datetime.fromisoformat(entry_ts.replace("Z", "+00:00"))
+                        time_stop_dt = (
+                            entry_dt.replace(tzinfo=UTC) if entry_dt.tzinfo is None else entry_dt
+                        )
+                        from datetime import timedelta
+
+                        time_stop_dt = time_stop_dt + timedelta(hours=12)
+                        snap["time_stop_eta"] = time_stop_dt.isoformat()
+                    except Exception:
+                        snap["time_stop_eta"] = None
                 state_positions.append(snap)
             payload = {
                 "mode": "paper" if PAPER_TRADE else "live",
@@ -855,6 +935,7 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
         },
         decision_id=fund_decision_id,
     )
+    _persist_state()
 
 
 def close_position(pos: dict, reason: str, current_price: float) -> None:
@@ -892,6 +973,7 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
         },
         decision_id=pos.get("gate_decision_id"),
     )
+    _persist_state()
 
     if not PAPER_TRADE and pos.get("mode") == "live":
         usdc = _usdc_address()
@@ -948,6 +1030,7 @@ def reset_daily() -> None:
     if today != last_reset_day:
         daily_trades = 0
         last_reset_day = today
+        _persist_state()
 
 
 def should_pause() -> bool:
@@ -962,6 +1045,11 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--smoke-test", action="store_true", help="Verify dashboard endpoints then exit"
+    )
+    ap.add_argument(
+        "--rebuild-state",
+        action="store_true",
+        help="Force rebuild of bot_state from today's artifact log (bypasses bot_state.json).",
     )
     args = ap.parse_args()
 
