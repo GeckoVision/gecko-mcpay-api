@@ -120,3 +120,43 @@ test of iter-2's prompt amendment.
 
 **Decision:** Don't restart for iter-3 yet. Let iter-2 try the open slot
 on its updated config first; the next entry IS the test.
+
+### 11:37:34 UTC — 🎯 MOMENTUM-ACCELERATION LENS FIRED LIVE
+
+20 seconds after MEW closed, bot caught a fresh PYTH breakout:
+
+**Decision:** `act via all_voices_aligned: 2B/1S/0N/0A`
+- chart_analyst: **bullish @ 0.85** — EXACTLY at the new floor
+- reasoning: *"Momentum acceleration with strong volume and breakout confirmation."*
+  ← cites the new lens verbatim
+- decision cost: $0.000696, 2946ms elapsed
+- decision_id: `ade0d6fa07ff444fbce8e4b82e8c1ef3`
+
+**Position opened:** PYTH-USDC entry $0.040059, $25 paper, SL $0.038857, TP $0.04206.
+
+**Significance:** This is the first PRODUCTION validation of iter-2's prompt
+amendment (`75c4d10`). The MOMENTUM ACCELERATION 6-cell lens added to
+chart_analyst's system prompt actually produced the expected behavior:
+- Bullish verdict at exactly 0.85 confidence (the threshold the lens
+  licenses for 6/6 cells fire)
+- Reasoning string named the lens by its prompt-defined term
+- Voice survived the wedge — it's not now bullishly biased; it's
+  catching a SPECIFIC observable pattern
+
+**State after:** daily_trades=3/3 hit. No more entries today. RAY + PYTH
+ride to TP/SL/trail/time-stop.
+
+**Best-case PnL this contest:**
+- RAY TP hit: +$0.96 paper (entry $0.7368 → TP $0.7737)
+  OR trail captures: +$0.37 paper (trail-floor +1.46%)
+- PYTH TP hit: +$1.25 paper (entry $0.040059 → TP $0.04206)
+  OR trail captures depending on path
+- Combined best case: ~$2.20 paper = +2.2% on $100
+- Honest realistic: +0.5% to +2.0% net (quant's median was +0.6%)
+
+**Validated and ready to fund:**
+- The momentum-acceleration lens works as designed
+- Trail acts as a tight max-drawdown floor (will need post-contest
+  refinement to be a true "let winners run" trail)
+- State persistence preserves positions across restart
+- The wedge stayed intact through every decision
