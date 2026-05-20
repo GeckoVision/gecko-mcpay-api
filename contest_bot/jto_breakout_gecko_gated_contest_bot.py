@@ -51,6 +51,17 @@ _LOGGER = ArtifactLogger()
 _LOCAL_MEMORY = LocalMemory()
 _LOCAL_PANEL: LocalPanel | None = None  # populated by the voice-bootstrap module once voices ship
 
+# Lazy bootstrap — voices wire in here once they ship. If OPENROUTER_API_KEY
+# is unset, the OpenRouterClient constructor raises and we fall through to
+# the no-local-panel path (bot still runs against price_breakout alone).
+try:
+    from bootstrap import build_local_panel
+
+    _LOCAL_PANEL = build_local_panel(memory=_LOCAL_MEMORY)
+    print(f"[lab] local panel armed with {len(_LOCAL_PANEL._voices)} voices")
+except Exception as exc:  # broad — any wiring failure should not crash the bot
+    print(f"[lab] local panel disabled: {type(exc).__name__}: {exc}")
+
 # ── Config ─────────────────────────────────────────────────────────
 PAPER_TRADE = True
 CHAIN = "solana"
