@@ -49,6 +49,13 @@ class BotState(BaseModel):
     total_spent_usd: float = 0.0
     last_reset_day: str = ""
     saved_at: str = ""  # ISO-UTC of last save
+    # iter-3.x 2026-05-20: persist realized PnL so the dashboard tile
+    # survives bot reboots (contest iteration loop requires ≤30s
+    # restarts and we don't want operators to lose visibility on what
+    # the session has earned). Recomputed from artifact on rebuild.
+    realized_pnl_today: float = 0.0
+    wins_today: int = 0
+    losses_today: int = 0
 
 
 class BotStateStore:
@@ -119,6 +126,9 @@ class BotStateStore:
         closed_keys: set[tuple[str, str]] = set()
         daily_trades = 0
         total_spent_usd = 0.0
+        realized_pnl_today = 0.0
+        wins_today = 0
+        losses_today = 0
 
         try:
             with open(path, encoding="utf-8") as f:
@@ -157,6 +167,14 @@ class BotStateStore:
                         # token below; record token only.
                         if isinstance(token, str):
                             closed_keys.add((token, ""))  # entry_ts unknown
+                        # Accumulate realized PnL for the dashboard tile.
+                        with contextlib.suppress(TypeError, ValueError):
+                            pnl_usd = float(payload.get("pnl_usd") or 0)
+                            realized_pnl_today += pnl_usd
+                            if pnl_usd > 0:
+                                wins_today += 1
+                            elif pnl_usd < 0:
+                                losses_today += 1
         except OSError as exc:
             logger.warning("bot_state: could not read artifact %s: %s", path, exc)
             return empty
@@ -222,6 +240,9 @@ class BotStateStore:
             daily_trades=daily_trades,
             consec_losses=0,  # not recoverable from artifact alone
             total_spent_usd=total_spent_usd,
+            realized_pnl_today=round(realized_pnl_today, 4),
+            wins_today=wins_today,
+            losses_today=losses_today,
             last_reset_day=datetime.now(UTC).strftime("%Y-%m-%d"),
             saved_at=datetime.now(UTC).isoformat(),
         )

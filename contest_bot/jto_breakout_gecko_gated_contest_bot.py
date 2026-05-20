@@ -84,12 +84,13 @@ CHAIN = "solana"
 POLL_SEC = 30
 TIMEFRAME = "5m"
 ENTRY_TYPE = "price_breakout"
-USD_PER_TRADE = 25
+USD_PER_TRADE = 50  # iter-3 2026-05-20: $25 → $50 (concentrate per trade-strategist). With MAX_CONCURRENT=1, deploys full $100 across 2 sequential trades.
 STOP_LOSS_PCT = 3
-TAKE_PROFIT_PCT = 5
-TRAIL_STOP_PCT = 1  # 2026-05-20 autonomous iter-2 (was 2 → 1 per quant analysis): tighter trail captures more of the peak. On meme-class vol (1-5%/h), 2% trail was getting swept on noise before TP; 1% trail locks in profits closer to peak. Highest-EV single-param change per quant — expected +1.3% [+0.4, +2.1] lift over 20h.
+TAKE_PROFIT_PCT = 8  # iter-3 2026-05-20: +5% → +8% (let memes run; +5% TP was capping winners on POPCAT/WIF-class vol).
+TRAIL_STOP_PCT = 1
+TRAIL_ACTIVATE_AFTER_PCT = 5  # iter-3 2026-05-20: trail only engages after position is +5% green. Prevents trail from closing chop-position roundtrippers. Below 5%, normal SL handles risk.  # 2026-05-20 autonomous iter-2 (was 2 → 1 per quant analysis): tighter trail captures more of the peak. On meme-class vol (1-5%/h), 2% trail was getting swept on noise before TP; 1% trail locks in profits closer to peak. Highest-EV single-param change per quant — expected +1.3% [+0.4, +2.1] lift over 20h.
 MAX_DAILY_TRADES = 3
-MAX_CONCURRENT = 2  # GLOBAL across all INSTRUMENTS (not per-instrument) — raised from 1 to allow a second uncorrelated entry while one is open; $25 ticket × 2 = $50 of $100 budget, leaves room for SL on both
+MAX_CONCURRENT = 1  # iter-3 2026-05-20: 2 → 1 (concentrate per trading-strategist). With $50 ticket + $100 budget, we deploy capital sequentially across 2 trades max, full conviction per trade.
 SESSION_LOSS_PAUSE = 2
 MAX_BUDGET_USD = 100  # total budget cap — GLOBAL across all INSTRUMENTS
 DASHBOARD_PORT = int(os.environ.get("DASHBOARD_PORT", "8265"))
@@ -101,23 +102,20 @@ DASHBOARD_PORT = int(os.environ.get("DASHBOARD_PORT", "8265"))
 # Same $100 wallet — positions compete for budget. MAX_CONCURRENT,
 # daily_trades, and total_spent_usd remain GLOBAL counters.
 INSTRUMENTS: list[dict] = [
-    # DeFi infra (low-vol, slow movers — keep for diversity)
-    {"symbol": "JTO", "mint": "jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL", "chain": "solana"},
-    {"symbol": "JUP", "mint": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN", "chain": "solana"},
+    # iter-3 2026-05-20: trimmed to high-vol candidates only. Dropped MEW
+    # (today's loser) + JTO/JUP/RAY/ORCA/HNT (low-vol established) per
+    # quant's memes-only recommendation. PYTH kept (today's winner via
+    # momentum-lens fire). DRIFT/TNSR kept (newer infra, more vol than
+    # major DeFi).
     {"symbol": "PYTH", "mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3", "chain": "solana"},
-    {"symbol": "RAY", "mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", "chain": "solana"},
-    {"symbol": "ORCA", "mint": "orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE", "chain": "solana"},
-    # Memes (high-vol — added 2026-05-20 — fast movers, more TP-touch chances)
+    # Memes (high-vol)
     {"symbol": "BONK", "mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", "chain": "solana"},
     {"symbol": "WIF", "mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", "chain": "solana"},
     {"symbol": "POPCAT", "mint": "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr", "chain": "solana"},
-    {"symbol": "MEW", "mint": "MEW1gQWJ3nEXg2qgERiKu7FAFj79PHvQVREQUzScPP5", "chain": "solana"},
     {"symbol": "BOME", "mint": "ukHH6c7mMyiWCf1b9pnWe25TSpkDDt3H5pQZgZ74J82", "chain": "solana"},
-    # Newer infra (more volatile than the major DeFi)
+    # Newer infra (more volatile than major DeFi)
     {"symbol": "DRIFT", "mint": "DriFtupJYLTosbwoN8koMbEYSx54aFAVLddWsbksjwg7", "chain": "solana"},
     {"symbol": "TNSR", "mint": "TNSRxcUxoT9xBG3de7PiJyTDYu7kskLqcpddxnEJAS6", "chain": "solana"},
-    # DePIN
-    {"symbol": "HNT", "mint": "hntyVP6YFm1Hg25TN9WGLqM12b8TQmcknKrdu1oxWux", "chain": "solana"},
 ]
 
 ENTRY_PARAMS = {
@@ -139,7 +137,7 @@ VOL_SPIKE_AVG_BARS = 24
 BTC_OVERLAY = {
     "condition": "green_candle",
     "ma_period": 20,
-}  # green_candle: BTC's last 5m bar closes above its open. More permissive than above_ma. Matches starter-coach btc_overlay spec.
+}  # iter-3.1 2026-05-20: reverted uptrend → green_candle. uptrend (close>EMA8 AND EMA8>lagged-MA) was hard-blocking 100% of ticks in BTC chop — voices never got to vote. green_candle is permissive enough to let real moves through (it gave us PYTH 11:37 UTC entry on iter-2). The 0.85 chart floor + risk + memory are the real wedge; this is a coarse safety belt only.
 BTC_WBTC_MINT = "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh"
 
 SAFETY = {"honeypot_check": True, "phishing_exclude": True}
@@ -206,6 +204,14 @@ consec_losses = _loaded.consec_losses
 last_reset_day = _loaded.last_reset_day
 signal_feed: list[dict] = []
 total_spent_usd = _loaded.total_spent_usd  # tracks cumulative live spend against MAX_BUDGET_USD
+# iter-3.x 2026-05-20: realized PnL persisted across reboots so the
+# dashboard tile doesn't reset to 0 on every restart. Source of truth is
+# bot_state.json (incremented in close_position, recomputed from
+# artifact on rebuild). In-session-only closed[] is still used for the
+# detailed per-position breakdown.
+realized_pnl_today = _loaded.realized_pnl_today
+wins_today = _loaded.wins_today
+losses_today = _loaded.losses_today
 
 # Persist the loaded snapshot immediately so subsequent boots see a
 # canonical bot_state.json (rather than re-replaying the artifact every
@@ -217,6 +223,9 @@ if not _state_file_exists or _REBUILD_STATE:
             daily_trades=daily_trades,
             consec_losses=consec_losses,
             total_spent_usd=total_spent_usd,
+            realized_pnl_today=realized_pnl_today,
+            wins_today=wins_today,
+            losses_today=losses_today,
             last_reset_day=last_reset_day,
             saved_at=datetime.now(UTC).isoformat(),
         )
@@ -233,6 +242,9 @@ def _persist_state() -> None:
             daily_trades=daily_trades,
             consec_losses=consec_losses,
             total_spent_usd=total_spent_usd,
+            realized_pnl_today=realized_pnl_today,
+            wins_today=wins_today,
+            losses_today=losses_today,
             last_reset_day=last_reset_day,
             saved_at=datetime.now(UTC).isoformat(),
         )
@@ -306,9 +318,21 @@ class _DashHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path == "/api/state":
             closed = [p for p in positions if p["status"] == "closed"]
-            total_pnl = sum(p.get("pnl_usd", 0) for p in closed)
-            wins = sum(1 for p in closed if p.get("pnl_usd", 0) > 0)
-            losses = len(closed) - wins
+            # iter-3.x: cumulative stats come from persisted counters
+            # (survive reboot). In-session closed[] is still used for
+            # the per-position table below.
+            # Persisted counters are the source of truth — close_position
+            # increments them on every close (paper + live). Fall back to
+            # in-session tally only when both are zero (first run before
+            # any close happened).
+            if realized_pnl_today or wins_today or losses_today:
+                total_pnl = realized_pnl_today
+                wins = wins_today
+                losses = losses_today
+            else:
+                total_pnl = sum(p.get("pnl_usd", 0) for p in closed)
+                wins = sum(1 for p in closed if p.get("pnl_usd", 0) > 0)
+                losses = len(closed) - wins
             # Add current_price + threshold prices for open positions so
             # the dashboard surfaces TP / SL / time-stop ETA explicitly.
             state_positions = []
@@ -368,7 +392,7 @@ class _DashHandler(BaseHTTPRequestHandler):
                 else None,
                 "signal_feed": signal_feed[-50:],
                 "stats": {
-                    "total_trades": len(closed),
+                    "total_trades": (wins + losses) if (wins or losses) else len(closed),
                     "wins": wins,
                     "losses": losses,
                     "pnl_usd": round(total_pnl, 2),
@@ -945,7 +969,7 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
 
 
 def close_position(pos: dict, reason: str, current_price: float) -> None:
-    global consec_losses
+    global consec_losses, realized_pnl_today, wins_today, losses_today
     ep = pos["entry_price"]
     pnl_pct = (current_price - ep) / ep * 100 if ep else 0.0
     pnl_usd = pos["usd"] * pnl_pct / 100
@@ -960,6 +984,13 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
         }
     )
     consec_losses = consec_losses + 1 if pnl_pct < 0 else 0
+    # iter-3.x 2026-05-20: accumulate into persisted counters so the
+    # dashboard PnL tile survives a bot reboot.
+    realized_pnl_today = round(realized_pnl_today + pnl_usd, 4)
+    if pnl_usd > 0:
+        wins_today += 1
+    elif pnl_usd < 0:
+        losses_today += 1
     icon = "📗" if pnl_pct >= 0 else "📕"
     _log(
         "sell",
@@ -1004,13 +1035,20 @@ def monitor_positions() -> None:
         ep = pos["entry_price"]
         pnl_pct = (current_price - ep) / ep * 100 if ep else 0.0
 
-        # Trailing stop
+        # Trailing stop with activate_after_pct gate (iter-3 2026-05-20):
+        # Trail only fires AFTER position has been >= TRAIL_ACTIVATE_AFTER_PCT
+        # green from entry. This prevents trail from closing positions that
+        # only briefly touched green — letting real winners ride toward TP
+        # before the trail engages. MEW (peak +0.06%) and PYTH (peak +1.93%)
+        # would NOT have triggered trail under iter-3.
         if TRAIL_STOP_PCT is not None:
             peak = pos["peak_price"]
-            trail = (peak - current_price) / peak * 100 if peak else 0.0
-            if trail >= TRAIL_STOP_PCT:
-                close_position(pos, "trailing_stop", current_price)
-                continue
+            peak_pct = (peak - ep) / ep * 100 if ep else 0.0
+            if peak_pct >= TRAIL_ACTIVATE_AFTER_PCT:
+                trail = (peak - current_price) / peak * 100 if peak else 0.0
+                if trail >= TRAIL_STOP_PCT:
+                    close_position(pos, "trailing_stop", current_price)
+                    continue
 
         # Stop loss
         if pnl_pct <= -STOP_LOSS_PCT:

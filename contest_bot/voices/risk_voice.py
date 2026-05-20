@@ -131,18 +131,28 @@ class RiskVoice:
         band, conf, reason = _compute_risk_band_deterministic(market_state, memory)
         elapsed_ms_local = int((time.monotonic() - started) * 1000)
 
-        if band == "bearish" and conf >= _HARD_VETO_CONFIDENCE:
-            # Hard veto — skip the LLM round-trip entirely.
-            return VoiceOpinion(
-                voice_name=self.voice_name,
-                verdict="bearish",
-                confidence=conf,
-                reasoning=reason[:200],
-                observations=[],
-                raw_response="",
-                elapsed_ms=elapsed_ms_local,
-                cost_usd=None,
-            )
+        # 2026-05-20 founder patch: deterministic-only — no LLM ratify.
+        # The LLM ratify path was over-vetoing on market sentiment (down
+        # moves on JTO/JUP/PYTH at first poll → bearish despite zero real
+        # risk signal). Trusted deterministic band is the right behavior:
+        # risk_voice's job is hard-veto threshold checks, not market mood
+        # reading (that's chart_analyst's job). The v0.2 collapse path
+        # from the spec (§7.5) is now functionally complete.
+        return VoiceOpinion(
+            voice_name=self.voice_name,
+            verdict=band,
+            confidence=conf,
+            reasoning=reason[:200],
+            observations=[],
+            raw_response="",
+            elapsed_ms=elapsed_ms_local,
+            cost_usd=None,
+        )
+
+        # NOTE: LLM ratify path below is preserved as dead code for the
+        # contract-uniformity story in the spec. Re-enable by gating the
+        # early return above behind a feature flag if we ever want it
+        # back. As-is, the lines below never execute.
 
         # Non-veto path: still call the LLM for contract uniformity.
         # The model may escalate (helper missed a check) but never
