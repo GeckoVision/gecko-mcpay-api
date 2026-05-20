@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import threading
 import time
@@ -66,7 +67,6 @@ except Exception as exc:  # broad — any wiring failure should not crash the bo
 PAPER_TRADE = True
 CHAIN = "solana"
 POLL_SEC = 30
-SYMBOL = "JTO-USDC"
 TIMEFRAME = "5m"
 ENTRY_TYPE = "price_breakout"
 USD_PER_TRADE = 25
@@ -74,18 +74,28 @@ STOP_LOSS_PCT = 3
 TAKE_PROFIT_PCT = 5
 TRAIL_STOP_PCT = None
 MAX_DAILY_TRADES = 3
-MAX_CONCURRENT = 1
+MAX_CONCURRENT = 1  # GLOBAL across all INSTRUMENTS (not per-instrument)
 SESSION_LOSS_PAUSE = 2
-MAX_BUDGET_USD = 100  # total budget cap — bot stops spending beyond this
-DASHBOARD_PORT = 8265
+MAX_BUDGET_USD = 100  # total budget cap — GLOBAL across all INSTRUMENTS
+DASHBOARD_PORT = int(os.environ.get("DASHBOARD_PORT", "8265"))
 
-TOKEN_ADDRESS = "jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL"  # JTO mint on Solana
+# ── Multi-instrument config (s40-lab-#4) ───────────────────────────
+# Per founder direction: iterate JTO → JUP → PYTH each poll, evaluate
+# price_breakout per instrument independently, feed each candidate
+# signal through the local panel + Gecko shadow gate + paper/live exec.
+# Same $100 wallet — positions compete for budget. MAX_CONCURRENT,
+# daily_trades, and total_spent_usd remain GLOBAL counters.
+INSTRUMENTS: list[dict] = [
+    {"symbol": "JTO", "mint": "jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL", "chain": "solana"},
+    {"symbol": "JUP", "mint": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN", "chain": "solana"},
+    {"symbol": "PYTH", "mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3", "chain": "solana"},
+]
 
 ENTRY_PARAMS = {
     "direction": "up",
-    "lookback_bars": 6,
-    "confirm_pct": 0.3,
-}  # ⚠ TEST-MODE LOOSEN (was 24, 1.0) — verifies signal→gate→position pipeline end-to-end; REVERT before live flip
+    "lookback_bars": 4,
+    "confirm_pct": 0.2,
+}  # ⚠ TEST-MODE LOOSEN (was 24, 1.0) — feed voices more candidate signals; voices are the real gate now. REVERT before live flip
 
 SAFETY = {"honeypot_check": True, "phishing_exclude": True}
 
@@ -189,6 +199,15 @@ class _DashHandler(BaseHTTPRequestHandler):
                 if WALLET_ADDRESS
                 else "",
                 "positions": state_positions,
+                "instruments": [
+                    {
+                        "symbol": inst["symbol"],
+                        "mint": inst["mint"],
+                        "chain": inst["chain"],
+                        **(_LAST_SNAPSHOTS.get(inst["symbol"]) or {}),
+                    }
+                    for inst in INSTRUMENTS
+                ],
                 "signal_feed": signal_feed[-50:],
                 "stats": {
                     "total_trades": len(closed),
@@ -283,14 +302,101 @@ def passes_safety(token: str) -> tuple[bool, list[str]]:
 
 
 # ── Signal detection ───────────────────────────────────────────────
-def find_candidates() -> list[dict]:
-    # Entry type: price_breakout
-    signals = oc.get_signals(wallet_type=2)  # wallet_type 2 = dev/deployer
-    return [
-        {"token": s.get("tokenAddress", ""), "symbol": "", "signal_data": s}
-        for s in signals
-        if s.get("tokenAddress")
-    ]
+# Per-instrument kline snapshot, cached for the dashboard.
+_LAST_SNAPSHOTS: dict[str, dict] = {}
+
+
+def evaluate_breakout(inst: dict) -> dict | None:
+    """Evaluate price_breakout on a single instrument's 5m klines.
+
+    Returns a candidate dict ``{token, symbol, signal_data}`` if the
+    latest close exceeds the prior ``lookback_bars`` highs by at least
+    ``confirm_pct``%; otherwise ``None``. Always refreshes the
+    dashboard snapshot for the instrument.
+    """
+    mint = inst["mint"]
+    sym = inst["symbol"]
+    lookback = int(ENTRY_PARAMS.get("lookback_bars", 4))
+    confirm = float(ENTRY_PARAMS.get("confirm_pct", 0.2))
+
+    candles = oc.get_candles(mint, TIMEFRAME, limit=max(lookback + 4, 24))
+    price_data = oc.get_price_info(mint)
+    spot = float((price_data.get("data") or {}).get("price", 0) or 0)
+
+    snap = {
+        "symbol": sym,
+        "mint": mint,
+        "spot": spot,
+        "bars": len(candles),
+        "lookback": lookback,
+        "confirm_pct": confirm,
+        "delta_pct": None,
+        "range_pct": None,
+    }
+    _LAST_SNAPSHOTS[sym] = snap
+
+    if len(candles) < lookback + 1:
+        return None
+
+    # Most-recent candle is last in list per onchainos kline convention.
+    recent = candles[-1]
+    prior = candles[-(lookback + 1) : -1]
+    if not prior:
+        return None
+    prior_high = max(c["high"] for c in prior)
+    prior_low = min(c["low"] for c in prior)
+    close = float(recent["close"])
+    if prior_high <= 0 or close <= 0:
+        return None
+
+    delta_pct = (close - prior_high) / prior_high * 100.0
+    range_pct = (prior_high - prior_low) / prior_low * 100.0 if prior_low > 0 else 0.0
+    snap["delta_pct"] = round(delta_pct, 3)
+    snap["range_pct"] = round(range_pct, 3)
+
+    if delta_pct < confirm:
+        return None
+
+    _log(
+        "info",
+        f"[{sym}] entry signal: breakout up {delta_pct:.2f}% over {lookback} bars",
+    )
+    return {
+        "token": mint,
+        "symbol": f"{sym}-USDC",
+        "signal_data": {
+            "instrument": sym,
+            "breakout_pct": round(delta_pct, 3),
+            "range_pct": round(range_pct, 3),
+            "lookback_bars": lookback,
+            "spot_price": spot,
+            "close": close,
+            "prior_high": prior_high,
+        },
+    }
+
+
+def poll_instruments() -> None:
+    """Iterate INSTRUMENTS once per poll. MAX_CONCURRENT / daily_trades /
+    total_spent_usd guards are checked PER ITERATION so a fill on JTO
+    blocks JUP/PYTH in the same tick (global invariants).
+    """
+    for inst in INSTRUMENTS:
+        # GLOBAL guards re-checked every instrument — a fill on the
+        # previous iteration must block subsequent ones in this tick.
+        if sum(1 for p in positions if p["status"] == "open") >= MAX_CONCURRENT:
+            return
+        if daily_trades >= MAX_DAILY_TRADES:
+            return
+
+        cand = evaluate_breakout(inst)
+        if cand is None:
+            continue
+        ok, failed = passes_safety(cand["token"])
+        if not ok:
+            _log("filter", f"[{inst['symbol']}] ✗ safety: {', '.join(failed)}")
+            continue
+        open_position(cand["token"], cand["symbol"], cand["signal_data"])
 
 
 # ── Position lifecycle ─────────────────────────────────────────────
@@ -329,7 +435,7 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
         "range_24h_pct": float((signal_data or {}).get("range24h") or 0.0),
         "volume_24h": float((signal_data or {}).get("volume24h") or 0.0),
     }
-    instrument = symbol_str.split("-")[0] if symbol_str else SYMBOL.split("-")[0]
+    instrument = symbol_str.split("-")[0] if symbol_str else token[:8]
 
     # ── Local-lab panel (runs BEFORE the Gecko shadow gate) ─────────
     # Lazy `is not None` lets the bot run before ai-ml-engineer's
@@ -636,21 +742,7 @@ def main() -> None:
                 continue
 
             monitor_positions()
-
-            open_cnt = sum(1 for p in positions if p["status"] == "open")
-            if open_cnt < MAX_CONCURRENT and daily_trades < MAX_DAILY_TRADES:
-                for cand in find_candidates():
-                    if not cand.get("token"):
-                        continue
-                    ok, failed = passes_safety(cand["token"])
-                    if ok:
-                        open_position(
-                            cand["token"], cand.get("symbol", ""), cand.get("signal_data", {})
-                        )
-                    else:
-                        sym = cand.get("symbol") or cand["token"][:8]
-                        _log("filter", f"[FILTER] {sym} ✗ {', '.join(failed)}")
-
+            poll_instruments()
             time.sleep(POLL_SEC)
 
     except KeyboardInterrupt:
