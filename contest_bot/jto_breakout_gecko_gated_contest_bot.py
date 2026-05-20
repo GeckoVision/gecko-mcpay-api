@@ -87,7 +87,7 @@ ENTRY_TYPE = "price_breakout"
 USD_PER_TRADE = 25
 STOP_LOSS_PCT = 3
 TAKE_PROFIT_PCT = 5
-TRAIL_STOP_PCT = None
+TRAIL_STOP_PCT = 1  # 2026-05-20 autonomous iter-2 (was 2 → 1 per quant analysis): tighter trail captures more of the peak. On meme-class vol (1-5%/h), 2% trail was getting swept on noise before TP; 1% trail locks in profits closer to peak. Highest-EV single-param change per quant — expected +1.3% [+0.4, +2.1] lift over 20h.
 MAX_DAILY_TRADES = 3
 MAX_CONCURRENT = 2  # GLOBAL across all INSTRUMENTS (not per-instrument) — raised from 1 to allow a second uncorrelated entry while one is open; $25 ticket × 2 = $50 of $100 budget, leaves room for SL on both
 SESSION_LOSS_PAUSE = 2
@@ -101,15 +101,21 @@ DASHBOARD_PORT = int(os.environ.get("DASHBOARD_PORT", "8265"))
 # Same $100 wallet — positions compete for budget. MAX_CONCURRENT,
 # daily_trades, and total_spent_usd remain GLOBAL counters.
 INSTRUMENTS: list[dict] = [
-    # DeFi infra
+    # DeFi infra (low-vol, slow movers — keep for diversity)
     {"symbol": "JTO", "mint": "jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL", "chain": "solana"},
     {"symbol": "JUP", "mint": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN", "chain": "solana"},
     {"symbol": "PYTH", "mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3", "chain": "solana"},
     {"symbol": "RAY", "mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", "chain": "solana"},
     {"symbol": "ORCA", "mint": "orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE", "chain": "solana"},
-    # Memes (highest volume on Solana)
+    # Memes (high-vol — added 2026-05-20 — fast movers, more TP-touch chances)
     {"symbol": "BONK", "mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", "chain": "solana"},
     {"symbol": "WIF", "mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", "chain": "solana"},
+    {"symbol": "POPCAT", "mint": "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr", "chain": "solana"},
+    {"symbol": "MEW", "mint": "MEW1gQWJ3nEXg2qgERiKu7FAFj79PHvQVREQUzScPP5", "chain": "solana"},
+    {"symbol": "BOME", "mint": "ukHH6c7mMyiWCf1b9pnWe25TSpkDDt3H5pQZgZ74J82", "chain": "solana"},
+    # Newer infra (more volatile than the major DeFi)
+    {"symbol": "DRIFT", "mint": "DriFtupJYLTosbwoN8koMbEYSx54aFAVLddWsbksjwg7", "chain": "solana"},
+    {"symbol": "TNSR", "mint": "TNSRxcUxoT9xBG3de7PiJyTDYu7kskLqcpddxnEJAS6", "chain": "solana"},
     # DePIN
     {"symbol": "HNT", "mint": "hntyVP6YFm1Hg25TN9WGLqM12b8TQmcknKrdu1oxWux", "chain": "solana"},
 ]

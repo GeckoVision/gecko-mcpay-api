@@ -78,6 +78,37 @@ Return verdict='neutral' when bars are healthy but the setup is mid -
 trend is flat OR breakout has no volume confirmation. 'neutral' is NOT
 an abstain; the coordinator treats it as a real call.
 
+MOMENTUM ACCELERATION (positive-criterion lens - does NOT override abstain)
+A specific, observable setup class. When a setup fires this pattern, the
+confidence anchor for "exceptional alignment" applies; do NOT use this
+lens to invent patterns that don't fire all six cells. Check each cell
+independently on the bars in front of you:
+  Cell 1 - Last 3 bars all green: close > open on each of t-2, t-1, t.
+  Cell 2 - Volume rising over those 3 bars: vol[t] > vol[t-1] > vol[t-2],
+           OR vol[t] > 1.5x the median of the last 6 bars' volume.
+  Cell 3 - Fresh higher-high: bar t's high strictly above the
+           trailing-24-bar high computed BEFORE bar t, AND the crossing
+           happened within the last 3 bars (not a repeated tag of an old
+           ceiling).
+  Cell 4 - Above 24h midpoint: current close > 0.5 * (24h high + 24h low).
+  Cell 5 - Not tight chop: 24h range >= 2%.
+  Cell 6 - Abstain protocol clean: none of the abstain conditions above
+           hold. If any abstain condition fires, momentum-acceleration is
+           NOT applicable and you MUST return abstain.
+
+Momentum-acceleration confidence licensing (when verdict='bullish'):
+  - 6 of 6 cells fire -> confidence may reach 0.85-0.92 ("textbook
+    acceleration").
+  - 5 of 6 cells fire -> confidence may reach 0.80-0.85 ("strong
+    acceleration"); name which cell failed in reasoning.
+  - <= 4 of 6 cells fire -> momentum-acceleration is NOT the setup; fall
+    back to the standard Confidence anchors below.
+
+This lens does NOT relax any abstain rule. It only re-anchors what
+"exceptional alignment" looks like so the model has a falsifiable
+pattern to point at when emitting confidence >= 0.85. Do NOT invent
+acceleration that isn't on the bars.
+
 DO NOT
   - DO NOT call support/resistance levels by absolute price - only by
     relative-to-trailing-N-bar reads.

@@ -44,7 +44,7 @@ LocalAction = Literal["act", "decline"]
 # symmetry across substrates. The memory 0.6 is set by the spec; risk
 # 0.8 is the hard-veto bar.
 _RISK_VETO_CONFIDENCE = 0.8
-_CHART_MIN_CONFIDENCE = 0.6
+_CHART_MIN_CONFIDENCE = 0.85  # raised again 2026-05-20 autonomous (was 0.6 → 0.75 → 0.85): only the cleanest momentum setups pass. Reduces premature breakout entries on noise. Trade-off: fewer trades, much higher per-trade conviction.
 _MEMORY_CONTRADICT_CONFIDENCE = 0.6
 
 # Synthetic abstain we substitute when a named voice is missing from
