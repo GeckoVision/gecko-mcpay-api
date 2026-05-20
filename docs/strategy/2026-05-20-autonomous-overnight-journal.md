@@ -98,3 +98,25 @@ When one of the open positions resolves (TP/SL/trail/time-stop), I'll have a fre
 
 
 
+
+### 11:37 UTC — MEW closed via trail (-$0.24 paper)
+
+**Event:** MEW-USDC closed via trailing_stop. pnl_pct -0.97%, pnl_usd -$0.24.
+
+**Finding:** trail-stop fired even though MEW never went meaningfully green
+(peak was only +0.06%). The TRAIL_STOP_PCT=1 logic checks `current < peak ×
+0.99` regardless of whether peak ever cleared the +2% activation level.
+This means the trail acts as a **tight max-drawdown-from-peak (~-1% effective
+floor)**, not a "let-winners-run" trail.
+
+For chop: this is actually decent risk management — caps losses at ~1%
+instead of -3% SL. For real trail behavior: post-contest fix is to require
+`activate_after_pct` (only engage trail after position is X% green).
+
+**State:** 1 slot now free (RAY-USDC still open, +2.26%). daily_trades=2/3,
+one more entry allowed today. Next candidate that passes the new
+(0.85 floor + momentum lens) chart_analyst will be our first PRODUCTION
+test of iter-2's prompt amendment.
+
+**Decision:** Don't restart for iter-3 yet. Let iter-2 try the open slot
+on its updated config first; the next entry IS the test.
