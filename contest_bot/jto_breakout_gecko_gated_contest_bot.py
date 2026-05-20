@@ -30,12 +30,26 @@ sys.path.insert(0, str(Path(__file__).parent))
 import asyncio
 
 from gecko_wrap import ArtifactLogger, GeckoGate, HourlyCircuitBreaker
+from local_memory import LocalMemory
+from local_panel import LocalPanel
 from onchainos import OnchainOS
 
 # ── Gecko wrap layer (verdict gate + circuit breaker + ledger) ──────
-_GATE = GeckoGate(stub_mode=True, shadow_mode=True)  # S39-#143: Gecko is shadow-only for the OKX momentum-spot contest (out of canon scope per docs/strategy/2026-05-20-panel-act-rate-on-momentum-spot.md)
+_GATE = GeckoGate(
+    stub_mode=True, shadow_mode=True
+)  # S39-#143: Gecko is shadow-only for the OKX momentum-spot contest (out of canon scope per docs/strategy/2026-05-20-panel-act-rate-on-momentum-spot.md)
 _BREAKER = HourlyCircuitBreaker()
 _LOGGER = ArtifactLogger()
+
+# ── Local-lab panel (s40-lab #2) ───────────────────────────────────
+# The local panel runs BEFORE the Gecko shadow gate. It stays None
+# until ai-ml-engineer's voices land — the lazy guard below keeps the
+# bot running pre-voice. The panel is the lab surface for validating
+# new agent voices LOCALLY before transplanting winners to PRD. See
+# docs/strategy/2026-05-20-panel-act-rate-on-momentum-spot.md and the
+# project-local-lab-strategy-2026-05-20 memory.
+_LOCAL_MEMORY = LocalMemory()
+_LOCAL_PANEL: LocalPanel | None = None  # populated by the voice-bootstrap module once voices ship
 
 # ── Config ─────────────────────────────────────────────────────────
 PAPER_TRADE = True
@@ -56,7 +70,11 @@ DASHBOARD_PORT = 8265
 
 TOKEN_ADDRESS = "jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL"  # JTO mint on Solana
 
-ENTRY_PARAMS = {"direction": "up", "lookback_bars": 24, "confirm_pct": 1.0}
+ENTRY_PARAMS = {
+    "direction": "up",
+    "lookback_bars": 6,
+    "confirm_pct": 0.3,
+}  # ⚠ TEST-MODE LOOSEN (was 24, 1.0) — verifies signal→gate→position pipeline end-to-end; REVERT before live flip
 
 SAFETY = {"honeypot_check": True, "phishing_exclude": True}
 
@@ -301,6 +319,33 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
         "volume_24h": float((signal_data or {}).get("volume24h") or 0.0),
     }
     instrument = symbol_str.split("-")[0] if symbol_str else SYMBOL.split("-")[0]
+
+    # ── Local-lab panel (runs BEFORE the Gecko shadow gate) ─────────
+    # Lazy `is not None` lets the bot run before ai-ml-engineer's
+    # voices land. Once they do, a voice-bootstrap module wires the
+    # panel in and this branch starts firing. The local panel is
+    # advisory + observed via local_memory.jsonl; the Gecko shadow
+    # gate still runs below and is the only thing that touches the
+    # artifact-log ledger surface.
+    if _LOCAL_PANEL is not None:
+        local_decision = asyncio.run(_LOCAL_PANEL.run(market_state))
+        _LOGGER.log(
+            "local_panel",
+            {
+                "instrument": instrument,
+                "action": local_decision.action,
+                "reason": local_decision.reason,
+                "coordinator_rule_fired": local_decision.coordinator_rule_fired,
+                "voice_count": len(local_decision.voice_opinions),
+                "total_elapsed_ms": local_decision.total_elapsed_ms,
+                "total_cost_usd": local_decision.total_cost_usd,
+            },
+            decision_id=local_decision.decision_id,
+        )
+        if local_decision.action != "act":
+            _log("filter", f"[LOCAL] ✗ {local_decision.reason}")
+            return
+
     decision = asyncio.run(_GATE.check_entry(instrument, market_state))
     # S39-#143 — event_type encodes shadow-vs-strict so the artifact log
     # distinguishes "Gecko would have blocked but we proceeded anyway" from

@@ -58,6 +58,14 @@ apps/*
 # Grading is private; we don't want noisy diffs on every probe run.
 docs/superpowers/falsifier-results/
 
+# Contest bot — per-run state. Reproducible from the bot itself; we don't
+# want every artifact-log day to dirty the tree, and the local-lab JSONL
+# is operator-private telemetry that should never enter the repo.
+contest_bot/circuit_breaker_state.json
+contest_bot/artifact_*.jsonl
+contest_bot/local_memory.jsonl
+contest_bot/jto_breakout_gecko_gated_contest_live_ack.jsonl
+
 # Skill installs from `npx skills add okx/...` and `okx/plugin-store`.
 # Per-machine install state — reproducible via the npx command, not
 # source we maintain. Same shape as node_modules / .venv.
