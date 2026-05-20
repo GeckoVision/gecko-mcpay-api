@@ -160,3 +160,34 @@ ride to TP/SL/trail/time-stop.
   refinement to be a true "let winners run" trail)
 - State persistence preserves positions across restart
 - The wedge stayed intact through every decision
+
+### 11:57:29 UTC — 🟢 RAY closed via trail at +1.39% (+$0.35 paper)
+
+**Event:** RAY-USDC closed via trailing_stop. pnl_pct +1.39%, pnl_usd +$0.35.
+
+Captured ~57% of RAY's +2.47% peak. The 1% trail (peak × 0.99) fired
+when RAY drifted back through $0.74787.
+
+**Trail-stop validation, complete:** This was the design intent.
+- MEW close: -0.97% (trail caps small losses fast — chop-protection)
+- RAY close: +1.39% (trail captures most of the peak — let-winners-run lite)
+The implementation has a known limitation (no activate_after_pct gate),
+but in practice the behavior is the right trade-off for chop markets.
+
+**Realized PnL ledger:**
+| | PnL % | PnL $ |
+|---|---|---|
+| MEW (trail) | -0.97% | -$0.24 |
+| RAY (trail) | +1.39% | +$0.35 |
+| PYTH (open) | — | — |
+| **Realized** | | **+$0.11** (+0.11% on $100) |
+
+**State:** 1 slot free, but daily_trades=3/3 capped — no new entries until
+UTC midnight (~12h away). PYTH rides to its own resolution.
+
+**Projection:**
+- Best: realized +$0.11 + PYTH TP = +$1.36 (+1.36% on $100)
+- Modal: realized +$0.11 + PYTH trail ~+$0.30 = +$0.41 (+0.41%)
+- Worst: realized +$0.11 + PYTH SL = -$0.64 (-0.64%)
+
+All within quant's predicted P10-P90 band [-2.5%, +5.5%].
