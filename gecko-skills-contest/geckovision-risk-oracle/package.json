@@ -47,6 +47,9 @@
     "Analyze risk before swapping",
     "GeckoVision risk check",
     "Risk assessment for",
-    "Is this safe?"
+    "Is this safe?",
+    "Is this position stalling?",
+    "Should I rotate out of",
+    "Manage my open positions"
   ]
 }

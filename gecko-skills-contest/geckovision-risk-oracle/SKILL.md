@@ -12,6 +12,9 @@ triggers:
   - "GeckoVision risk check"
   - "Risk assessment for [token]"
   - "Is [token] safe?"
+  - "Is [position] stalling?"
+  - "Should I rotate out of [token]?"
+  - "Manage my open positions"
 dependencies:
   - okx-dex-token
   - okx-dex-market
@@ -244,10 +247,64 @@ okx-dex-signal (smart money) → okx-dex-token → [GECKOVISION RISK CHECK] → 
 - **DEFER** → confirm with user, surfacing dissent
 - **REJECT** → refuse, explain
 
+## Position management: stall detection (post-entry)
+
+The oracle's job doesn't end at entry. The most common silent loss in
+agentic trading isn't a scam — it's the **stall**: a position that climbs
++1–2%, fades, and oscillates in that band for hours without hitting a
+take-profit or a stop-loss. It binds a slot at near-zero forward
+expectancy while better setups go untaken. GeckoVision flags it.
+
+**Trigger:** "Is [position] stalling?", "Should I rotate out of [token]?",
+"Manage my open positions", or any post-entry check on a held position.
+
+**The stall signature** (a held position is stalling when ALL hold):
+- **Aged** — open beyond a meaningful window (e.g. ≥90 min on intraday)
+- **Stuck in the green no-man's-land** — PnL in roughly +0.3% to +2%, i.e.
+  above flat but below the level a real winner reaches
+- **No new high recently** — price has not made a new high in ~30 min.
+  This is the key *pause-vs-stall* discriminator: a position merely
+  *consolidating* before a breakout makes a new high inside that window; a
+  *stalled* one does not.
+
+**The pause exception (do NOT exit):** if volume is still healthy (≥~40%
+of the entry-bar level) or the price is still printing wide candles, the
+position is catching its breath, not dying. Hold. Cutting a pause is how
+you turn a winner into a small win.
+
+**The rotation principle:** exiting a confirmed stall is worth it because
+it **frees the slot for a better trade** — not because the exit price is
+great. Therefore: only rotate when a *fresh, higher-conviction candidate
+actually exists*. Rotating a flat +1% position into idle cash (paying
+~0.2% round-trip) for no replacement is value-destroying. The verdict must
+gate on "a better seat is available," never on "this seat is mediocre."
+
+**Output (stall check):**
+```json
+{
+  "verdict": "HOLD | ROTATE",
+  "stall_confirmed": true,
+  "signals": {"age_min": 192, "pnl_pct": 1.1, "mins_since_high": 60, "volume_vs_entry": 0.3},
+  "reasoning": "Open 3.2h, stuck at +1.1% for over an hour, no new high in 60min, volume decayed to 30% of entry. Momentum is spent — this is a stall, not a pause.",
+  "recommendation": "ROTATE only if a fresh candidate is available; otherwise hold to the time-stop. Do not exit into idle cash.",
+  "citations": ["okx-dex-market: no_new_high_60min, volume=30%_of_entry"]
+}
+```
+
+**Provenance:** this rule is not theoretical — GeckoVision's live contest
+agent watched the same token stall in the +1–2% band twice (3h+ each)
+before this detector was added, and the simple time+structure heuristic
+above was falsified against the live trade log: it fires on the stalls and
+spares every position that later reached take-profit. The data-driven v2
+(return-autocorrelation + volume-decay classifier) is in development as
+per-poll telemetry accumulates.
+
 ## Monetization
 Per-query via the OKX x402 payment protocol (~$0.01–0.05/check), paid
 automatically by the calling agent. The risk oracle is a metered service:
-agents pay for the brake the same way they pay for the accelerator.
+agents pay for the brake the same way they pay for the accelerator. Both
+the **pre-trade verdict** and the **post-entry stall check** are metered
+calls — the oracle covers the full trade lifecycle, entry to exit.
 
 ## Provenance
 GeckoVision built and ran a live trading agent on the OKX Agentic Trading
