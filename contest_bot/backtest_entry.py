@@ -58,6 +58,19 @@ FLAT_STALL_LO, FLAT_STALL_HI = -0.5, 2.0
 FLAT_STALL_NO_NEW_HIGH_BARS = 6  # 30 min / 5m
 TIME_STOP_BARS = 144  # 12h / 5m
 
+# ── GRID params (S40 strategist design) ────────────────────────────
+GRID_LEVELS = 8  # buy/sell rungs between the Bollinger bands
+GRID_BB_N = 20
+GRID_BB_K = 2.0
+GRID_FILL_FEE_PCT = 0.6  # DEX slippage + spread per fill (one side)
+GRID_ATR_N = 14
+GRID_RANGE_BREAK_ATR = 1.0  # close > 1 ATR beyond a band ⇒ halt + market-exit
+
+# ── Regime segmentation (chop vs trend) ────────────────────────────
+REGIME_ADX_CHOP = 18.0  # adx ≤ this ⇒ chop
+REGIME_ADX_TREND = 25.0  # adx ≥ this ⇒ trend; (18, 25) is the hold-state dead-zone
+REGIME_CONFIRM_BARS = 3  # bars a new regime must persist before we flip
+
 
 # ── Pure-Python indicators ─────────────────────────────────────────
 def ema(vals: list[float], n: int) -> list[float | None]:
@@ -162,6 +175,41 @@ def mfi(highs, lows, closes, vols, n: int = 14) -> list[float | None]:
     return out
 
 
+def atr(highs: list[float], lows: list[float], closes: list[float], n: int = 14) -> list[float | None]:
+    """Wilder's ATR. out[i] valid from index n onward."""
+    m = len(closes)
+    out: list[float | None] = [None] * m
+    if m <= n:
+        return out
+    tr = [0.0]
+    for i in range(1, m):
+        tr.append(max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])))
+    seed = sum(tr[1 : n + 1]) / n
+    out[n] = seed
+    for i in range(n + 1, m):
+        out[i] = (out[i - 1] * (n - 1) + tr[i]) / n  # type: ignore[operator]
+    return out
+
+
+def bb(closes: list[float], n: int = 20, k: float = 2.0) -> tuple[list[float | None], list[float | None], list[float | None]]:
+    """Bollinger Bands (SMA ± k·σ). Returns (lower, mid, upper); valid from index n-1."""
+    m = len(closes)
+    lower: list[float | None] = [None] * m
+    mid: list[float | None] = [None] * m
+    upper: list[float | None] = [None] * m
+    if m < n:
+        return lower, mid, upper
+    for i in range(n - 1, m):
+        window = closes[i - n + 1 : i + 1]
+        sma = sum(window) / n
+        var = sum((x - sma) ** 2 for x in window) / n
+        sd = var ** 0.5
+        mid[i] = sma
+        lower[i] = sma - k * sd
+        upper[i] = sma + k * sd
+    return lower, mid, upper
+
+
 # ── Entry rules ────────────────────────────────────────────────────
 def entry_old(c: dict, i: int) -> bool:
     if i < 4:
@@ -237,6 +285,123 @@ def simulate_exit(c: dict, entry_idx: int) -> float:
     return (c["close"][-1] - ep) / ep * 100
 
 
+# ── GRID strategy (chop-window mean-reversion) ─────────────────────
+def simulate_grid(c: dict, start_idx: int, end_idx: int, params: dict | None = None) -> dict:
+    """Walk a chop window [start_idx, end_idx] with a static Bollinger grid.
+    Buy-lot fills when low touches a level; matched sell when high reaches the
+    next level up. Each fill costs GRID_FILL_FEE_PCT once. Range-break (close
+    >GRID_RANGE_BREAK_ATR·ATR beyond a band) halts + market-exits all lots."""
+    p = params or {}
+    levels_n = int(p.get("levels", GRID_LEVELS))
+    bb_n = int(p.get("bb_n", GRID_BB_N))
+    bb_k = float(p.get("bb_k", GRID_BB_K))
+    fee = float(p.get("fee_pct", GRID_FILL_FEE_PCT))
+    atr_n = int(p.get("atr_n", GRID_ATR_N))
+    break_atr = float(p.get("range_break_atr", GRID_RANGE_BREAK_ATR))
+
+    empty = {"realized_pnl_pct": 0.0, "n_fills": 0, "n_round_trips": 0, "halted": False, "open_at_end": 0}
+    if end_idx <= start_idx:
+        return empty
+
+    lower, mid, upper = bb(c["close"], bb_n, bb_k)
+    atr_s = atr(c["high"], c["low"], c["close"], atr_n)
+    lo_band, up_band = lower[start_idx], upper[start_idx]
+    a = atr_s[start_idx]
+    if lo_band is None or up_band is None or up_band <= lo_band:
+        return empty
+
+    step = (up_band - lo_band) / (levels_n - 1) if levels_n > 1 else (up_band - lo_band)
+    grid_levels = [lo_band + step * k for k in range(levels_n)]
+
+    open_lots: list[float] = []
+    realized = 0.0
+    n_fills = 0
+    n_round_trips = 0
+    filled_buy: set[int] = set()
+
+    for j in range(start_idx, end_idx + 1):
+        hi, lo, cl = c["high"][j], c["low"][j], c["close"][j]
+        if a is not None and a > 0:
+            if cl > up_band + break_atr * a or cl < lo_band - break_atr * a:
+                for buy_px in open_lots:
+                    realized += (cl - buy_px) / buy_px * 100 - fee
+                    n_fills += 1
+                open_lots.clear()
+                filled_buy.clear()
+                return {"realized_pnl_pct": realized, "n_fills": n_fills,
+                        "n_round_trips": n_round_trips, "halted": True, "open_at_end": 0}
+        for lvl_idx in sorted(filled_buy):
+            if lvl_idx + 1 >= levels_n:
+                continue
+            sell_px = grid_levels[lvl_idx + 1]
+            if hi >= sell_px:
+                buy_px = grid_levels[lvl_idx]
+                realized += (sell_px - buy_px) / buy_px * 100 - fee
+                n_fills += 1
+                n_round_trips += 1
+                filled_buy.discard(lvl_idx)
+                if buy_px in open_lots:
+                    open_lots.remove(buy_px)
+        for lvl_idx in range(levels_n - 1):
+            if lvl_idx in filled_buy:
+                continue
+            buy_px = grid_levels[lvl_idx]
+            if lo <= buy_px:
+                realized -= fee
+                n_fills += 1
+                filled_buy.add(lvl_idx)
+                open_lots.append(buy_px)
+
+    end_cl = c["close"][end_idx]
+    for buy_px in open_lots:
+        realized += (end_cl - buy_px) / buy_px * 100 - fee
+    return {"realized_pnl_pct": realized, "n_fills": n_fills,
+            "n_round_trips": n_round_trips, "halted": False, "open_at_end": len(open_lots)}
+
+
+def segment_regimes(c: dict, adx_n: int = 14) -> list[tuple[str, int, int]]:
+    """Split bars into chop/trend runs via ADX with 3-bar confirm + dead-zone
+    hysteresis. Returns [(regime, start_idx, end_idx), ...] inclusive."""
+    a_series = c["adx"]
+    m = len(a_series)
+    first = next((i for i, v in enumerate(a_series) if v is not None), None)
+    if first is None or first >= m - 1:
+        return []
+    runs: list[tuple[str, int, int]] = []
+    regime = "chop"
+    run_start = first
+    pending: str | None = None
+    pending_count = 0
+    for i in range(first, m):
+        a = a_series[i]
+        if a is None:
+            continue
+        if a <= REGIME_ADX_CHOP:
+            cand = "chop"
+        elif a >= REGIME_ADX_TREND:
+            cand = "trend"
+        else:
+            cand = regime
+        if cand == regime:
+            pending = None
+            pending_count = 0
+            continue
+        if cand == pending:
+            pending_count += 1
+        else:
+            pending = cand
+            pending_count = 1
+        if pending_count >= REGIME_CONFIRM_BARS:
+            flip_at = i - REGIME_CONFIRM_BARS + 1
+            runs.append((regime, run_start, max(flip_at - 1, run_start)))
+            regime = pending  # type: ignore[assignment]
+            run_start = flip_at
+            pending = None
+            pending_count = 0
+    runs.append((regime, run_start, m - 1))
+    return [(r, s, e) for (r, s, e) in runs if e > s]
+
+
 # ── Backtest engine ────────────────────────────────────────────────
 @dataclass
 class RuleResult:
@@ -304,6 +469,7 @@ def enrich(candles: list[dict]) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--sweep", action="store_true", help="threshold sweep on PROPOSED")
+    ap.add_argument("--grid", action="store_true", help="grid-strategy backtest on chop segments (KILL METRIC)")
     args = ap.parse_args()
 
     oc = OnchainOS(chain="solana")
@@ -321,6 +487,63 @@ def main() -> None:
 
     if not data:
         print("\nNo usable data. Aborting.")
+        return
+
+    if args.grid:
+        print("\n=== GRID on CHOP segments (S40 KILL METRIC) ===")
+        print(f"  bands=BB({GRID_BB_N},{GRID_BB_K}σ)  levels={GRID_LEVELS}  fee={GRID_FILL_FEE_PCT}%/fill  "
+              f"range-break={GRID_RANGE_BREAK_ATR}·ATR\n")
+        print("  Per chop window:  GRID  vs  CASH(0%)  vs  BREAKOUT(NEW rule in-window)\n")
+        hdr = (f"{'symbol':>8} | {'chopWin':>7} {'chopBars':>8} | {'gridPnL%':>9} {'fills':>5} {'rtrips':>6} "
+               f"{'halts':>5} | {'brkoutPnL%':>10} | {'verdict':>9}")
+        print(hdr)
+        print("-" * len(hdr))
+        grid_total = 0.0
+        brk_total = 0.0
+        for sym, c in data.items():
+            segs = segment_regimes(c, adx_n=14)
+            chop_segs = [(s, e) for (r, s, e) in segs if r == "chop"]
+            sym_grid = sym_fills = sym_rtrips = sym_halts = sym_chop_bars = 0.0
+            for s, e in chop_segs:
+                g = simulate_grid(c, s, e)
+                sym_grid += g["realized_pnl_pct"]
+                sym_fills += g["n_fills"]
+                sym_rtrips += g["n_round_trips"]
+                sym_halts += 1 if g["halted"] else 0
+                sym_chop_bars += (e - s + 1)
+            sym_brk = 0.0
+            for s, e in chop_segs:
+                i = s
+                while i <= e:
+                    if entry_new(c, i):
+                        sym_brk += simulate_exit(c, i)
+                        i += 6
+                    else:
+                        i += 1
+            if sym_grid > 0 and sym_grid > sym_brk:
+                verdict = "WORKS"
+            elif sym_grid <= 0:
+                verdict = "SHELVE"
+            else:
+                verdict = "marginal"
+            grid_total += sym_grid
+            brk_total += sym_brk
+            print(f"{sym:>8} | {len(chop_segs):>7} {int(sym_chop_bars):>8} | {sym_grid:>9.2f} {int(sym_fills):>5} "
+                  f"{int(sym_rtrips):>6} {int(sym_halts):>5} | {sym_brk:>10.2f} | {verdict:>9}")
+        print("-" * len(hdr))
+        print(f"{'TOTAL':>8} | {'':>7} {'':>8} | {grid_total:>9.2f} {'':>5} {'':>6} {'':>5} | {brk_total:>10.2f} |")
+        print("\n=== KILL METRIC ===")
+        print(f"  GRID chop-PnL:      {grid_total:+.2f}%")
+        print(f"  CASH chop-PnL:        0.00%")
+        print(f"  BREAKOUT chop-PnL:  {brk_total:+.2f}%")
+        print(f"\n  Grid edge vs CASH:     {grid_total:+.2f}%")
+        print(f"  Grid edge vs BREAKOUT: {grid_total - brk_total:+.2f}%")
+        if grid_total <= 0:
+            print("\n  ✗ Grid net-NEGATIVE after fees across the universe — DEX spread eats the step. "
+                  "Don't ship grid universe-wide; only the WORKS rows (if any).")
+        else:
+            print("\n  ✓ Grid positive — ship ONLY on WORKS symbols; SHELVE the rest.")
+        print("\n⚠ N small (≈25h, 299-bar cap), chop windows short. Directional only.")
         return
 
     if args.sweep:
