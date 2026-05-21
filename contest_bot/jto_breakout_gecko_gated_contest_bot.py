@@ -79,7 +79,7 @@ except Exception as exc:  # broad — any wiring failure should not crash the bo
     print(f"[lab] local panel disabled: {type(exc).__name__}: {exc}")
 
 # ── Config ─────────────────────────────────────────────────────────
-PAPER_TRADE = False  # 🔴 LIVE 2026-05-20: paper-validated 6h+ across 4 closes (MEW/RAY/PYTH paper). Iter-3.2 mixed-slots ran clean for 1.5h before flip. OKX contest 113 registered (joinStatus=1). Policy seatbelts active: singleTxLimit=$50, dailyTradeTxLimit=$150. Funded wallet $99.64 USDC on Solana.
+PAPER_TRADE = True  # contest over 2026-05-21 — back to paper as the test harness for new code (Track B voices etc.). Validate in paper + demo before any future live flip (founder go-ahead required, per project_x402_stub_then_live).
 CHAIN = "solana"
 POLL_SEC = 30
 TIMEFRAME = "5m"
