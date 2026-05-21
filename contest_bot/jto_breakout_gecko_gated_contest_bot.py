@@ -89,6 +89,19 @@ STOP_LOSS_PCT = 3
 TAKE_PROFIT_PCT = 4  # iter-3.5 live 2026-05-20: 8 → 4. Founder observation + live peaks confirm: these memes oscillate ~2% naturally; +8% requires a 4x-of-normal move that almost never happens in chop. PYTH peak was +1.53% (just 0.47% short of trail activation) before drifting back. With trail-activate-at-2% catching pokes and TP-at-4% catching real momentum, 3 × +2-4% trades outperforms 1 × +8% miracle.
 STALL_GREEN_EXIT_AGE_MIN = 60  # iter-3.5 live 2026-05-20: stall-exit overlay (founder rule). If a position is open ≥60min AND pnl ≥STALL_GREEN_EXIT_MIN_PCT, force-close at market. Catches the "drifted +2-3% then died" failure mode that neither trail (no peak retracement) nor TP (never hit 4%) catches.
 STALL_GREEN_EXIT_MIN_PCT = 2.0  # see STALL_GREEN_EXIT_AGE_MIN above.
+# iter-3.8 flat-stall exit (2026-05-21, quant-approved simple rule). Catches
+# the BONK no-man's-land BELOW the +2% stall_green_exit threshold: a position
+# that climbs to +1-2%, fades, and oscillates there for hours without ever
+# reaching TP (+4%), arming the trail (peak +2%), or clearing stall_green_exit
+# (pnl +2%). Pure time+structure heuristic — NO tuned parameters fit to BONK.
+# Early exit of a confirmed flat-stall is +EV vs holding to the 12h time-stop
+# (E[forward return | flat-stall] ≈ 0, so locking the small green removes
+# downside drift). The no-new-high gate is the pause-protection: a real
+# consolidation about to break out makes a new high inside 30min.
+FLAT_STALL_AGE_MIN = 90  # position must be at least this old
+FLAT_STALL_PNL_LO = 0.3  # only fire inside this green band ...
+FLAT_STALL_PNL_HI = 2.0  # ... (below STALL_GREEN_EXIT_MIN_PCT, above ~flat)
+FLAT_STALL_NO_NEW_HIGH_MIN = 30  # AND no new high in this many minutes
 TRAIL_STOP_PCT = 1
 TRAIL_ACTIVATE_AFTER_PCT = 2  # iter-3.1 E-LITE 2026-05-20: 5 → 2. Founder + analyst-pair call: in a 14h contest window with N=1-2 trades, the stall failure mode (position drifts +1-4% then dies, hits time-stop near $0 PnL) dominates the upside-clip risk. Trail at activate=+2% + give-back=1% converts modal stalls into +1-1.5% realized wins. Real momentum still rides — the trail tracks peak, never gives back >1%, so a +2%→+12% runner closes at ~+11%. Trade-off accepted: some wigglers that go +2% → +1% → +5% will exit at +1% instead of riding to +5%. At N=1, quant says lift is statistically indistinguishable from baseline; founder's call is "we need to actually book something."  # 2026-05-20 autonomous iter-2 (was 2 → 1 per quant analysis): tighter trail captures more of the peak. On meme-class vol (1-5%/h), 2% trail was getting swept on noise before TP; 1% trail locks in profits closer to peak. Highest-EV single-param change per quant — expected +1.3% [+0.4, +2.1] lift over 20h.
 MAX_DAILY_TRADES = 3
@@ -1068,6 +1081,38 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
     _persist_state()
 
 
+# ── Per-poll telemetry (iter-3.8, 2026-05-21) ──────────────────────
+# Append one row per open position per poll to poll_telemetry_YYYYMMDD.jsonl.
+# This is the DATA FOUNDATION for the data-driven stall detector (v2): the
+# quant flagged that we currently store no per-poll price series, so no stall
+# threshold can ever be validated. Schema maps 1:1 to a future Mongo
+# collection (lab-first, transplant to PRD per local_lab_strategy). The
+# return-series alone supports the highest-merit v2 signal (autocorrelation
+# of returns: mean-reverting ⇒ stall, persistent ⇒ pause) — no volume needed.
+_TELEMETRY_PATH = Path(__file__).parent / f"poll_telemetry_{datetime.now(UTC).strftime('%Y%m%d')}.jsonl"
+
+
+def _log_telemetry(row: dict) -> None:
+    """Best-effort append of a per-poll telemetry row. Never raises into the
+    poll loop — telemetry failure must not halt trading."""
+    try:
+        with open(_TELEMETRY_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+    except OSError:
+        pass
+
+
+def _mins_since(ts_iso: str, default: float = 0.0) -> float:
+    """Minutes elapsed since an ISO-UTC timestamp. Tolerant of naive/aware."""
+    try:
+        dt = datetime.fromisoformat(ts_iso.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return (datetime.now(UTC) - dt).total_seconds() / 60
+    except Exception:
+        return default
+
+
 # ── Monitor open positions ─────────────────────────────────────────
 def monitor_positions() -> None:
     for pos in [p for p in positions if p["status"] == "open"]:
@@ -1076,9 +1121,38 @@ def monitor_positions() -> None:
         if not current_price:
             continue
 
-        pos["peak_price"] = max(pos.get("peak_price", 0), current_price)
+        # Track last new-high time BEFORE updating peak, so we can tell
+        # whether THIS poll set a new high (used by the flat-stall gate).
+        prev_peak = pos.get("peak_price", 0)
+        now_iso = datetime.now(UTC).isoformat()
+        if current_price >= prev_peak:
+            pos["last_new_high_ts"] = now_iso
+        elif "last_new_high_ts" not in pos:
+            # Positions recovered from state pre-iter-3.8 won't have it —
+            # seed from entry so the no-new-high timer starts at entry.
+            pos["last_new_high_ts"] = pos.get("entry_ts", now_iso)
+
+        pos["peak_price"] = max(prev_peak, current_price)
         ep = pos["entry_price"]
         pnl_pct = (current_price - ep) / ep * 100 if ep else 0.0
+        peak_pct = (pos["peak_price"] - ep) / ep * 100 if ep else 0.0
+        mins_since_high = _mins_since(pos["last_new_high_ts"])
+
+        # Telemetry — one row per position per poll (data foundation for v2).
+        _log_telemetry(
+            {
+                "ts": now_iso,
+                "symbol": pos.get("symbol"),
+                "token": pos.get("token"),
+                "price": current_price,
+                "entry_price": ep,
+                "pnl_pct": round(pnl_pct, 4),
+                "peak_pct": round(peak_pct, 4),
+                "mins_since_high": round(mins_since_high, 2),
+                "age_min": round(_mins_since(pos.get("entry_ts", now_iso)), 2),
+                "mode": pos.get("mode"),
+            }
+        )
 
         # Trailing stop with activate_after_pct gate (iter-3 2026-05-20):
         # Trail only fires AFTER position has been >= TRAIL_ACTIVATE_AFTER_PCT
@@ -1123,6 +1197,19 @@ def monitor_positions() -> None:
             age_min = 0.0
         if age_min >= STALL_GREEN_EXIT_AGE_MIN and pnl_pct >= STALL_GREEN_EXIT_MIN_PCT:
             close_position(pos, "stall_green_exit", current_price)
+            continue
+
+        # iter-3.8 flat-stall exit (see constants block). Catches the BONK
+        # no-man's-land BELOW the +2% stall_green_exit threshold: aged,
+        # stuck in the +0.3-2% band, and no new high in 30min (= momentum
+        # spent, not consolidating). Locks the small green before it drifts
+        # to a flat/negative 12h time-stop.
+        if (
+            age_min >= FLAT_STALL_AGE_MIN
+            and FLAT_STALL_PNL_LO <= pnl_pct <= FLAT_STALL_PNL_HI
+            and mins_since_high >= FLAT_STALL_NO_NEW_HIGH_MIN
+        ):
+            close_position(pos, "flat_stall_exit", current_price)
             continue
 
         print(
