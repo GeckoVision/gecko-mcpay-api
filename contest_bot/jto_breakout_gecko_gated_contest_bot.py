@@ -111,7 +111,9 @@ INSTRUMENTS: list[dict] = [
     # major DeFi).
     {"symbol": "PYTH", "mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3", "chain": "solana"},
     # Memes (high-vol)
-    {"symbol": "BONK", "mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", "chain": "solana"},
+    # BONK removed 2026-05-21 (founder call): two BONK positions stalled in
+    # the +1-1.6% no-man's-land for 3h+ each without reaching TP/trail/stall
+    # triggers. Dropping it from rotation — it kept binding a slot at low conviction.
     {"symbol": "WIF", "mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", "chain": "solana"},
     {"symbol": "POPCAT", "mint": "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr", "chain": "solana"},
     {"symbol": "BOME", "mint": "ukHH6c7mMyiWCf1b9pnWe25TSpkDDt3H5pQZgZ74J82", "chain": "solana"},
