@@ -1,0 +1,6 @@
+{
+  "name": "gecko-yield-verdict",
+  "version": "0.1",
+  "title": "Gecko Yield Verdict",
+  "description": "The grounded \"should I deposit into this pool?\" verdict layer for OKX DeFi. Pulls live pool data — APY, TVL, pair, historical rate and TVL trend — from onchainOS / OKX TradeKit, then runs a 7-voice adversarial panel that returns an act / pass / defer verdict with confidence, one surviving dissent line, and investor-canon citations (Howard Marks, Aswath Damodaran, Berkshire letters). Its defining behavior: the panel ABSTAINS rather than fabricating a number when the corpus has no basis — honest grounding over a confident guess. Runs upstream of okx-defi-invest as the neutral \"should I?\" before the \"do it\", and never auto-executes. Includes a baseline mode (onchainOS data plus a transparent in-skill heuristic, no panel) so the with-and-without-Gecko decision delta is measurable on the same skill."
+}

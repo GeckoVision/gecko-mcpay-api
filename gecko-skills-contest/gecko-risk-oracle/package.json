@@ -1,0 +1,55 @@
+{
+  "name": "gecko-risk-oracle",
+  "version": "2.0.0",
+  "description": "A grounded, adversarial risk oracle that stops AI trading agents from executing unsafe or hallucinated trades. Three independent lenses \u2014 market structure, security, and portfolio memory \u2014 debate every trade using live OnchainOS data, and a deterministic coordinator returns SAFE, DEFER, or REJECT with surviving dissent and citations, never a black box or a fabricated \"looks fine.\" Covers the full trade lifecycle: pre-trade risk verdict and post-entry stall detection. Use it when an agent or user asks \"is this safe to trade?\", \"should I buy [token]?\", \"check risk for [token]\", \"is [position] stalling?\", or before any swap executes. While other skills accelerate trading, this is the brake that makes them safe to run unattended.",
+  "author": "Gecko",
+  "license": "MIT",
+  "keywords": [
+    "risk-management",
+    "security",
+    "trading-bot",
+    "onchainos",
+    "solana",
+    "ethereum",
+    "guardrails",
+    "defi",
+    "agentic-trading",
+    "safety"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gecko/risk-oracle"
+  },
+  "main": "SKILL.md",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "okx-dex-token": "latest",
+    "okx-dex-market": "latest",
+    "okx-wallet-portfolio": "latest",
+    "okx-security": "latest"
+  },
+  "tags": [
+    "risk-management",
+    "security",
+    "trading-bot",
+    "onchainos",
+    "solana",
+    "ethereum",
+    "guardrails",
+    "defi"
+  ],
+  "triggers": [
+    "Is this safe to trade?",
+    "Check risk for",
+    "Should I buy",
+    "Analyze risk before swapping",
+    "Gecko risk check",
+    "Risk assessment for",
+    "Is this safe?",
+    "Is this position stalling?",
+    "Should I rotate out of",
+    "Manage my open positions"
+  ]
+}
