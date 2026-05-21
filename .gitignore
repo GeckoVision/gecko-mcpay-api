@@ -77,6 +77,7 @@ contest_bot/jto_breakout_gecko_gated_contest_live_ack.jsonl
 .agents/
 .claude/skills/okx-*
 .claude/skills/starter-coach
+.claude/skills/colosseum-copilot
 skills-lock.json
 
 # Contest-bot operator junk — iteration logs, state snapshots, manual
