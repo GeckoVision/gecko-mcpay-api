@@ -312,7 +312,7 @@ class _DashHandler(BaseHTTPRequestHandler):
                 state_positions.append(snap)
             payload = {
                 "mode": "paper" if PAPER_TRADE else "live",
-                "strategy": "jto_breakout_gecko_gated_contest",
+                "strategy": "momentum_studio_bot",
                 "entry_type": ENTRY_TYPE,
                 "sl_pct": STOP_LOSS_PCT,
                 "tp_pct": TAKE_PROFIT_PCT,
@@ -900,6 +900,9 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
                 "cache_age_s": cache_age_s,
                 "protocol": fund_verdict.protocol,
             },
+            # local_decision is always bound here when _LOCAL_PANEL is not None:
+            # it is assigned before this block, and a non-"act" decision returns
+            # earlier — so the panel branch only runs with a real decision.
             decision_id=local_decision.decision_id if _LOCAL_PANEL is not None else None,
         )
         _log(
@@ -1254,7 +1257,7 @@ def main() -> None:
         print("🔴  LIVE MODE — REAL FUNDS AT RISK")
         print("=" * 50)
         print("  Strategy   : My Strategy")
-        print(f"  Per trade  : ${25} USD")
+        print(f"  Per trade  : ${USD_PER_TRADE} USD")
         print(f"  Budget cap : ${MAX_BUDGET_USD} USD")
         print(f"  Stop loss  : -{STOP_LOSS_PCT}%")
         print("\nReal money will be used. Losses are permanent.")
@@ -1275,11 +1278,11 @@ def main() -> None:
 
         _ack = {
             "ts": datetime.utcnow().isoformat(),
-            "strategy": "jto_breakout_gecko_gated_contest",
+            "strategy": "momentum_studio_bot",
             "confirmation": "CONFIRM",
             "budget_cap": MAX_BUDGET_USD,
         }
-        _ack_path = _P(__file__).parent / "jto_breakout_gecko_gated_contest_live_ack.jsonl"
+        _ack_path = _P(__file__).parent / "momentum_studio_bot_live_ack.jsonl"
         with open(_ack_path, "a") as _f:
             _f.write(_json.dumps(_ack) + "\n")
         print("\n✅ Live mode confirmed. Starting bot...\n")
