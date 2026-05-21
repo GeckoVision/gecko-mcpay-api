@@ -288,13 +288,15 @@ def test_memory_voice_warm_start_calls_llm(tmp_path: Path) -> None:
     client = _make_or_client(handler)
     voice = MemoryVoice(client=client)
     mem = LocalMemory(path=tmp_path / "memory_warm.jsonl")
+    # B4 fix: memory_voice reads position_close rows (realized outcomes), NOT
+    # local_decision rows. Writing local_decision rows would hit cold-start.
     for i in range(5):
         mem.append(
-            "local_decision",
+            "position_close",
             {
-                "action": "act" if i < 4 else "decline",
-                "reason": "all_voices_aligned",
-                "market_state": {"instrument": "JTO"},
+                "symbol": "JTO",
+                "pnl_pct": 1.5 if i < 4 else -0.5,
+                "exit_reason": "take_profit" if i < 4 else "stop_loss",
             },
         )
 
@@ -312,8 +314,10 @@ def test_memory_voice_parse_fail_returns_abstain(tmp_path: Path) -> None:
     client = _make_or_client(handler)
     voice = MemoryVoice(client=client)
     mem = LocalMemory(path=tmp_path / "memory_parse.jsonl")
+    # B4 fix: must use position_close rows to reach the LLM/parse path.
+    # local_decision rows are ignored and would trigger cold-start instead.
     for _ in range(5):
-        mem.append("local_decision", {"action": "act"})
+        mem.append("position_close", {"symbol": "JTO", "pnl_pct": 1.0, "exit_reason": "take_profit"})
 
     op = asyncio.run(voice.grade(_healthy_market_state(), mem))
     assert op.verdict == "abstain"
@@ -388,8 +392,13 @@ def test_risk_voice_hourly_pnl_veto_skips_llm(tmp_path: Path) -> None:
     client.aclose()
 
 
-def test_risk_voice_healthy_floor_calls_llm_and_ratifies(tmp_path: Path) -> None:
-    """Healthy floor: the helper says bullish/0.7; LLM ratifies."""
+def test_risk_voice_healthy_floor_returns_bullish_deterministic(tmp_path: Path) -> None:
+    """Healthy floor: deterministic band returns bullish/0.7 without any LLM call.
+
+    2026-05-20 founder patch: risk_voice is now fully deterministic (no LLM
+    ratify). The LLM was over-vetoing on market sentiment. Deterministic veto
+    checks are the correct behavior — market mood reading is chart_analyst's job.
+    """
     calls = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -411,7 +420,8 @@ def test_risk_voice_healthy_floor_calls_llm_and_ratifies(tmp_path: Path) -> None
     op = asyncio.run(voice.grade(_healthy_market_state(), mem))
 
     assert op.verdict == "bullish"
-    assert calls["n"] == 1, "healthy path SHOULD call the LLM"
+    assert op.confidence == pytest.approx(0.70)  # deterministic healthy floor
+    assert calls["n"] == 0, "deterministic path must NOT call the LLM"
     client.aclose()
 
 
@@ -671,8 +681,9 @@ def test_bootstrap_returns_panel_when_env_set(
     mem = LocalMemory(path=tmp_path / "bs_set.jsonl")
     panel = build_local_panel(memory=mem)
     assert isinstance(panel, LocalPanel)
-    # Three voices, in the spec'd order: chart_analyst, memory_voice, risk_voice.
+    # Four voices (B3 added regime_analyst): chart_analyst, memory_voice,
+    # risk_voice, regime_analyst.
     names = [v.voice_name for v in panel._voices]
-    assert names == ["chart_analyst", "memory_voice", "risk_voice"]
+    assert names == ["chart_analyst", "memory_voice", "risk_voice", "regime_analyst"]
     # Coordinator is the imported function.
     assert panel._coordinator is coordinator

@@ -1320,7 +1320,7 @@ def main() -> None:
         print("🔴  LIVE MODE — REAL FUNDS AT RISK")
         print("=" * 50)
         print("  Strategy   : My Strategy")
-        print(f"  Per trade  : ${25} USD")
+        print(f"  Per trade  : ${USD_PER_TRADE} USD")
         print(f"  Budget cap : ${MAX_BUDGET_USD} USD")
         print(f"  Stop loss  : -{STOP_LOSS_PCT}%")
         print("\nReal money will be used. Losses are permanent.")
