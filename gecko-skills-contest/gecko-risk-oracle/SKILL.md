@@ -1,6 +1,6 @@
 ---
 name: gecko-risk-oracle
-description: A grounded, adversarial risk oracle that prevents AI trading agents from hallucinating or executing unsafe trades. Runs a three-lens debate (market structure, security, portfolio memory) and returns SAFE / DEFER / REJECT with surviving dissent and citations — never a black box, never a fabricated "looks fine."
+description: A grounded, adversarial risk oracle that stops AI trading agents from executing unsafe or hallucinated trades. Three independent lenses — market structure, security, and portfolio memory — debate every trade using live OnchainOS data, and a deterministic coordinator returns SAFE, DEFER, or REJECT with surviving dissent and citations, never a black box or a fabricated "looks fine." Covers the full trade lifecycle: pre-trade risk verdict and post-entry stall detection. Use it when an agent or user asks "is this safe to trade?", "should I buy [token]?", "check risk for [token]", "is [position] stalling?", or before any swap executes. While other skills accelerate trading, this is the brake that makes them safe to run unattended.
 version: 2.0.0
 author: Gecko
 tags: [risk-management, security, trading-bot, onchainos, solana, ethereum, guardrails, defi, agentic-trading, safety]
