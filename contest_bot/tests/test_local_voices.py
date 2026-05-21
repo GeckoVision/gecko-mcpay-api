@@ -468,12 +468,12 @@ def test_coordinator_risk_veto_first() -> None:
 def test_coordinator_risk_bearish_below_threshold_does_not_veto() -> None:
     """Rule 1: risk bearish at conf < 0.8 does NOT veto."""
     opinions = [
-        _opinion("chart_analyst", "bullish", 0.7),
+        _opinion("chart_analyst", "bullish", 0.9),  # clears the 0.85 normal floor
         _opinion("memory_voice", "neutral", 0.5),
-        _opinion("risk_voice", "bearish", 0.5),  # below threshold
+        _opinion("risk_voice", "bearish", 0.5),  # below veto threshold
     ]
     action, reason = coordinator(opinions)
-    # Should fall through Rule 1; chart is bullish so all_voices_aligned.
+    # Should fall through Rule 1; chart is bullish above floor so it acts.
     assert action == "act"
     assert reason == "all_voices_aligned"
 
@@ -491,9 +491,13 @@ def test_coordinator_chart_not_bullish_declines() -> None:
 
 
 def test_coordinator_chart_confidence_below_threshold_declines() -> None:
-    """Rule 2: chart bullish but confidence < 0.6 declines."""
+    """Rule 3 (normal floor): chart bullish but confidence < 0.85 declines.
+
+    Locks the v2 floor (raised from 0.6 in B6): a 0.8 chart that would
+    have acted under v1 now declines — only the cleanest momentum passes.
+    """
     opinions = [
-        _opinion("chart_analyst", "bullish", 0.55),
+        _opinion("chart_analyst", "bullish", 0.8),  # between old 0.6 and new 0.85
         _opinion("memory_voice", "bullish", 0.8),
         _opinion("risk_voice", "bullish", 0.7),
     ]
@@ -503,9 +507,9 @@ def test_coordinator_chart_confidence_below_threshold_declines() -> None:
 
 
 def test_coordinator_memory_contradicts_declines() -> None:
-    """Rule 3: memory bearish at >= 0.6 declines."""
+    """Rule 4: memory bearish at >= 0.6 declines (chart must first clear floor)."""
     opinions = [
-        _opinion("chart_analyst", "bullish", 0.7),
+        _opinion("chart_analyst", "bullish", 0.9),
         _opinion("memory_voice", "bearish", 0.7),
         _opinion("risk_voice", "bullish", 0.7),
     ]
@@ -515,9 +519,9 @@ def test_coordinator_memory_contradicts_declines() -> None:
 
 
 def test_coordinator_memory_bearish_below_threshold_passes() -> None:
-    """Rule 3: memory bearish at conf < 0.6 does NOT decline."""
+    """Rule 4: memory bearish at conf < 0.6 does NOT decline."""
     opinions = [
-        _opinion("chart_analyst", "bullish", 0.7),
+        _opinion("chart_analyst", "bullish", 0.9),
         _opinion("memory_voice", "bearish", 0.5),
         _opinion("risk_voice", "bullish", 0.7),
     ]
@@ -529,7 +533,7 @@ def test_coordinator_memory_bearish_below_threshold_passes() -> None:
 def test_coordinator_memory_abstain_passes() -> None:
     """Memory abstain (cold start) should NOT block."""
     opinions = [
-        _opinion("chart_analyst", "bullish", 0.7),
+        _opinion("chart_analyst", "bullish", 0.9),
         _opinion("memory_voice", "abstain", 0.0),
         _opinion("risk_voice", "bullish", 0.7),
     ]
@@ -539,9 +543,9 @@ def test_coordinator_memory_abstain_passes() -> None:
 
 
 def test_coordinator_all_aligned_acts() -> None:
-    """Else branch: all gates pass → act."""
+    """Else branch: all gates pass (chart above 0.85 floor) → act."""
     opinions = [
-        _opinion("chart_analyst", "bullish", 0.75),
+        _opinion("chart_analyst", "bullish", 0.9),
         _opinion("memory_voice", "neutral", 0.6),
         _opinion("risk_voice", "bullish", 0.7),
     ]
@@ -562,9 +566,9 @@ def test_coordinator_missing_chart_voice_declines() -> None:
 
 
 def test_coordinator_missing_memory_voice_falls_through() -> None:
-    """Missing memory voice should be treated as abstain — rule 3 does not fire."""
+    """Missing memory voice should be treated as abstain — rule 4 does not fire."""
     opinions = [
-        _opinion("chart_analyst", "bullish", 0.7),
+        _opinion("chart_analyst", "bullish", 0.9),
         _opinion("risk_voice", "bullish", 0.7),
     ]
     action, reason = coordinator(opinions)
@@ -575,8 +579,69 @@ def test_coordinator_missing_memory_voice_falls_through() -> None:
 def test_coordinator_missing_risk_voice_does_not_veto() -> None:
     """Missing risk voice should be treated as abstain — rule 1 cannot veto."""
     opinions = [
-        _opinion("chart_analyst", "bullish", 0.7),
+        _opinion("chart_analyst", "bullish", 0.9),
         _opinion("memory_voice", "neutral", 0.5),
+    ]
+    action, reason = coordinator(opinions)
+    assert action == "act"
+    assert reason == "all_voices_aligned"
+
+
+# ── coordinator: B6 regime gate-modulator ─────────────────────────────
+def test_coordinator_chop_raises_floor_declines() -> None:
+    """B6: a confirmed-chop regime raises the chart floor to 0.92.
+
+    A 0.88 chart that acts in trend/neutral must DECLINE in chop —
+    breakout is -EV in chop, so we demand only the cleanest setups.
+    """
+    opinions = [
+        _opinion("chart_analyst", "bullish", 0.88),
+        _opinion("memory_voice", "neutral", 0.5),
+        _opinion("risk_voice", "bullish", 0.7),
+        _opinion("regime_analyst", "bearish", 0.7),  # confident chop
+    ]
+    action, reason = coordinator(opinions)
+    assert action == "decline"
+    assert reason == "chop_below_high_bar"
+
+
+def test_coordinator_chop_high_conviction_acts() -> None:
+    """B6: a chop regime still ACTS when chart clears the 0.92 chop floor."""
+    opinions = [
+        _opinion("chart_analyst", "bullish", 0.95),
+        _opinion("memory_voice", "neutral", 0.5),
+        _opinion("risk_voice", "bullish", 0.7),
+        _opinion("regime_analyst", "bearish", 0.7),  # confident chop
+    ]
+    action, reason = coordinator(opinions)
+    assert action == "act"
+    assert reason == "chop_high_conviction"
+
+
+def test_coordinator_trend_uses_normal_floor_acts() -> None:
+    """B6: a trend regime uses the normal 0.85 floor — 0.88 acts."""
+    opinions = [
+        _opinion("chart_analyst", "bullish", 0.88),
+        _opinion("memory_voice", "neutral", 0.5),
+        _opinion("risk_voice", "bullish", 0.7),
+        _opinion("regime_analyst", "bullish", 0.7),  # trend
+    ]
+    action, reason = coordinator(opinions)
+    assert action == "act"
+    assert reason == "all_voices_aligned"
+
+
+def test_coordinator_unconfident_chop_uses_normal_floor() -> None:
+    """B6: regime must be >= 0.6 confident it's chop to raise the bar.
+
+    A low-confidence chop call (0.4) does NOT raise the floor — 0.88 acts
+    on the normal 0.85 floor.
+    """
+    opinions = [
+        _opinion("chart_analyst", "bullish", 0.88),
+        _opinion("memory_voice", "neutral", 0.5),
+        _opinion("risk_voice", "bullish", 0.7),
+        _opinion("regime_analyst", "bearish", 0.4),  # not confident enough
     ]
     action, reason = coordinator(opinions)
     assert action == "act"
