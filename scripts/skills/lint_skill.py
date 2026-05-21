@@ -113,9 +113,13 @@ def lint(skill_dir: Path) -> int:
             r.warn(f"Check 4: {d}/ present (guideline)", "absent — guideline, not a gate")
 
     # Check 5 — no phantom OKX skill references
+    # Scan only the body (after frontmatter) so the skill's own `name:` line
+    # doesn't produce a false-positive match (e.g. gecko-okx-* → okx-*).
     deps = fm.get("dependencies", [])
     deps = deps if isinstance(deps, list) else [deps]
-    body_refs = set(re.findall(r"\bokx-[a-z0-9-]+\b", text))
+    fm_match = re.match(r"^---\s*\n.*?\n---\s*\n", text, re.S)
+    body_text = text[fm_match.end():] if fm_match else text
+    body_refs = set(re.findall(r"\bokx-[a-z0-9-]+\b", body_text))
     referenced = {str(d).strip() for d in deps if str(d).strip()} | body_refs
     phantom = sorted(s for s in referenced if s.startswith("okx-") and s not in KNOWN_OKX_SKILLS)
     r.gate(not phantom, "Check 5: no phantom OKX skill references",

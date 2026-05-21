@@ -77,6 +77,7 @@ contest_bot/jto_breakout_gecko_gated_contest_live_ack.jsonl
 .agents/
 .claude/skills/okx-*
 .claude/skills/starter-coach
+.claude/skills/colosseum-copilot
 skills-lock.json
 
 # Contest-bot operator junk — iteration logs, state snapshots, manual
@@ -91,3 +92,16 @@ contest_bot/poll_telemetry_*.jsonl
 # OKX example skills pulled down for reference (kline-indicator,
 # market-intel). Context-feed material, not source we maintain.
 skills_example/
+
+# gecko-okx-quickstart skill — runtime artifacts (same shape as contest_bot)
+gecko-okx-quickstart/bot_state.json
+gecko-okx-quickstart/bot_state.json.tmp
+gecko-okx-quickstart/circuit_breaker_state.json
+gecko-okx-quickstart/local_memory.jsonl
+gecko-okx-quickstart/*.log
+gecko-okx-quickstart/*_live_ack.jsonl
+gecko-okx-quickstart/poll_telemetry_*.jsonl
+gecko-okx-quickstart/artifact_*.jsonl
+gecko-okx-quickstart/__pycache__/
+gecko-okx-quickstart/**/__pycache__/
+gecko-okx-quickstart/.env

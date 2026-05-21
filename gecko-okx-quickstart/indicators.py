@@ -1,0 +1,189 @@
+"""Shared technical indicators — pure Python, computed from DEX candles.
+
+B1 (S40 Track B). The OKX 80-indicator API is CEX-only and not callable
+from this bot's runtime, so we compute indicators in Python from the same
+5m candles the bot already fetches via onchainos (DEX). These functions are
+the single source of truth shared by the live bot's voices AND
+backtest_entry.py.
+
+Candles are ASCENDING (oldest-first) — get_candles sorts them (iter-3.11
+fix). All series functions return a list aligned to the input, with `None`
+during the warmup window.
+
+`compute_latest(candles)` is the per-poll convenience: returns the latest
+indicator snapshot a voice reasons over (adx, rsi, mfi, ema50, atr, bb).
+"""
+
+from __future__ import annotations
+
+
+def ema(vals: list[float], n: int) -> list[float | None]:
+    if len(vals) < n:
+        return [None] * len(vals)
+    k = 2 / (n + 1)
+    out: list[float | None] = [None] * (n - 1)
+    seed = sum(vals[:n]) / n
+    out.append(seed)
+    for v in vals[n:]:
+        out.append(out[-1] * (1 - k) + v * k)  # type: ignore[operator]
+    return out
+
+
+def rsi(closes: list[float], n: int = 14) -> list[float | None]:
+    out: list[float | None] = [None] * len(closes)
+    if len(closes) <= n:
+        return out
+    gains, losses = [], []
+    for i in range(1, len(closes)):
+        d = closes[i] - closes[i - 1]
+        gains.append(max(d, 0.0))
+        losses.append(max(-d, 0.0))
+    avg_g = sum(gains[:n]) / n
+    avg_l = sum(losses[:n]) / n
+    for i in range(n, len(closes)):
+        if i > n:
+            avg_g = (avg_g * (n - 1) + gains[i - 1]) / n
+            avg_l = (avg_l * (n - 1) + losses[i - 1]) / n
+        rs = avg_g / avg_l if avg_l > 0 else float("inf")
+        out[i] = 100.0 if avg_l == 0 else 100 - (100 / (1 + rs))
+    return out
+
+
+def _wilder_smooth(vals: list[float], n: int) -> list[float | None]:
+    out: list[float | None] = [None] * len(vals)
+    if len(vals) < n:
+        return out
+    s = sum(vals[:n])
+    out[n - 1] = s
+    for i in range(n, len(vals)):
+        s = s - (s / n) + vals[i]
+        out[i] = s
+    return out
+
+
+def adx(highs: list[float], lows: list[float], closes: list[float], n: int = 14) -> list[float | None]:
+    m = len(closes)
+    out: list[float | None] = [None] * m
+    if m < 2 * n:
+        return out
+    tr, plus_dm, minus_dm = [0.0], [0.0], [0.0]
+    for i in range(1, m):
+        up = highs[i] - highs[i - 1]
+        dn = lows[i - 1] - lows[i]
+        plus_dm.append(up if (up > dn and up > 0) else 0.0)
+        minus_dm.append(dn if (dn > up and dn > 0) else 0.0)
+        tr.append(max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])))
+    atr_s = _wilder_smooth(tr, n)
+    pdm_s = _wilder_smooth(plus_dm, n)
+    mdm_s = _wilder_smooth(minus_dm, n)
+    dx: list[float | None] = [None] * m
+    for i in range(m):
+        if atr_s[i] and atr_s[i] != 0 and pdm_s[i] is not None and mdm_s[i] is not None:
+            pdi = 100 * pdm_s[i] / atr_s[i]
+            mdi = 100 * mdm_s[i] / atr_s[i]
+            dx[i] = 100 * abs(pdi - mdi) / (pdi + mdi) if (pdi + mdi) > 0 else 0.0
+    first = next((i for i, v in enumerate(dx) if v is not None), None)
+    if first is None or first + n > m:
+        return out
+    seed = sum(v for v in dx[first : first + n] if v is not None) / n  # type: ignore[arg-type]
+    out[first + n - 1] = seed
+    for i in range(first + n, m):
+        if dx[i] is not None:
+            out[i] = (out[i - 1] * (n - 1) + dx[i]) / n  # type: ignore[operator]
+    return out
+
+
+def mfi(highs, lows, closes, vols, n: int = 14) -> list[float | None]:
+    m = len(closes)
+    out: list[float | None] = [None] * m
+    if m <= n:
+        return out
+    tp = [(highs[i] + lows[i] + closes[i]) / 3 for i in range(m)]
+    pos, neg = [0.0], [0.0]
+    for i in range(1, m):
+        rmf = tp[i] * vols[i]
+        if tp[i] > tp[i - 1]:
+            pos.append(rmf)
+            neg.append(0.0)
+        elif tp[i] < tp[i - 1]:
+            pos.append(0.0)
+            neg.append(rmf)
+        else:
+            pos.append(0.0)
+            neg.append(0.0)
+    for i in range(n, m):
+        p = sum(pos[i - n + 1 : i + 1])
+        ng = sum(neg[i - n + 1 : i + 1])
+        out[i] = 100.0 if ng == 0 else 100 - (100 / (1 + p / ng))
+    return out
+
+
+def atr(highs: list[float], lows: list[float], closes: list[float], n: int = 14) -> list[float | None]:
+    m = len(closes)
+    out: list[float | None] = [None] * m
+    if m <= n:
+        return out
+    tr = [0.0]
+    for i in range(1, m):
+        tr.append(max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])))
+    seed = sum(tr[1 : n + 1]) / n
+    out[n] = seed
+    for i in range(n + 1, m):
+        out[i] = (out[i - 1] * (n - 1) + tr[i]) / n  # type: ignore[operator]
+    return out
+
+
+def bb(closes: list[float], n: int = 20, k: float = 2.0) -> tuple[list[float | None], list[float | None], list[float | None]]:
+    m = len(closes)
+    lower: list[float | None] = [None] * m
+    mid: list[float | None] = [None] * m
+    upper: list[float | None] = [None] * m
+    if m < n:
+        return lower, mid, upper
+    for i in range(n - 1, m):
+        window = closes[i - n + 1 : i + 1]
+        sma = sum(window) / n
+        var = sum((x - sma) ** 2 for x in window) / n
+        sd = var ** 0.5
+        mid[i] = sma
+        lower[i] = sma - k * sd
+        upper[i] = sma + k * sd
+    return lower, mid, upper
+
+
+def compute_latest(candles: list[dict]) -> dict:
+    """Per-poll snapshot of the latest indicator values from a candle list
+    (ascending, dicts with open/high/low/close/volume). Returns a dict the
+    voices reason over; values are None when not enough warmup. bb_width is
+    the band width as a % of mid (a volatility-compression / regime cue)."""
+    if not candles:
+        return {}
+    highs = [c["high"] for c in candles]
+    lows = [c["low"] for c in candles]
+    closes = [c["close"] for c in candles]
+    vols = [c.get("volume", 0.0) for c in candles]
+
+    def _last(series: list) -> float | None:
+        return next((v for v in reversed(series) if v is not None), None)
+
+    bl, bm, bu = bb(closes, 20, 2.0)
+    bl_v, bm_v, bu_v = _last(bl), _last(bm), _last(bu)
+    bb_width = ((bu_v - bl_v) / bm_v * 100) if (bl_v is not None and bu_v is not None and bm_v) else None
+
+    return {
+        "price": closes[-1] if closes else None,
+        "adx": _last(adx(highs, lows, closes, 14)),
+        "rsi": _last(rsi(closes, 14)),
+        "mfi": _last(mfi(highs, lows, closes, vols, 14)),
+        "ema9": _last(ema(closes, 9)),
+        "ema21": _last(ema(closes, 21)),
+        "ema50": _last(ema(closes, 50)),
+        "atr": _last(atr(highs, lows, closes, 14)),
+        "bb_lower": bl_v,
+        "bb_mid": bm_v,
+        "bb_upper": bu_v,
+        "bb_width": bb_width,
+    }
+
+
+__all__ = ["ema", "rsi", "adx", "mfi", "atr", "bb", "compute_latest"]
