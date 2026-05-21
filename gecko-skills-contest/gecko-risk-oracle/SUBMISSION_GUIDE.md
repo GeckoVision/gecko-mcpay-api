@@ -1,7 +1,7 @@
 # OKX Agentic Trading Contest - Submission Guide
 
 ## Overview
-This guide explains how to submit the GeckoVision Risk Oracle skill to the OKX Plugin Store for the Agentic Trading Contest. The skill has been optimized to score highly on both the AI and Human judging criteria.
+This guide explains how to submit the Gecko Risk Oracle skill to the OKX Plugin Store for the Agentic Trading Contest. The skill has been optimized to score highly on both the AI and Human judging criteria.
 
 ## Scoring Optimization Checklist
 
@@ -25,19 +25,19 @@ This guide explains how to submit the GeckoVision Risk Oracle skill to the OKX P
    ```
 
 2. **Copy the Skill Files:**
-   Copy the entire `geckovision-risk-oracle` folder into the `skills/` directory of the cloned repo.
+   Copy the entire `gecko-risk-oracle` folder into the `skills/` directory of the cloned repo.
 
 3. **Test Locally (Optional but Recommended):**
    If you have the OnchainOS CLI installed, test the skill locally:
    ```bash
-   npx skills add ./skills/geckovision-risk-oracle
+   npx skills add ./skills/gecko-risk-oracle
    ```
    Ask your agent: "Should I buy 1000 USDC of SOL?" and verify it uses the skill.
 
 4. **Create a Pull Request:**
    - Commit your changes and push to your fork.
    - Open a Pull Request against the `okx/plugin-store-community` repository.
-   - Title the PR: `feat: add geckovision-risk-oracle skill`
+   - Title the PR: `feat: add gecko-risk-oracle skill`
    - In the PR description, mention that this is a submission for the Agentic Trading Contest.
 
 5. **Register for the Contest:**

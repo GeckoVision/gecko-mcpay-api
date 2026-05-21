@@ -1,15 +1,15 @@
 ---
-name: geckovision-risk-oracle
+name: gecko-risk-oracle
 description: A grounded, adversarial risk oracle that prevents AI trading agents from hallucinating or executing unsafe trades. Runs a three-lens debate (market structure, security, portfolio memory) and returns SAFE / DEFER / REJECT with surviving dissent and citations — never a black box, never a fabricated "looks fine."
 version: 2.0.0
-author: GeckoVision
+author: Gecko
 tags: [risk-management, security, trading-bot, onchainos, solana, ethereum, guardrails, defi, agentic-trading, safety]
 triggers:
   - "Is this safe to trade?"
   - "Check risk for [token]"
   - "Should I buy [token]?"
   - "Analyze risk before swapping"
-  - "GeckoVision risk check"
+  - "Gecko risk check"
   - "Risk assessment for [token]"
   - "Is [token] safe?"
   - "Is [position] stalling?"
@@ -22,7 +22,7 @@ dependencies:
   - okx-security
 ---
 
-# GeckoVision Risk Oracle
+# Gecko Risk Oracle
 
 > The safety layer for agentic trading. Before any swap executes, three
 > independent lenses debate the trade and a deterministic coordinator
@@ -47,7 +47,7 @@ one skill that makes all the others safe to run unattended.
 
 **The core principle: abstain, do not fabricate.** When evidence is thin,
 the oracle returns DEFER or REJECT — it never invents a green light. This
-discipline is not theoretical: GeckoVision's own trading agent ran live on
+discipline is not theoretical: Gecko's own trading agent ran live on
 the OKX Agentic Trading Contest and declined dozens of low-conviction
 candidates in a row rather than force a trade, while the trades it *did*
 take closed positive. The brake is the product.
@@ -57,11 +57,11 @@ take closed positive. The brake is the product.
 Most "risk check" skills are a single threshold table: liquidity < X →
 reject. That is table stakes — anyone can write it, and a single lens is
 exactly how agents get fooled (a token can have deep liquidity *and* be a
-honeypot). GeckoVision runs an **adversarial panel**: three lenses analyze
+honeypot). Gecko runs an **adversarial panel**: three lenses analyze
 the same trade independently, are allowed to disagree, and a fixed
 coordinator rule — not a vibe — turns their dissent into a verdict.
 
-| Generic risk skill | GeckoVision Risk Oracle |
+| Generic risk skill | Gecko Risk Oracle |
 |---|---|
 | One threshold table | **Three adversarial lenses** that can veto each other |
 | On-chain metrics only | On-chain data **+ investor-canon principles**, both cited |
@@ -247,8 +247,8 @@ exist where it should is a typo or a scam.
 ## Integration with OnchainOS
 Sits between research and execution in any trading flow:
 ```
-okx-dex-token → okx-dex-market → [GECKOVISION RISK CHECK] → okx-dex-swap
-okx-dex-signal (smart money) → okx-dex-token → [GECKOVISION RISK CHECK] → okx-dex-swap
+okx-dex-token → okx-dex-market → [GECKO RISK CHECK] → okx-dex-swap
+okx-dex-signal (smart money) → okx-dex-token → [GECKO RISK CHECK] → okx-dex-swap
 ```
 - **SAFE** → continue to `okx-dex-swap`
 - **DEFER** → confirm with user, surfacing dissent
@@ -260,7 +260,7 @@ The oracle's job doesn't end at entry. The most common silent loss in
 agentic trading isn't a scam — it's the **stall**: a position that climbs
 +1–2%, fades, and oscillates in that band for hours without hitting a
 take-profit or a stop-loss. It binds a slot at near-zero forward
-expectancy while better setups go untaken. GeckoVision flags it.
+expectancy while better setups go untaken. Gecko flags it.
 
 **Trigger:** "Is [position] stalling?", "Should I rotate out of [token]?",
 "Manage my open positions", or any post-entry check on a held position.
@@ -298,7 +298,7 @@ gate on "a better seat is available," never on "this seat is mediocre."
 }
 ```
 
-**Provenance:** this rule is not theoretical — GeckoVision's live contest
+**Provenance:** this rule is not theoretical — Gecko's live contest
 agent watched the same token stall in the +1–2% band twice (3h+ each)
 before this detector was added, and the simple time+structure heuristic
 above was falsified against the live trade log: it fires on the stalls and
@@ -314,7 +314,7 @@ the **pre-trade verdict** and the **post-entry stall check** are metered
 calls — the oracle covers the full trade lifecycle, entry to exit.
 
 ## Provenance
-GeckoVision built and ran a live trading agent on the OKX Agentic Trading
+Gecko built and ran a live trading agent on the OKX Agentic Trading
 Contest using this exact discipline — adversarial lenses, a deterministic
 coordinator, and abstain-not-fabricate. The agent declined far more
 candidates than it took, and its real on-chain trades closed net positive.

@@ -1,0 +1,55 @@
+{
+  "name": "gecko-risk-oracle",
+  "version": "2.0.0",
+  "description": "A grounded, adversarial risk oracle that prevents AI trading agents from hallucinating or executing unsafe trades. Runs a three-lens debate (market structure, security, portfolio memory) and returns SAFE / DEFER / REJECT with surviving dissent and citations.",
+  "author": "Gecko",
+  "license": "MIT",
+  "keywords": [
+    "risk-management",
+    "security",
+    "trading-bot",
+    "onchainos",
+    "solana",
+    "ethereum",
+    "guardrails",
+    "defi",
+    "agentic-trading",
+    "safety"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gecko/risk-oracle"
+  },
+  "main": "SKILL.md",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "okx-dex-token": "latest",
+    "okx-dex-market": "latest",
+    "okx-wallet-portfolio": "latest",
+    "okx-security": "latest"
+  },
+  "tags": [
+    "risk-management",
+    "security",
+    "trading-bot",
+    "onchainos",
+    "solana",
+    "ethereum",
+    "guardrails",
+    "defi"
+  ],
+  "triggers": [
+    "Is this safe to trade?",
+    "Check risk for",
+    "Should I buy",
+    "Analyze risk before swapping",
+    "Gecko risk check",
+    "Risk assessment for",
+    "Is this safe?",
+    "Is this position stalling?",
+    "Should I rotate out of",
+    "Manage my open positions"
+  ]
+}
