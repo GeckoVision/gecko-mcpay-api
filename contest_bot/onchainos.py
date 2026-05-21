@@ -598,7 +598,16 @@ class OnchainOS:
         """
         onchainos wallet balance --chain <chainId> [--force]
         Returns all token balances for the active wallet on this chain.
-        Each item: {tokenAddress, symbol, balance, balanceUsd, ...}
+        Each item normalized to: {tokenAddress, symbol, balance, balanceUsd, ...}
+
+        iter-3.6 live 2026-05-20 — fixed nested-response parse. Current OKX
+        OnchainOS CLI returns:
+            data.details[*].tokenAssets[*] → flat list of token rows
+        with fields {symbol, balance, usdValue, tokenAddress, ...}.
+        Old wrapper looked for flat data.balances/data/assets and fell
+        through to []. That made the bot see $0 balance for everything,
+        which caused close_position to skip the exit swap (bal>0 check),
+        which left PYTH stranded in the wallet after stall_green_exit.
         """
         args = ["wallet", "balance", "--chain", self.chain_id]
         if force:
@@ -606,8 +615,25 @@ class OnchainOS:
         data = _run_cli(*args)
         if "error" in data:
             return []
-        # Normalize response
-        balances = data.get("balances", data.get("data", data.get("assets", [])))
+
+        # New nested shape (current CLI)
+        out: list[dict[str, Any]] = []
+        details = (data.get("data") or {}).get("details") or []
+        if isinstance(details, list):
+            for det in details:
+                token_assets = det.get("tokenAssets") or []
+                if isinstance(token_assets, list):
+                    for t in token_assets:
+                        if isinstance(t, dict):
+                            # Normalize CLI field names to the wrapper's
+                            # historical contract (balanceUsd, balance, symbol).
+                            normalized = dict(t)
+                            normalized.setdefault("balanceUsd", t.get("usdValue", 0))
+                            out.append(normalized)
+            return out
+
+        # Fallback: old flat shape (just in case CLI flips back)
+        balances = data.get("balances", data.get("assets", []))
         if isinstance(balances, list):
             return balances
         return []
@@ -616,6 +642,11 @@ class OnchainOS:
         """
         onchainos wallet balance --chain <chainId> --token-address <addr>
         Returns balance amount for a specific token. 0.0 if not held.
+
+        iter-3.6 live 2026-05-20: fixed nested-response parse. Same root
+        cause as get_all_balances — CLI returns data.details[].tokenAssets[]
+        not a flat balance field. PYTH stranded-in-wallet bug came from
+        this returning 0.0 even when the wallet held 1077 PYTH.
         """
         args = [
             "wallet", "balance",
@@ -627,7 +658,28 @@ class OnchainOS:
         data = _run_cli(*args)
         if "error" in data:
             return 0.0
-        # Parse balance from response
+
+        # New nested shape (current CLI): walk into data.details[].tokenAssets[].
+        details = (data.get("data") or {}).get("details") or []
+        if isinstance(details, list):
+            for det in details:
+                token_assets = det.get("tokenAssets") or []
+                if isinstance(token_assets, list):
+                    for t in token_assets:
+                        if not isinstance(t, dict):
+                            continue
+                        addr = t.get("tokenAddress") or ""
+                        # Match by address (case-insensitive — Solana mints
+                        # are usually case-sensitive but tolerate variation).
+                        if addr.lower() == token_address.lower():
+                            try:
+                                return float(t.get("balance") or 0)
+                            except (TypeError, ValueError):
+                                return 0.0
+            # Found the response but no matching token — wallet doesn't hold it.
+            return 0.0
+
+        # Fallback: old flat shape (just in case CLI flips back)
         bal = data.get("balance", data.get("amount", 0))
         if isinstance(bal, (int, float)):
             return float(bal)
