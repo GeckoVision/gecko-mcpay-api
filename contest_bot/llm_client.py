@@ -138,12 +138,23 @@ class OpenRouterClient:
         messages: list[dict[str, Any]],
         response_format: dict[str, Any] | None = None,
         temperature: float = 0.0,
+        max_tokens: int = 400,
     ) -> LLMResponse:
-        """Run one chat completion. Raises on unrecoverable failure."""
+        """Run one chat completion. Raises on unrecoverable failure.
+
+        max_tokens defaults to 400 (2026-05-21): the voices return a small
+        JSON verdict (~300 tokens). Without a cap, OpenRouter reserves the
+        model's full context (16384 for gpt-4o-mini) against your credit
+        balance and 402s on a low balance even though the actual response is
+        tiny. Capping keeps voice calls cheap AND affordable on low credits
+        (confirmed: 800 still 402s on a near-empty balance, 400 succeeds).
+        Raise this once OpenRouter credits are topped up if voices truncate.
+        """
         body: dict[str, Any] = {
             "model": model,
             "messages": messages,
             "temperature": temperature,
+            "max_tokens": max_tokens,
         }
         if response_format is not None:
             body["response_format"] = response_format
