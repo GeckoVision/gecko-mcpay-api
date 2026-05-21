@@ -137,9 +137,9 @@ INSTRUMENTS: list[dict] = [
 
 ENTRY_PARAMS = {
     "direction": "up",
-    "lookback_bars": 4,
-    "confirm_pct": 0.2,
-}  # ⚠ TEST-MODE LOOSEN (was 24, 1.0) — feed voices more candidate signals; voices are the real gate now. REVERT before live flip
+    "lookback_bars": 24,
+    "confirm_pct": 1.5,
+}  # iter-3.10 2026-05-21: REVERTED the test-mode loosening that was wrongly shipped live (was 4, 0.2 — a 0.2% breakout over a 20-min high = noise; we were buying micro-pops that immediately mean-reverted, which is why entries kept stalling — BONK/BOME both peaked within minutes of entry then faded). Now: close must clear the prior 2-HOUR high (24×5m bars) by ≥1.5% — a real breakout, not a noise wiggle. Founder caught this by observing we enter at exhausted micro-tops. Stronger than the original 1.0 confirm per founder. Fewer, higher-conviction entries.
 
 # ── volume_spike entry primitive (s40-lab-#5) ──────────────────────
 # Fires when the most recent bar's volume exceeds median(last N bars) * mult.
