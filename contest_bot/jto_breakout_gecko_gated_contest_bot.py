@@ -978,10 +978,48 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
 
 
 def close_position(pos: dict, reason: str, current_price: float) -> None:
-    global consec_losses, realized_pnl_today, wins_today, losses_today
+    global consec_losses, realized_pnl_today, wins_today, losses_today, total_spent_usd
     ep = pos["entry_price"]
-    pnl_pct = (current_price - ep) / ep * 100 if ep else 0.0
-    pnl_usd = pos["usd"] * pnl_pct / 100
+    cost_usd = float(pos.get("usd") or 0)
+    # Oracle-price estimate — used for PAPER mode and as a pre-swap log hint.
+    est_pnl_pct = (current_price - ep) / ep * 100 if ep else 0.0
+    est_pnl_usd = cost_usd * est_pnl_pct / 100
+
+    # iter-3.7 live 2026-05-20: for LIVE positions, execute the exit swap
+    # FIRST and compute realized PnL from the ACTUAL USDC received
+    # (swap.to_amount_raw), not the oracle price. The oracle can flash a
+    # spiky tick (WIF flashed +6.2% but really filled +0.45%); booking the
+    # oracle reading inflated dashboard PnL ~3.5x vs the real wallet.
+    pnl_usd = est_pnl_usd
+    pnl_pct = est_pnl_pct
+    exit_tx = ""
+    if not PAPER_TRADE and pos.get("mode") == "live":
+        usdc = _usdc_address()
+        bal = oc.get_token_balance(pos["token"])
+        if bal > 0 and usdc:
+            result = oc.swap_execute(pos["token"], usdc, str(bal), WALLET_ADDRESS)
+            if result.ok:
+                exit_tx = result.tx_hash
+                # Real USDC received = to_amount_raw / 10^to_decimals.
+                try:
+                    if result.to_amount_raw and result.to_decimals:
+                        usdc_received = float(result.to_amount_raw) / (10 ** result.to_decimals)
+                        pnl_usd = round(usdc_received - cost_usd, 4)
+                        pnl_pct = round(pnl_usd / cost_usd * 100, 2) if cost_usd else 0.0
+                    else:
+                        # Swap ok but no amount returned — fall back to oracle
+                        # estimate and flag it for the audit log.
+                        print("   [WARN] swap ok but to_amount missing — using oracle estimate")
+                except (TypeError, ValueError, ZeroDivisionError):
+                    print("   [WARN] could not parse swap fill — using oracle estimate")
+                print(f"   exit tx: {exit_tx[:16]}... | real fill PnL ${pnl_usd:+.2f}")
+            else:
+                # Exit swap FAILED — do NOT mark the position closed. Leave it
+                # open so the next monitor tick retries. Booking a close here
+                # would strand the token in the wallet (the PYTH bug).
+                print(f"   [ERROR] Exit swap failed: {result.error} — position stays OPEN for retry")
+                return
+
     pos.update(
         {
             "status": "closed",
@@ -990,6 +1028,7 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
             "exit_reason": reason,
             "pnl_pct": round(pnl_pct, 2),
             "pnl_usd": round(pnl_usd, 2),
+            "exit_tx": exit_tx,
         }
     )
     consec_losses = consec_losses + 1 if pnl_pct < 0 else 0
@@ -1000,6 +1039,10 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
         wins_today += 1
     elif pnl_usd < 0:
         losses_today += 1
+    # iter-3.7: free the budget the closed position was holding so new
+    # entries can fire (was the stuck-at-$90 budget-cap bug).
+    if pos.get("mode") == "live":
+        total_spent_usd = round(max(0.0, total_spent_usd - cost_usd), 4)
     icon = "📗" if pnl_pct >= 0 else "📕"
     _log(
         "sell",
@@ -1016,20 +1059,11 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
             "exit_reason": reason,
             "pnl_pct": round(pnl_pct, 2),
             "pnl_usd": round(pnl_usd, 2),
+            "exit_tx": exit_tx,
         },
         decision_id=pos.get("gate_decision_id"),
     )
     _persist_state()
-
-    if not PAPER_TRADE and pos.get("mode") == "live":
-        usdc = _usdc_address()
-        bal = oc.get_token_balance(pos["token"])
-        if bal > 0 and usdc:
-            result = oc.swap_execute(pos["token"], usdc, str(bal), WALLET_ADDRESS)
-            if result.ok:
-                print(f"   exit tx: {result.tx_hash[:16]}...")
-            else:
-                print(f"   [ERROR] Exit swap failed: {result.error}")
 
 
 # ── Monitor open positions ─────────────────────────────────────────

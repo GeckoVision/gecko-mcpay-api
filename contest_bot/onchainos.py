@@ -84,6 +84,10 @@ class SwapResult:
     from_token: str = ""
     to_token: str = ""
     amount: str = ""
+    # iter-3.7 live 2026-05-20: capture the actual output amount so callers
+    # can compute REAL realized PnL from the fill, not the oracle price.
+    to_amount_raw: str = ""  # minimal units (lamports/wei) of to_token received
+    to_decimals: int = 0  # decimals of to_token, for converting to_amount_raw
 
 
 def _run_cli(*args: str, timeout: int = 30) -> dict[str, Any]:
@@ -540,12 +544,28 @@ class OnchainOS:
         data = _run_cli(*args, timeout=60)
         if "error" in data:
             return SwapResult(ok=False, error=data["error"])
+        # iter-3.7 live 2026-05-20: real CLI response is nested under
+        # data.data — {swapTxHash, toAmount, toToken.decimal, ...}. The old
+        # wrapper read top-level data.txHash (always absent → empty tx_hash)
+        # and never captured toAmount, so callers couldn't compute real PnL.
+        inner = data.get("data") if isinstance(data.get("data"), dict) else {}
+        # ok=false swaps (e.g. AccountNotFound, simulation failed) come back
+        # as {"ok": false, "error": "..."} — surface as a failed result.
+        if data.get("ok") is False:
+            return SwapResult(ok=False, error=str(data.get("error") or "swap returned ok=false"))
+        to_tok = inner.get("toToken") or {}
+        try:
+            to_dec = int(to_tok.get("decimal") or 0)
+        except (TypeError, ValueError):
+            to_dec = 0
         return SwapResult(
             ok=True,
-            tx_hash=data.get("txHash", data.get("tx_hash", "")),
+            tx_hash=inner.get("swapTxHash") or data.get("txHash") or data.get("tx_hash") or "",
             from_token=from_token,
             to_token=to_token,
             amount=readable_amount,
+            to_amount_raw=str(inner.get("toAmount") or ""),
+            to_decimals=to_dec,
         )
 
     # ── Wallet / Position Monitoring ──────────────────────────────
