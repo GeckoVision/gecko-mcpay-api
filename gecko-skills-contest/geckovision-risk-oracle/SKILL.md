@@ -29,6 +29,13 @@ dependencies:
 > returns **SAFE / DEFER / REJECT** — grounded in live on-chain data and
 > investor-canon principles, with surviving dissent shown, never hidden.
 
+**Primary data source & trading tool: OnchainOS.** Every lens draws its
+evidence exclusively from OnchainOS skills — `okx-dex-token`,
+`okx-dex-market`, `okx-security`, `okx-wallet-portfolio` — and all execution
+routes through `okx-dex-swap` on the OnchainOS Agentic Wallet (TEE-signed).
+Investor-canon principles are an interpretation layer *over* OnchainOS data,
+never a substitute for it. No external data feeds, no off-chain oracles.
+
 ## Why this exists
 
 Trading agents are probabilistic; money is deterministic. When an LLM
