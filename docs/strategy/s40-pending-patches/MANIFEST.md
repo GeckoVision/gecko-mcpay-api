@@ -103,3 +103,36 @@ on real data (PAPER mode unless founder authorizes live).
 All code-writing SEQUENTIAL (no parallel writes — git tangle). The full
 deliverable code is in the 2026-05-21 session transcript + the three agent
 IDs above (continuable via SendMessage).
+
+---
+
+## S40 KICKOFF EXECUTED — 2026-05-21 ~07:20 UTC-3 (results)
+
+**Contest outcome:** PARTICIPATION GRANT HELD ✅ — final wallet $106.81
+(≥$100), joinStatus 1, final PnL +$0.84 (3W/2L). The bot took its 1 remaining
+overnight trade (-$0.18, within the predicted -$1.35 max). Watchdog + bot
+stopped cleanly post-contest.
+
+**Patches applied + committed:**
+- C1 grid backtest → SHELVE grid (heavily -EV after 0.6%/fill DEX fees on all
+  6 symbols). Keep momentum + chop-abstain. (commit 677eeea)
+- D2 skill self-lint → scripts/skills/lint_skill.py; gecko-risk-oracle PASSES. (34f534a)
+- A0 canon fill → 28/28 URLs verified live; ingested 398 macro + 439
+  mauboussin chunks to Mongo. (committed)
+
+**⚠️ FOLLOW-UP NEEDED — canon DOUBLE-INGEST (founder approval to dedup):**
+canon_macro + canon_mauboussin each have 2× duplicate chunks (likely a
+worktree agent ingested + the kickoff ingested again). Retrieval still works
+but duplicates skew relevance. The dedup (delete-many on prod Mongo) was
+correctly blocked by the guardrail — needs founder OK. Ready command:
+```python
+# keep one per (provider_kind, source_url, chunk_index), delete extras
+# for canon_macro + canon_mauboussin in gecko_rag.chunks
+```
+Run when awake (or add a Bash permission rule). Drift test passes (4/4).
+
+**DEFERRED to founder-awake (per cron instruction):**
+- Track B voices (chart_analyst v2 / regime_analyst / memory-fix) — changes
+  agent behavior; needs sequential apply + eval gate + founder scope sign-off.
+- Formal canon reach test (Pattern E/F).
+- Improved-agent paper execution (no improved agents until Track B lands).
