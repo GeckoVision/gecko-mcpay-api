@@ -443,6 +443,16 @@ class OnchainOS:
                 "close": float(c.get("close", c.get("c", 0)) or 0),
                 "volume": float(c.get("volume", c.get("vol", 0)) or 0),
             })
+        # iter-3.11 2026-05-21 CRITICAL FIX: the OKX kline CLI returns candles
+        # NEWEST-FIRST (descending ts). Every consumer in the bot assumes the
+        # LAST element is the most-recent bar (evaluate_breakout's
+        # `recent = candles[-1]`, btc_overlay's `current_close = candles[-1]`,
+        # volume_spike's `volumes[-1]`). With descending order, candles[-1] was
+        # the OLDEST bar — so breakout detection compared ancient candles and
+        # never fired on current price action; most entries came from
+        # volume_spike by accident. Sorting ascending here fixes breakout +
+        # BTC overlay + volume_spike + the backtest harness in one place.
+        result.sort(key=lambda r: r["ts"])
         return result
 
     # ── Signals ───────────────────────────────────────────────────

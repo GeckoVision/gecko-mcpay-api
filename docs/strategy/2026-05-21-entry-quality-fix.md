@@ -116,3 +116,54 @@ positive PnL delta across the threshold sweep.
 
 This is roadmap **Track D (D1) + B5** converging: OKX indicators wired into
 entry, validated on data, not vibes.
+
+---
+
+## UPDATE — backtest harness built + run (iter-3.11)
+
+`contest_bot/backtest_entry.py` — pulls 299×5m candles/symbol, pure-Python
+indicators, replays OLD/NEW/PROPOSED entries through the live exit stack.
+
+### CRITICAL BUG #2 found by the harness: candle ordering
+
+`get_candles` returned candles **newest-first (descending)**, but every
+consumer (`evaluate_breakout` `recent=candles[-1]`, `btc_overlay`
+`current_close=candles[-1]`, volume_spike `volumes[-1]`) assumed the LAST
+element is the most-recent bar. With descending order, `candles[-1]` was the
+**oldest** bar — so **breakout detection compared ancient candles and never
+fired on current price action.** Most entries came from volume_spike by
+accident. Fixed in `onchainos.get_candles` (iter-3.11): `result.sort(key=ts)`
+→ ascending, fixing breakout + BTC overlay + volume_spike + the harness at
+once. This is a bigger root cause than the threshold bug.
+
+### Backtest finding — breakout is REGIME-dependent (overturns "raise the threshold")
+
+Sweep of lookback × confirm_pct over a 25h chop window, through the exit stack:
+
+```
+Every cell with confirm >= 0.5% is NEGATIVE.
+0.8-1.5% breakouts: every signal hit the -3% SL (0% win) — fakeouts.
+Only the loosest 0.2% scrapes positive (+2-4%) — by scalping noise,
+  and at 36-57 trades it can't run under MAX_DAILY_TRADES=3 anyway.
+NEW (1.5%/24-bar) + PROPOSED: 0 trades in chop — correctly ABSTAINING.
+```
+
+**Conclusion: in a chop regime, breakout entries are -EV at any threshold.**
+Strong breakouts in chop are bull traps that reverse to SL. This is not a
+threshold problem — it's a regime problem. We've been running a momentum
+strategy in a market with no momentum.
+
+**Implications:**
+1. The strict NEW config firing 0 trades in chop is CORRECT — abstain when
+   the strategy doesn't fit the regime. Do NOT loosen to force trades.
+2. Validates the strategist's `adx>=22` gate: it keeps us out of chop.
+3. Validates **Track B6 grid strategy**: grid profits from the chop that
+   kills breakouts. The two strategies are regime-complementary
+   (momentum when adx high, grid when adx low).
+
+### Honest limits
+
+- 25h / single regime (chop). The result "breakout loses in chop" is robust;
+  "what threshold wins in a trend" is unanswerable without trend-regime data.
+- Deeper history (pagination) + a trend-window sample are needed before
+  promoting any breakout threshold. The harness is ready to re-run.
