@@ -46,6 +46,14 @@ LocalAction = Literal["act", "decline"]
 _RISK_VETO_CONFIDENCE = 0.8
 _CHART_MIN_CONFIDENCE = 0.85  # raised again 2026-05-20 autonomous (was 0.6 → 0.75 → 0.85): only the cleanest momentum setups pass. Reduces premature breakout entries on noise. Trade-off: fewer trades, much higher per-trade conviction.
 _MEMORY_CONTRADICT_CONFIDENCE = 0.6
+# B6 (S40) — regime gate-modulator. The backtest proved breakout is -EV in
+# chop. So in a confirmed CHOP regime we RAISE the chart floor (only the
+# very cleanest setups pass); in TREND/neutral/abstain we use the normal
+# floor. This is a MODULATOR, not a veto — it never bans a symbol, it makes
+# us selective in chop. (DRIFT in a trend trades at 0.85; DRIFT in chop must
+# clear 0.92 — selective, not "never".)
+_CHART_CHOP_FLOOR = 0.92  # chart confidence required to act in a confirmed-chop regime
+_REGIME_CHOP_CONFIDENCE = 0.6  # regime must be this confident it's chop to raise the bar
 
 # Synthetic abstain we substitute when a named voice is missing from
 # the opinions list — keeps the rule chain branch-free.
@@ -71,6 +79,7 @@ def coordinator(opinions: list[VoiceOpinion]) -> tuple[LocalAction, str | None]:
     chart = by_name.get("chart_analyst")
     memory = by_name.get("memory_voice", _ABSTAIN_PLACEHOLDER)
     risk = by_name.get("risk_voice", _ABSTAIN_PLACEHOLDER)
+    regime = by_name.get("regime_analyst", _ABSTAIN_PLACEHOLDER)
 
     # Defensive special-case: chart is the only positive-signal source.
     # Without it we cannot ever say 'act'. Decline early so downstream
@@ -82,16 +91,27 @@ def coordinator(opinions: list[VoiceOpinion]) -> tuple[LocalAction, str | None]:
     if risk.verdict == "bearish" and risk.confidence >= _RISK_VETO_CONFIDENCE:
         return ("decline", "risk_veto")
 
-    # Rule 2 — chart must be bullish above the confidence threshold.
-    if chart.verdict != "bullish" or chart.confidence < _CHART_MIN_CONFIDENCE:
+    # Rule 2 — chart must be bullish at all.
+    if chart.verdict != "bullish":
         return ("decline", "chart_below_threshold")
 
-    # Rule 3 — memory must not contradict.
+    # Rule 3 (B6) — regime-modulated floor. A confirmed CHOP regime
+    # (regime_analyst bearish & confident) raises the bar to the chop
+    # floor; everything else (trend / transitional / abstain) uses the
+    # normal floor. This is the gate-modulator, not a veto — it never
+    # bans a symbol, it just demands a much cleaner setup in chop where
+    # breakout is -EV.
+    in_chop = regime.verdict == "bearish" and regime.confidence >= _REGIME_CHOP_CONFIDENCE
+    floor = _CHART_CHOP_FLOOR if in_chop else _CHART_MIN_CONFIDENCE
+    if chart.confidence < floor:
+        return ("decline", "chop_below_high_bar" if in_chop else "chart_below_threshold")
+
+    # Rule 4 — memory must not contradict (realized-outcome based, B4).
     if memory.verdict == "bearish" and memory.confidence >= _MEMORY_CONTRADICT_CONFIDENCE:
         return ("decline", "memory_contradicts")
 
     # All gates passed.
-    return ("act", "all_voices_aligned")
+    return ("act", "chop_high_conviction" if in_chop else "all_voices_aligned")
 
 
 __all__ = ["coordinator"]
