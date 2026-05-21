@@ -21,6 +21,7 @@ from voices.base import LocalVoice
 from voices.chart_analyst import ChartAnalystVoice
 from voices.coordinator_rules import coordinator
 from voices.memory_voice import MemoryVoice
+from voices.regime_analyst import RegimeAnalystVoice
 from voices.risk_voice import RiskVoice
 
 
@@ -43,6 +44,9 @@ def build_local_panel(memory: LocalMemory) -> LocalPanel:
         ChartAnalystVoice(client=client),
         MemoryVoice(client=client),
         RiskVoice(client=client),
+        # B3 (S40): deterministic chop/trend classifier — votes + logs now;
+        # the coordinator wires it into the rule chain as a gate-modulator in B6.
+        RegimeAnalystVoice(client=client),
     ]
     return LocalPanel(voices=voices, memory=memory, coordinator=coordinator)
 
