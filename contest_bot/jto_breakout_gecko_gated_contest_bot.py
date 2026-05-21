@@ -80,12 +80,16 @@ except Exception as exc:  # broad — any wiring failure should not crash the bo
     print(f"[lab] local panel disabled: {type(exc).__name__}: {exc}")
 
 # ── Config ─────────────────────────────────────────────────────────
-PAPER_TRADE = True  # contest over 2026-05-21 — back to paper as the test harness for new code (Track B voices etc.). Validate in paper + demo before any future live flip (founder go-ahead required, per project_x402_stub_then_live).
+# Default PAPER (safe). Live is an explicit, deliberate RUNTIME env flip —
+# `PAPER_TRADE=false python3 ...` — so the repo never carries a live default and
+# no accidental commit can arm real money. Founder go-ahead required per
+# project_x402_stub_then_live; the __main__ block still demands a typed CONFIRM.
+PAPER_TRADE = os.environ.get("PAPER_TRADE", "true").strip().lower() not in ("false", "0", "no")
 CHAIN = "solana"
 POLL_SEC = 30
 TIMEFRAME = "5m"
 ENTRY_TYPE = "price_breakout"
-USD_PER_TRADE = 45  # iter-3.2 live 2026-05-20: $50 → $45. With MAX_CONCURRENT=2 and $99.64 live budget, $45 × 2 = $90 deployed leaves $9.64 for slippage + tx fees. Below singleTxLimit ($50) policy cap with room.
+USD_PER_TRADE = int(os.environ.get("USD_PER_TRADE", "45"))  # runtime-overridable for "run and adjust": e.g. USD_PER_TRADE=25 for a smaller first live session. Default 45 (contest-proven). With MAX_CONCURRENT=2: 45×2=$90 deployed of ~$100 wallet — leaves little headroom, so start smaller on the first oracle-gated live run.
 STOP_LOSS_PCT = 3
 TAKE_PROFIT_PCT = 4  # iter-3.5 live 2026-05-20: 8 → 4. Founder observation + live peaks confirm: these memes oscillate ~2% naturally; +8% requires a 4x-of-normal move that almost never happens in chop. PYTH peak was +1.53% (just 0.47% short of trail activation) before drifting back. With trail-activate-at-2% catching pokes and TP-at-4% catching real momentum, 3 × +2-4% trades outperforms 1 × +8% miracle.
 STALL_GREEN_EXIT_AGE_MIN = 60  # iter-3.5 live 2026-05-20: stall-exit overlay (founder rule). If a position is open ≥60min AND pnl ≥STALL_GREEN_EXIT_MIN_PCT, force-close at market. Catches the "drifted +2-3% then died" failure mode that neither trail (no peak retracement) nor TP (never hit 4%) catches.
