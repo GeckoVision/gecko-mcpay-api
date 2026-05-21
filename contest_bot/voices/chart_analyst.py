@@ -54,7 +54,13 @@ INPUTS
 You receive:
   (a) instrument name and current spot,
   (b) the last 30 5-minute OHLCV bars,
-  (c) 1h delta%, 24h delta%, 24h range%.
+  (c) 1h delta%, 24h delta%, 24h range%,
+  (d) computed indicators (ADX, RSI, MFI, EMA stack, BB-width) with a
+      confluence guide. PREFER these over eyeballing the bars — a real
+      bullish setup needs TREND (adx>=25 + EMA stacked-up) AND flow
+      (mfi>=55) AND room (rsi<72). adx<=18 (chop) or rsi>72 (exhausted)
+      means there is no clean setup, regardless of a pretty candle pattern.
+      This is the lesson from live data: breakouts in chop are fakeouts.
 
 WHAT TO GRADE
   1. Trend over the last 6 bars (30 minutes): up, down, flat.
@@ -335,10 +341,52 @@ def _build_user_prompt(
         f"1h delta: {change_1h:+.2f}%\n"
         f"24h delta: {change_24h:+.2f}%\n"
         f"24h range: {range_24h:.2f}%\n\n"
+        f"{_format_indicators(bars)}"
         f"Last 30 5m bars (oldest first):\n{ohlcv_table}\n\n"
     )
     lens = _format_corpus_lens(corpus_chunks or [])
     return base + lens + "Grade the setup."
+
+
+def _format_indicators(bars: list[Any]) -> str:
+    """B2 (S40): computed TA indicators from the 5m bars, so the model
+    reasons over real ADX/RSI/MFI/EMA confluence instead of eyeballing the
+    candle table. Returns "" if indicators can't be computed (warmup) — the
+    abstain protocol + the OHLCV table still carry the read."""
+    try:
+        import indicators as _ind
+
+        # bars may be dicts or sequences; compute_latest needs dicts with
+        # open/high/low/close/volume. Coerce sequence-bars defensively.
+        norm: list[dict] = []
+        for b in bars:
+            if isinstance(b, dict):
+                norm.append(b)
+            elif isinstance(b, (list, tuple)) and len(b) >= 6:
+                norm.append({"open": float(b[1]), "high": float(b[2]),
+                             "low": float(b[3]), "close": float(b[4]), "volume": float(b[5])})
+        if len(norm) < 30:
+            return ""
+        s = _ind.compute_latest(norm)
+        if s.get("adx") is None or s.get("rsi") is None:
+            return ""
+        regime = "TREND" if s["adx"] >= 25 else ("CHOP" if s["adx"] <= 18 else "transitional")
+        ema_stack = (
+            "stacked-up (9>21>50)"
+            if (s.get("ema9") and s.get("ema21") and s.get("ema50") and s["ema9"] > s["ema21"] > s["ema50"])
+            else "not-stacked"
+        )
+        mfi = s.get("mfi")
+        bbw = s.get("bb_width")
+        return (
+            "Indicators (5m):\n"
+            f"  ADX={s['adx']:.1f} ({regime})  RSI={s['rsi']:.1f}  "
+            f"MFI={mfi:.1f}  EMA={ema_stack}  BBwidth={bbw:.2f}%\n"
+            "  Confluence guide: a real bullish setup wants TREND (adx>=25 + ema stacked-up) "
+            "AND flow (mfi>=55) AND room (rsi<72, not exhausted). Chop (adx<=18) or rsi>72 = no clean setup.\n\n"
+        )
+    except Exception:
+        return ""
 
 
 def _format_corpus_lens(chunks: list[dict[str, Any]]) -> str:
