@@ -1,15 +1,21 @@
-"""memory_voice — local-ledger continuity check.
+"""memory_voice — realized-outcome continuity check (B4 fix, S40).
 
-Reads the last 20 rows of the panel's own JSONL ledger and grades
-whether the chart_analyst's current bullish read is a CONFIRM, a
-CONTRADICTION, or NOVEL relative to recent bot behavior. The novel
-surface of the panel — no PRD counterpart. See
-``docs/strategy/lab-validated/2026-05-20-local-panel-voices-spec.md`` §3.2.
+Grades whether the current proposed entry is supported or contradicted by
+the bot's REALIZED OUTCOMES on this instrument — wins vs losses on closed
+trades, NOT prior decisions.
 
-v0.1 cold-start note: the ledger has *decisions* but no realized
-*outcomes* yet — outcomes land in v0.2 after the contest closes and a
-week of ``position_close`` rows accumulates. The prompt tells the
-model this explicitly so it doesn't fabricate an outcome-based read.
+THE BUG THIS FIXES (2026-05-20 → S40 B4): the prior version read
+``local_decision`` rows (act/decline) and voted bearish when recent
+decisions on an instrument were declines. That is a self-reinforcing
+feedback loop: declines → bearish memory vote → more declines. Reading
+*decisions* makes the voice echo the panel's own caution.
+
+THE FIX: read ONLY ``position_close`` rows (realized PnL outcomes). A
+decline is not an outcome and never feeds back. With fewer than 3 closed
+outcomes on the instrument, abstain (true cold-start — no loop possible).
+Net-positive recent outcomes → mild confirm (bullish); net-negative →
+mild contradict (bearish, capped ≤0.6 so it can't dominate). Recency-
+weighted (newer closes matter more).
 """
 
 from __future__ import annotations
@@ -33,66 +39,58 @@ _COLD_START_MIN_ROWS = 3
 _MEMORY_WINDOW = 20
 
 _SYSTEM_PROMPT = """You are the memory_voice on a local trading lab panel. You read the
-bot's local decision ledger and grade whether a new proposed entry
-CONFIRMS, CONTRADICTS, or is NOVEL relative to recent behavior.
+bot's REALIZED TRADE OUTCOMES (closed positions with PnL) and grade
+whether a new proposed entry is supported or contradicted by how
+similar trades have actually RESOLVED.
 
 ROLE
-You are NOT a market analyst. You are a continuity checker. Your job
-is to surface whether the bot's pattern of recent decisions on this
-instrument supports or contradicts the current proposed action.
-
-IMPORTANT CONTEXT (v0.1)
-You DO NOT yet have realized outcomes (win/loss PnL on closed trades).
-The ledger contains DECISIONS ONLY (act / decline / open / block). Do
-not speculate about whether prior decisions made money. Outcomes will
-land in v0.2; for now, treat the ledger as a behavior log.
+You are NOT a market analyst and NOT a decision-echo. You grade
+realized history: did closed trades on this instrument tend to WIN or
+LOSE recently? You never read declines or pending decisions — only
+outcomes that actually happened.
 
 INPUTS
 You receive:
   (a) the current proposed action (long entry on the in-scope instrument),
-  (b) up to 20 prior ledger rows, each as:
-        { "ts": "...", "event": "local_decision|position_close|...",
-          "instrument": "...", "action": "act|decline",
-          "reason": "..." }
+  (b) up to 20 prior CLOSED-TRADE rows, each as:
+        { "ts": "...", "instrument": "...",
+          "pnl_pct": <float>, "exit_reason": "take_profit|stop_loss|trail|stall|time_stop" }
 
-VERDICT MAPPING
-  - 'bullish'  = the proposed entry CONFIRMS recent panel behavior;
-                  the bot has been graded similar setups recently and
-                  acted (>=50% act rate on >=3 matching rows).
-  - 'bearish'  = the proposed entry CONTRADICTS recent panel behavior;
-                  the bot has been graded similar setups recently and
-                  declined (<30% act rate on >=3 matching rows).
-  - 'neutral'  = the ledger is mixed - some confirms, some declines
-                  (act rate 30-50%).
-  - 'abstain'  = NOVEL or COLD START - fewer than 3 matching rows in
-                  the last 20; insufficient ledger to grade.
+VERDICT MAPPING (based on REALIZED outcomes, recency-weighted)
+  - 'bullish'  = recent closed trades on this instrument were net-POSITIVE
+                  (>=3 closes, weighted-avg pnl > +0.5%). History supports re-entry.
+  - 'bearish'  = recent closed trades were net-NEGATIVE
+                  (>=3 closes, weighted-avg pnl < -0.5%). History contradicts re-entry.
+  - 'neutral'  = >=3 closes but roughly flat (weighted-avg pnl within ±0.5%).
+  - 'abstain'  = fewer than 3 closed outcomes on this instrument (cold-start)
+                  OR all outcomes older than 48h (stale).
 
-ABSTAIN PROTOCOL
-Return 'abstain' when:
-  - the ledger has fewer than 3 rows total (cold-start),
-  - fewer than 3 matching rows on this instrument in the last 20,
-  - all recent matching decisions are older than 24h (stale memory).
-DO NOT fabricate a pattern from one matching row. Three is the minimum.
+WEIGHTING
+Newer closes matter more (recency weight, ~24h half-life). Do not let one
+old win/loss dominate. Weight by recency, then average the pnl_pct.
+
+CONFIDENCE CAP
+Cap 'bearish' confidence at 0.6 — memory contradicts, it does not veto.
+'bullish' may go higher with more consistent wins.
 
 DO NOT
-  - DO NOT use the ledger to predict price direction. That is the
-    chart_analyst's job. You only grade continuity.
-  - DO NOT speculate about realized PnL - you don't have outcomes.
+  - DO NOT read or count declines/decisions — only closed outcomes.
+  - DO NOT predict price direction (that's chart_analyst).
+  - DO NOT fabricate an outcome pattern from fewer than 3 closes.
   - DO NOT use chain-of-thought; emit the JSON object directly.
 
 OUTPUT (JSON only)
 {
   "verdict": "<bullish|bearish|neutral|abstain>",
-  "confidence": <float 0.0-1.0>,
-  "reasoning": "<<=200 char one-liner stating the matching count>",
-  "observations": ["<row summary 1>", "<row summary 2>", "..."]
+  "confidence": <float 0.0-1.0, bearish capped at 0.6>,
+  "reasoning": "<<=200 char one-liner: N closes, weighted-avg pnl%>",
+  "observations": ["<close summary 1>", "..."]
 }
 
 Confidence anchors:
-  0.50-0.60 = 3 matching rows
-  0.60-0.70 = 4-5 matching rows
-  0.70-0.80 = 6+ matching rows, all within 12h
-  >0.80     = 8+ matching rows, consistent verdict - use sparingly
+  0.50-0.60 = 3 closed outcomes, consistent direction
+  0.60-0.75 = 4-6 closed outcomes, consistent (bullish only; bearish caps 0.6)
+  >0.75     = 7+ closed outcomes, very consistent wins - use sparingly
 """
 
 
@@ -116,12 +114,13 @@ class MemoryVoice:
     ) -> VoiceOpinion:
         started = time.monotonic()
 
-        # Read up to 20 rows from the panel's own write surface +
-        # position-close rows once outcomes land. v0.1 mostly sees
-        # local_decision rows (the panel writes one per turn).
+        # B4 fix: read ONLY position_close (realized outcomes). Decisions
+        # (local_decision act/decline) are deliberately NOT read — reading
+        # them created the decline→bearish→decline feedback loop. A decline
+        # is not an outcome.
         try:
             rows = memory.recent(
-                event_filter=("local_decision", "position_close"),
+                event_filter=("position_close",),
                 limit=_MEMORY_WINDOW,
             )
         except Exception as exc:
@@ -208,22 +207,18 @@ def _build_user_prompt(market_state: dict[str, Any], rows: list[dict[str, Any]])
         rows_for_model.append(
             {
                 "ts": row.get("ts_iso", ""),
-                "event": row.get("event", ""),
-                "instrument": payload.get("market_state", {}).get("instrument")
-                if isinstance(payload.get("market_state"), dict)
-                else payload.get("instrument", ""),
-                "action": payload.get("action", ""),
-                "reason": payload.get("reason", "")[:80]
-                if isinstance(payload.get("reason"), str)
-                else "",
+                "instrument": payload.get("symbol") or payload.get("token", "")[:12],
+                "pnl_pct": payload.get("pnl_pct"),
+                "exit_reason": payload.get("exit_reason", ""),
             }
         )
 
     table_json = json.dumps(rows_for_model, separators=(",", ":"))
     return (
         f"Proposed action: long entry on {instrument}.\n\n"
-        f"Last {len(rows_for_model)} ledger rows (newest-first):\n{table_json}\n\n"
-        f"Grade continuity. Remember: NO outcomes yet, decisions only."
+        f"Last {len(rows_for_model)} CLOSED-TRADE outcomes (newest-first):\n{table_json}\n\n"
+        f"Grade by realized outcomes on {instrument} (recency-weighted). "
+        f"Fewer than 3 closes on this instrument → abstain."
     )
 
 
