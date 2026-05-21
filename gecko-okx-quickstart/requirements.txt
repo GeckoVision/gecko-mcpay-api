@@ -1,0 +1,6 @@
+httpx>=0.27
+websockets>=12.0
+pydantic>=2.6
+# Optional — only needed for the best-effort investor-canon corpus lens.
+# The bot runs fine without it (voices fall back to indicators + LLM).
+pymongo>=4.6
