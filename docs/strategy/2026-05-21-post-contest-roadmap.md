@@ -53,6 +53,33 @@ loader, not a rewrite.
 | **B3** | Rotation gate | "Only exit a stall if a fresh higher-conviction candidate exists" — wire the monitor loop to the candidate scan so freed slots are actually filled |
 | **B4** | New voices (transplant candidates) | smart_money_voice (OKX signal feed), regime_analyst (BTC/SOL macro state). Build in lab, validate, promote to PRD oracle |
 | **B5** | Entry-quality study | We decline ~95% of candidates (chart < 0.85). Use telemetry to check: of the declines, how many *would* have been winners? Tune the floor on data, not feel |
+| **B6** | **Grid strategy for chop regimes** | Spot-grid profits from *oscillation* (buy low / sell high in a range) — exactly the chop where our momentum bot stalls (BONK). It would *make money on the stalls that frustrate us.* Grid is the natural complement to momentum: run momentum in trends, grid in ranges (gate on `adx` — low ADX = chop = grid). Native OKX `grid_create_order` endpoint (Track D). Realistic target modeled on proven OKX grid bots: **~1.5-2.5%/week sustained**, prioritizing **low drawdown** (the best one ran +183% over 2yr at 0.75% max weekly drawdown) |
+
+### Track D — OKX API integration (market data + execution)
+
+The OKX OnchainOS API (docs: `https://web3.okx.com/llms-full.txt`) exposes
+far more than we currently use. We poll `/price-info` and compute our own
+EMA/breakout by hand. OKX serves **80+ validated technical indicators**,
+real-time WebSocket push, smart-money signals, and native grid/DCA bots —
+much of it available right now as `okx-agent-trade-kit` MCP tools
+(`market_get_indicator`, `market_get_candles`, `smartmoney_*`,
+`grid_create_order`, …).
+
+| Sprint | Deliverable | Concrete OKX capability |
+|---|---|---|
+| **D1** | Enrich chart_analyst with OKX indicators instead of hand-rolled EMA | `market_get_indicator`: `macd`, `rsi`, `supertrend`, `adx` (trend strength), `aroon`, `bb` (Bollinger) — stop maintaining our own TA math |
+| **D2** | **Stall-detector v2 inputs — shortcut the data wait** | `hv` (historical volatility — compression = stall), `bbwidth` / `atr` (range compression), and crucially `mfi` / `cmf` / `obv` (volume-flow). **These are the exact volume-decay / pause-vs-stall features the quant said we lacked** — OKX pre-computes them, so we don't have to accumulate 100 episodes first. Still validate thresholds on telemetry, but the signal is available now. |
+| **D3** | Real-time WebSocket push → replace 30s polling | OKX WebSocket market channels (added 2026-03-26). Lower latency = catch breakouts/stalls faster, fewer missed exits |
+| **D4** | smart_money_voice data source | `smartmoney_*` (signal overview/trend by filter/trader) + `top-long-short` indicator (Top Trader Long/Short Ratio) + address tracking. Feeds Track B4 |
+| **D5** | Better candidate discovery | Trenches API (meme / golden-dog tracking) + token rankings — replaces fixed-universe volume_spike scanning with live discovery |
+| **D6** | Authoritative PnL accounting | Portfolio API (`market portfolio-token-pnl`) — cross-checks our real-fill PnL, belt-and-suspenders after the oracle-price accounting bug |
+
+**Key insight (D2):** the OKX indicator API partially *shortcuts* the
+quant's "we have no data" blocker. `hv`, `bbwidth`, `mfi` are exactly the
+stall/pause discriminators — pre-computed and validated by OKX. The
+telemetry (Track A) is still the falsification ground-truth, but v2 stall
+detection can be prototyped against these indicators immediately rather
+than waiting for 100 logged episodes.
 
 ### Track C — Skills (the sellable product)
 
@@ -80,15 +107,36 @@ data. The contest just bootstrapped the loop with real money on the line.
 
 ---
 
+## Realistic-returns benchmark (proven OKX grid bots, decoded)
+
+The top copy-tradeable OKX spot-grid bots, read correctly:
+
+| Bot | Headline | Runtime | Real weekly avg | Max weekly drawdown |
+|---|---|---|---|---|
+| SUI/USDT | +226% | 654d | ~2.4%/week | 8.08% |
+| XRP/USDT | +208% | 769d | ~1.9%/week | 7.50% |
+| TRX/USDT | +183% | 767d | ~1.7%/week | **0.75%** ← the gold standard |
+
+The headline +200% is **total over ~2 years**, not weekly. The "7D max
+drawdown" is the worst-week *loss*, not a return. **The honest, proven,
+sustainable target is ~1.5-2.5%/week with low drawdown** — and TRX proves
+the holy grail (steady return + sub-1% drawdown) is achievable. This is our
+north-star return profile: not flashy, low-drawdown, sustained. It matches
+the earlier honest math (sustained ~0.3-0.5%/day).
+
 ## Near-term sprint order (next 2–3 sprints)
 
-1. **A2** — volume+range in telemetry (small, unblocks B2)
-2. **B5** — entry-quality study on accumulated telemetry (are we too strict?)
-3. **A4 + B2** — labeled episodes → data-driven stall-detector v2
-4. **C2** — skill calls the live PRD oracle (turns the skill into a real product surface)
+1. **D1 + D2** — wire OKX indicator API (available NOW): `macd`/`rsi`/`adx`
+   into chart_analyst, and `hv`/`bbwidth`/`mfi` into stall detection. High
+   value, low effort, and D2 shortcuts the "no data" blocker.
+2. **A2** — volume+range in telemetry (falsification ground-truth for D2)
+3. **B5** — entry-quality study on accumulated telemetry (are we too strict?)
+4. **B6 (prototype)** — grid strategy in paper, gated on `adx` (chop detector)
+5. **A4 + B2** — labeled episodes → data-driven stall-detector v2
+6. **C2** — skill calls the live PRD oracle (turns the skill into a real product surface)
 
 Everything else (Mongo migration, new voices, copy-trade skill, x402
-metering) sequences behind these as the data and the capital grow.
+metering, WebSocket push) sequences behind these as data + capital grow.
 
 ---
 
