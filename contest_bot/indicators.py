@@ -213,11 +213,61 @@ def bb(closes: list[float], n: int = 20, k: float = 2.0) -> tuple[list[float | N
     return lower, mid, upper
 
 
+def chop(
+    highs: list[float],
+    lows: list[float],
+    closes: list[float],
+    n: int = 14,
+) -> list[float | None]:
+    """Choppiness Index (CHOP) series aligned to input candles.
+
+    CHOP = 100 * log10( sum(TR, n) / (max(high, n) - min(low, n)) ) / log10(n)
+
+    Interpretation:
+      > 61.8 — maximum chop (mean-reverting, momentum is -EV)
+      < 38.2 — strongly trending (directional momentum applies)
+      between — transitional
+
+    Returns None for the first n-1 bars (warmup). Uses the same True Range
+    definition as atr(): TR_i = max(H-L, |H-prev_C|, |L-prev_C|).
+    """
+    m = len(closes)
+    out: list[float | None] = [None] * m
+    if m <= n:
+        return out
+    import math
+
+    # Build TR series (index 0 = first bar, TR[0]=0 by convention)
+    tr = [0.0]
+    for i in range(1, m):
+        tr.append(
+            max(
+                highs[i] - lows[i],
+                abs(highs[i] - closes[i - 1]),
+                abs(lows[i] - closes[i - 1]),
+            )
+        )
+
+    for i in range(n, m):
+        # sum of TR over window [i-n+1 .. i] (n bars)
+        sum_tr = sum(tr[i - n + 1 : i + 1])
+        hh = max(highs[i - n + 1 : i + 1])
+        ll = min(lows[i - n + 1 : i + 1])
+        denom = hh - ll
+        if denom <= 0 or sum_tr <= 0:
+            # flat candles / zero range — undefined; leave None
+            continue
+        out[i] = 100.0 * math.log10(sum_tr / denom) / math.log10(n)
+
+    return out
+
+
 def compute_latest(candles: list[dict]) -> dict:
     """Per-poll snapshot of the latest indicator values from a candle list
     (ascending, dicts with open/high/low/close/volume). Returns a dict the
     voices reason over; values are None when not enough warmup. bb_width is
-    the band width as a % of mid (a volatility-compression / regime cue)."""
+    the band width as a % of mid (a volatility-compression / regime cue).
+    chop is the Choppiness Index (n=14): >61.8 max chop, <38.2 trending."""
     if not candles:
         return {}
     highs = [c["high"] for c in candles]
@@ -249,7 +299,8 @@ def compute_latest(candles: list[dict]) -> dict:
         "bb_mid": bm_v,
         "bb_upper": bu_v,
         "bb_width": bb_width,
+        "chop": _last(chop(highs, lows, closes, 14)),
     }
 
 
-__all__ = ["ema", "rsi", "adx", "adx_full", "mfi", "atr", "bb", "compute_latest"]
+__all__ = ["ema", "rsi", "adx", "adx_full", "mfi", "atr", "bb", "chop", "compute_latest"]

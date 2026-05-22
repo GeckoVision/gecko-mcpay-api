@@ -798,6 +798,94 @@ def test_coordinator_unconfident_chop_uses_normal_floor() -> None:
     assert reason == "all_voices_aligned"
 
 
+# ── CHOP indicator unit tests ─────────────────────────────────────────
+
+import indicators as _ind  # noqa: E402  (already importable from the sys.path insert above)
+
+
+def _make_candles(closes: list[float]) -> list[dict]:
+    """Minimal candle list from a close series (high/low ±0.1% of close)."""
+    return [
+        {
+            "open": c,
+            "high": c * 1.001,
+            "low": c * 0.999,
+            "close": c,
+            "volume": 10_000.0,
+        }
+        for c in closes
+    ]
+
+
+def test_chop_trending_is_low() -> None:
+    """Monotonically rising prices produce a CHOP value < 61.8 (trending)."""
+    closes = [1.0 + i * 0.02 for i in range(50)]
+    candles = _make_candles(closes)
+    highs = [c["high"] for c in candles]
+    lows = [c["low"] for c in candles]
+    series = _ind.chop(highs, lows, closes, n=14)
+    # Last value must be computed (not None)
+    last = next((v for v in reversed(series) if v is not None), None)
+    assert last is not None, "chop series returned all None for trending data"
+    assert last < 61.8, f"expected chop < 61.8 for trend, got {last:.2f}"
+
+
+def test_chop_sideways_is_high() -> None:
+    """Oscillating prices that stay within a tight range produce CHOP > 38.2.
+
+    True chop: many bars each covering nearly the full session range (high TR
+    per bar, but range_max - range_min stays roughly constant). Use
+    _chop_candles which alternates direction within a fixed band — this
+    maximises sumTR / (H_max - L_min) ratio → high CHOP.
+    """
+    candles = _chop_candles(50)
+    highs = [c["high"] for c in candles]
+    lows = [c["low"] for c in candles]
+    closes = [c["close"] for c in candles]
+    series = _ind.chop(highs, lows, closes, n=14)
+    last = next((v for v in reversed(series) if v is not None), None)
+    assert last is not None, "chop series returned all None for sideways data"
+    assert last > 38.2, f"expected chop > 38.2 for sideways, got {last:.2f}"
+
+
+def test_chop_warmup_returns_none() -> None:
+    """Fewer than n+1 candles returns all None (warmup window)."""
+    closes = [1.0] * 14  # exactly n candles — series[n] doesn't exist
+    candles = _make_candles(closes)
+    highs = [c["high"] for c in candles]
+    lows = [c["low"] for c in candles]
+    series = _ind.chop(highs, lows, closes, n=14)
+    assert all(v is None for v in series), "expected all None during warmup"
+
+
+def test_compute_latest_includes_chop() -> None:
+    """compute_latest returns a 'chop' key for a sufficiently long candle list."""
+    closes = [1.0 + i * 0.01 for i in range(50)]
+    candles = [
+        {"open": c, "high": c * 1.001, "low": c * 0.999, "close": c, "volume": 1000.0}
+        for c in closes
+    ]
+    snap = _ind.compute_latest(candles)
+    assert "chop" in snap, "compute_latest must include 'chop' key"
+    # With 50 bars and n=14 the value should be computed (not None)
+    assert snap["chop"] is not None, "chop should be non-None for 50-bar series"
+
+
+def test_regime_analyst_reasoning_includes_bb_and_chop(tmp_path: Path) -> None:
+    """RegimeAnalystVoice reasoning string must mention bb_width and chop labels."""
+    voice = RegimeAnalystVoice()
+    mem = LocalMemory(path=tmp_path / "regime_bb_chop.jsonl")
+    candles = _uptrend_candles(60)
+    state = _healthy_market_state(ohlcv_5m=candles)
+    state["candles"] = candles
+
+    op = asyncio.run(voice.grade(state, mem))
+
+    # Both bb_width and chop labels must appear in the reasoning string.
+    assert "bb_width" in op.reasoning, f"bb_width missing from reasoning: {op.reasoning}"
+    assert "chop=" in op.reasoning, f"chop= missing from reasoning: {op.reasoning}"
+
+
 # ── bootstrap ─────────────────────────────────────────────────────────
 def test_bootstrap_raises_when_env_unset(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """build_local_panel must propagate OpenRouterConfigError so the bot's
