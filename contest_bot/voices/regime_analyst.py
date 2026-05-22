@@ -1,27 +1,37 @@
-"""regime_analyst — chop-vs-trend classifier (S40 Track B3, NEW voice).
+"""regime_analyst — chop/trend/direction classifier (S40 Track B3, direction fix S41).
 
-The axis the chart_analyst can't express. Tonight's backtest proved breakout
-entries are -EV in CHOP and only work in TREND — but no voice models *whether
+The axis the chart_analyst can't express. Backtest proved breakout entries
+are -EV in CHOP and only work in TREND — but no voice modelled *whether
 the regime even permits momentum trading*. regime_analyst fills that gap.
 
 Deterministic-first (like risk_voice — no LLM): reads the latest indicators
-(ADX = trend strength, Bollinger band-width = volatility expansion) from the
-candles the bot already passes in ``market_state["candles"]`` and emits:
+(ADX = trend strength, +DI/−DI = direction) from the candles the bot
+already passes in ``market_state["candles"]`` and emits:
 
-  - verdict='bullish'  → TREND (adx >= 25): momentum trading is permitted.
-  - verdict='bearish'  → CHOP  (adx <= 18): momentum is -EV here; the
-                          coordinator should raise the bar or defer.
-  - verdict='neutral'  → TRANSITIONAL (18 < adx < 25): hold/uncertain.
+  - verdict='bullish'  → UPTREND  (adx >= 25 AND +DI > −DI):
+                          momentum trading is permitted; a genuine uptrend.
+  - verdict='bearish'  → CHOP or DOWNTREND:
+                            adx <= 18 (chop: momentum -EV), OR
+                            adx >= 25 AND −DI > +DI (downtrend: longs blocked).
+  - verdict='neutral'  → TRANSITIONAL (18 < adx < 25): direction uncertain.
   - verdict='abstain'  → not enough candle history to classify.
 
 Confidence is ADX-derived (how far past the threshold). The coordinator (B6)
-reads this as a GATE MODULATOR, not a veto: in chop it raises chart's required
-floor / routes to defer_grid; in trend it leaves the panel as-is.
+reads this as a GATE MODULATOR: regime 'bearish' (chop OR downtrend) raises
+chart's required floor / routes to defer; trend leaves the panel as-is.
 
-Pattern D justification (why this isn't redundant with chart_analyst): chart
-says *direction* (is this setup bullish); regime says *whether direction-
-trading applies at all*. A bullish chart read in a chop regime is exactly the
-fakeout the backtest showed loses. Different axis, real separation.
+S41 direction fix:
+  Before this fix ADX >= 25 unconditionally → 'bullish', meaning a strong
+  downtrend was mis-labelled "momentum permitted". The +DI/−DI directional
+  components are now surfaced by indicators.compute_latest() and used here
+  to distinguish up- from down-trend. Both chop and downtrend correctly
+  raise the coordinator floor and block longs.
+
+Pattern D justification (why this isn't redundant with chart_analyst):
+chart says *direction* (is this setup bullish); regime says *whether
+direction-trading applies at all*. A bullish chart read in a chop regime
+is exactly the fakeout the backtest showed loses. Different axis, real
+separation.
 """
 
 from __future__ import annotations
@@ -33,13 +43,13 @@ import indicators
 from voices.base import MemoryReader, VoiceOpinion
 
 # Thresholds mirror the backtest's regime segmentation (REGIME_ADX_CHOP/TREND).
-_ADX_TREND = 25.0  # adx >= this ⇒ trend, momentum permitted
-_ADX_CHOP = 18.0   # adx <= this ⇒ chop, momentum -EV
+_ADX_TREND = 25.0  # adx >= this ⇒ meaningful trend (direction decides up/down)
+_ADX_CHOP = 18.0   # adx <= this ⇒ chop, momentum -EV regardless of direction
 _MIN_BARS = 30     # need enough candles for a meaningful ADX(14)
 
 
 class RegimeAnalystVoice:
-    """Deterministic chop/trend classifier. No LLM call."""
+    """Deterministic chop/trend/direction classifier. No LLM call."""
 
     voice_name: str = "regime_analyst"
 
@@ -64,38 +74,64 @@ class RegimeAnalystVoice:
             )
 
         snap = indicators.compute_latest(candles)
-        adx = snap.get("adx")
+        adx_v = snap.get("adx")
+        plus_di = snap.get("plus_di")
+        minus_di = snap.get("minus_di")
         bb_width = snap.get("bb_width")
-        if adx is None:
+
+        if adx_v is None:
             return self._opinion(
                 "abstain", 0.0, "adx_unavailable", [], started,
             )
 
         obs = [
-            f"adx={adx:.1f}",
+            f"adx={adx_v:.1f}",
+            f"+DI={plus_di:.1f}" if plus_di is not None else "+DI=n/a",
+            f"-DI={minus_di:.1f}" if minus_di is not None else "-DI=n/a",
             f"bb_width={bb_width:.2f}%" if bb_width is not None else "bb_width=n/a",
         ]
 
-        if adx >= _ADX_TREND:
-            # Trend strength scales confidence: adx 25→0.55, 40→~0.85, cap 0.9.
-            conf = min(0.9, 0.55 + (adx - _ADX_TREND) / 50.0)
-            return self._opinion(
-                "bullish", conf,
-                f"TREND adx={adx:.1f}>= {_ADX_TREND:.0f} — momentum permitted",
-                obs, started,
-            )
-        if adx <= _ADX_CHOP:
-            # Deeper chop = more confident it's -EV for momentum.
-            conf = min(0.85, 0.55 + (_ADX_CHOP - adx) / 40.0)
+        if adx_v >= _ADX_TREND:
+            # Strong trend — direction determines bull vs bear verdict.
+            # Confidence scales with ADX distance past the threshold.
+            conf = min(0.9, 0.55 + (adx_v - _ADX_TREND) / 50.0)
+            if plus_di is not None and minus_di is not None:
+                if plus_di > minus_di:
+                    return self._opinion(
+                        "bullish", conf,
+                        f"uptrend: ADX {adx_v:.1f} +DI>{'-'}DI ({plus_di:.1f}>{minus_di:.1f}) — momentum permitted",
+                        obs, started,
+                    )
+                else:
+                    # Downtrend: strong ADX but sellers are in control.
+                    # Block longs — same coordinator path as chop (bearish raises floor).
+                    return self._opinion(
+                        "bearish", conf,
+                        f"downtrend: ADX {adx_v:.1f} {'-'}DI>+DI ({minus_di:.1f}>{plus_di:.1f}) — longs blocked",
+                        obs, started,
+                    )
+            else:
+                # DI unavailable but ADX strong — treat as uptrend (conservative
+                # assumption: presence of trend without direction info).
+                return self._opinion(
+                    "bullish", conf,
+                    f"TREND adx={adx_v:.1f}>={_ADX_TREND:.0f} (DI n/a) — momentum permitted",
+                    obs, started,
+                )
+
+        if adx_v <= _ADX_CHOP:
+            # Chop: weak trend regardless of direction — momentum is -EV.
+            conf = min(0.85, 0.55 + (_ADX_CHOP - adx_v) / 40.0)
             return self._opinion(
                 "bearish", conf,
-                f"CHOP adx={adx:.1f}<= {_ADX_CHOP:.0f} — momentum -EV here",
+                f"chop: ADX {adx_v:.1f}<={_ADX_CHOP:.0f} — momentum -EV here",
                 obs, started,
             )
-        # Dead-zone — transitional.
+
+        # Dead-zone — transitional (18 < adx < 25).
         return self._opinion(
             "neutral", 0.4,
-            f"TRANSITIONAL adx={adx:.1f} in ({_ADX_CHOP:.0f},{_ADX_TREND:.0f})",
+            f"transitional: ADX {adx_v:.1f} in ({_ADX_CHOP:.0f},{_ADX_TREND:.0f})",
             obs, started,
         )
 

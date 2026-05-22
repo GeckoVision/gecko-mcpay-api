@@ -31,6 +31,7 @@ from local_panel import LocalPanel  # noqa: E402
 from voices.base import VoiceOpinion  # noqa: E402
 from voices.chart_analyst import ChartAnalystVoice  # noqa: E402
 from voices.coordinator_rules import coordinator  # noqa: E402
+from voices.regime_analyst import RegimeAnalystVoice  # noqa: E402
 from voices.memory_voice import MemoryVoice  # noqa: E402
 from voices.risk_voice import (  # noqa: E402
     RiskVoice,
@@ -597,6 +598,127 @@ def test_coordinator_missing_risk_voice_does_not_veto() -> None:
     assert reason == "all_voices_aligned"
 
 
+# ── regime_analyst ───────────────────────────────────────────────────
+
+
+def _uptrend_candles(n: int = 60, start: float = 1.0, step: float = 0.02) -> list[dict]:
+    """Ascending price candles: close near high, higher-highs each bar.
+    Produces high +DI (buyers consistently winning each bar move).
+    """
+    candles = []
+    price = start
+    for i in range(n):
+        open_ = price
+        high = price + step * 1.5
+        low = price - step * 0.2   # shallow pullbacks — +DI dominates
+        close = price + step * 1.2
+        candles.append({"open": open_, "high": high, "low": low, "close": close, "volume": 10_000.0})
+        price = close
+    return candles
+
+
+def _downtrend_candles(n: int = 60, start: float = 3.0, step: float = 0.02) -> list[dict]:
+    """Descending price candles: close near low, lower-lows each bar.
+    Produces high -DI (sellers consistently winning each bar move).
+    """
+    candles = []
+    price = start
+    for i in range(n):
+        open_ = price
+        high = price + step * 0.2   # shallow bounces — -DI dominates
+        low = price - step * 1.5
+        close = price - step * 1.2
+        candles.append({"open": open_, "high": high, "low": low, "close": close, "volume": 10_000.0})
+        price = close
+    return candles
+
+
+def _chop_candles(n: int = 60, center: float = 2.0, half_range: float = 0.05) -> list[dict]:
+    """Alternating up/down bars around a fixed centre — low net directional movement.
+    Produces low ADX (both +DM and -DM stay small after netting out).
+    """
+    candles = []
+    price = center
+    direction = 1
+    for i in range(n):
+        move = half_range * 0.5 * direction
+        open_ = price
+        high = price + half_range * 0.3
+        low = price - half_range * 0.3
+        close = price + move
+        candles.append({"open": open_, "high": high, "low": low, "close": close, "volume": 10_000.0})
+        price = close
+        direction *= -1
+    return candles
+
+
+def test_regime_analyst_uptrend_returns_bullish(tmp_path: Path) -> None:
+    """Uptrend candles (high ADX, +DI > -DI) → bullish verdict."""
+    voice = RegimeAnalystVoice()
+    mem = LocalMemory(path=tmp_path / "regime_up.jsonl")
+    candles = _uptrend_candles(60)
+    state = _healthy_market_state(ohlcv_5m=candles)
+    # Pass candles both ways (regime reads market_state["candles"])
+    state["candles"] = candles
+
+    op = asyncio.run(voice.grade(state, mem))
+
+    assert op.verdict == "bullish", f"expected bullish uptrend, got {op.verdict}: {op.reasoning}"
+    assert op.confidence > 0.5
+    assert "uptrend" in op.reasoning.lower() or "momentum permitted" in op.reasoning.lower()
+
+
+def test_regime_analyst_downtrend_returns_bearish(tmp_path: Path) -> None:
+    """Downtrend candles (high ADX, -DI > +DI) → bearish verdict.
+
+    This is the S41 regression guard: before the direction fix, strong
+    downtrends were mis-labelled 'bullish' (momentum permitted). After the
+    fix, -DI > +DI must produce 'bearish' (longs blocked).
+    """
+    voice = RegimeAnalystVoice()
+    mem = LocalMemory(path=tmp_path / "regime_down.jsonl")
+    candles = _downtrend_candles(60)
+    state = _healthy_market_state(ohlcv_5m=candles)
+    state["candles"] = candles
+
+    op = asyncio.run(voice.grade(state, mem))
+
+    assert op.verdict == "bearish", (
+        f"S41 regression: downtrend must return bearish (longs blocked), "
+        f"got {op.verdict}: {op.reasoning}"
+    )
+    assert op.confidence > 0.5
+    assert "downtrend" in op.reasoning.lower() or "longs blocked" in op.reasoning.lower()
+
+
+def test_regime_analyst_chop_returns_bearish(tmp_path: Path) -> None:
+    """Chop candles (low ADX) → bearish verdict (momentum -EV)."""
+    voice = RegimeAnalystVoice()
+    mem = LocalMemory(path=tmp_path / "regime_chop.jsonl")
+    candles = _chop_candles(60)
+    state = _healthy_market_state(ohlcv_5m=candles)
+    state["candles"] = candles
+
+    op = asyncio.run(voice.grade(state, mem))
+
+    assert op.verdict == "bearish", f"expected bearish chop, got {op.verdict}: {op.reasoning}"
+    assert "chop" in op.reasoning.lower() or "momentum" in op.reasoning.lower()
+
+
+def test_regime_analyst_insufficient_bars_abstains(tmp_path: Path) -> None:
+    """< 30 bars → abstain (unchanged from pre-fix behaviour)."""
+    voice = RegimeAnalystVoice()
+    mem = LocalMemory(path=tmp_path / "regime_short.jsonl")
+    candles = _uptrend_candles(20)
+    state = _healthy_market_state(ohlcv_5m=candles)
+    state["candles"] = candles
+
+    op = asyncio.run(voice.grade(state, mem))
+
+    assert op.verdict == "abstain"
+    assert "insufficient_history" in op.reasoning
+
+
 # ── coordinator: B6 regime gate-modulator ─────────────────────────────
 def test_coordinator_chop_raises_floor_declines() -> None:
     """B6: a confirmed-chop regime raises the chart floor to 0.92.
@@ -639,6 +761,24 @@ def test_coordinator_trend_uses_normal_floor_acts() -> None:
     action, reason = coordinator(opinions)
     assert action == "act"
     assert reason == "all_voices_aligned"
+
+
+def test_coordinator_downtrend_raises_floor_same_as_chop() -> None:
+    """S41 regression guard: a downtrend (regime bearish from -DI>+DI) raises
+    the chart floor exactly like chop. Both chop and downtrend emit
+    regime.verdict='bearish', so the coordinator path is identical.
+    A 0.88 chart must DECLINE even though the regime call came from a
+    strong downtrend, not from low-ADX chop.
+    """
+    opinions = [
+        _opinion("chart_analyst", "bullish", 0.88),
+        _opinion("memory_voice", "neutral", 0.5),
+        _opinion("risk_voice", "bullish", 0.7),
+        _opinion("regime_analyst", "bearish", 0.75),  # could be chop OR downtrend
+    ]
+    action, reason = coordinator(opinions)
+    assert action == "decline"
+    assert reason == "chop_below_high_bar"
 
 
 def test_coordinator_unconfident_chop_uses_normal_floor() -> None:

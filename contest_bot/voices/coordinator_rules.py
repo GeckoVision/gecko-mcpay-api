@@ -95,12 +95,14 @@ def coordinator(opinions: list[VoiceOpinion]) -> tuple[LocalAction, str | None]:
     if chart.verdict != "bullish":
         return ("decline", "chart_below_threshold")
 
-    # Rule 3 (B6) — regime-modulated floor. A confirmed CHOP regime
-    # (regime_analyst bearish & confident) raises the bar to the chop
-    # floor; everything else (trend / transitional / abstain) uses the
-    # normal floor. This is the gate-modulator, not a veto — it never
-    # bans a symbol, it just demands a much cleaner setup in chop where
-    # breakout is -EV.
+    # Rule 3 (B6) — regime-modulated floor. A confirmed CHOP-OR-DOWNTREND
+    # (regime_analyst bearish & confident) raises the bar to the chop floor;
+    # everything else (uptrend / transitional / abstain) uses the normal floor.
+    # After the S41 direction fix, 'bearish' covers both:
+    #   - chop (adx <= 18): momentum -EV regardless of direction
+    #   - downtrend (adx >= 25, -DI > +DI): longs structurally wrong
+    # This is the gate-modulator, not a veto — it never bans a symbol,
+    # it just demands a much cleaner setup when direction-momentum is -EV.
     in_chop = regime.verdict == "bearish" and regime.confidence >= _REGIME_CHOP_CONFIDENCE
     floor = _CHART_CHOP_FLOOR if in_chop else _CHART_MIN_CONFIDENCE
     if chart.confidence < floor:

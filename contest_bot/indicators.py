@@ -61,7 +61,12 @@ def _wilder_smooth(vals: list[float], n: int) -> list[float | None]:
     return out
 
 
-def adx(highs: list[float], lows: list[float], closes: list[float], n: int = 14) -> list[float | None]:
+def adx(
+    highs: list[float],
+    lows: list[float],
+    closes: list[float],
+    n: int = 14,
+) -> list[float | None]:
     m = len(closes)
     out: list[float | None] = [None] * m
     if m < 2 * n:
@@ -91,6 +96,63 @@ def adx(highs: list[float], lows: list[float], closes: list[float], n: int = 14)
         if dx[i] is not None:
             out[i] = (out[i - 1] * (n - 1) + dx[i]) / n  # type: ignore[operator]
     return out
+
+
+def adx_full(
+    highs: list[float],
+    lows: list[float],
+    closes: list[float],
+    n: int = 14,
+) -> tuple[list[float | None], list[float | None], list[float | None]]:
+    """Return (adx_series, plus_di_series, minus_di_series) aligned to input.
+
+    The DI series are smoothed +DI / −DI lines (same Wilder smoothing used
+    inside ``adx()``). These share the same warmup window as ADX — values
+    are None until the first valid ADX bar.  ``compute_latest`` calls this
+    instead of ``adx()`` so the directional components are available without
+    recomputing the raw DMs a second time.
+    """
+    m = len(closes)
+    none_series: list[float | None] = [None] * m
+    if m < 2 * n:
+        return none_series[:], none_series[:], none_series[:]
+
+    tr, plus_dm, minus_dm = [0.0], [0.0], [0.0]
+    for i in range(1, m):
+        up = highs[i] - highs[i - 1]
+        dn = lows[i - 1] - lows[i]
+        plus_dm.append(up if (up > dn and up > 0) else 0.0)
+        minus_dm.append(dn if (dn > up and dn > 0) else 0.0)
+        tr.append(max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])))
+
+    atr_s = _wilder_smooth(tr, n)
+    pdm_s = _wilder_smooth(plus_dm, n)
+    mdm_s = _wilder_smooth(minus_dm, n)
+
+    adx_out: list[float | None] = [None] * m
+    pdi_out: list[float | None] = [None] * m
+    mdi_out: list[float | None] = [None] * m
+
+    dx: list[float | None] = [None] * m
+    for i in range(m):
+        if atr_s[i] and atr_s[i] != 0 and pdm_s[i] is not None and mdm_s[i] is not None:
+            pdi = 100 * pdm_s[i] / atr_s[i]  # type: ignore[operator]
+            mdi = 100 * mdm_s[i] / atr_s[i]  # type: ignore[operator]
+            pdi_out[i] = pdi
+            mdi_out[i] = mdi
+            dx[i] = 100 * abs(pdi - mdi) / (pdi + mdi) if (pdi + mdi) > 0 else 0.0
+
+    first = next((i for i, v in enumerate(dx) if v is not None), None)
+    if first is None or first + n > m:
+        return adx_out, pdi_out, mdi_out
+
+    seed = sum(v for v in dx[first : first + n] if v is not None) / n  # type: ignore[arg-type]
+    adx_out[first + n - 1] = seed
+    for i in range(first + n, m):
+        if dx[i] is not None:
+            adx_out[i] = (adx_out[i - 1] * (n - 1) + dx[i]) / n  # type: ignore[operator]
+
+    return adx_out, pdi_out, mdi_out
 
 
 def mfi(highs, lows, closes, vols, n: int = 14) -> list[float | None]:
@@ -170,9 +232,13 @@ def compute_latest(candles: list[dict]) -> dict:
     bl_v, bm_v, bu_v = _last(bl), _last(bm), _last(bu)
     bb_width = ((bu_v - bl_v) / bm_v * 100) if (bl_v is not None and bu_v is not None and bm_v) else None
 
+    adx_s, pdi_s, mdi_s = adx_full(highs, lows, closes, 14)
+
     return {
         "price": closes[-1] if closes else None,
-        "adx": _last(adx(highs, lows, closes, 14)),
+        "adx": _last(adx_s),
+        "plus_di": _last(pdi_s),
+        "minus_di": _last(mdi_s),
         "rsi": _last(rsi(closes, 14)),
         "mfi": _last(mfi(highs, lows, closes, vols, 14)),
         "ema9": _last(ema(closes, 9)),
@@ -186,4 +252,4 @@ def compute_latest(candles: list[dict]) -> dict:
     }
 
 
-__all__ = ["ema", "rsi", "adx", "mfi", "atr", "bb", "compute_latest"]
+__all__ = ["ema", "rsi", "adx", "adx_full", "mfi", "atr", "bb", "compute_latest"]
