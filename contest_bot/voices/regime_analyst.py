@@ -84,11 +84,36 @@ class RegimeAnalystVoice:
                 "abstain", 0.0, "adx_unavailable", [], started,
             )
 
+        chop_v = snap.get("chop")
+        # bb_width label: expansion >2% signals volatility opening; compression
+        # <1% signals coiling (breakout potential or slow bleed — context-dependent).
+        if bb_width is not None:
+            if bb_width > 2.0:
+                bb_label = f"bb_width {bb_width:.2f}% — expansion"
+            elif bb_width < 1.0:
+                bb_label = f"bb_width {bb_width:.2f}% — compression"
+            else:
+                bb_label = f"bb_width {bb_width:.2f}%"
+        else:
+            bb_label = "bb_width=n/a"
+
+        # chop label for reasoning context (informational only — no gate)
+        if chop_v is not None:
+            if chop_v > 61.8:
+                chop_label = f"chop={chop_v:.1f} (max chop)"
+            elif chop_v < 38.2:
+                chop_label = f"chop={chop_v:.1f} (trending)"
+            else:
+                chop_label = f"chop={chop_v:.1f}"
+        else:
+            chop_label = "chop=n/a"
+
         obs = [
             f"adx={adx_v:.1f}",
             f"+DI={plus_di:.1f}" if plus_di is not None else "+DI=n/a",
             f"-DI={minus_di:.1f}" if minus_di is not None else "-DI=n/a",
-            f"bb_width={bb_width:.2f}%" if bb_width is not None else "bb_width=n/a",
+            bb_label,
+            chop_label,
         ]
 
         if adx_v >= _ADX_TREND:
@@ -99,7 +124,7 @@ class RegimeAnalystVoice:
                 if plus_di > minus_di:
                     return self._opinion(
                         "bullish", conf,
-                        f"uptrend: ADX {adx_v:.1f} +DI>{'-'}DI ({plus_di:.1f}>{minus_di:.1f}) — momentum permitted",
+                        f"uptrend: ADX {adx_v:.1f} +DI>{'-'}DI ({plus_di:.1f}>{minus_di:.1f}) — momentum permitted; {bb_label}; {chop_label}",
                         obs, started,
                     )
                 else:
@@ -107,7 +132,7 @@ class RegimeAnalystVoice:
                     # Block longs — same coordinator path as chop (bearish raises floor).
                     return self._opinion(
                         "bearish", conf,
-                        f"downtrend: ADX {adx_v:.1f} {'-'}DI>+DI ({minus_di:.1f}>{plus_di:.1f}) — longs blocked",
+                        f"downtrend: ADX {adx_v:.1f} {'-'}DI>+DI ({minus_di:.1f}>{plus_di:.1f}) — longs blocked; {bb_label}; {chop_label}",
                         obs, started,
                     )
             else:
@@ -115,7 +140,7 @@ class RegimeAnalystVoice:
                 # assumption: presence of trend without direction info).
                 return self._opinion(
                     "bullish", conf,
-                    f"TREND adx={adx_v:.1f}>={_ADX_TREND:.0f} (DI n/a) — momentum permitted",
+                    f"TREND adx={adx_v:.1f}>={_ADX_TREND:.0f} (DI n/a) — momentum permitted; {bb_label}; {chop_label}",
                     obs, started,
                 )
 
@@ -124,14 +149,14 @@ class RegimeAnalystVoice:
             conf = min(0.85, 0.55 + (_ADX_CHOP - adx_v) / 40.0)
             return self._opinion(
                 "bearish", conf,
-                f"chop: ADX {adx_v:.1f}<={_ADX_CHOP:.0f} — momentum -EV here",
+                f"chop: ADX {adx_v:.1f}<={_ADX_CHOP:.0f} — momentum -EV here; {bb_label}; {chop_label}",
                 obs, started,
             )
 
         # Dead-zone — transitional (18 < adx < 25).
         return self._opinion(
             "neutral", 0.4,
-            f"transitional: ADX {adx_v:.1f} in ({_ADX_CHOP:.0f},{_ADX_TREND:.0f})",
+            f"transitional: ADX {adx_v:.1f} in ({_ADX_CHOP:.0f},{_ADX_TREND:.0f}); {bb_label}; {chop_label}",
             obs, started,
         )
 
