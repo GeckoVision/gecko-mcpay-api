@@ -1,0 +1,16 @@
+{
+  "_fixture": "onchainOS defi deposit response, investment-id 29130 \u2014 the BORROW side of the Kamino USDC reserve (investType=6, carries borrowInfoList). Its terminal klend instruction is borrow_obligation_liquidity (disc 797f12cc49f5e141), NOT a supply instruction. This is the Step-3 first-deposit blocker root cause: broadcasting it fails simulation with ObligationDepositsEmpty (klend code 23) because a fresh obligation has no collateral to borrow against. Recorded read-only 2026-05-22; NEVER broadcast (the OKX backend rejects it pre-broadcast, $0). The hardened gate (require_supply=True) must REJECT this as a non-supply tx. signatureData dropped; from retained.",
+  "ok": true,
+  "data": {
+    "dataList": [
+      {
+        "callDataType": "EMPTY",
+        "from": "3HrXPry37q5bcaa5C3m543bHLShpMxu7LF4KbRjBJN4i",
+        "originalData": "",
+        "serializedData": "uQD6oWTwm1joyvEW5yUTTrAQbMi1Ccc9KqTVV7f5ViQz4odxwtaBo4yi833zeZMrV75QonTpJzqZhSiSdKyruK3sJCfuHsbyarLi49ER8yHZVGcaAFEFPeKJpfiKFF84APkeCMouVRoYJDY9iryNxB52wNYHALFe3j4NuuVrr4fTTE7dNmeZUhnDiuCg7HnU99eqZsCJmZE8h4kUTCNEnxzgKrkU4DQQnpD33kPAkLbLjwMwFBe3wo1RJMVh3cv4uBqKWeAjQAfdDXn5TuhgbonAd3L3xK78rEaeYwcj6TveFJ1Ja1FfYUizzqDHq1sau1ctcGzZtzkbVPbHB2x3aJWdriVWQdYZURwG5q7T8TZsiFB1japvmBVG6r8K3u498iQSic1kBWZWUJVtrjf8M33Lq4wkeBZzqjtCpGBAxKUB563JVSUmsYxZQyyZ1Fb5EjRZt86EsSJ5KYbTXbDGaMfELxxiEhERYa4nM4uxisF63qu94PmhCVpy9e7meCWpMUXhqM4fWswy2nJpdkowFFaaYeJ9Wn8LtZ3zZfKKiKBqAiUdFLrU96jSqcB311cZTXoV3BzamjD19PpKvDNEdMPHeReA8eQbW1uvUUbVk9L8T4ufiNgKGaDxQmurTxGiH5YQDPssU49swpwuXPzRMRw9iRAnUdLGxrfvaiQEkLHf43yWg9rgzd66AAXwyBr386DVfQ9DrSeCwPC16Y1eafJx596HegW8EbLynCKXvmNG4xQepigcQh5A7YPpVSTgNGehtQsxmC13nQwHjNTiHvtJgMyYBT6Z4qLFTujJaWWdyb8ZJU9yAr5QFSt3h87NvnidVW5gSeWn8ks5aD11A6grx42p3dgZp2AvCMtFSL1HTi33GHzScwABpXhEP6Xn8rds6eo9zbCXCXMw8KAb8Cr8oukYTRtkeLM2M8HxtCisTYnptMPu3u1BPcGnfuZoM68xSF5awC3riFJqocWTrPmcyuC9Ui6eGut7vpv3LLnKqtQq4Yr4LQnHCfw9RBzSLCb",
+        "to": "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD",
+        "value": "0x0"
+      }
+    ]
+  }
+}

@@ -46,10 +46,12 @@ from gecko_core.execution.yield_base import (
 )
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
-DEPOSIT_FIXTURE = FIXTURE_DIR / "deposit_29130_25usdc.json"
+# id 227050 = Kamino USDC SUPPLY (SINGLE_EARN). The old 29130 fixture was the
+# BORROW side and is kept only as a negative case (gate must reject it).
+DEPOSIT_FIXTURE = FIXTURE_DIR / "deposit_227050_5usdc.json"
 
 # Sample deposit notional used to (re)generate the fixture.
-SAMPLE_AMOUNT_USDC = "25"
+SAMPLE_AMOUNT_USDC = "5"
 
 
 # --- live fetch (never broadcasts) -----------------------------------------

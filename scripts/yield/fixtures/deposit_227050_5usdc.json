@@ -1,0 +1,16 @@
+{
+  "_fixture": "onchainOS defi deposit response, Kamino USDC SUPPLY id 227050 (SINGLE_EARN, investType=1), $5, Solana chainIndex 501. Recorded read-only 2026-05-22; NEVER broadcast. UNSIGNED calldata. This is the CORRECT supply product: its terminal klend instruction is deposit_reserve_liquidity_and_obligation_collateral (disc 81c70402de271a2e). Contrast deposit_29130_25usdc_BORROW.json, whose terminal instruction is borrow_obligation_liquidity (the Step-3 blocker). Server signatureData blob dropped; from is the wallet PUBLIC pubkey, retained for the payer assertion.",
+  "ok": true,
+  "data": {
+    "dataList": [
+      {
+        "callDataType": "EMPTY",
+        "from": "3HrXPry37q5bcaa5C3m543bHLShpMxu7LF4KbRjBJN4i",
+        "originalData": "",
+        "serializedData": "2xWGSSYEbxnudzPQxsPp3gnTr2FqpXVRYepCEV4jnTLsa55JthTWDY4suiBaQR4jHAfsbQrvo5T5wGfr1M3evzCv6QhmDmYN9ybbGh939uBNKUWmMpqWzdoYEbJeBWhN2SAsYBuNrpn5tWyyVpv6v8NnMt3jx2zBqmg4ezAzG3zZYXUg4kAxBf1x1wNzLtfToVt9fRQ4XaGFFJH8aMAD1ik1HWnu3dxv53ZXABB3K5Hmb9yfhHYA5SSa8isiJAfq46X2V7x6WL3Rgq3nV24PPJBuFYD4DzK7zSiutPKwqjJo8wkhHQtCWaMRYBrfk1Btp5SL3nCfPfsEWo9y4bNMm3heqz5BtCikVm8fEqbwG419cugetHajJ6jWfK2FL1HHsurjh7L1J8KKvtGyWbJN2k8oWWscXeDSooZmbjrYbYxmu8TfAdzZrjSQLifH9i1B7SrAsgGveGodxbbmKoahUiAVeJCEMQHM5Ut4vo98182bbf1cAFqd4R7M7D7FpqiHLGz6Ly8SpqdNEfMpYBqJJMgwxwQtQZJU1HW6Hp1orF1zmrMUAA7b9V7xUxYVWdSf56EEB8FQW7hqaneDgLJZryJt8PUCJE5mTjpJqCvtAK5YkkyoDaBYqR7wUno7tPo5DJKsBStiMCYr2af4xSokzNKd8ZgB4sJiNF5UAAoZWR8AV64kSKzdU1WhBohnbN2q54gFoTUu84RKAS4sHJGGheprU63Jpwu5PuFowUm1kbrdXzEKqjtszi9quV3qGxVFshMdyHwrAMoPg7zyuf1UNykjcopytSbYQ7Dpet9jcuq9rRykn41Gbnuebp7B5UK36TxK5PNjk43uPYA1PRS8Gv3LRJEopMmYwiFzXCsZJWQpHE7jBALru8qVgbkUTv6wGuB6vTGEUgZpMT1x1FShbVMDo1jckyn3Q8qyGGLi3grK7GspEiJxfG19JtKpbJEyWvDBwZW8KqFJTt5dA9mXuRMhtuF42aNpmqcPxkYpeEZQNoNAYMyLjvjK4Gvnk7ELjyTXJYafqh8QsuRqG642dQfKzi6HhbD9EPfcFfRve6RgveX1rNtHsjfj3LaK7PfHmXjo9xXCXTK9jUYuHKo51taqWWoqrGHp1oZADa3MEHRLJtz13jdVYdo1BFf9DK5o7hhj3qWXQ7WV9SJ6WFjthdzkpfd4kUdrk8GHrgWsqxP6SRcL67fUY8Vmpj6eBJ5qCrsfsmVpkV4pRYcUfu7hMRZXHw4BtY6kbKyGkKr4Z8bwBHjkVKov1YDHWSjLpHgDomL8fKascrJMFecejiuVEgKkXdwGgNhqHcerqqyPbxsZC6w7m9qBvuPhcRR8rjNDyLRDHtYquKCBNNqnV9NEJVcmXbCthRzbhTdJBxvJHsFYLYvS9sKC8g4qhm",
+        "to": "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD",
+        "value": "0x0"
+      }
+    ]
+  }
+}

@@ -17,8 +17,12 @@ from __future__ import annotations
 
 from gecko_core.execution.yield_base.validation import (
     EMPTY_SIG,
+    KAMINO_USDC_BORROW_INVESTMENT_ID,
     KAMINO_USDC_INVESTMENT_ID,
+    KLEND_BORROW_DISCRIMINATORS,
     KLEND_PROGRAM_ID,
+    KLEND_SUPPLY_DISCRIMINATORS,
+    KLEND_WITHDRAW_DISCRIMINATORS,
     SOLANA_CHAIN_INDEX,
     USDC_MINT,
     USDC_PRECISION,
@@ -31,8 +35,12 @@ from gecko_core.execution.yield_base.validation import (
 
 __all__ = [
     "EMPTY_SIG",
+    "KAMINO_USDC_BORROW_INVESTMENT_ID",
     "KAMINO_USDC_INVESTMENT_ID",
+    "KLEND_BORROW_DISCRIMINATORS",
     "KLEND_PROGRAM_ID",
+    "KLEND_SUPPLY_DISCRIMINATORS",
+    "KLEND_WITHDRAW_DISCRIMINATORS",
     "SOLANA_CHAIN_INDEX",
     "USDC_MINT",
     "USDC_PRECISION",

@@ -10,11 +10,23 @@ failure mode. Sprint 12 CDP `/settle` broke because only the stub path was
 tested. Here we replay the REAL onchainOS response bytes and decode them as a
 genuine Solana ``VersionedTransaction``; nothing is stubbed.
 
-Re-recording the fixture (a once-off live `defi deposit` calldata fetch — still
-read-only, still never broadcast) is gated behind the ``live_kamino`` marker so
-it never runs in the default sweep. The redeem-calldata fixture is tracked as a
-skipped placeholder: it cannot be recorded until a real on-chain position
-exists, which only happens at Step 3 (founder-authorized live deposit).
+Step-3 blocker resolution (2026-05-22): the original target investment-id
+**29130** turned out to be the BORROW side of the Kamino USDC reserve
+(investType=6, terminal klend instruction ``borrow_obligation_liquidity``).
+Broadcasting it fails simulation with ``ObligationDepositsEmpty`` (klend code
+23) because a fresh obligation has no collateral to borrow against. The correct
+USDC SUPPLY product is **227050** (SINGLE_EARN, investType=1, terminal
+instruction ``deposit_reserve_liquidity_and_obligation_collateral``). The
+validator now enforces SUPPLY *semantics* (``require_supply=True``): it rejects
+any tx that invokes a borrow instruction and requires a deposit instruction.
+The 29130 borrow fixture is retained here as a NEGATIVE case the gate must catch.
+
+Re-recording the supply fixture (a once-off live `defi deposit` calldata fetch —
+still read-only, still never broadcast) is gated behind the ``live_kamino``
+marker so it never runs in the default sweep. The redeem-calldata fixture is
+tracked as a skipped placeholder: it cannot be recorded until a real on-chain
+position exists, which only happens once a live deposit is broadcast (a separate
+founder decision — at the time of writing no position has been created).
 
 Reference: ``docs/strategy/2026-05-22-yield-base-build-plan.md`` §4 Step 2.
 
@@ -44,12 +56,18 @@ from gecko_core.execution.yield_base import (
 )
 
 FIXTURES = Path(__file__).parent / "fixtures" / "yield_base"
-DEPOSIT_FIXTURE = FIXTURES / "deposit_29130_25usdc.json"
+DEPOSIT_FIXTURE = FIXTURES / "deposit_227050_5usdc.json"  # USDC SUPPLY (correct)
+BORROW_FIXTURE = FIXTURES / "deposit_29130_BORROW.json"  # borrow side (negative)
 REDEEM_FAIL_FIXTURE = FIXTURES / "redeem_29130_ratio1_FAIL.json"
+REDEEM_FIXTURE = FIXTURES / "redeem_29130_ratio1.json"  # exists only post-deposit
 
 # The wallet that built the recorded deposit (public Solana address, not a
 # secret). The validator asserts account[0] of the decoded tx == this `from`.
 EXPECTED_PAYER = "3HrXPry37q5bcaa5C3m543bHLShpMxu7LF4KbRjBJN4i"
+
+# klend deposit/supply instruction discriminator we expect to terminate the tx.
+DEPOSIT_RESERVE_LIQ_AND_OBLIG_COLL = "81c70402de271a2e"
+BORROW_OBLIGATION_LIQUIDITY = "797f12cc49f5e141"
 
 
 def _load(path: Path) -> dict:
@@ -61,7 +79,7 @@ def _load(path: Path) -> dict:
 
 def test_deposit_fixture_replays_to_valid_calldata() -> None:
     """The committed onchainOS deposit response decodes to a structurally
-    valid, UNSIGNED Kamino klend deposit tx."""
+    valid, UNSIGNED Kamino klend SUPPLY tx."""
     summary = assert_deposit_calldata(_load(DEPOSIT_FIXTURE))
     assert isinstance(summary, CalldataSummary)
     assert summary.to == KLEND_PROGRAM_ID
@@ -85,16 +103,42 @@ def test_deposit_calldata_is_unsigned() -> None:
     assert summary.unsigned is True
 
 
-def test_deposit_fixture_targets_kamino_klend() -> None:
-    """Step-1 finding locked in: 5 klend instructions, klend is the target."""
+def test_deposit_fixture_is_supply_not_borrow() -> None:
+    """SEMANTIC GATE: the supply fixture invokes a Kamino deposit instruction
+    and NOT a borrow instruction. This is the guard that resolves the Step-3
+    blocker (29130 was the borrow side)."""
     summary = assert_deposit_calldata(_load(DEPOSIT_FIXTURE))
-    assert summary.programs.count(KLEND_PROGRAM_ID) == 1
-    assert summary.klend_instruction_count == 5
+    assert summary.has_supply_instruction is True
+    assert summary.has_borrow_instruction is False
+    assert DEPOSIT_RESERVE_LIQ_AND_OBLIG_COLL in summary.klend_discriminators
+    assert BORROW_OBLIGATION_LIQUIDITY not in summary.klend_discriminators
 
 
-def test_precision_25_usdc_to_minimal_units() -> None:
-    """$25 → 25_000_000 minimal units (10^6), exact, no float."""
-    assert expected_minimal_units("25", USDC_PRECISION) == 25_000_000
+def test_borrow_fixture_is_rejected_by_supply_gate() -> None:
+    """NEGATIVE case — the 29130 BORROW calldata must be rejected by the
+    default (require_supply=True) gate. This is the exact tx that failed
+    on-chain simulation with ObligationDepositsEmpty; the gate now catches it
+    OFFLINE for $0 before any broadcast."""
+    payload = _load(BORROW_FIXTURE)
+    with pytest.raises(SimFailure, match="BORROW"):
+        assert_deposit_calldata(payload, expect_payer=EXPECTED_PAYER)
+
+
+def test_borrow_fixture_passes_when_supply_not_required() -> None:
+    """With require_supply=False the borrow tx still passes the purely-
+    structural checks (it IS a valid unsigned klend tx) — proving the
+    rejection above is the *semantic* guard, not a structural artifact."""
+    summary = assert_deposit_calldata(
+        _load(BORROW_FIXTURE), expect_payer=EXPECTED_PAYER, require_supply=False
+    )
+    assert summary.has_borrow_instruction is True
+    assert summary.has_supply_instruction is False
+    assert BORROW_OBLIGATION_LIQUIDITY in summary.klend_discriminators
+
+
+def test_precision_5_usdc_to_minimal_units() -> None:
+    """$5 → 5_000_000 minimal units (10^6), exact, no float."""
+    assert expected_minimal_units("5", USDC_PRECISION) == 5_000_000
     assert expected_minimal_units("100", USDC_PRECISION) == 100_000_000
     assert expected_minimal_units("0.000001", USDC_PRECISION) == 1
 
@@ -138,21 +182,35 @@ def test_mismatched_payer_fails() -> None:
         assert_deposit_calldata(_load(DEPOSIT_FIXTURE), expect_payer="NotOurWallet")
 
 
-# --- redeem-calldata placeholder (blocked on Step 3 position) --------------
+# --- redeem-calldata placeholder (blocked on a live position) --------------
 
 
-@pytest.mark.skip(reason="redeem fixture recorded post-Step-3 deposit")
+@pytest.mark.skipif(
+    not REDEEM_FIXTURE.exists(),
+    reason="redeem fixture is recorded only after a live deposit creates a position",
+)
 def test_redeem_calldata_replays_to_valid_exit() -> None:
-    """PLACEHOLDER — tracked, not forgotten.
+    """A real `defi redeem --ratio 1` returns valid exit calldata ONLY when the
+    wallet holds a Kamino position. With no position it clean-errors (84027).
 
-    A real `defi redeem --ratio 1` returns valid exit calldata ONLY when the
-    wallet holds a Kamino position. Step 1 confirmed it clean-errors (84027)
-    with no position. Once Step 3's $5-10 live deposit confirms, record the
-    redeem calldata into fixtures/yield_base/redeem_29130_ratio1.json and
-    fill this in: assert it decodes, targets klend, is unsigned, payer matches.
-    Until then this stays skipped so the gap is visible, not silent.
-    """
-    raise AssertionError("unreachable — skipped until the Step-3 redeem fixture exists")
+    This test is auto-enabled the moment the redeem fixture file lands (recorded
+    immediately after a live deposit confirms). It asserts the exit calldata
+    decodes, targets klend, is unsigned, the payer matches, and invokes a
+    withdraw/redeem instruction (not a deposit/borrow). Until the fixture
+    exists, skipif keeps the gap VISIBLE rather than silent."""
+    from gecko_core.execution.yield_base import KLEND_WITHDRAW_DISCRIMINATORS
+
+    payload = _load(REDEEM_FIXTURE)
+    # The exit tx is a valid unsigned klend tx but is NOT a supply deposit, so
+    # validate it with require_supply=False and assert withdraw semantics here.
+    summary = assert_deposit_calldata(payload, expect_payer=EXPECTED_PAYER, require_supply=False)
+    assert summary.to == KLEND_PROGRAM_ID
+    assert summary.unsigned is True
+    assert summary.payer == EXPECTED_PAYER
+    assert any(d in KLEND_WITHDRAW_DISCRIMINATORS for d in summary.klend_discriminators), (
+        f"exit tx invokes no withdraw/redeem instruction: {summary.klend_discriminators}"
+    )
+    assert summary.has_borrow_instruction is False
 
 
 # --- once-off live re-record (operator opt-in; never broadcasts) -----------
@@ -161,7 +219,7 @@ def test_redeem_calldata_replays_to_valid_exit() -> None:
 @pytest.mark.live_kamino
 def test_record_deposit_fixture_live() -> None:
     """Re-fetch the deposit calldata from the live onchainOS CLI and assert it
-    still matches the locked shape. Read-only — NEVER calls `wallet
+    still matches the locked SUPPLY shape. Read-only — NEVER calls `wallet
     contract-call`, NEVER signs, NEVER broadcasts. Gated behind both the
     ``live_kamino`` marker AND ``GECKO_YIELD_KAMINO_LIVE=1`` so the default
     sweep and CI never touch the network."""
@@ -176,7 +234,9 @@ def test_record_deposit_fixture_live() -> None:
     from sim_kamino_deposit import fetch_live_deposit, get_wallet_address  # type: ignore
 
     addr = get_wallet_address()
-    payload = fetch_live_deposit(addr, "25")
+    payload = fetch_live_deposit(addr, "5")
     summary = assert_deposit_calldata(payload, expect_payer=addr)
     assert summary.to == KLEND_PROGRAM_ID
     assert summary.unsigned is True
+    assert summary.has_supply_instruction is True
+    assert summary.has_borrow_instruction is False
