@@ -276,6 +276,8 @@ def _compute_index_snapshot(symbol: str, candles: list[dict]) -> dict:
     """
     snap = _indicators.compute_latest(candles)
     adx_v = snap.get("adx")
+    plus_di_v = snap.get("plus_di")
+    minus_di_v = snap.get("minus_di")
     rsi_v = snap.get("rsi")
     mfi_v = snap.get("mfi")
     ema9 = snap.get("ema9")
@@ -334,8 +336,11 @@ def _compute_index_snapshot(symbol: str, candles: list[dict]) -> dict:
     return {
         "instrument": symbol,
         "adx": _r(adx_v),
+        "plus_di": _r(plus_di_v),
+        "minus_di": _r(minus_di_v),
         "rsi": _r(rsi_v),
         "mfi": _r(mfi_v),
+        "bb_width": _r(snap.get("bb_width")),
         "ema_stack": ema_stack,
         "regime": regime,
         "price": price,
@@ -921,7 +926,12 @@ def poll_instruments() -> None:
             "volume_spike": vs_fires,
         }
 
+        # FIX #5 — eval telemetry: one row per symbol per poll for gate evaluation.
+        # For no-signal polls the panel never ran, so chart/regime fields will be
+        # null — that's correct; the quant needs the full indicator series including
+        # quiet polls to evaluate gate calibration over a 5-day paper period.
         if not (bo_fires or vs_fires):
+            _log_eval_telemetry(inst["symbol"], action="no_signal", decline_reason=None)
             continue
 
         if bo_fires and vs_fires:
@@ -1081,6 +1091,13 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
                 "total_cost_usd": local_decision.total_cost_usd,
             },
             decision_id=local_decision.decision_id,
+        )
+        # FIX #5 — eval telemetry for candidate polls (panel ran).
+        # _LAST_PANEL[instrument] was just updated above, so all fields are fresh.
+        _log_eval_telemetry(
+            instrument,
+            action=local_decision.action,
+            decline_reason=local_decision.reason if local_decision.action != "act" else None,
         )
         if local_decision.action != "act":
             _log("filter", f"[LOCAL] ✗ {local_decision.reason}")
@@ -1301,6 +1318,11 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
 # of returns: mean-reverting ⇒ stall, persistent ⇒ pause) — no volume needed.
 _TELEMETRY_PATH = _STATE_BASE / f"poll_telemetry_{datetime.now(UTC).strftime('%Y%m%d')}.jsonl"
 
+# Per-poll per-symbol evaluation telemetry for the quant gate evaluation.
+# One JSONL row per symbol per poll: indicators + panel decision + action.
+# Respects GECKO_STATE_DIR like all other state files. Never crashes the loop.
+_EVAL_TELEMETRY_PATH = _STATE_BASE / f"eval_telemetry_{datetime.now(UTC).strftime('%Y%m%d')}.jsonl"
+
 
 def _log_telemetry(row: dict) -> None:
     """Best-effort append of a per-poll telemetry row. Never raises into the
@@ -1309,6 +1331,46 @@ def _log_telemetry(row: dict) -> None:
         with open(_TELEMETRY_PATH, "a", encoding="utf-8") as f:
             f.write(json.dumps(row) + "\n")
     except OSError:
+        pass
+
+
+def _log_eval_telemetry(sym: str, action: str | None, decline_reason: str | None) -> None:
+    """Append one eval-telemetry row for sym to eval_telemetry_YYYYMMDD.jsonl.
+
+    Pulls indicator snapshot from _LAST_INDEX[sym] and the most-recent
+    panel decision from _LAST_PANEL[sym] (if present). All fields are
+    best-effort: missing values write null. Never raises — instrumentation
+    must never break trading.
+    """
+    try:
+        idx = _LAST_INDEX.get(sym) or {}
+        panel = _LAST_PANEL.get(sym) or {}
+        # Extract regime + chart voice from the panel's voices list
+        voices = panel.get("voices") or []
+        regime_v = next((v for v in voices if v.get("name") == "regime_analyst"), {})
+        chart_v = next((v for v in voices if v.get("name") == "chart_analyst"), {})
+        row = {
+            "ts": datetime.now(UTC).isoformat(),
+            "symbol": sym,
+            "price": idx.get("price"),
+            "adx": idx.get("adx"),
+            "plus_di": idx.get("plus_di"),
+            "minus_di": idx.get("minus_di"),
+            "rsi": idx.get("rsi"),
+            "mfi": idx.get("mfi"),
+            "bb_width": idx.get("bb_width"),
+            # range_24h_pct is not in _LAST_INDEX — best effort from snapshot
+            "range_24h_pct": _LAST_SNAPSHOTS.get(sym, {}).get("range_pct"),
+            "regime": panel.get("regime"),
+            "chart_verdict": chart_v.get("verdict"),
+            "chart_conf": chart_v.get("confidence"),
+            "action": action,
+            "decline_reason": decline_reason,
+        }
+        with open(_EVAL_TELEMETRY_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+    except Exception:
+        # Never propagate — instrumentation must never break trading.
         pass
 
 
