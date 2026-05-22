@@ -307,19 +307,35 @@ def _compute_index_snapshot(symbol: str, candles: list[dict]) -> dict:
     else:
         regime = "unknown"
 
-    # Deterministic conditional triggers
+    # Deterministic conditional triggers — DIRECTION-AWARE (+DI vs -DI).
+    # s42: ADX measures trend STRENGTH, not direction. A high ADX in a DOWNtrend
+    # is not a long setup. The trigger only says "momentum confirms" when the
+    # trend points UP (+DI > -DI) — otherwise it falsely greenlit downtrends
+    # (the POPCAT false-alarm: ADX 48 but -DI>+DI = a falling knife).
+    plus_di = snap.get("plus_di")
+    minus_di = snap.get("minus_di")
+    up_dir = plus_di is not None and minus_di is not None and plus_di > minus_di
+    down_dir = plus_di is not None and minus_di is not None and minus_di > plus_di
+
     bull_parts: list[str] = []
     bear_parts: list[str] = []
-    if adx_v is not None and adx_v >= 25:
-        bull_parts.append("ADX>25")
+    if adx_v is not None and adx_v >= 25 and up_dir:
+        bull_parts.append("ADX>25 +DI>-DI")
     if mfi_v is not None and mfi_v >= 55:
         bull_parts.append("MFI>55")
     if ema_stack == "up":
         bull_parts.append("EMA stack up")
     if rsi_v is not None and 40 <= rsi_v <= 65:
         bull_parts.append("RSI in range")
-    bull_trigger = (" & ".join(bull_parts) + " → momentum confirms") if bull_parts else "no confirm signals"
+    # "momentum confirms" requires up-direction; otherwise it's not a long.
+    bull_trigger = (
+        " & ".join(bull_parts) + " → momentum confirms"
+        if (bull_parts and up_dir)
+        else "no clean long setup"
+    )
 
+    if adx_v is not None and adx_v >= 25 and down_dir:
+        bear_parts.append("-DI>+DI → downtrend, longs blocked")
     if mfi_v is not None and mfi_v < 45:
         bear_parts.append("MFI<45 → buying exhausted")
     if rsi_v is not None and rsi_v > 70:
