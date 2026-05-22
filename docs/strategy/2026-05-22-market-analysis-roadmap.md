@@ -41,11 +41,10 @@ The question was: binary **TP2/SL3 backtest says −EV** vs **live N=7 trailing 
 ### Phase 1 — Two levers in priority order: (A) the FEE/VENUE lever [dominant, NEW], (B) the multi-TF read + structure
 *Phase 0.5 proved the strategy is fee-dominated: gross edge +0.17% vs a ~0.5–0.75% DEX round-trip. Lowering the fee bar is the bigger, cheaper move; the structure work then has to clear a much lower bar. Do (A) first.*
 
-- **1.0 — THE FEE/VENUE LEVER (dominant).** Decide + implement the lowest-fee execution path the product can live with. **This is a strategic fork (founder + business-manager + trading-strategist + web3-engineer):**
-  - **Stay on-chain DEX (identity-preserving):** realistic fee floor ~0.5% (swap + slippage on no-tax majors) → EV bar = gross ≥ ~1.0%. Structure work must lift gross ~6× (0.17→1.0). Hard.
-  - **CEX maker fills (OKX Agent Trade Kit, already wired):** maker ~0.08–0.1%/side → fee ~0.2% RT → EV bar = gross ≥ ~0.4%. Structure work must lift gross ~2.4× (0.17→0.4). Achievable — but it's a venue/identity pivot (CEX, not on-chain DEX).
-  - **Lower frequency alone does NOT fix per-trade EV** (fewer −EV trades = less loss, not profit) — only helps combined with (B).
-  - Deliverable: a per-fee-level EV table (strategist+quant) + the identity tradeoff (business-manager) + the execution-path feasibility (web3) → founder picks the venue. *Everything downstream keys off the chosen fee.*
+- **1.0 — THE FEE/VENUE LEVER (dominant). ✅ DECIDED 2026-05-22 → `docs/strategy/2026-05-22-fee-venue-decision.md`.** The 3-lens package resolved it: **the DEX-vs-CEX fork was a false binary, and "CEX already wired" was wrong** (the wired path is a DEX taker-swap router, no maker/limit). **Decision: stay on-chain. Fix the fee with Jupiter RFQ (~0.04% RT, interim) → Phoenix CLOB maker (~0% maker, the real fix)** — both on-chain, self-custodial, *cheaper* than OKX CEX maker (~0.18%), and identity-true. **CEX rejected** for the house path (more expensive than the on-chain orderbook + breaks the non-custodial/x402 story the proof-artifact exists to prove); kept only as a user-selectable neutral adapter.
+  - **The hard truth (quant EV-at-each-fee table):** even at ~0% fee, *today's* gross edge (+0.09–0.17%) is a coin-flip (CI straddles zero). The fee buys ~0.55%/trade and turns a guaranteed loser into break-even; a **~2.4–4× gross-edge lift** (the Phase-1 structure work) must carry it past. **Both levers required** — neither alone clears the 2×-fee gate.
+  - **Lower frequency alone does NOT fix per-trade EV** — only helps combined with the edge work + a higher-R:R gate.
+  - **Build order:** the §5 fee×gating sweep FIRST (Phase V, below) → confirm the fee path's depth on our 5 names (RFQ/Phoenix probe, web3) → Jupiter-limit/RFQ interim → Phoenix maker.
 - **1.1** Add 4h + 15m candle fetch (zero-cost — `kline --bar 4H/15m` already works); probe 4h history depth first.
 - **1.2** `features/structure.py` — swing-pivot detection → support/resistance level table → HH/HL market-structure classification → range boundaries. Pure functions (the `indicators.py` pattern). **P0 — decorrelated from momentum, the direct fakeout fix.** (data-scientist)
 - **1.3** `features/patterns.py` (engulfing/pin/inside/outside — only `pattern@level`), `features/flow.py` (RVOL/VWAP/CVD-divergence, absorbing fixed `net_flow.py`), breakout/retest-quality features.
@@ -65,6 +64,7 @@ The question was: binary **TP2/SL3 backtest says −EV** vs **live N=7 trailing 
 - **3.3** **chart floor relaxation** (0.85→~0.72) + EMA→contributor — *now safe* because the regime router (Phase 2) blocks the chop/downtrend longs the high floor was bluntly suppressing. Sequenced, one variable at a time, replay-gated.
 
 ### Phase V — The validation spine (runs THROUGHOUT, gates every phase)
+- **V.0 — ⭐ THE DIRECTION-FALSIFIER (run FIRST, free, on cached data).** `scripts/calibration/fee_sensitivity_gating_delta.py`: replay the cached windows through the exit-reconciliation simulator, sweep **fee × `gating ∈ {on, off}`**, emit `netEV / block-CI / payoff` per cell. **The bot is a proof artifact; the bar is the GATING DELTA, not absolute PnL** — does `backtest(gating=on) − backtest(gating=off)` come out positive + CI-clean (do the trades Gecko *let through* beat the ones it would *veto*)? Two free answers before we build: (1) does ANY reachable fee make net-EV CI exclude zero — if not even at 0%, the *edge* not the venue is the blocker; (2) is the gating delta positive at break-even fee — if zero/negative (the live entry gate already backtests −0.64%), **the wedge itself needs work before any venue or feature build.** Note: at high fee the fee MASKS the gating signal (every gated trade loses ~0.5%), so the delta is only legible at break-even fee. (quant + strategist)
 - **V.1** Extend `scripts/calibration/` → `feature_validation.py`: a `Feature` protocol (computed strictly on `candles[:i+1]`), **block-bootstrap CI** (replacing the IID `bootstrap_ci` — autocorrelation makes effective-N ≪ raw-N), **leakage traps** (shuffle + placebo-label), **per-regime partitioning**, **FDR multiple-comparisons** + a pre-registration ledger, **walk-forward** folds. (statistician)
 - **V.2 Acceptance gates — a feature/strategy ships ONLY if (default REJECT):** leakage-clean; net-of-fee EV block-CI **excludes zero** in its declared regime; survives **BH-FDR** across the batch; **N_eff ≥ 30**; out-of-sample positive, same sign across folds; **incremental** over the existing panel (VIF); **economically meaningful** — **gross edge ≥ 2× round-trip fee** (≥~1.5% at 0.75%, ≥~1.0% at 0.5%). (statistician + quant)
 
@@ -86,8 +86,16 @@ The question was: binary **TP2/SL3 backtest says −EV** vs **live N=7 trailing 
 4. Is the goal still capital-preservation (favor fewer, higher-R:R trades)?
 
 ## Status
-Discovery complete (6 lenses). **Phase 0.5 (exit reconciliation) DONE** — the result reframed the roadmap: **the strategy is fee-dominated, not analysis-limited.** Net change: a new **Phase 1.0 fee/venue lever** (dominant), and the structure/multi-TF work demoted to the *second* lever (still needed — it must clear the new, lower fee bar). The −EV is real, not a measurement artifact.
+Discovery complete (6 lenses). **Phase 0.5 (exit reconciliation) DONE** + **Phase 1.0 fee/venue package DONE.** Two settled findings reframed the roadmap:
+1. **The strategy is fee-dominated, not analysis-limited** (0.5). The −EV is real, not a measurement artifact.
+2. **The fee fix is on-chain** (1.0) — the DEX-vs-CEX fork was a false binary; CEX is rejected (more expensive than the on-chain orderbook + identity-breaking). Path: Jupiter RFQ → Phoenix maker. But even free execution is a coin-flip on today's edge — **both** the fee fix and a ~2.4–4× gross-edge lift are required.
 
-**Open decision (founder):** the **DEX-vs-CEX fork** in Phase 1.0 — keep the on-chain DEX identity (gross bar ~1.0%) or take the CEX maker-fee advantage (gross bar ~0.4%, but a venue/identity pivot). Everything downstream keys off this.
+**The deepest reframe:** the bot is a **proof artifact**, so the bar is the **gating delta** (gated > ungated, CI-clean), not absolute PnL. This makes **V.0 (the fee×gating sweep) the highest-value next measurement** — it falsifies the whole direction for free before we build, and may reveal the *wedge itself* needs work (the entry gate backtests −0.64%).
 
-**Next (mandate-covered, runs regardless of the fork): finish Phase 0 data integrity** — 0.1 forming-candle, 0.2 CVD reconstruction, 0.3 volUsd + candle-order guard, 0.4 outcome ledger. These corrupt all measurement and are needed under either venue. Then resolve the fork → Phase 1.
+**Next, in order:**
+1. **V.0 fee×gating sweep** — the direction-falsifier (free, cached data). Does the gate discriminate at break-even fee?
+2. **Foundation L1 — Phase 0 data integrity** (forming-candle, CVD, volUsd+candle-guard, outcome ledger) + **Phase V spine** (block-bootstrap, leakage traps, per-regime, FDR, walk-forward, acceptance gates). Venue-agnostic; needed regardless.
+3. **Foundation L2 — Phase 1 structure/multi-TF** (the gross-edge lift) → only meaningful once V.0 confirms the gate discriminates.
+4. The on-chain fee path (RFQ depth probe → Phoenix adapter) as the execution-layer build.
+
+Granular TDD plan for L1 (Phase 0 + Phase V incl. V.0) → execute via subagent-driven-development.
