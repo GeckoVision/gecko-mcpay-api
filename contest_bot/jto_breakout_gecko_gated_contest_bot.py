@@ -93,9 +93,9 @@ TIMEFRAME = "5m"
 ENTRY_TYPE = "price_breakout"
 USD_PER_TRADE = int(os.environ.get("USD_PER_TRADE", "45"))  # runtime-overridable for "run and adjust": e.g. USD_PER_TRADE=25 for a smaller first live session. Default 45 (contest-proven). With MAX_CONCURRENT=2: 45×2=$90 deployed of ~$100 wallet — leaves little headroom, so start smaller on the first oracle-gated live run.
 STOP_LOSS_PCT = 3
-TAKE_PROFIT_PCT = 4  # iter-3.5 live 2026-05-20: 8 → 4. Founder observation + live peaks confirm: these memes oscillate ~2% naturally; +8% requires a 4x-of-normal move that almost never happens in chop. PYTH peak was +1.53% (just 0.47% short of trail activation) before drifting back. With trail-activate-at-2% catching pokes and TP-at-4% catching real momentum, 3 × +2-4% trades outperforms 1 × +8% miracle.
+TAKE_PROFIT_PCT = 2  # s41 2026-05-22: 4 → 2. Quant symbol study: universe oscillates ~2%, rarely +4% (only WIF reached it); +4% TP was structurally unreachable. Founder: "take 1-2%, not 4%". TODO: validate TP2 EV via calibration harness. PRIOR iter-3.5: 8 → 4. Founder observation + live peaks confirm: these memes oscillate ~2% naturally; +8% requires a 4x-of-normal move that almost never happens in chop. PYTH peak was +1.53% (just 0.47% short of trail activation) before drifting back. With trail-activate-at-2% catching pokes and TP-at-4% catching real momentum, 3 × +2-4% trades outperforms 1 × +8% miracle.
 STALL_GREEN_EXIT_AGE_MIN = 60  # iter-3.5 live 2026-05-20: stall-exit overlay (founder rule). If a position is open ≥60min AND pnl ≥STALL_GREEN_EXIT_MIN_PCT, force-close at market. Catches the "drifted +2-3% then died" failure mode that neither trail (no peak retracement) nor TP (never hit 4%) catches.
-STALL_GREEN_EXIT_MIN_PCT = 2.0  # see STALL_GREEN_EXIT_AGE_MIN above.
+STALL_GREEN_EXIT_MIN_PCT = 1.0  # s41 2026-05-22: 2.0 → 1.0 — book a +1% stalled-green (founder: "take at least 1%"). see STALL_GREEN_EXIT_AGE_MIN above.
 # iter-3.8 flat-stall exit (2026-05-21, quant-approved simple rule). Catches
 # the BONK no-man's-land BELOW the +2% stall_green_exit threshold: a position
 # that climbs to +1-2%, fades, and oscillates there for hours without ever
@@ -110,7 +110,7 @@ FLAT_STALL_PNL_LO = -0.5  # iter-3.9 2026-05-21: 0.3 → -0.5. Widened the band 
 FLAT_STALL_PNL_HI = 2.0  # ... (below STALL_GREEN_EXIT_MIN_PCT)
 FLAT_STALL_NO_NEW_HIGH_MIN = 30  # AND no new high in this many minutes
 TRAIL_STOP_PCT = 1
-TRAIL_ACTIVATE_AFTER_PCT = 2  # iter-3.1 E-LITE 2026-05-20: 5 → 2. Founder + analyst-pair call: in a 14h contest window with N=1-2 trades, the stall failure mode (position drifts +1-4% then dies, hits time-stop near $0 PnL) dominates the upside-clip risk. Trail at activate=+2% + give-back=1% converts modal stalls into +1-1.5% realized wins. Real momentum still rides — the trail tracks peak, never gives back >1%, so a +2%→+12% runner closes at ~+11%. Trade-off accepted: some wigglers that go +2% → +1% → +5% will exit at +1% instead of riding to +5%. At N=1, quant says lift is statistically indistinguishable from baseline; founder's call is "we need to actually book something."  # 2026-05-20 autonomous iter-2 (was 2 → 1 per quant analysis): tighter trail captures more of the peak. On meme-class vol (1-5%/h), 2% trail was getting swept on noise before TP; 1% trail locks in profits closer to peak. Highest-EV single-param change per quant — expected +1.3% [+0.4, +2.1] lift over 20h.
+TRAIL_ACTIVATE_AFTER_PCT = 1  # s41 2026-05-22: 2 → 1 — protect gains from +1% (founder: capture small wins in chop, don't wait for 4%). PRIOR iter-3.1 E-LITE 2026-05-20: 5 → 2. Founder + analyst-pair call: in a 14h contest window with N=1-2 trades, the stall failure mode (position drifts +1-4% then dies, hits time-stop near $0 PnL) dominates the upside-clip risk. Trail at activate=+2% + give-back=1% converts modal stalls into +1-1.5% realized wins. Real momentum still rides — the trail tracks peak, never gives back >1%, so a +2%→+12% runner closes at ~+11%. Trade-off accepted: some wigglers that go +2% → +1% → +5% will exit at +1% instead of riding to +5%. At N=1, quant says lift is statistically indistinguishable from baseline; founder's call is "we need to actually book something."  # 2026-05-20 autonomous iter-2 (was 2 → 1 per quant analysis): tighter trail captures more of the peak. On meme-class vol (1-5%/h), 2% trail was getting swept on noise before TP; 1% trail locks in profits closer to peak. Highest-EV single-param change per quant — expected +1.3% [+0.4, +2.1] lift over 20h.
 MAX_DAILY_TRADES = 3  # reverted 3 (overnight, founder B): participation grant is the goal (qualified: $363 vol + $107 balance). Keep conservative — preserve the $100+ floor; bot waits for a clean trend trade, abstains in chop. Don't risk what we have.
 MAX_CONCURRENT = 2  # iter-3.2 mixed-slots 2026-05-20: 1 → 2 (founder call). Sticking with 1 concentrates risk on a single instrument — if BONK stalls 12h, we exit the contest with $0 realized PnL. Two slots = two parallel chances at TP, with informal diversification from the universe (PYTH/DRIFT/TNSR are the less-meme half). Capital math: $50 × 2 = $100 = full wallet deployed; max drawdown both-SL = -$3 (-3% on $100); max gain both-TP = +$8 (+8% on $100). No idle capital is the contest mindset.
 SESSION_LOSS_PAUSE = 2
@@ -142,9 +142,9 @@ INSTRUMENTS: list[dict] = [
     {"symbol": "WIF", "mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", "chain": "solana"},
     {"symbol": "POPCAT", "mint": "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr", "chain": "solana"},
     {"symbol": "BOME", "mint": "ukHH6c7mMyiWCf1b9pnWe25TSpkDDt3H5pQZgZ74J82", "chain": "solana"},
-    # Newer infra (more volatile than major DeFi)
-    {"symbol": "DRIFT", "mint": "DriFtupJYLTosbwoN8koMbEYSx54aFAVLddWsbksjwg7", "chain": "solana"},
-    {"symbol": "TNSR", "mint": "TNSRxcUxoT9xBG3de7PiJyTDYu7kskLqcpddxnEJAS6", "chain": "solana"},
+    # s41 2026-05-22: DRIFT + TNSR DROPPED — quant + strategist unanimous: illiquid
+    # ($19k / $3.7k 24h DEX vol; a $45 trade is 100-335% of a 5m bar, can't fill
+    # cleanly). ADD candidates JUP/RAY/JTO deferred pending canon-coverage check.
 ]
 
 ENTRY_PARAMS = {
