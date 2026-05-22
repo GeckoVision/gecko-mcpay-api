@@ -60,7 +60,12 @@ DEFAULT_BREAKER_THRESHOLD_USD = -3.0
 DEFAULT_BREAKER_WINDOW_S = 60 * 60  # 60-minute rolling window
 DEFAULT_BREAKER_PAUSE_S = 60 * 60  # 60-minute pause after trip
 
-_STATE_DIR = Path(__file__).parent
+import os as _os
+
+# GECKO_STATE_DIR lets a test instance write to a separate directory without
+# touching the live bot's state files. Default = module directory (unchanged
+# behaviour; the live bot finds its existing files on the next restart).
+_STATE_DIR = Path(_os.environ["GECKO_STATE_DIR"]) if _os.environ.get("GECKO_STATE_DIR") else Path(__file__).parent
 DEFAULT_BREAKER_STATE_PATH = _STATE_DIR / "circuit_breaker_state.json"
 
 X402Mode = Literal["stub", "live"]

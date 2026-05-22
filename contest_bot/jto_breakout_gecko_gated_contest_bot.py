@@ -27,6 +27,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
 
+import indicators as _indicators
+
 # ── Import OnchainOS from the same skill directory ─────────────────
 sys.path.insert(0, str(Path(__file__).parent))
 import asyncio
@@ -114,6 +116,11 @@ MAX_CONCURRENT = 2  # iter-3.2 mixed-slots 2026-05-20: 1 → 2 (founder call). S
 SESSION_LOSS_PAUSE = 2
 MAX_BUDGET_USD = 100  # total budget cap — GLOBAL across all INSTRUMENTS
 DASHBOARD_PORT = int(os.environ.get("DASHBOARD_PORT", "8265"))
+# GECKO_STATE_DIR: env-overridable state directory. Default = the contest_bot/
+# directory (so the live bot on port 8265 finds its existing state files on
+# its next restart). Set to a separate path for isolated test instances so
+# they never touch the live bot's state files.
+_STATE_BASE = Path(os.environ["GECKO_STATE_DIR"]) if os.environ.get("GECKO_STATE_DIR") else Path(__file__).parent
 
 # ── Multi-instrument config (s40-lab-#4) ───────────────────────────
 # Per founder direction: iterate JTO → JUP → PYTH each poll, evaluate
@@ -208,7 +215,7 @@ _REBUILD_STATE = "--rebuild-state" in sys.argv
 _state_file_exists = _STATE_STORE.path.exists()
 _loaded = BotState() if _REBUILD_STATE else _STATE_STORE.load()
 if _REBUILD_STATE or not _state_file_exists:
-    artifact_path = Path(__file__).parent / f"artifact_{datetime.now(UTC).strftime('%Y%m%d')}.jsonl"
+    artifact_path = _STATE_BASE / f"artifact_{datetime.now(UTC).strftime('%Y%m%d')}.jsonl"
     if artifact_path.exists():
         rebuilt = _STATE_STORE.rebuild_from_artifact(artifact_path)
         if rebuilt.positions or rebuilt.daily_trades:
@@ -228,6 +235,12 @@ _LAST_PANEL: dict[str, dict] = {}
 # S41: the most-recent Gecko Oracle (fundamentals) verdict per instrument, for
 # the dashboard's Oracle panel — the live, corpus-grounded value-investor read.
 _LAST_FUND: dict[str, dict] = {}
+
+# S41 studio: per-instrument ADX/RSI/MFI snapshot, updated every poll from
+# the candles already fetched for breakout detection. Keyed by symbol.
+# Shape: {instrument, adx, rsi, mfi, ema_stack, regime, price, ts,
+#          bull_trigger, bear_trigger}
+_LAST_INDEX: dict[str, dict] = {}
 
 # Oracle grounding floor (s41): minimum citations for an oracle verdict to get
 # a vote in the gate. Per founder principle "approve or decline ONLY with
@@ -250,6 +263,88 @@ def _fund_snapshot(v: Any) -> dict[str, Any]:
         "key_drivers": v.key_drivers[:2],
         "ts": v.ts.isoformat(),
     }
+def _compute_index_snapshot(symbol: str, candles: list[dict]) -> dict:
+    """Compute ADX/RSI/MFI snapshot from already-fetched candles.
+
+    Called inside evaluate_breakout() to reuse the same candle data — no
+    extra network fetch. Returns a dict suitable for _LAST_INDEX[symbol]
+    and the /api/state 'indexes' payload.
+
+    bull_trigger / bear_trigger are DETERMINISTIC strings derived from
+    the indicators (no LLM). They make "what would flip this?" visible on
+    the dashboard without any latency cost.
+    """
+    snap = _indicators.compute_latest(candles)
+    adx_v = snap.get("adx")
+    rsi_v = snap.get("rsi")
+    mfi_v = snap.get("mfi")
+    ema9 = snap.get("ema9")
+    ema21 = snap.get("ema21")
+    ema50 = snap.get("ema50")
+    price = snap.get("price")
+
+    # EMA stack: all three must be non-None
+    if ema9 is not None and ema21 is not None and ema50 is not None:
+        if ema9 > ema21 > ema50:
+            ema_stack = "up"
+        elif ema9 < ema21 < ema50:
+            ema_stack = "down"
+        else:
+            ema_stack = "tangled"
+    else:
+        ema_stack = "tangled"
+
+    # Regime from ADX
+    if adx_v is not None:
+        if adx_v >= 25:
+            regime = "TREND"
+        elif adx_v <= 18:
+            regime = "CHOP"
+        else:
+            regime = "transition"
+    else:
+        regime = "unknown"
+
+    # Deterministic conditional triggers
+    bull_parts: list[str] = []
+    bear_parts: list[str] = []
+    if adx_v is not None and adx_v >= 25:
+        bull_parts.append("ADX>25")
+    if mfi_v is not None and mfi_v >= 55:
+        bull_parts.append("MFI>55")
+    if ema_stack == "up":
+        bull_parts.append("EMA stack up")
+    if rsi_v is not None and 40 <= rsi_v <= 65:
+        bull_parts.append("RSI in range")
+    bull_trigger = (" & ".join(bull_parts) + " → momentum confirms") if bull_parts else "no confirm signals"
+
+    if mfi_v is not None and mfi_v < 45:
+        bear_parts.append("MFI<45 → buying exhausted")
+    if rsi_v is not None and rsi_v > 70:
+        bear_parts.append("RSI>70 → overbought")
+    if adx_v is not None and adx_v <= 18:
+        bear_parts.append("ADX<18 → chop")
+    if ema_stack == "down":
+        bear_parts.append("EMA stack down")
+    bear_trigger = "; ".join(bear_parts) if bear_parts else "no warning signals"
+
+    def _r(v: float | None) -> float | None:
+        return round(v, 2) if v is not None else None
+
+    return {
+        "instrument": symbol,
+        "adx": _r(adx_v),
+        "rsi": _r(rsi_v),
+        "mfi": _r(mfi_v),
+        "ema_stack": ema_stack,
+        "regime": regime,
+        "price": price,
+        "ts": datetime.now(UTC).isoformat(),
+        "bull_trigger": bull_trigger,
+        "bear_trigger": bear_trigger,
+    }
+
+
 total_spent_usd = _loaded.total_spent_usd  # tracks cumulative live spend against MAX_BUDGET_USD
 # iter-3.x 2026-05-20: realized PnL persisted across reboots so the
 # dashboard tile doesn't reset to 0 on every restart. Source of truth is
@@ -298,7 +393,7 @@ def _persist_state() -> None:
     )
 
 
-DASHBOARD_HTML = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>My Strategy Dashboard</title><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#0a0e14;color:#ccd6f6;font-family:'SF Mono','Fira Code',monospace;font-size:13px;padding:16px}h2{color:#00e676;margin-bottom:10px;font-size:15px}.panel{background:#12171f;border:1px solid #252d3a;border-radius:8px;padding:14px;margin-bottom:12px}.row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #1a2030}.row:last-child{border-bottom:none}.label{color:#8892b0}.green{color:#00e676}.red{color:#ff5252}.yellow{color:#ffd740}.blue{color:#448aff}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}table{width:100%;border-collapse:collapse}th{color:#448aff;text-align:left;padding:6px 8px;border-bottom:1px solid #252d3a;font-weight:normal}td{padding:5px 8px;border-bottom:1px solid #1a2030}.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px}.badge-paper{background:#1a2a4a;color:#448aff}.badge-live{background:#2a1a1a;color:#ff5252}.feed-item{padding:3px 0;border-bottom:1px solid #1a2030;font-size:12px}.ts{color:#4a5568;margin-right:8px}</style></head><body><div class='panel'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><h2>&#x1F40B; My Strategy</h2><span id='mode-badge' class='badge'></span></div><div class='grid2'><div><div class='row'><span class='label'>Entry</span><span id='entry-type'></span></div><div class='row'><span class='label'>Stop Loss</span><span class='red' id='sl'></span></div><div class='row'><span class='label'>Take Profit</span><span class='green' id='tp'></span></div><div class='row'><span class='label'>Poll</span><span id='poll'></span></div></div><div><div class='row'><span class='label'>Wallet</span><span class='blue' id='wallet'></span></div><div class='row'><span class='label'>Session PnL</span><span id='session-pnl'></span></div><div class='row'><span class='label'>Trades</span><span id='trades'></span></div><div class='row'><span class='label'>Win Rate</span><span id='winrate'></span></div></div></div></div><div class='panel'><h2>Open Positions (<span id='open-count'>0</span>)</h2><table><thead><tr><th>Symbol</th><th>Entry</th><th>Current</th><th>PnL</th><th>TP target</th><th>SL trigger</th><th>Time-stop</th><th>Since</th></tr></thead><tbody id='pos-body'></tbody></table></div><div class='panel'><h2>&#x1F5E3;&#xFE0F; Agent Voices &mdash; latest decisions</h2><div id='voices'></div></div><div class='panel'><h2>&#x1F52E; Gecko Oracle &mdash; fundamentals verdict (live, grounded)</h2><div id='oracle'></div></div><div class='panel'><h2>Signal Feed</h2><div id='feed'></div></div><script>async function refresh(){try{const r=await fetch('/api/state');const d=await r.json();const mb=document.getElementById('mode-badge');mb.textContent=d.mode==='paper'?'PAPER 📄':'LIVE 🔴';mb.className='badge badge-'+(d.mode==='paper'?'paper':'live');document.getElementById('entry-type').textContent=d.entry_type||'';document.getElementById('sl').textContent='-'+d.sl_pct+'%';document.getElementById('tp').textContent='+'+d.tp_pct+'%';document.getElementById('poll').textContent=d.poll_sec+'s';document.getElementById('wallet').textContent=d.wallet||'—';const s=d.stats||{};const pnl=s.pnl_usd||0;const pe=document.getElementById('session-pnl');pe.textContent=(pnl>=0?'+':'')+'$'+pnl.toFixed(2);pe.className=pnl>=0?'green':'red';document.getElementById('trades').textContent=(s.daily_trades||0)+'/'+(s.daily_limit||0)+' today';const wr=(s.wins&&s.total_trades)?Math.round(s.wins/s.total_trades*100):0;document.getElementById('winrate').textContent=s.total_trades?(wr+'% ('+s.wins+'W/'+s.losses+'L)'):'—';const open=(d.positions||[]).filter(p=>p.status==='open');document.getElementById('open-count').textContent=open.length;document.getElementById('pos-body').innerHTML=open.map(p=>{const pct=p.pnl_pct||0;const cl=pct>=0?'green':'red';const since=(p.entry_ts||'').slice(11,19);const tpStr=(p.tp_price||0).toFixed(6);const slStr=(p.sl_price||0).toFixed(6);const tse=(p.time_stop_eta||'').slice(11,19);return '<tr><td>'+(p.symbol||p.token.slice(0,12))+'</td><td>'+(p.entry_price||0).toFixed(6)+'</td><td>'+(p.current_price||0).toFixed(6)+'</td><td class=\"'+cl+'\">'+(pct>=0?'+':'')+pct.toFixed(1)+'%</td><td class=\"green\">'+tpStr+'</td><td class=\"red\">'+slStr+'</td><td>'+tse+'</td><td>'+since+'</td></tr>';}).join('');const feed=document.getElementById('feed');feed.innerHTML=(d.signal_feed||[]).slice(-30).reverse().map(e=>{const cl=e.type==='buy'?'green':e.type==='sell'?'red':e.type==='filter'?'yellow':'';return '<div class=\"feed-item\"><span class=\"ts\">'+(e.ts||'').slice(11,19)+'</span><span class=\"'+cl+'\">'+e.msg+'</span></div>';}).join('');const vc=function(v){return v==='bullish'?'green':v==='bearish'?'red':v==='abstain'?'blue':'yellow';};const vbox=document.getElementById('voices');vbox.innerHTML=(d.panel||[]).slice(0,6).map(function(p){const act=p.action==='act'?'green':'red';const reg=p.regime==='TREND'?'green':p.regime==='CHOP'?'red':'yellow';const voices=(p.voices||[]).map(function(o){return '<span style=\"margin-right:10px\">'+o.name.replace('_voice','').replace('_analyst','')+': <span class=\"'+vc(o.verdict)+'\">'+o.verdict+'</span> '+(o.confidence!=null?o.confidence.toFixed(2):'')+'</span>';}).join('');return '<div class=\"feed-item\"><span class=\"ts\">'+(p.ts||'').slice(11,19)+'</span><b>'+p.instrument+'</b> regime <span class=\"'+reg+'\">'+p.regime+'</span> &rarr; <span class=\"'+act+'\">'+p.action+'</span> <span class=\"label\">('+(p.rule||'')+')</span><br>&nbsp;&nbsp;'+voices+'</div>';}).join('')||'<div class=\"feed-item label\">no panel decisions yet</div>';var oc2=function(v){return v==='act'?'green':v==='pass'?'red':'yellow';};var obox=document.getElementById('oracle');obox.innerHTML=(d.oracle||[]).slice(0,8).map(function(o){var kd=(o.key_drivers||[]).slice(0,1).join('');return '<div class=feed-item><b>'+o.instrument+'</b> <span class='+oc2(o.verdict)+'>'+o.verdict+'</span> '+(o.confidence!=null?o.confidence.toFixed(2):'')+' <span class=label>('+(o.citations||0)+' cites'+(o.grounded?'':', ungrounded — no gate')+')</span>'+(kd?'<br>&nbsp;&nbsp;<span class=label>'+kd+'</span>':'')+'</div>';}).join('')||'<div class=feed-item>no oracle verdicts yet</div>';}catch(err){console.error(err);}}setInterval(refresh,5000);refresh();</script></body></html>"
+DASHBOARD_HTML = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>My Strategy Dashboard</title><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#0a0e14;color:#ccd6f6;font-family:'SF Mono','Fira Code',monospace;font-size:13px;padding:16px}h2{color:#00e676;margin-bottom:10px;font-size:15px}.panel{background:#12171f;border:1px solid #252d3a;border-radius:8px;padding:14px;margin-bottom:12px}.row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #1a2030}.row:last-child{border-bottom:none}.label{color:#8892b0}.green{color:#00e676}.red{color:#ff5252}.yellow{color:#ffd740}.blue{color:#448aff}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}table{width:100%;border-collapse:collapse}th{color:#448aff;text-align:left;padding:6px 8px;border-bottom:1px solid #252d3a;font-weight:normal}td{padding:5px 8px;border-bottom:1px solid #1a2030}.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px}.badge-paper{background:#1a2a4a;color:#448aff}.badge-live{background:#2a1a1a;color:#ff5252}.feed-item{padding:3px 0;border-bottom:1px solid #1a2030;font-size:12px}.ts{color:#4a5568;margin-right:8px}.reading{font-size:11px;color:#8892b0;margin-top:2px;padding-left:8px;font-style:italic}</style></head><body><div class='panel'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><h2>&#x1F40B; My Strategy</h2><span id='mode-badge' class='badge'></span></div><div class='grid2'><div><div class='row'><span class='label'>Entry</span><span id='entry-type'></span></div><div class='row'><span class='label'>Stop Loss</span><span class='red' id='sl'></span></div><div class='row'><span class='label'>Take Profit</span><span class='green' id='tp'></span></div><div class='row'><span class='label'>Poll</span><span id='poll'></span></div></div><div><div class='row'><span class='label'>Wallet</span><span class='blue' id='wallet'></span></div><div class='row'><span class='label'>Session PnL</span><span id='session-pnl'></span></div><div class='row'><span class='label'>Trades</span><span id='trades'></span></div><div class='row'><span class='label'>Win Rate</span><span id='winrate'></span></div></div></div></div><div class='panel'><h2>Open Positions (<span id='open-count'>0</span>)</h2><table><thead><tr><th>Symbol</th><th>Entry</th><th>Current</th><th>PnL</th><th>TP target</th><th>SL trigger</th><th>Time-stop</th><th>Since</th></tr></thead><tbody id='pos-body'></tbody></table></div><div class='panel'><h2>&#x1F5E3;&#xFE0F; Agent Voices &mdash; latest decisions</h2><div id='voices'></div></div><div class='panel'><h2>&#x1F4CA; Indexes (ADX / RSI / MFI)</h2><div id='indexes'></div></div><div class='panel'><h2>&#x1F52E; Gecko Oracle &mdash; fundamentals verdict (live, grounded)</h2><div id='oracle'></div></div><div class='panel'><h2>Signal Feed</h2><div id='feed'></div></div><script>async function refresh(){try{const r=await fetch('/api/state');const d=await r.json();const mb=document.getElementById('mode-badge');mb.textContent=d.mode==='paper'?'PAPER 📄':'LIVE 🔴';mb.className='badge badge-'+(d.mode==='paper'?'paper':'live');document.getElementById('entry-type').textContent=d.entry_type||'';document.getElementById('sl').textContent='-'+d.sl_pct+'%';document.getElementById('tp').textContent='+'+d.tp_pct+'%';document.getElementById('poll').textContent=d.poll_sec+'s';document.getElementById('wallet').textContent=d.wallet||'—';const s=d.stats||{};const pnl=s.pnl_usd||0;const pe=document.getElementById('session-pnl');pe.textContent=(pnl>=0?'+':'')+'$'+pnl.toFixed(2);pe.className=pnl>=0?'green':'red';document.getElementById('trades').textContent=(s.daily_trades||0)+'/'+(s.daily_limit||0)+' today';const wr=(s.wins&&s.total_trades)?Math.round(s.wins/s.total_trades*100):0;document.getElementById('winrate').textContent=s.total_trades?(wr+'% ('+s.wins+'W/'+s.losses+'L)'):'—';const open=(d.positions||[]).filter(p=>p.status==='open');document.getElementById('open-count').textContent=open.length;document.getElementById('pos-body').innerHTML=open.map(p=>{const pct=p.pnl_pct||0;const cl=pct>=0?'green':'red';const since=(p.entry_ts||'').slice(11,19);const tpStr=(p.tp_price||0).toFixed(6);const slStr=(p.sl_price||0).toFixed(6);const tse=(p.time_stop_eta||'').slice(11,19);return '<tr><td>'+(p.symbol||p.token.slice(0,12))+'</td><td>'+(p.entry_price||0).toFixed(6)+'</td><td>'+(p.current_price||0).toFixed(6)+'</td><td class='+cl+'>'+(pct>=0?'+':'')+pct.toFixed(1)+'%</td><td class=green>'+tpStr+'</td><td class=red>'+slStr+'</td><td>'+tse+'</td><td>'+since+'</td></tr>';}).join('');const feed=document.getElementById('feed');feed.innerHTML=(d.signal_feed||[]).slice(-30).reverse().map(e=>{const cl=e.type==='buy'?'green':e.type==='sell'?'red':e.type==='filter'?'yellow':'';return '<div class=feed-item><span class=ts>'+(e.ts||'').slice(11,19)+'</span><span class='+cl+'>'+e.msg+'</span></div>';}).join('');const vc=function(v){return v==='bullish'?'green':v==='bearish'?'red':v==='abstain'?'blue':'yellow';};const vbox=document.getElementById('voices');vbox.innerHTML=(d.panel||[]).slice(0,6).map(function(p){const act=p.action==='act'?'green':'red';const reg=p.regime==='TREND'?'green':p.regime==='CHOP'?'red':'yellow';const voices=(p.voices||[]).map(function(o){const rtext=o.name==='chart_analyst'&&o.reasoning?'<div class=reading>'+o.reasoning+'</div>':'';return '<span style=margin-right:10px>'+o.name.replace('_voice','').replace('_analyst','')+': <span class='+vc(o.verdict)+'>'+o.verdict+'</span> '+(o.confidence!=null?o.confidence.toFixed(2):'')+'</span>'+rtext;}).join('');return '<div class=feed-item><span class=ts>'+(p.ts||'').slice(11,19)+'</span><b>'+p.instrument+'</b> regime <span class='+reg+'>'+p.regime+'</span> &rarr; <span class='+act+'>'+p.action+'</span> <span class=label>('+(p.rule||'')+')</span><br>&nbsp;&nbsp;'+voices+'</div>';}).join('')||'<div class=feed-item>no panel decisions yet</div>';var ixbox=document.getElementById('indexes');var adxCl=function(v){return v==null?'label':v>=25?'green':v<=18?'red':'yellow';};var rsiCl=function(v){return v==null?'label':v>70?'red':'green';};var mfiCl=function(v){return v==null?'label':v>=55?'green':'label';};ixbox.innerHTML=(d.indexes||[]).map(function(ix){var adxv=ix.adx!=null?ix.adx.toFixed(1):'n/a';var rsiv=ix.rsi!=null?ix.rsi.toFixed(1):'n/a';var mfiv=ix.mfi!=null?ix.mfi.toFixed(1):'n/a';var regCl=ix.regime==='TREND'?'green':ix.regime==='CHOP'?'red':'yellow';var stackCl=ix.ema_stack==='up'?'green':ix.ema_stack==='down'?'red':'yellow';return '<div class=feed-item><b>'+ix.instrument+'</b> <span class=label>$'+(ix.price!=null?ix.price.toFixed(5):'n/a')+'</span> regime <span class='+regCl+'>'+ix.regime+'</span> EMA <span class='+stackCl+'>'+ix.ema_stack+'</span><br>&nbsp;&nbsp;ADX <span class='+adxCl(ix.adx)+'>'+adxv+'</span> RSI <span class='+rsiCl(ix.rsi)+'>'+rsiv+'</span> MFI <span class='+mfiCl(ix.mfi)+'>'+mfiv+'</span><br>&nbsp;&nbsp;<span class=green>bull: '+ix.bull_trigger+'</span><br>&nbsp;&nbsp;<span class=red>bear: '+ix.bear_trigger+'</span></div>';}).join('')||'<div class=feed-item>waiting for first poll...</div>';var oc2=function(v){return v==='act'?'green':v==='pass'?'red':'yellow';};var obox=document.getElementById('oracle');obox.innerHTML=(d.oracle||[]).slice(0,8).map(function(o){var kd=(o.key_drivers||[]).slice(0,1).join('');return '<div class=feed-item><b>'+o.instrument+'</b> <span class='+oc2(o.verdict)+'>'+o.verdict+'</span> '+(o.confidence!=null?o.confidence.toFixed(2):'')+' <span class=label>('+(o.citations||0)+' cites'+(o.grounded?'':', ungrounded — no gate')+')</span>'+(kd?'<br>&nbsp;&nbsp;<span class=label>'+kd+'</span>':'')+'</div>';}).join('')||'<div class=feed-item>no oracle verdicts yet</div>';}catch(err){console.error(err);}}setInterval(refresh,5000);refresh();</script></body></html>"
 
 
 # ── TA helpers ─────────────────────────────────────────────────────
@@ -447,6 +542,11 @@ class _DashHandler(BaseHTTPRequestHandler):
                 # newest-first, for the dashboard's Oracle panel.
                 "oracle": sorted(
                     _LAST_FUND.values(), key=lambda o: o.get("ts", ""), reverse=True
+                ),
+                # S41 studio: ADX/RSI/MFI index snapshot per instrument,
+                # newest-first, for the dashboard's Indexes panel.
+                "indexes": sorted(
+                    _LAST_INDEX.values(), key=lambda x: x.get("ts", ""), reverse=True
                 ),
                 "stats": {
                     "total_trades": (wins + losses) if (wins or losses) else len(closed),
@@ -734,6 +834,11 @@ def evaluate_breakout(inst: dict) -> dict | None:
     }
     _LAST_SNAPSHOTS[sym] = snap
 
+    # Item 1 (S41 studio): compute ADX/RSI/MFI from the same candles —
+    # no extra network fetch. Warm up silently if warmup not met yet.
+    if candles:
+        _LAST_INDEX[sym] = _compute_index_snapshot(sym, candles)
+
     if len(candles) < lookback + 1:
         return None
 
@@ -957,7 +1062,9 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
                     "name": o.voice_name,
                     "verdict": o.verdict,
                     "confidence": round(o.confidence, 2),
-                    "reasoning": (o.reasoning or "")[:140],
+                    # Item 2: full reasoning for chart_analyst (the bot's actual
+                    # read); 300 chars for other voices. Dashboard renders it.
+                    "reasoning": (o.reasoning or "")[:(300 if o.voice_name == "chart_analyst" else 200)],
                 }
                 for o in local_decision.voice_opinions
             ],
@@ -1192,7 +1299,7 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
 # collection (lab-first, transplant to PRD per local_lab_strategy). The
 # return-series alone supports the highest-merit v2 signal (autocorrelation
 # of returns: mean-reverting ⇒ stall, persistent ⇒ pause) — no volume needed.
-_TELEMETRY_PATH = Path(__file__).parent / f"poll_telemetry_{datetime.now(UTC).strftime('%Y%m%d')}.jsonl"
+_TELEMETRY_PATH = _STATE_BASE / f"poll_telemetry_{datetime.now(UTC).strftime('%Y%m%d')}.jsonl"
 
 
 def _log_telemetry(row: dict) -> None:
@@ -1412,7 +1519,7 @@ def main() -> None:
             "confirmation": "CONFIRM",
             "budget_cap": MAX_BUDGET_USD,
         }
-        _ack_path = _P(__file__).parent / "jto_breakout_gecko_gated_contest_live_ack.jsonl"
+        _ack_path = _STATE_BASE / "jto_breakout_gecko_gated_contest_live_ack.jsonl"
         with open(_ack_path, "a") as _f:
             _f.write(_json.dumps(_ack) + "\n")
         print("\n✅ Live mode confirmed. Starting bot...\n")

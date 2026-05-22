@@ -36,7 +36,14 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_STATE_PATH = Path(__file__).parent / "bot_state.json"
+import os as _os
+
+# GECKO_STATE_DIR lets a test instance write state to a separate directory
+# without touching the live bot's files. Default is the module directory
+# (unchanged behaviour for the live bot — it finds its existing files on
+# the next restart).
+_GECKO_STATE_DIR = Path(_os.environ["GECKO_STATE_DIR"]) if _os.environ.get("GECKO_STATE_DIR") else Path(__file__).parent
+_DEFAULT_STATE_PATH = _GECKO_STATE_DIR / "bot_state.json"
 
 
 class BotState(BaseModel):
