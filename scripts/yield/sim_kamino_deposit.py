@@ -31,123 +31,25 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-
 from typing import Any
 
-from solders.transaction import VersionedTransaction
-
-# --- constants we assert against (the wire shape we're locking in) ---------
-KLEND_PROGRAM_ID = "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
-USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
-SOLANA_CHAIN_INDEX = "501"
-KAMINO_USDC_INVESTMENT_ID = "29130"  # Kamino / Main Pool, USDC lend, Solana
-USDC_PRECISION = 6
-EMPTY_SIG = "1" * 64  # solders renders an unsigned slot as 64 base58 '1's
+# The structural validation now lives in gecko-core (Step 2, Pattern C). This
+# script is a thin caller; it owns only the CLI fetch + the argparse surface.
+from gecko_core.execution.yield_base import (
+    KAMINO_USDC_INVESTMENT_ID,
+    SOLANA_CHAIN_INDEX,
+    USDC_MINT,
+    USDC_PRECISION,
+    SimFailure,
+    assert_deposit_calldata,
+    expected_minimal_units,
+)
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 DEPOSIT_FIXTURE = FIXTURE_DIR / "deposit_29130_25usdc.json"
 
 # Sample deposit notional used to (re)generate the fixture.
 SAMPLE_AMOUNT_USDC = "25"
-
-
-# --- base58 (no external dep; the repo ships solders but not base58) --------
-_B58_ALPHABET = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-
-
-def b58decode(s: str) -> bytes:
-    n = 0
-    for ch in s.encode():
-        n = n * 58 + _B58_ALPHABET.index(ch)
-    body = n.to_bytes((n.bit_length() + 7) // 8, "big") if n else b""
-    pad = len(s) - len(s.lstrip("1"))
-    return b"\x00" * pad + body
-
-
-class SimFailure(AssertionError):
-    """Raised when the calldata fails a structural assertion (Step-1 FAIL)."""
-
-
-def expected_minimal_units(amount_human: str, precision: int) -> int:
-    """100 USDC at 6 decimals -> 100_000_000. Exact, no float."""
-    from decimal import Decimal
-
-    scaled = Decimal(amount_human) * (Decimal(10) ** precision)
-    if scaled != scaled.to_integral_value():
-        raise SimFailure(f"amount {amount_human} not representable in {precision} decimals (dust)")
-    return int(scaled)
-
-
-# --- the assertions --------------------------------------------------------
-def assert_deposit_calldata(
-    payload: dict[str, Any], *, expect_payer: str | None = None
-) -> dict[str, Any]:
-    """Assert an onchainOS deposit response carries a structurally-valid,
-    unsigned Kamino deposit transaction. Returns a summary dict on PASS."""
-    if not payload.get("ok"):
-        raise SimFailure(f"response ok=False: {payload.get('error')!r}")
-
-    data = payload.get("data") or {}
-    data_list = data.get("dataList")
-    if not data_list:
-        raise SimFailure("empty dataList — no calldata returned")
-    if len(data_list) != 1:
-        # not fatal, but our v1 expects a single tx for a USDC lend deposit
-        raise SimFailure(f"expected 1 tx in dataList, got {len(data_list)}")
-
-    item = data_list[0]
-    to = item.get("to")
-    ser = item.get("serializedData")
-    payer = item.get("from")
-
-    if to != KLEND_PROGRAM_ID:
-        raise SimFailure(f"'to' is {to!r}, expected Kamino klend {KLEND_PROGRAM_ID}")
-    if not ser:
-        raise SimFailure("serializedData is empty")
-    if expect_payer is not None and payer != expect_payer:
-        raise SimFailure(f"'from' {payer!r} != expected payer {expect_payer!r}")
-
-    # decode + parse as a real Solana versioned tx
-    raw = b58decode(ser)
-    if len(raw) < 64:
-        raise SimFailure(f"decoded tx too small ({len(raw)} bytes)")
-    try:
-        tx = VersionedTransaction.from_bytes(raw)
-    except Exception as exc:
-        raise SimFailure(f"serializedData is not a decodable Solana tx: {exc}") from exc
-
-    msg = tx.message
-    sigs = list(tx.signatures)
-    if len(sigs) < 1:
-        raise SimFailure("tx has no signature slots")
-    # SAFETY GATE: the tx must be UNSIGNED. A signed tx here means something
-    # tried to sign — the whole point of Step 1 is that nothing signs.
-    if not all(str(s) == EMPTY_SIG for s in sigs):
-        raise SimFailure("tx is SIGNED — Step 1 must never sign; aborting")
-
-    akeys = list(msg.account_keys)
-    instrs = list(msg.instructions)
-    if not instrs:
-        raise SimFailure("tx has zero instructions")
-
-    prog_ids = [str(akeys[ix.program_id_index]) for ix in instrs]
-    if KLEND_PROGRAM_ID not in prog_ids:
-        raise SimFailure(f"no Kamino klend instruction in tx; programs invoked: {prog_ids}")
-
-    payer_acct = str(akeys[0]) if akeys else None
-    if payer is not None and payer_acct != payer:
-        raise SimFailure(f"fee-payer account[0] {payer_acct!r} != response 'from' {payer!r}")
-
-    return {
-        "to": to,
-        "payer": payer_acct,
-        "decoded_bytes": len(raw),
-        "num_account_keys": len(akeys),
-        "num_instructions": len(instrs),
-        "klend_instruction_count": prog_ids.count(KLEND_PROGRAM_ID),
-        "programs": sorted(set(prog_ids)),
-        "unsigned": True,
-    }
 
 
 # --- live fetch (never broadcasts) -----------------------------------------
@@ -232,7 +134,7 @@ def main() -> int:
         return 1
 
     print("\n[deposit calldata summary]")
-    for k, v in summary.items():
+    for k, v in summary.to_dict().items():
         print(f"  {k}: {v}")
     print("\nStep 1 free-sim (deposit calldata): PASS")
     print("  -> structurally-valid UNSIGNED Kamino USDC-lend deposit tx, $0 spent")
