@@ -19,8 +19,13 @@ strategy for every sea, not a wait for the perfect one.*
 3. **🔴 Quote-token unit inconsistency** (PYTH USDC-quoted, WIF SOL-quoted) → any USD math must read `changedTokenInfo` per-trade.
 Plus: `volUsd` discarded; candle-order sort is a load-bearing single-point-of-failure; no order-book in onchainOS (DEX has no CLOB → OKX/Birdeye proxy); **4h+15m candles already work, just never called.**
 
-## The quant reconciliation (highest-value single measurement)
-The binary **TP2/SL3 backtest says −EV** (demands 75% win-rate; gross edge ~1/7 of the fee). But the **live trailing-stop exits (N=7) show a 3.6:1 payoff** (avg win +2.9% vs loss −0.81%, break-even ~22%, realized 57%). **They measure different exit regimes and disagree on sign.** → **Re-run the calibration with the ACTUAL trailing-stop exit logic, not the TP2/SL3 binary.** The edge may already live in the *exit* mechanism, understated by the binary backtest. This is the cheapest, highest-value thing on the roadmap.
+## The quant reconciliation — ✅ RESOLVED 2026-05-22 (`db113f2`, `docs/strategy/2026-05-22-exit-reconciliation.md`)
+The question was: binary **TP2/SL3 backtest says −EV** vs **live N=7 trailing exits show 3.6:1** — which exit model is truth? **Settled with a faithful replica of the live exit stack** (trail-activate +1% / give-back 1% / stall-green / flat-stall / close-based polling, not intrabar-touch). **Verdict — the edge is NOT in the exits, and the −EV is NOT an artifact of the wrong exit model:**
+- Real-exit net-EV is **negative with the block-bootstrap CI excluding zero in EVERY regime** (ALL −0.58%, TREND −0.62%, TRANSITIONAL −0.48%, CHOP −0.63%); replicates across both windows (N≈175, N_eff≈135).
+- The real stack improves the *shape* (payoff 1.5–2.0:1 vs binary 0.7:1 — trail/flat-stall cut the loss tail to −0.58% vs binary −2.2%) but **gross EV is only +0.17%/trade → break-even fee 0.17%, below any real DEX fee.**
+- **The live N=7 (3.6:1 / +1.31%) was small-sample luck:** jackknife — dropping the single WIF +6.21% trade collapses the mean to +0.50%; 5 of 7 live exits fall outside the backtest window; the live entry gate itself backtests *negative* (−0.64%), so selection quality isn't the explanation.
+
+**→ THE STRATEGY IS FEE-DOMINATED, not exit-limited or entry-floor-limited.** Both the exit mechanism and the entry floor move EV by *less than the fee*. Keep the exit stack (good risk management — it cuts the loss tail), but the gross edge isn't above costs. **This re-prioritizes the roadmap: the fee/venue lever is now the dominant Phase-1 move (see below), the structure/multi-TF analysis is the second lever.**
 
 ---
 
@@ -31,9 +36,16 @@ The binary **TP2/SL3 backtest says −EV** (demands 75% win-rate; gross edge ~1/
 - **0.2** Fix the CVD USD reconstruction (`net_flow._parse_usd` → read `changedTokenInfo` quote leg × quote-USD price; side from `type`). Make the Wave-2b gate actually work.
 - **0.3** Capture `volUsd` from kline; add a guard/test on the newest-first→ascending candle sort.
 - **0.4** Start a real **outcome ledger** (entry → realized exit reason + net PnL) so validation isn't 100% reliant on candle reconstruction.
-- **0.5 (highest value)** Re-run `tp_regime_validation.py` / `chart_floor_calibration.py` with the **actual trailing-stop exit logic** — settle whether the edge is in the exits. (quant)
+- **0.5 (highest value) — ✅ DONE (`db113f2`):** Re-ran with a faithful replica of the live exit stack. **Verdict: edge NOT in the exits; strategy is fee-dominated (gross +0.17% < break-even fee 0.17%); live N=7 was luck.** See the resolved section above + `2026-05-22-exit-reconciliation.md`. *This result promotes the fee/venue lever to Phase 1.* (quant)
 
-### Phase 1 — The multi-TF read + structure (see clearly) — *the core build*
+### Phase 1 — Two levers in priority order: (A) the FEE/VENUE lever [dominant, NEW], (B) the multi-TF read + structure
+*Phase 0.5 proved the strategy is fee-dominated: gross edge +0.17% vs a ~0.5–0.75% DEX round-trip. Lowering the fee bar is the bigger, cheaper move; the structure work then has to clear a much lower bar. Do (A) first.*
+
+- **1.0 — THE FEE/VENUE LEVER (dominant).** Decide + implement the lowest-fee execution path the product can live with. **This is a strategic fork (founder + business-manager + trading-strategist + web3-engineer):**
+  - **Stay on-chain DEX (identity-preserving):** realistic fee floor ~0.5% (swap + slippage on no-tax majors) → EV bar = gross ≥ ~1.0%. Structure work must lift gross ~6× (0.17→1.0). Hard.
+  - **CEX maker fills (OKX Agent Trade Kit, already wired):** maker ~0.08–0.1%/side → fee ~0.2% RT → EV bar = gross ≥ ~0.4%. Structure work must lift gross ~2.4× (0.17→0.4). Achievable — but it's a venue/identity pivot (CEX, not on-chain DEX).
+  - **Lower frequency alone does NOT fix per-trade EV** (fewer −EV trades = less loss, not profit) — only helps combined with (B).
+  - Deliverable: a per-fee-level EV table (strategist+quant) + the identity tradeoff (business-manager) + the execution-path feasibility (web3) → founder picks the venue. *Everything downstream keys off the chosen fee.*
 - **1.1** Add 4h + 15m candle fetch (zero-cost — `kline --bar 4H/15m` already works); probe 4h history depth first.
 - **1.2** `features/structure.py` — swing-pivot detection → support/resistance level table → HH/HL market-structure classification → range boundaries. Pure functions (the `indicators.py` pattern). **P0 — decorrelated from momentum, the direct fakeout fix.** (data-scientist)
 - **1.3** `features/patterns.py` (engulfing/pin/inside/outside — only `pattern@level`), `features/flow.py` (RVOL/VWAP/CVD-divergence, absorbing fixed `net_flow.py`), breakout/retest-quality features.
@@ -74,4 +86,8 @@ The binary **TP2/SL3 backtest says −EV** (demands 75% win-rate; gross edge ~1/
 4. Is the goal still capital-preservation (favor fewer, higher-R:R trades)?
 
 ## Status
-Discovery complete (6 lenses). This doc = the design + roadmap. **Next: the granular, TDD-style implementation plan for Phase 0** (the data-integrity fixes + the exit reconciliation — the immediate, highest-value, real-bug work), then execute phase-by-phase behind the validation gates.
+Discovery complete (6 lenses). **Phase 0.5 (exit reconciliation) DONE** — the result reframed the roadmap: **the strategy is fee-dominated, not analysis-limited.** Net change: a new **Phase 1.0 fee/venue lever** (dominant), and the structure/multi-TF work demoted to the *second* lever (still needed — it must clear the new, lower fee bar). The −EV is real, not a measurement artifact.
+
+**Open decision (founder):** the **DEX-vs-CEX fork** in Phase 1.0 — keep the on-chain DEX identity (gross bar ~1.0%) or take the CEX maker-fee advantage (gross bar ~0.4%, but a venue/identity pivot). Everything downstream keys off this.
+
+**Next (mandate-covered, runs regardless of the fork): finish Phase 0 data integrity** — 0.1 forming-candle, 0.2 CVD reconstruction, 0.3 volUsd + candle-order guard, 0.4 outcome ledger. These corrupt all measurement and are needed under either venue. Then resolve the fork → Phase 1.
