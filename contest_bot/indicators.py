@@ -303,4 +303,58 @@ def compute_latest(candles: list[dict]) -> dict:
     }
 
 
-__all__ = ["ema", "rsi", "adx", "adx_full", "mfi", "atr", "bb", "chop", "compute_latest"]
+def compute_regime_1h(candles_1h: list[dict]) -> str:
+    """Classify 1h-bar regime as TREND-UP / TREND-DOWN / CHOP.
+
+    Uses ADX (n=14) + DI direction + CHOP (n=14) on the 1h candles.
+    Requires at least 28 bars for a valid ADX warm-up (2×n); with fewer bars
+    returns "CHOP" as the conservative unknown (don't trust an up-trend we
+    haven't measured).
+
+    Classification rules (CODE — never in a prompt):
+      ADX >= 25 AND +DI > -DI → TREND-UP
+      ADX >= 25 AND -DI > +DI → TREND-DOWN
+      ADX <= 18 OR CHOP >= 61.8 → CHOP
+      else → CHOP  (transitional — treat conservatively)
+
+    The regime modulator in coordinator_rules.py gates on TREND-DOWN and CHOP
+    to raise the chart floor for 5m longs.
+    """
+    if not candles_1h or len(candles_1h) < 28:
+        return "CHOP"  # insufficient history — conservative default
+
+    def _last(series: list) -> float | None:
+        return next((v for v in reversed(series) if v is not None), None)
+
+    highs = [c["high"] for c in candles_1h]
+    lows = [c["low"] for c in candles_1h]
+    closes = [c["close"] for c in candles_1h]
+
+    adx_s, pdi_s, mdi_s = adx_full(highs, lows, closes, 14)
+    chop_s = chop(highs, lows, closes, 14)
+
+    adx_v = _last(adx_s)
+    pdi_v = _last(pdi_s)
+    mdi_v = _last(mdi_s)
+    chop_v = _last(chop_s)
+
+    if adx_v is None:
+        return "CHOP"
+
+    if adx_v >= 25:
+        if pdi_v is not None and mdi_v is not None:
+            return "TREND-UP" if pdi_v > mdi_v else "TREND-DOWN"
+        return "TREND-UP"  # direction indeterminate but trending — mild default
+
+    # ADX < 25 — check CHOP for strong choppiness confirmation
+    if adx_v <= 18 or (chop_v is not None and chop_v >= 61.8):
+        return "CHOP"
+
+    # Transitional (18 < ADX < 25, CHOP < 61.8) — conservative
+    return "CHOP"
+
+
+__all__ = [
+    "ema", "rsi", "adx", "adx_full", "mfi", "atr", "bb", "chop",
+    "compute_latest", "compute_regime_1h",
+]
