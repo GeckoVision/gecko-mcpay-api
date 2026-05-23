@@ -26,13 +26,38 @@ if str(_CONTEST_BOT_DIR) not in sys.path:
 # ── net_flow tests ────────────────────────────────────────────────────
 
 import net_flow as nf
-from net_flow import NetFlowSignal, compute_net_flow, cache_clear
+from net_flow import cache_clear, compute_net_flow
+
+# S44 Fix 0.2: real onchainos `token trades` rows carry NO flat usd field — USD
+# is reconstructed from the changedTokenInfo quote leg × quote-USD price. These
+# helpers build real-shaped rows quoted in USDC (price 1.0) so a `usd` arg maps
+# 1:1 to the quote amount, keeping the synthetic CVD arithmetic readable.
+_TEST_TOKEN = "BaseTokenMint1111111111111111111111111111111"
+_USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+
+
+def _trade(side: str, usd: float, base: str = _TEST_TOKEN) -> dict:
+    """A real-shape USDC-quoted trade row: usd == quote (USDC) amount."""
+    return {
+        "type": side,
+        "tokenContractAddress": base,
+        "changedTokenInfo": [
+            {"tokenAddress": base, "tokenSymbol": "TKN", "amount": str(usd)},
+            {"tokenAddress": _USDC_MINT, "tokenSymbol": "USDC", "amount": str(usd)},
+        ],
+        "volume": str(usd),
+    }
 
 
 def _make_oc(trades: list[dict], signals: list[dict] | Exception | None = None) -> Any:
-    """Build a minimal onchainos fake with preset trades + signals."""
+    """Build a minimal onchainos fake with preset trades + signals.
+
+    get_price_info is stubbed to price USDC at 1.0 (real-shape reconstruction
+    calls it for non-stable quote legs; USDC short-circuits, but keep it safe).
+    """
     fake = MagicMock()
     fake.get_token_trades.return_value = trades
+    fake.get_price_info.return_value = {"data": [{"price": "1.0"}]}
     if isinstance(signals, Exception):
         fake.get_signals.side_effect = signals
     else:
@@ -40,11 +65,11 @@ def _make_oc(trades: list[dict], signals: list[dict] | Exception | None = None) 
     return fake
 
 
-# Sample buy and sell trade dicts matching the field names onchainos returns.
-_BUY_1000 = {"side": "buy", "usd_amount": 1000.0}
-_SELL_200  = {"side": "sell", "usd_amount": 200.0}
-_BUY_300   = {"side": "buy", "usd_amount": 300.0}
-_SELL_2000 = {"side": "sell", "usd_amount": 2000.0}
+# Sample buy/sell trades in the REAL changedTokenInfo shape (USDC-quoted).
+_BUY_1000 = _trade("buy", 1000.0)
+_SELL_200 = _trade("sell", 200.0)
+_BUY_300 = _trade("buy", 300.0)
+_SELL_2000 = _trade("sell", 2000.0)
 
 
 @pytest.fixture(autouse=True)
@@ -77,10 +102,7 @@ class TestNetFlowCVD:
     def test_neutral_small_imbalance(self) -> None:
         """Tiny imbalance below neutral band → neutral (not accumulation)."""
         # $100 buy vs $90 sell: net $10, 10% — below _NEUTRAL_BAND_USD ($500)
-        oc = _make_oc([
-            {"side": "buy", "usd_amount": 100.0},
-            {"side": "sell", "usd_amount": 90.0},
-        ])
+        oc = _make_oc([_trade("buy", 100.0), _trade("sell", 90.0)])
         result = compute_net_flow("TOKEN_C", "JUP", oc)
         assert result is not None
         assert result.verdict == "neutral"
@@ -88,10 +110,7 @@ class TestNetFlowCVD:
     def test_neutral_small_pct_imbalance(self) -> None:
         """Large volumes but <10% net imbalance → neutral."""
         # $10,100 buy vs $9,900 sell: net $200, but <10% (200/20000 = 1%)
-        oc = _make_oc([
-            {"side": "buy", "usd_amount": 10_100.0},
-            {"side": "sell", "usd_amount": 9_900.0},
-        ])
+        oc = _make_oc([_trade("buy", 10_100.0), _trade("sell", 9_900.0)])
         result = compute_net_flow("TOKEN_D", "RAY", oc)
         assert result is not None
         assert result.verdict == "neutral"
@@ -99,7 +118,7 @@ class TestNetFlowCVD:
     def test_neutral_upgrades_to_accumulation_on_sm_buys(self) -> None:
         """Neutral CVD + ≥2 smart-money buys → upgraded to accumulation."""
         oc = _make_oc(
-            [{"side": "buy", "usd_amount": 100.0}, {"side": "sell", "usd_amount": 90.0}],
+            [_trade("buy", 100.0), _trade("sell", 90.0)],
             signals=[
                 {"direction": "buy"},
                 {"direction": "buy"},
@@ -165,25 +184,17 @@ class TestNetFlowCVD:
         compute_net_flow("TOKEN_K", "JTO", oc)
         assert oc.get_token_trades.call_count == 2
 
-    def test_usd_field_aliases(self) -> None:
-        """Parser handles multiple USD field name variants."""
-        trades = [
-            {"side": "buy", "usdAmount": 600.0},   # camelCase
-            {"side": "sell", "amount": 50.0},
-        ]
-        oc = _make_oc(trades)
+    def test_usd_from_quote_leg(self) -> None:
+        """USD is reconstructed from the changedTokenInfo quote leg (real shape)."""
+        oc = _make_oc([_trade("buy", 600.0), _trade("sell", 50.0)])
         result = compute_net_flow("TOKEN_L", "PYTH", oc)
         assert result is not None
         assert result.buy_usd == pytest.approx(600.0)
         assert result.sell_usd == pytest.approx(50.0)
 
-    def test_side_tradeType_alias(self) -> None:
-        """Side parsed from 'tradeType' field with numeric values."""
-        trades = [
-            {"tradeType": "1", "usd_amount": 800.0},   # "1" = buy
-            {"tradeType": "2", "usd_amount": 100.0},   # "2" = sell
-        ]
-        oc = _make_oc(trades)
+    def test_side_from_type_field(self) -> None:
+        """Side is parsed from the real 'type' field (buy/sell)."""
+        oc = _make_oc([_trade("buy", 800.0), _trade("sell", 100.0)])
         result = compute_net_flow("TOKEN_M", "WIF", oc)
         assert result is not None
         assert result.verdict == "accumulation"
@@ -200,14 +211,16 @@ def _candles_trending_up(n: int = 40) -> list[dict]:
     price = 1.0
     for i in range(n):
         price += 0.05  # +5% per bar — consistent uptrend
-        bars.append({
-            "ts": i,
-            "open": price - 0.02,
-            "high": price + 0.01,
-            "low": price - 0.03,
-            "close": price,
-            "volume": 10000.0,
-        })
+        bars.append(
+            {
+                "ts": i,
+                "open": price - 0.02,
+                "high": price + 0.01,
+                "low": price - 0.03,
+                "close": price,
+                "volume": 10000.0,
+            }
+        )
     return bars
 
 
@@ -217,31 +230,36 @@ def _candles_trending_down(n: int = 40) -> list[dict]:
     price = 10.0
     for i in range(n):
         price -= 0.05  # -5% per bar
-        bars.append({
-            "ts": i,
-            "open": price + 0.02,
-            "high": price + 0.03,
-            "low": price - 0.01,
-            "close": price,
-            "volume": 10000.0,
-        })
+        bars.append(
+            {
+                "ts": i,
+                "open": price + 0.02,
+                "high": price + 0.03,
+                "low": price - 0.01,
+                "close": price,
+                "volume": 10000.0,
+            }
+        )
     return bars
 
 
 def _candles_choppy(n: int = 40) -> list[dict]:
     """Oscillating price — no directional trend."""
     import math
+
     bars = []
     for i in range(n):
         price = 2.0 + 0.1 * math.sin(i * 0.8)
-        bars.append({
-            "ts": i,
-            "open": price,
-            "high": price + 0.005,
-            "low": price - 0.005,
-            "close": price + 0.001,
-            "volume": 5000.0,
-        })
+        bars.append(
+            {
+                "ts": i,
+                "open": price,
+                "high": price + 0.005,
+                "low": price - 0.005,
+                "close": price + 0.001,
+                "volume": 5000.0,
+            }
+        )
     return bars
 
 
@@ -270,8 +288,8 @@ class TestRegime1h:
 
 # ── coordinator regime_1h modulator tests ────────────────────────────
 
-from voices.coordinator_rules import coordinator
 from voices.base import VoiceOpinion
+from voices.coordinator_rules import coordinator
 
 
 def _op(name: str, verdict: str, conf: float) -> VoiceOpinion:
@@ -351,6 +369,7 @@ class TestCoordinatorRegime1h:
 
 # ── poll_instruments distribution gate integration test ──────────────
 
+
 class TestDistributionGateInBot:
     """Smoke test: poll_instruments blocks distribution-flow candidates."""
 
@@ -385,12 +404,28 @@ class TestDistributionGateInBot:
     def _flat_candles_breakout(self, base: float = 1.0, n: int = 30) -> list[dict]:
         """24 flat bars then one higher close to trigger breakout."""
         bars = [
-            {"ts": i, "open": base, "high": base + 0.001, "low": base - 0.001, "close": base, "volume": 1000.0}
+            {
+                "ts": i,
+                "open": base,
+                "high": base + 0.001,
+                "low": base - 0.001,
+                "close": base,
+                "volume": 1000.0,
+            }
             for i in range(n - 1)
         ]
         # Final bar breaks above by 2%
         close = base * 1.02
-        bars.append({"ts": n - 1, "open": base, "high": close, "low": base, "close": close, "volume": 1000.0})
+        bars.append(
+            {
+                "ts": n - 1,
+                "open": base,
+                "high": close,
+                "low": base,
+                "close": close,
+                "volume": 1000.0,
+            }
+        )
         return bars
 
     def test_distribution_flow_blocks_candidate(self, bot, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -407,10 +442,10 @@ class TestDistributionGateInBot:
         fake_oc.get_candles.return_value = bars
         fake_oc.get_price_info.return_value = {"data": {"price": 1.02}}
         fake_oc.btc_overlay_passes = MagicMock(return_value=(True, "disabled"))
-        # Distribution: heavy sell flow
+        # Distribution: heavy sell flow (real changedTokenInfo shape, USDC-quoted)
         fake_oc.get_token_trades.return_value = [
-            {"side": "sell", "usd_amount": 5000.0},
-            {"side": "buy",  "usd_amount": 100.0},
+            _trade("sell", 5000.0, base=mint),
+            _trade("buy", 100.0, base=mint),
         ]
         fake_oc.get_signals.return_value = []
 
@@ -427,9 +462,10 @@ class TestDistributionGateInBot:
 
         # Check signal_feed contains distribution_flow decline
         distribution_log = [
-            e for e in bot.signal_feed
+            e
+            for e in bot.signal_feed
             if "distribution" in e.get("msg", "").lower()
-               or "distribution_flow" in e.get("msg", "").lower()
+            or "distribution_flow" in e.get("msg", "").lower()
         ]
         assert len(distribution_log) >= 1
 
@@ -443,10 +479,10 @@ class TestDistributionGateInBot:
         fake_oc = MagicMock()
         fake_oc.get_candles.return_value = bars
         fake_oc.get_price_info.return_value = {"data": {"price": 1.02}}
-        # Accumulation: heavy buy flow
+        # Accumulation: heavy buy flow (real changedTokenInfo shape, USDC-quoted)
         fake_oc.get_token_trades.return_value = [
-            {"side": "buy",  "usd_amount": 5000.0},
-            {"side": "sell", "usd_amount": 200.0},
+            _trade("buy", 5000.0, base=mint),
+            _trade("sell", 200.0, base=mint),
         ]
         fake_oc.get_signals.return_value = []
         fake_oc.get_all_balances.return_value = []
@@ -461,7 +497,6 @@ class TestDistributionGateInBot:
         bot.poll_instruments()
 
         distribution_blocks = [
-            e for e in bot.signal_feed
-            if "distribution_flow" in e.get("msg", "").lower()
+            e for e in bot.signal_feed if "distribution_flow" in e.get("msg", "").lower()
         ]
         assert len(distribution_blocks) == 0
