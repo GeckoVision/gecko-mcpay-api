@@ -354,7 +354,28 @@ def compute_regime_1h(candles_1h: list[dict]) -> str:
     return "CHOP"
 
 
+def adx_slope(adx_series: list[float | None], lookback: int = 3) -> float | None:
+    """Δ of ADX over `lookback` bars. Positive = strengthening trend. None if insufficient."""
+    if len(adx_series) <= lookback:
+        return None
+    a, b = adx_series[-1], adx_series[-1 - lookback]
+    if a is None or b is None:
+        return None
+    return round(a - b, 4)
+
+
+def adx_distance(adx_value: float | None, trend_threshold: float = 25.0) -> float | None:
+    """Signed margin from the trend threshold. Positive = above (trending)."""
+    return None if adx_value is None else round(adx_value - trend_threshold, 4)
+
+
+def chop_distance(chop_value: float | None, chop_threshold: float = 61.8) -> float | None:
+    """Signed distance from the chop ceiling. Positive = below (trending side)."""
+    return None if chop_value is None else round(chop_threshold - chop_value, 4)
+
+
 __all__ = [
     "ema", "rsi", "adx", "adx_full", "mfi", "atr", "bb", "chop",
     "compute_latest", "compute_regime_1h",
+    "adx_slope", "adx_distance", "chop_distance",
 ]
