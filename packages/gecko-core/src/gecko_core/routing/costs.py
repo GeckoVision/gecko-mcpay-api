@@ -15,7 +15,9 @@ have moved to catalog ids.
 
 from __future__ import annotations
 
-from typing import Final, TypedDict
+from typing import Final
+
+from typing_extensions import TypedDict  # py<3.12 + pydantic needs this variant
 
 from gecko_core.routing.catalog import load_catalog
 

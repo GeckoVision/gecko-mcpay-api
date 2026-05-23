@@ -20,7 +20,9 @@ not a top-level Category.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Final, Literal, TypedDict
+from typing import Final, Literal
+
+from typing_extensions import TypedDict  # py<3.12 + pydantic needs this variant
 
 # ---------------------------------------------------------------------------
 # Knowledge category — the 7-dimension partition.

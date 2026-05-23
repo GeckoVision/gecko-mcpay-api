@@ -14,7 +14,7 @@ imports :func:`build_receipt` — no string templates copied at call sites.
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing_extensions import TypedDict  # py<3.12 + pydantic needs this variant
 
 from gecko_core.types import SettlementMode
 

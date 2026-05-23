@@ -2,7 +2,7 @@
   "mcpServers": {
     "gecko": {
       "command": "uvx",
-      "args": ["gecko-mcp@latest", "serve"],
+      "args": ["--python", "3.12", "gecko-mcp@latest", "serve"],
       "env": {
         "GECKO_API_URL": "https://api.geckovision.tech"
       }

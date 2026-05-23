@@ -1,6 +1,6 @@
 [project]
 name = "gecko-core"
-version = "0.2.25"
+version = "0.2.26"
 description = "Builder Bootstrap Platform SDK — pure business logic. CLI, MCP, and API import this."
 requires-python = ">=3.11"
 dependencies = [
@@ -14,6 +14,8 @@ dependencies = [
     "lxml>=4.9",
     "pydantic>=2.7",
     "pydantic-settings>=2.4",
+    # pydantic 2.12 requires typing_extensions.TypedDict on py<3.12; we import it directly.
+    "typing_extensions>=4.10",
     "tenacity>=8.5",
     "pyautogen>=0.2",
     "ag2[openai]>=0.8",

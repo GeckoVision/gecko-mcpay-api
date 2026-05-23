@@ -10,7 +10,9 @@ ordered preference list (preferred-first) so the budget cap can downshift.
 
 from __future__ import annotations
 
-from typing import Final, Literal, TypedDict
+from typing import Final, Literal
+
+from typing_extensions import TypedDict  # py<3.12 + pydantic needs this variant
 
 TaskHint = Literal["reasoning", "code", "extraction", "summary", "default"]
 DEFAULT_TASK_HINT: Final[TaskHint] = "default"

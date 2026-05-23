@@ -15,7 +15,7 @@ This is an informational surface only; no payment flow consults it.
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing_extensions import TypedDict  # py<3.12 + pydantic needs this variant
 
 from gecko_core.orchestration.advisor.models import PANEL_VOICE_ORDER
 from gecko_core.routing.catalog import AgentRole, Tier, models_for_role
