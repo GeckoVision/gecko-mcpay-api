@@ -35,9 +35,7 @@ class DecisionRecorder:
 class SimulationRegistry:
     def __init__(self, root: pathlib.Path | str | None = None, sims_coll=None, decs_coll=None):
         self._root = (
-            pathlib.Path(root)
-            if root
-            else pathlib.Path(__file__).parent.parent / "decision_runs"
+            pathlib.Path(root) if root else pathlib.Path(__file__).parent.parent / "decision_runs"
         )
         if sims_coll is None and decs_coll is None:
             sims_coll, decs_coll = get_collections()
@@ -67,7 +65,7 @@ class SimulationRegistry:
                 capture_output=True,
                 text=True,
             ).stdout.strip()
-        except Exception:  # noqa: BLE001 — never block startup on git
+        except Exception:
             sha = ""
         # TAKE_PROFIT_PCT / STOP_LOSS_PCT / PAPER_TRADE live in the bot module; the bot
         # passes them in via env or this method reads sensible env-overridable defaults.
@@ -85,7 +83,9 @@ class SimulationRegistry:
                     "tp_pct": os.environ.get("TAKE_PROFIT_PCT", ""),
                     "sl_pct": os.environ.get("STOP_LOSS_PCT", ""),
                 },
-                mode="paper" if os.environ.get("PAPER_TRADE", "true").lower() != "false" else "live",
+                mode="paper"
+                if os.environ.get("PAPER_TRADE", "true").lower() != "false"
+                else "live",
                 code_commit=sha,
             )
         )

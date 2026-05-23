@@ -77,7 +77,9 @@ def adx(
         dn = lows[i - 1] - lows[i]
         plus_dm.append(up if (up > dn and up > 0) else 0.0)
         minus_dm.append(dn if (dn > up and dn > 0) else 0.0)
-        tr.append(max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])))
+        tr.append(
+            max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
+        )
     atr_s = _wilder_smooth(tr, n)
     pdm_s = _wilder_smooth(plus_dm, n)
     mdm_s = _wilder_smooth(minus_dm, n)
@@ -123,7 +125,9 @@ def adx_full(
         dn = lows[i - 1] - lows[i]
         plus_dm.append(up if (up > dn and up > 0) else 0.0)
         minus_dm.append(dn if (dn > up and dn > 0) else 0.0)
-        tr.append(max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])))
+        tr.append(
+            max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
+        )
 
     atr_s = _wilder_smooth(tr, n)
     pdm_s = _wilder_smooth(plus_dm, n)
@@ -180,14 +184,18 @@ def mfi(highs, lows, closes, vols, n: int = 14) -> list[float | None]:
     return out
 
 
-def atr(highs: list[float], lows: list[float], closes: list[float], n: int = 14) -> list[float | None]:
+def atr(
+    highs: list[float], lows: list[float], closes: list[float], n: int = 14
+) -> list[float | None]:
     m = len(closes)
     out: list[float | None] = [None] * m
     if m <= n:
         return out
     tr = [0.0]
     for i in range(1, m):
-        tr.append(max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])))
+        tr.append(
+            max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
+        )
     seed = sum(tr[1 : n + 1]) / n
     out[n] = seed
     for i in range(n + 1, m):
@@ -195,7 +203,9 @@ def atr(highs: list[float], lows: list[float], closes: list[float], n: int = 14)
     return out
 
 
-def bb(closes: list[float], n: int = 20, k: float = 2.0) -> tuple[list[float | None], list[float | None], list[float | None]]:
+def bb(
+    closes: list[float], n: int = 20, k: float = 2.0
+) -> tuple[list[float | None], list[float | None], list[float | None]]:
     m = len(closes)
     lower: list[float | None] = [None] * m
     mid: list[float | None] = [None] * m
@@ -206,7 +216,7 @@ def bb(closes: list[float], n: int = 20, k: float = 2.0) -> tuple[list[float | N
         window = closes[i - n + 1 : i + 1]
         sma = sum(window) / n
         var = sum((x - sma) ** 2 for x in window) / n
-        sd = var ** 0.5
+        sd = var**0.5
         mid[i] = sma
         lower[i] = sma - k * sd
         upper[i] = sma + k * sd
@@ -280,7 +290,9 @@ def compute_latest(candles: list[dict]) -> dict:
 
     bl, bm, bu = bb(closes, 20, 2.0)
     bl_v, bm_v, bu_v = _last(bl), _last(bm), _last(bu)
-    bb_width = ((bu_v - bl_v) / bm_v * 100) if (bl_v is not None and bu_v is not None and bm_v) else None
+    bb_width = (
+        ((bu_v - bl_v) / bm_v * 100) if (bl_v is not None and bu_v is not None and bm_v) else None
+    )
 
     adx_s, pdi_s, mdi_s = adx_full(highs, lows, closes, 14)
 
@@ -375,7 +387,17 @@ def chop_distance(chop_value: float | None, chop_threshold: float = 61.8) -> flo
 
 
 __all__ = [
-    "ema", "rsi", "adx", "adx_full", "mfi", "atr", "bb", "chop",
-    "compute_latest", "compute_regime_1h",
-    "adx_slope", "adx_distance", "chop_distance",
+    "ema",
+    "rsi",
+    "adx",
+    "adx_full",
+    "mfi",
+    "atr",
+    "bb",
+    "chop",
+    "compute_latest",
+    "compute_regime_1h",
+    "adx_slope",
+    "adx_distance",
+    "chop_distance",
 ]

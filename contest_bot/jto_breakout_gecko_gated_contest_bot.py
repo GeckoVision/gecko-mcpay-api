@@ -183,7 +183,7 @@ def _init_decision_store() -> None:
                 capture_output=True,
                 text=True,
             ).stdout.strip()
-        except Exception:  # noqa: BLE001
+        except Exception:  # best-effort: git SHA is metadata, never block startup
             sha = ""
         _SIM = SimulationRegistry()
         _RUN_ID = _SIM.start(
@@ -207,7 +207,7 @@ def _init_decision_store() -> None:
         )
         _RECORDER = _SIM.recorder()
         print(f"[decision-store] run {_RUN_ID} armed ({len(INSTRUMENTS)} instruments)")
-    except Exception as exc:  # noqa: BLE001 — recorder must never block the bot
+    except Exception as exc:  # recorder must never block the bot
         print(f"[decision-store] disabled: {type(exc).__name__}: {exc}")
         _SIM, _RUN_ID, _RECORDER = None, None, None
 
@@ -1432,7 +1432,7 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
                     _l = [float(c.get("low") or c.get("l") or 0) for c in ms_candles]
                     _c = [float(c.get("close") or c.get("c") or 0) for c in ms_candles]
                     adx_series, _, _ = _indicators.adx_full(_h, _l, _c)
-            except Exception:  # noqa: BLE001 — slope is optional telemetry
+            except Exception:  # slope is optional telemetry — never block the entry
                 adx_series = []
             snap["adx_slope"] = _indicators.adx_slope(adx_series) if adx_series else None
             snap["adx_distance"] = _indicators.adx_distance(snap.get("adx"))
@@ -1480,7 +1480,7 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
                 )
             )
             pos["decision_id"] = _did  # carry the link to the outcome on close
-        except Exception as exc:  # noqa: BLE001 — recorder must never break the loop
+        except Exception as exc:  # recorder must never break the trading loop
             print(f"[decision-store] record skipped: {type(exc).__name__}: {exc}")
 
     if PAPER_TRADE:
@@ -1586,7 +1586,7 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
                 _ent = datetime.fromisoformat(pos["entry_ts"])
                 _ext = datetime.fromisoformat(pos["exit_ts"])
                 duration_min = round((_ext - _ent).total_seconds() / 60.0, 2)
-            except Exception:  # noqa: BLE001 — duration is optional telemetry
+            except Exception:  # duration is optional telemetry — never block the close
                 duration_min = None
             # peak_pct from the tracked peak_price vs entry (no peak_pct local).
             peak_pct: float | None = None
@@ -1605,7 +1605,7 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
                     peak_pct=peak_pct,
                 ),
             )
-        except Exception as exc:  # noqa: BLE001 — recorder must never break the close
+        except Exception as exc:  # recorder must never break the close path
             print(f"[decision-store] attach_outcome skipped: {type(exc).__name__}: {exc}")
 
     consec_losses = consec_losses + 1 if pnl_pct < 0 else 0

@@ -1,4 +1,4 @@
-from indicators import adx_slope, adx_distance, chop_distance
+from indicators import adx_distance, adx_slope, chop_distance
 
 
 def test_adx_slope_rising():

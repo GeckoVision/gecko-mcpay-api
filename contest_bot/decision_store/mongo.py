@@ -11,7 +11,7 @@ def best_effort_upsert(coll, flt: dict, doc: dict) -> bool:
     try:
         coll.update_one(flt, {"$set": doc}, upsert=True)
         return True
-    except Exception as exc:  # noqa: BLE001 — fail-safe by design
+    except Exception as exc:
         logger.warning(
             "decision_store: mongo upsert failed (%s); JSONL remains source of truth", exc
         )
@@ -26,10 +26,8 @@ def get_collections():
     try:
         from pymongo import MongoClient
 
-        db = MongoClient(uri, serverSelectionTimeoutMS=3000)[
-            os.environ.get("MONGODB_DB", "gecko")
-        ]
+        db = MongoClient(uri, serverSelectionTimeoutMS=3000)[os.environ.get("MONGODB_DB", "gecko")]
         return db["simulations"], db["decisions"]
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("decision_store: mongo unavailable (%s); JSONL-only", exc)
         return None, None

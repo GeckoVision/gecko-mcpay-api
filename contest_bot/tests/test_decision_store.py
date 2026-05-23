@@ -1,4 +1,9 @@
-from decision_store.models import SimulationDoc, DecisionDoc, Outcome
+import json
+
+from decision_store.models import DecisionDoc, Outcome, SimulationDoc
+from decision_store.mongo import best_effort_upsert
+from decision_store.recorder import SimulationRegistry
+from decision_store.sync import sync_run
 
 
 def test_simulation_doc_roundtrip():
@@ -40,9 +45,6 @@ def test_outcome_dict():
     assert o.to_dict()["exit_reason"] == "flat_stall_exit"
 
 
-from decision_store.mongo import best_effort_upsert
-
-
 class _FakeColl:
     def __init__(self):
         self.docs = {}
@@ -68,11 +70,6 @@ def test_upsert_swallows_errors():
     assert best_effort_upsert(_Boom(), {"decision_id": "d1"}, {"decision_id": "d1"}) is False
 
 
-import json
-
-from decision_store.recorder import DecisionRecorder, SimulationRegistry
-
-
 def _mk(tmp_path):
     sims, decs = _FakeColl(), _FakeColl()
     reg = SimulationRegistry(root=tmp_path, sims_coll=sims, decs_coll=decs)
@@ -80,7 +77,7 @@ def _mk(tmp_path):
 
 
 def test_start_writes_simulation_json(tmp_path):
-    reg, sims, _ = _mk(tmp_path)
+    reg, _sims, _ = _mk(tmp_path)
     run_id = reg.start(
         SimulationDoc(
             run_id="",
@@ -97,7 +94,7 @@ def test_start_writes_simulation_json(tmp_path):
 
 
 def test_record_appends_jsonl_and_attach_outcome_patches(tmp_path):
-    reg, sims, decs = _mk(tmp_path)
+    reg, _sims, decs = _mk(tmp_path)
     run_id = reg.start(
         SimulationDoc(
             run_id="",
@@ -142,11 +139,8 @@ def test_record_appends_jsonl_and_attach_outcome_patches(tmp_path):
     assert decs.docs[did]["coordinator"]["action"] == "act"  # mongo got it too
 
 
-from decision_store.sync import sync_run
-
-
 def test_sync_loads_jsonl_into_coll(tmp_path):
-    reg, sims, decs = _mk(tmp_path)
+    reg, _sims, _decs = _mk(tmp_path)
     run_id = reg.start(
         SimulationDoc(
             run_id="",

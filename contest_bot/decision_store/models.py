@@ -3,11 +3,11 @@ from __future__ import annotations
 import dataclasses
 import uuid
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 @dataclass
@@ -28,7 +28,7 @@ class SimulationDoc:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: dict) -> "SimulationDoc":
+    def from_dict(cls, d: dict) -> SimulationDoc:
         return cls(**{k: d.get(k) for k in (f.name for f in dataclasses.fields(cls))})
 
 

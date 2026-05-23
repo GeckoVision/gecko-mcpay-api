@@ -15,7 +15,9 @@ def sync_run(run_dir: pathlib.Path, sims_coll, decs_coll) -> int:
         if not line.strip():
             continue
         row = json.loads(line)
-        merged.setdefault(row["decision_id"], {}).update(row)  # fold outcome patches onto the decision
+        merged.setdefault(row["decision_id"], {}).update(
+            row
+        )  # fold outcome patches onto the decision
     for did, doc in merged.items():
         best_effort_upsert(decs_coll, {"decision_id": did}, doc)
     return len(merged)
@@ -24,9 +26,7 @@ def sync_run(run_dir: pathlib.Path, sims_coll, decs_coll) -> int:
 def main() -> None:
     sims, decs = get_collections()
     root = pathlib.Path(__file__).parent.parent / "decision_runs"
-    total = sum(
-        sync_run(d, sims, decs) for d in root.iterdir() if (d / "simulation.json").exists()
-    )
+    total = sum(sync_run(d, sims, decs) for d in root.iterdir() if (d / "simulation.json").exists())
     print(f"synced {total} decisions across {len(list(root.iterdir()))} runs")
 
 
