@@ -4,14 +4,15 @@ import { BEATS, WEEKLY_FRAMES } from "./weekly/timing";
 import { BeatTitle } from "./weekly/BeatTitle";
 import { BeatPreContest } from "./weekly/BeatPreContest";
 import { BeatReckoning } from "./weekly/BeatReckoning";
-import { BeatReframe } from "./weekly/BeatReframe";
+import { BeatStudio } from "./weekly/BeatStudio";
 import { BeatValidation } from "./weekly/BeatValidation";
 import { BeatRoadmap } from "./weekly/BeatRoadmap";
 import { BeatEndCard } from "./weekly/BeatEndCard";
 
-// WeeklyUpdate — 60s weekly build update. 1920×1080, 30fps, 1800 frames.
-// 7 locked beats. Stark dark editorial, mint accent, burn-in captions.
-// Reads fully muted; minimal motion; no gradients/animated web3 backdrops.
+// WeeklyUpdate — 60s weekly build update, product-forward recut ("less ads, more
+// building"). 1920×1080, 30fps, 1800 frames. The centerpiece is the real live
+// paper-mode studio walkthrough (18s). Stark dark editorial, mint accent, burn-in
+// captions. Reads fully muted; minimal motion; no gradients/animated backdrops.
 
 // Thin persistent progress strip + brand mark — documentary, calm, always-on.
 const ProgressFooter: React.FC = () => {
@@ -60,8 +61,8 @@ export const WeeklyUpdate: React.FC = () => {
       <Sequence from={BEATS.reckoning.from} durationInFrames={BEATS.reckoning.dur}>
         <BeatReckoning />
       </Sequence>
-      <Sequence from={BEATS.reframe.from} durationInFrames={BEATS.reframe.dur}>
-        <BeatReframe />
+      <Sequence from={BEATS.studio.from} durationInFrames={BEATS.studio.dur}>
+        <BeatStudio />
       </Sequence>
       <Sequence from={BEATS.validation.from} durationInFrames={BEATS.validation.dur}>
         <BeatValidation />

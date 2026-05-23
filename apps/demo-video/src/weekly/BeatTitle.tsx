@@ -3,7 +3,7 @@ import { COLORS, FONT } from "../theme";
 import { useFade, useBeatTail, Caret } from "./primitives";
 import { BEATS } from "./timing";
 
-// Beat 1 — Title [0–120 / 0:00–0:04]
+// Beat 1 — Title [0–90 / 0:00–0:03]
 // "Gecko — weekly build update" · subhead "intelligence + safety for money-agents"
 export const BeatTitle: React.FC = () => {
   const titleOp = useFade(0, 20);
