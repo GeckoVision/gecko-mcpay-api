@@ -71,6 +71,12 @@ _REGIME_CHOP_CONFIDENCE = 0.6  # regime must be this confident it's chop to rais
 # 1h chop/downtrend — we just require much stronger confirmation.
 _CHART_1H_ADVERSE_FLOOR = float(os.environ.get("GECKO_CHART_ADVERSE_FLOOR", "0.92"))  # chart confidence required when 1h is CHOP or TREND-DOWN (env-overridable)
 
+# 2026-05-23 overnight experiment: bypass the chart gate (Rules 2 + 3) to measure
+# the RAW breakout signal's EV in PAPER. When ON, a fired breakout enters subject
+# ONLY to risk-veto (Rule 1) + memory-contradict (Rule 4); the chart_analyst's
+# bullish-requirement + confidence floor are skipped. Default OFF — never ship on.
+_CHART_GATE_OFF = os.environ.get("GECKO_CHART_GATE_OFF", "").strip().lower() in ("1", "true", "yes")
+
 # Synthetic abstain we substitute when a named voice is missing from
 # the opinions list — keeps the rule chain branch-free.
 _ABSTAIN_PLACEHOLDER = VoiceOpinion(
@@ -115,8 +121,8 @@ def coordinator(
     if risk.verdict == "bearish" and risk.confidence >= _RISK_VETO_CONFIDENCE:
         return ("decline", "risk_veto")
 
-    # Rule 2 — chart must be bullish at all.
-    if chart.verdict != "bullish":
+    # Rule 2 — chart must be bullish at all. (skipped when chart gate off — raw-breakout paper experiment)
+    if not _CHART_GATE_OFF and chart.verdict != "bullish":
         return ("decline", "chart_below_threshold")
 
     # Rule 3a (Wave-2b) — multi-timeframe 1h modulator. If the 1h tape is
@@ -142,7 +148,7 @@ def coordinator(
         floor = _CHART_MIN_CONFIDENCE
         floor_reason = "chart_below_threshold"
 
-    if chart.confidence < floor:
+    if not _CHART_GATE_OFF and chart.confidence < floor:
         return ("decline", floor_reason)
 
     # Rule 4 — memory must not contradict (realized-outcome based, B4).
