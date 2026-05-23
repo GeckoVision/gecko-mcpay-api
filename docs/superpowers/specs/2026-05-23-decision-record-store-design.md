@@ -51,6 +51,15 @@ queryable** by strategy/regime/market-state.
     close (a NEW immutable patch row in JSONL; `$set` in Mongo). Mirrors the existing
     artifact "rows immutable, outcome patches append" pattern.
 
+## Design rationale: store the un-recoverable (founder)
+Market data is **re-fetchable** — OKX gives real-time *and* historical candles/depth on
+demand. **Our decisions + the agent's reasoning are not** — once a run ends, *why* it
+acted or abstained is gone forever. So the store's job is to capture the **un-recoverable**
+thing (the full decision + every voice's reasoning), and merely *reference* the candle
+window (the approved "lean": `candles_ref`; re-fetch market data when replaying). That
+asymmetry — ephemeral decisions vs durable, fetchable market data — is what the whole
+design turns on, and it's why we don't bank candle content.
+
 ## Data model
 
 **`simulations`** (one per run):
