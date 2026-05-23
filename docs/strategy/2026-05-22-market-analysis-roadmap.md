@@ -90,12 +90,20 @@ Discovery complete (6 lenses). **Phase 0.5 (exit reconciliation) DONE** + **Phas
 1. **The strategy is fee-dominated, not analysis-limited** (0.5). The −EV is real, not a measurement artifact.
 2. **The fee fix is on-chain** (1.0) — the DEX-vs-CEX fork was a false binary; CEX is rejected (more expensive than the on-chain orderbook + identity-breaking). Path: Jupiter RFQ → Phoenix maker. But even free execution is a coin-flip on today's edge — **both** the fee fix and a ~2.4–4× gross-edge lift are required.
 
-**The deepest reframe:** the bot is a **proof artifact**, so the bar is the **gating delta** (gated > ungated, CI-clean), not absolute PnL. This makes **V.0 (the fee×gating sweep) the highest-value next measurement** — it falsifies the whole direction for free before we build, and may reveal the *wedge itself* needs work (the entry gate backtests −0.64%).
+**The deepest reframe:** the bot is a **proof artifact**, so the bar is the **gating delta** (gated > ungated, CI-clean), not absolute PnL.
 
-**Next, in order:**
-1. **V.0 fee×gating sweep** — the direction-falsifier (free, cached data). Does the gate discriminate at break-even fee?
-2. **Foundation L1 — Phase 0 data integrity** (forming-candle, CVD, volUsd+candle-guard, outcome ledger) + **Phase V spine** (block-bootstrap, leakage traps, per-regime, FDR, walk-forward, acceptance gates). Venue-agnostic; needed regardless.
-3. **Foundation L2 — Phase 1 structure/multi-TF** (the gross-edge lift) → only meaningful once V.0 confirms the gate discriminates.
-4. The on-chain fee path (RFQ depth probe → Phoenix adapter) as the execution-layer build.
+**✅ THE EDGE-VALIDATION ARC IS DONE (5 measurements). THE PRODUCT WORKS.**
+- **V.0** (`7ffad04`): the bot's LOCAL momentum gate is **anti-predictive** (−1.5%/−1.9%, CI-clean wrong-side).
+- **Structure de-risk** (`3f80a6e`): structure features don't rescue it on this tape — momentum is the wrong axis; useful structural signal is subtractive (veto) + room-to-run, not direction-confirm.
+- **🏆 Oracle gating-delta** (`95879e1`, `2026-05-22-oracle-gating-delta.md`): the **real Gecko Oracle DISCRIMINATES — CI-clean POSITIVE +1.12%** (TREND +1.83% / CHOP +1.05% clean; TRANSITIONAL +0.43% soft). SAFE +0.64% vs DEFER −0.48%, jackknife-robust. **When Gecko says "act," those trades beat "defer" by ~1.1%, even in chop.** The wedge is a real selector — the opposite of the local gate.
+- **Jupiter Ultra** = the execution fee fix (see fee/venue doc); Jupiter Price API has no historical candles → data-coverage tape needs OKX market API/Birdeye history or forward collection.
 
-Granular TDD plan for L1 (Phase 0 + Phase V incl. V.0) → execute via subagent-driven-development.
+**Honest limit:** the Oracle improves *selection*, not the primitive's gross edge — SAFE +0.64% ≈ break-even after fee. **Profit = Oracle (selection ✅) + a real primitive (gross edge TBD) + Jupiter (low fee ✅).** 2 of 3 levers in hand.
+
+**Meta-finding (binding constraint):** every edge measurement ran on ONE quiet chop-heavy week, two overlapping windows, zero counter-trend cases. **Data coverage is the limit** — a richer multi-regime, multi-symbol tape is the highest-value foundation piece (turns "directional" into "solid").
+
+**Next, in priority order:**
+1. **Lock the Oracle result** — replicate on W2 + the OpenAI-direct production path (once quota's back) + bigger N for TRANSITIONAL. ~$0.50, high-confidence the sign holds.
+2. **Fix the prod OpenAI quota** (operational — live Oracle degraded; OpenRouter proven as the fallback).
+3. **Foundation = data coverage** — a richer tape (deeper history + the Phase 0.4 outcome ledger) + the Phase 0 data-integrity fixes + Phase V spine. The "solid foundation."
+4. **(For profit, secondary to proof)** a primitive with real gross edge → then wire **Jupiter Ultra** execution.

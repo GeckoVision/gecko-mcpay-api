@@ -93,3 +93,21 @@ Jupiter-limit/RFQ as the interim on-chain fee cut → Phoenix maker as the real 
 as user-selectable neutral adapters, never the house path. **But first:** the fee×gating sweep — if the
 gating delta doesn't survive at break-even fee, the venue isn't the problem and we'd be building the wrong
 thing.
+
+## UPDATE 2026-05-22 — Jupiter Ultra is THE execution path (from the Jupiter docs)
+The cleaner answer than "RFQ vs Phoenix" is **Jupiter Ultra** (the meta-aggregator, `GET /swap/v2/order`
+→ `POST /swap/v2/execute`): it routes every trade through **OKX, JupiterZ RFQ, Metis, and Dflow all
+competing for best price.** That **subsumes both** the current path (onchainOS = OKX *alone*) and the RFQ
+path — OKX has to *win* the price, and RFQ's ~0.04% kicks in when a market-maker quotes. One integration,
+on-chain, self-custodial, identity intact, strictly ≥ the best of its sub-routes. Free tier (1 RPS) is
+ample for the trigger-based bot; `x-api-key` from the Jupiter portal. **This replaces onchainOS as the
+house execution layer once there's a proven edge to execute.**
+- **Phoenix** (the founder's link) is **perpetual futures** — leverage/shorting/funding, a different
+  instrument that conflicts with the long-only-spot "safety" positioning. Not a drop-in spot fee fix.
+- **Backpack** (~0.16% RT) is a fine Solana-native exchange but **custodial** — same identity tradeoff as
+  OKX CEX; keep as a user adapter only.
+- **Data caveat:** Jupiter's Price API (`/price/v3`) is **real-time only — no historical candles.** Great
+  for live price + token signals (organic score, holders, liquidity), but the data-coverage tape (deeper
+  multi-regime history) still needs OKX market API / Birdeye klines or forward collection.
+- **Sequencing:** execution is built *after* the edge is proven. The `jup-ag/agent-skills` "integrating-jupiter"
+  skill is the build-time tool — install + use it when wiring execution, not before.
