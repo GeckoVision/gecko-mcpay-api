@@ -90,6 +90,11 @@ contest_bot/bot_state.*.json
 contest_bot/poll_telemetry_*.jsonl
 contest_bot/eval_telemetry_*.jsonl
 
+# Decision-record store (s43): per-run JSONL + simulation.json. Local +
+# best-effort synced to Mongo via `python -m decision_store.sync`; the
+# JSONL is the durable source of truth, not repo source. Never track.
+contest_bot/decision_runs/
+
 # OKX example skills pulled down for reference (kline-indicator,
 # market-intel). Context-feed material, not source we maintain.
 skills_example/
