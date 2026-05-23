@@ -38,3 +38,28 @@ def test_decision_doc_has_future_slots_and_null_outcome():
 def test_outcome_dict():
     o = Outcome(pnl_pct=-0.3, pnl_usd=-0.27, exit_reason="flat_stall_exit", duration_min=90)
     assert o.to_dict()["exit_reason"] == "flat_stall_exit"
+
+
+from decision_store.mongo import best_effort_upsert
+
+
+class _FakeColl:
+    def __init__(self):
+        self.docs = {}
+
+    def update_one(self, flt, update, upsert=False):
+        self.docs[flt["decision_id"]] = update["$set"]
+
+
+def test_upsert_writes_to_coll():
+    c = _FakeColl()
+    ok = best_effort_upsert(c, {"decision_id": "d1"}, {"decision_id": "d1", "x": 1})
+    assert ok is True and c.docs["d1"]["x"] == 1
+
+
+def test_upsert_swallows_errors():
+    class _Boom:
+        def update_one(self, *a, **k):
+            raise RuntimeError("mongo down")
+
+    assert best_effort_upsert(_Boom(), {"decision_id": "d1"}, {"decision_id": "d1"}) is False
