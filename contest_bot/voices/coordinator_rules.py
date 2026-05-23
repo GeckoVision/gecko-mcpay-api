@@ -39,6 +39,7 @@ See ``docs/strategy/lab-validated/2026-05-20-local-panel-voices-spec.md``
 
 from __future__ import annotations
 
+import os
 from typing import Literal
 
 from voices.base import VoiceOpinion
@@ -50,7 +51,7 @@ LocalAction = Literal["act", "decline"]
 # symmetry across substrates. The memory 0.6 is set by the spec; risk
 # 0.8 is the hard-veto bar.
 _RISK_VETO_CONFIDENCE = 0.8
-_CHART_MIN_CONFIDENCE = 0.85  # raised again 2026-05-20 autonomous (was 0.6 → 0.75 → 0.85): only the cleanest momentum setups pass. Reduces premature breakout entries on noise. Trade-off: fewer trades, much higher per-trade conviction.
+_CHART_MIN_CONFIDENCE = float(os.environ.get("GECKO_CHART_MIN_CONF", "0.85"))  # env-overridable (2026-05-23 overnight tuning). Default 0.85: only cleanest momentum setups pass. Override via GECKO_CHART_MIN_CONF for paper experiments.
 _MEMORY_CONTRADICT_CONFIDENCE = 0.6
 # B6 (S40) — 5m regime gate-modulator. The backtest proved breakout is -EV in
 # chop. So in a confirmed CHOP regime we RAISE the chart floor (only the
@@ -58,7 +59,7 @@ _MEMORY_CONTRADICT_CONFIDENCE = 0.6
 # floor. This is a MODULATOR, not a veto — it never bans a symbol, it makes
 # us selective in chop. (DRIFT in a trend trades at 0.85; DRIFT in chop must
 # clear 0.92 — selective, not "never".)
-_CHART_CHOP_FLOOR = 0.92  # chart confidence required to act in a confirmed-chop regime
+_CHART_CHOP_FLOOR = float(os.environ.get("GECKO_CHART_CHOP_FLOOR", "0.92"))  # chart confidence required to act in a confirmed-chop regime (env-overridable)
 _REGIME_CHOP_CONFIDENCE = 0.6  # regime must be this confident it's chop to raise the bar
 
 # Wave-2b (S42) — multi-timeframe 1h regime modulator.
@@ -68,7 +69,7 @@ _REGIME_CHOP_CONFIDENCE = 0.6  # regime must be this confident it's chop to rais
 # scenario the strategist diagnosed. This is still a MODULATOR not a hard ban:
 # a very high-conviction 5m breakout (chart >= 0.92) can still fire in a
 # 1h chop/downtrend — we just require much stronger confirmation.
-_CHART_1H_ADVERSE_FLOOR = 0.92  # chart confidence required when 1h is CHOP or TREND-DOWN
+_CHART_1H_ADVERSE_FLOOR = float(os.environ.get("GECKO_CHART_ADVERSE_FLOOR", "0.92"))  # chart confidence required when 1h is CHOP or TREND-DOWN (env-overridable)
 
 # Synthetic abstain we substitute when a named voice is missing from
 # the opinions list — keeps the rule chain branch-free.
