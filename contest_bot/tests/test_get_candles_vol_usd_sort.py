@@ -95,6 +95,4 @@ def test_sort_guard_raises_on_descending() -> None:
 def test_sort_guard_raises_on_single_inversion() -> None:
     """One mid-series inverted pair must trip the guard."""
     with pytest.raises(KlineSortError):
-        _assert_candles_ascending(
-            [{"ts": 100.0}, {"ts": 300.0}, {"ts": 200.0}, {"ts": 400.0}]
-        )
+        _assert_candles_ascending([{"ts": 100.0}, {"ts": 300.0}, {"ts": 200.0}, {"ts": 400.0}])
