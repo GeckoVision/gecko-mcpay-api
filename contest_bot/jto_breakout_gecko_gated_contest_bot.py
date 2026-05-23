@@ -34,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import asyncio
 
 from bot_state import BotState, BotStateStore
+from decision_store import DecisionDoc, Outcome, SimulationDoc, SimulationRegistry
 from fundamentals_oracle import FundamentalsOracle
 from gecko_wrap import ArtifactLogger, GeckoGate, HourlyCircuitBreaker
 from local_memory import LocalMemory
@@ -153,6 +154,100 @@ ENTRY_PARAMS = {
     "lookback_bars": 24,
     "confirm_pct": 1.5,
 }  # iter-3.10 2026-05-21: REVERTED the test-mode loosening that was wrongly shipped live (was 4, 0.2 — a 0.2% breakout over a 20-min high = noise; we were buying micro-pops that immediately mean-reverted, which is why entries kept stalling — BONK/BOME both peaked within minutes of entry then faded). Now: close must clear the prior 2-HOUR high (24×5m bars) by ≥1.5% — a real breakout, not a noise wiggle. Founder caught this by observing we enter at exhausted micro-tops. Stronger than the original 1.0 confirm per founder. Fewer, higher-conviction entries.
+
+# ── Decision-record store (s43) ────────────────────────────────────
+# Records every panel decision (voices + indicators + oracle verdict +
+# coordinator outcome), tagged by simulation/strategy/agent-group, with
+# realized outcomes linked on close. Durable to per-run JSONL +
+# best-effort to Mongo. EVERY recorder call site is wrapped in try/except
+# so a recorder fault can NEVER break the trading loop. The module-level
+# start is skipped under pytest (no on-import run dirs in tests) and is
+# best-effort: a failure here leaves _RECORDER as None and the wire sites
+# no-op gracefully.
+_SIM: SimulationRegistry | None = None
+_RUN_ID: str | None = None
+_RECORDER = None  # type: ignore[var-annotated]
+
+
+def _init_decision_store() -> None:
+    """Best-effort: arm the decision recorder. Never raises into import/startup."""
+    global _SIM, _RUN_ID, _RECORDER
+    if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("GECKO_DECISION_STORE_OFF"):
+        return
+    try:
+        import subprocess
+
+        try:
+            sha = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+        except Exception:  # best-effort: git SHA is metadata, never block startup
+            sha = ""
+        _SIM = SimulationRegistry()
+        _RUN_ID = _SIM.start(
+            SimulationDoc(
+                run_id="",
+                strategy_id="jto_breakout",
+                agent_group=os.environ.get("AGENT_GROUP", "default"),
+                symbol_universe=[i["symbol"] for i in INSTRUMENTS],
+                universe_label=os.environ.get("UNIVERSE_LABEL", "no-tax-majors"),
+                config={
+                    "chart_min_conf": os.environ.get("GECKO_CHART_MIN_CONF", "0.85"),
+                    "max_daily_trades": MAX_DAILY_TRADES,
+                    "max_concurrent": MAX_CONCURRENT,
+                    "tp_pct": TAKE_PROFIT_PCT,
+                    "sl_pct": STOP_LOSS_PCT,
+                    "entry_type": ENTRY_TYPE,
+                },
+                mode="paper" if PAPER_TRADE else "live",
+                code_commit=sha,
+            )
+        )
+        _RECORDER = _SIM.recorder()
+        print(f"[decision-store] run {_RUN_ID} armed ({len(INSTRUMENTS)} instruments)")
+    except Exception as exc:  # recorder must never block the bot
+        print(f"[decision-store] disabled: {type(exc).__name__}: {exc}")
+        _SIM, _RUN_ID, _RECORDER = None, None, None
+
+
+def build_decision_doc(
+    run_id: str,
+    symbol: str,
+    snap: dict,
+    signal: dict,
+    panel_voices: list[dict],
+    oracle: dict | None,
+    coordinator: dict,
+) -> DecisionDoc:
+    """Assemble a DecisionDoc from the bot's per-candidate panel inputs.
+
+    `snap` is the per-instrument indicator snapshot (`_LAST_INDEX[symbol]`-shaped)
+    plus the 3 distance/slope features computed at the call site. Pulls only the
+    fields the schema cares about; missing keys become None.
+    """
+    return DecisionDoc(
+        run_id=run_id,
+        symbol=symbol,
+        symbol_group="majors",
+        signal=signal,
+        indicators={
+            k: snap.get(k)
+            for k in (
+                "adx", "plus_di", "minus_di", "rsi", "mfi", "chop", "bb_width",
+                "range_24h_pct", "ema_stack", "regime", "regime_1h",
+                "adx_slope", "adx_distance", "chop_distance",
+            )
+        },
+        voices=panel_voices,
+        oracle=oracle,
+        coordinator=coordinator,
+    )
+
+
+# Arm the recorder at import (skipped under pytest via the env guard inside).
+_init_decision_store()
 
 # ── volume_spike entry primitive (s40-lab-#5) ──────────────────────
 # Fires when the most recent bar's volume exceeds median(last N bars) * mult.
@@ -1321,6 +1416,73 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
         "fundamentals_decision_id": fund_decision_id,
     }
 
+    # ── Decision-record store (s43): record this act-decision ──────────
+    # Wrapped so a recorder fault can NEVER break the trading loop. Only
+    # fires when the recorder armed (skipped under pytest / on init failure).
+    if _RECORDER is not None and _RUN_ID is not None:
+        try:
+            snap = dict(_LAST_INDEX.get(instrument) or {})
+            snap["range_24h_pct"] = market_state.get("range_24h_pct")
+            # adx_slope needs an ADX series — recompute best-effort from the
+            # fresh candles; None if insufficient bars.
+            adx_series: list[float | None] = []
+            try:
+                if ms_candles and len(ms_candles) >= 2:
+                    _h = [float(c.get("high") or c.get("h") or 0) for c in ms_candles]
+                    _l = [float(c.get("low") or c.get("l") or 0) for c in ms_candles]
+                    _c = [float(c.get("close") or c.get("c") or 0) for c in ms_candles]
+                    adx_series, _, _ = _indicators.adx_full(_h, _l, _c)
+            except Exception:  # slope is optional telemetry — never block the entry
+                adx_series = []
+            snap["adx_slope"] = _indicators.adx_slope(adx_series) if adx_series else None
+            snap["adx_distance"] = _indicators.adx_distance(snap.get("adx"))
+            snap["chop_distance"] = _indicators.chop_distance(snap.get("chop"))
+            _panel_voices = (
+                [
+                    {
+                        "name": o.voice_name,
+                        "verdict": o.verdict,
+                        "confidence": o.confidence,
+                        "reasoning": (o.reasoning or "")[:300],
+                    }
+                    for o in local_decision.voice_opinions
+                ]
+                if _LOCAL_PANEL is not None
+                else []
+            )
+            _oracle_dict = (
+                {
+                    "verdict": fund_verdict.verdict,
+                    "confidence": fund_verdict.confidence,
+                    "citations": fund_verdict.citations_count,
+                    "grounded": fund_verdict.citations_count >= ORACLE_GROUNDING_MIN_CITES,
+                }
+                if fund_verdict is not None
+                else None
+            )
+            _coordinator = (
+                {
+                    "action": local_decision.action,
+                    "rule": local_decision.coordinator_rule_fired,
+                }
+                if _LOCAL_PANEL is not None
+                else {"action": "act", "rule": "no_local_panel"}
+            )
+            _did = _RECORDER.record(
+                build_decision_doc(
+                    _RUN_ID,
+                    instrument,
+                    snap,
+                    {"fired": True, "type": ENTRY_TYPE},
+                    _panel_voices,
+                    _oracle_dict,
+                    _coordinator,
+                )
+            )
+            pos["decision_id"] = _did  # carry the link to the outcome on close
+        except Exception as exc:  # recorder must never break the trading loop
+            print(f"[decision-store] record skipped: {type(exc).__name__}: {exc}")
+
     if PAPER_TRADE:
         _log(
             "buy",
@@ -1413,6 +1575,39 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
             "exit_tx": exit_tx,
         }
     )
+
+    # ── Decision-record store (s43): link the realized outcome ─────────
+    # Wrapped so a recorder fault can NEVER break the close path. The
+    # decision_id was stored on the position dict at open_position time.
+    if _RECORDER is not None and pos.get("decision_id"):
+        try:
+            duration_min: float | None = None
+            try:
+                _ent = datetime.fromisoformat(pos["entry_ts"])
+                _ext = datetime.fromisoformat(pos["exit_ts"])
+                duration_min = round((_ext - _ent).total_seconds() / 60.0, 2)
+            except Exception:  # duration is optional telemetry — never block the close
+                duration_min = None
+            # peak_pct from the tracked peak_price vs entry (no peak_pct local).
+            peak_pct: float | None = None
+            _peak_price = pos.get("peak_price")
+            if _peak_price and ep:
+                peak_pct = round((_peak_price - ep) / ep * 100, 2)
+            _RECORDER.attach_outcome(
+                pos["decision_id"],
+                Outcome(
+                    pnl_pct=round(pnl_pct, 2),
+                    pnl_usd=round(pnl_usd, 2),
+                    exit_reason=reason,
+                    duration_min=duration_min,
+                    entry_price=ep,
+                    exit_price=current_price,
+                    peak_pct=peak_pct,
+                ),
+            )
+        except Exception as exc:  # recorder must never break the close path
+            print(f"[decision-store] attach_outcome skipped: {type(exc).__name__}: {exc}")
+
     consec_losses = consec_losses + 1 if pnl_pct < 0 else 0
     # iter-3.x 2026-05-20: accumulate into persisted counters so the
     # dashboard PnL tile survives a bot reboot.
