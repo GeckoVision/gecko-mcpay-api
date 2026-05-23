@@ -1,0 +1,28 @@
+{
+  "_note": "DOCUMENTED Birdeye /defi/ohlcv response shape (docs.birdeye.so, 2026-05-23). NOT a live capture — BIRDEYE_API_KEY is absent in this env, so live Birdeye collection is skipped + flagged (see scripts/calibration/tape/birdeye_source.py). When the key lands, replace this with a real capture and re-run the TDD. Values below are synthetic but the FIELD SHAPE matches the published schema.",
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "unixTime": 1779544800,
+        "o": 0.04201,
+        "h": 0.04230,
+        "l": 0.04190,
+        "c": 0.04225,
+        "v": 152340.55,
+        "address": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+        "type": "5m"
+      },
+      {
+        "unixTime": 1779545100,
+        "o": 0.04225,
+        "h": 0.04240,
+        "l": 0.04210,
+        "c": 0.04212,
+        "v": 98220.10,
+        "address": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+        "type": "5m"
+      }
+    ]
+  }
+}
