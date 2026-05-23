@@ -1,0 +1,31 @@
+{
+  "ok": true,
+  "data": {
+    "investWithTokenList": [
+      {
+        "browserUrl": "https://solscan.io/token/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "chainIndex": "501",
+        "coinAmount": "0",
+        "currencyAmount": "0",
+        "isBaseToken": false,
+        "network": "SOL",
+        "tokenAddress": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "tokenLogo": "https://static.coinall.ltd/cdn/explorer/okexchain/exchain_usdc.png",
+        "tokenName": "USD Coin",
+        "tokenPrecision": "6",
+        "tokenSymbol": "USDC"
+      }
+    ],
+    "receiveTokenInfo": {
+      "chainIndex": "501",
+      "coinAmount": "0",
+      "currencyAmount": "0",
+      "network": "SOL",
+      "tokenAddress": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "tokenLogo": "https://static.coinall.ltd/cdn/explorer/okexchain/exchain_usdc.png",
+      "tokenName": "USD Coin",
+      "tokenPrecision": "6",
+      "tokenSymbol": "USDC"
+    }
+  }
+}

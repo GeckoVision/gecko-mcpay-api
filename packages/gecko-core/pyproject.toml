@@ -42,6 +42,11 @@ dependencies = [
     # transitively by other deps but declared explicitly here so the
     # trade-agent hotpath import doesn't depend on transitive resolution.
     "websockets>=12.0",
+    # S41 yield-base — Solana MessageV0 / VersionedTransaction decode for the
+    # Kamino deposit-calldata contract validator (execution/yield_base). Pure
+    # offline parse of unsigned calldata; no RPC. Already a gecko-mcp dep,
+    # declared here so the validator import doesn't rely on transitive pull.
+    "solders>=0.21",
 ]
 
 [project.optional-dependencies]

@@ -40,7 +40,12 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_PATH = Path(__file__).parent / "local_memory.jsonl"
+import os as _os
+
+# GECKO_STATE_DIR lets a test instance write to a separate directory.
+# Default = module directory (unchanged behaviour for the live bot).
+_GECKO_STATE_DIR = Path(_os.environ["GECKO_STATE_DIR"]) if _os.environ.get("GECKO_STATE_DIR") else Path(__file__).parent
+_DEFAULT_PATH = _GECKO_STATE_DIR / "local_memory.jsonl"
 
 
 class LocalMemory:

@@ -1,0 +1,5 @@
+{
+  "_fixture": "onchainOS `defi redeem --ratio 1` response for Kamino USDC-lend id 29130 when the wallet holds NO position. Recorded read-only 2026-05-22. The integration returns a CLEAN error (code=84027), NOT malformed calldata — i.e. it did not silently build a garbage exit tx. A real redeem-calldata fixture cannot be recorded until a position exists (Step 3 deposit). See the skipped redeem placeholder test.",
+  "ok": false,
+  "error": "API error (code=84027): Failed to build transaction data"
+}

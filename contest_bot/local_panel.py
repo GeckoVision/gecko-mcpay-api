@@ -124,7 +124,15 @@ class LocalPanel:
                 )
                 opinions.append(_abstain_for_exception(voice, exc_name, elapsed_ms=0))
 
-        action, rule_fired = self._coordinator(opinions)
+        # Wave-2b: pass regime_1h from market_state to the coordinator if it
+        # accepts it (new optional kwarg). Old-style coordinators (tests,
+        # custom fns) that take only ``opinions`` are called without it.
+        # inspect is avoided — just try the two-arg call and fall back.
+        regime_1h: str | None = market_state.get("regime_1h")
+        try:
+            action, rule_fired = self._coordinator(opinions, regime_1h)  # type: ignore[call-arg]
+        except TypeError:
+            action, rule_fired = self._coordinator(opinions)  # type: ignore[call-arg]
         total_elapsed_ms = int((time.monotonic() - started) * 1000)
         total_cost_usd = round(sum((o.cost_usd or 0.0) for o in opinions), 6)
 

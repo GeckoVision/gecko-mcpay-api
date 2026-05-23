@@ -88,6 +88,7 @@ contest_bot/*.log
 contest_bot/*.bak
 contest_bot/bot_state.*.json
 contest_bot/poll_telemetry_*.jsonl
+contest_bot/eval_telemetry_*.jsonl
 
 # OKX example skills pulled down for reference (kline-indicator,
 # market-intel). Context-feed material, not source we maintain.

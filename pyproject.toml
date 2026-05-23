@@ -40,7 +40,7 @@ python_files = "test_*.py"
 # heavier slices via the Makefile recipes (`make test-mongo`,
 # `make test-live`, `make test-full`) or an explicit `-m` selector.
 # CI uses `make test-full` so coverage is preserved.
-addopts = "-q --strict-markers --import-mode=importlib -m 'not slow and not live and not live_solana and not live_cdp and not live_bazaar and not live_paysh and not live_x402_verdict and not e2e_smoke and not network and not integration and not mongo'"
+addopts = "-q --strict-markers --import-mode=importlib -m 'not slow and not live and not live_solana and not live_cdp and not live_bazaar and not live_paysh and not live_kamino and not live_x402_verdict and not e2e_smoke and not network and not integration and not mongo'"
 asyncio_mode = "auto"
 markers = [
     # S24 W3 Task #10 — laptop-vs-CI split. Path-based auto-marker
@@ -94,6 +94,15 @@ markers = [
     # (BUYER_WALLET_PRIVATE_KEY_PATH + BUYER_WALLET_PUBKEY). Mirrors the
     # live_cdp Pattern-C template from S12.5-TEST-04 for the Solana lane.
     "live_solana: gated buyer-side x402 contract test against real Solana facilitator (cassette replay by default)",
+    # S41 yield-base — gated ONCE-OFF re-recording of the onchainOS Kamino
+    # `defi deposit`/`redeem` calldata fixtures. The DEFAULT contract-test run
+    # is offline replay of the committed fixtures (no marker, runs in CI). Only
+    # the re-record path carries this marker, so a future CLI change forces a
+    # deliberate, opt-in re-capture rather than a silent network call. Mirrors
+    # the live_cdp Pattern-C template for the yield-base lane. NEVER broadcasts;
+    # NEVER calls `wallet contract-call`. See
+    # packages/gecko-core/tests/execution/test_yield_base_kamino_contract.py.
+    "live_kamino: gated once-off re-record of onchainOS Kamino deposit/redeem calldata fixtures (replay runs offline by default)",
 ]
 
 [dependency-groups]

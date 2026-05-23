@@ -1,0 +1,180 @@
+{
+  "ok": true,
+  "data": {
+    "aboutToken": [
+      {
+        "isBaseToken": false,
+        "marketCap": "8375235815.981334",
+        "price": "1",
+        "tokenAddress": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "tokenLogo": "https://static.coinall.ltd/cdn/explorer/okexchain/exchain_usdc.png",
+        "tokenSymbol": "USDC"
+      }
+    ],
+    "aggregateInvestmentId": 100751,
+    "analysisPlatformId": 116016,
+    "apyDetailInfo": {
+      "apyCalDesc": "A negative rate suggests that you’re earning from your loan. Borrow APY reflects token value changes over the past 4 hours, updated hourly. Total borrow APY is the sum of all borrow APYs in each category. These are references and don’t suggest future returns.",
+      "subDetailInfoList": [],
+      "title": "APY 8.19%",
+      "totalValue": "8.19%"
+    },
+    "baseRate": "0.08190",
+    "borrowInfoList": [
+      {
+        "clickAction": "NO_ACTION",
+        "contentType": 0,
+        "tipContent": "6792822.27760",
+        "title": "For loan"
+      },
+      {
+        "clickAction": "NO_ACTION",
+        "contentType": 0,
+        "tipContent": "700000000.0",
+        "title": "Loan cap"
+      },
+      {
+        "clickAction": "HOVER_ON",
+        "contentType": 1,
+        "hoverOnData": {
+          "content": "Max LTV is the maximum ratio of your loan to the value of your collateral."
+        },
+        "tipContent": "80%",
+        "title": "Max LTV"
+      },
+      {
+        "clickAction": "HOVER_ON",
+        "contentType": 1,
+        "hoverOnData": {
+          "content": "Charged when you get a loan"
+        },
+        "tipContent": "0%",
+        "title": "Borrow fee"
+      },
+      {
+        "clickAction": "HOVER_ON",
+        "contentType": 1,
+        "hoverOnData": {
+          "content": "Utilization rate refers to the percentage of borrowed assets compared to the total liquidity assets."
+        },
+        "tipContent": "95.45%",
+        "title": "Utilization rate"
+      },
+      {
+        "clickAction": "HOVER_ON",
+        "contentType": 1,
+        "hoverOnData": {
+          "content": "If the ratio of your loan to collateral exceeds this threshold, your assets may be liquidated."
+        },
+        "tipContent": "90%",
+        "title": "Liq threshold"
+      },
+      {
+        "clickAction": "HOVER_ON",
+        "contentType": 1,
+        "hoverOnData": {
+          "content": "What liquidators receive for selling a borrower’s collateral."
+        },
+        "tipContent": "10%",
+        "title": "Liq clearance fee"
+      }
+    ],
+    "bottomRightLogoList": [
+      {
+        "tokenLogo": "https://static.coinall.ltd/cdn/web3/protocol/logo/kamino-none.jpg/type=jpg_350_0?v=1779381152048",
+        "tokenName": "Kamino"
+      }
+    ],
+    "chainIndex": "501",
+    "contract": "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD",
+    "dailyRoi": "0.00022",
+    "darkNetworkLogo": "https://static.coinall.ltd/cdn/explorer/invest/network/logo/solana@2x.png",
+    "deeplink": "okx://wallet/invest/home?jumpType=3&investmentId=29130&chainId=501",
+    "detailPath": "kamino-solana-usdc-29130",
+    "earnedToken": [
+      {
+        "isBaseToken": false,
+        "tokenAddress": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "tokenLogo": "https://static.coinall.ltd/cdn/explorer/okexchain/exchain_usdc.png",
+        "tokenSymbol": "USDC"
+      }
+    ],
+    "hasBonus": false,
+    "hasRate": true,
+    "hasRateChart": true,
+    "hasRatePerformance": true,
+    "hasTvlChart": false,
+    "investType": 6,
+    "investmentClassify": "Main Pool",
+    "investmentId": 29130,
+    "investmentKey": "501-KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD-D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59",
+    "investmentName": "USDC",
+    "investmentShowName": "USDC",
+    "isBatchClaim": false,
+    "isExistTradingFee": 0,
+    "isInternal": false,
+    "isInvestable": true,
+    "isLosslessRateTip": false,
+    "isNeedIdentityVerify": false,
+    "isSupportClaim": false,
+    "isSupportRedeem": true,
+    "losslessRate": "0.00000",
+    "losslessRateType": 0,
+    "lpToken": [
+      {
+        "isBaseToken": false,
+        "tokenAddress": "D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59",
+        "tokenLogo": "https://static.coinall.ltd/cdn/wallet/logo/icon_custom_default_L.png",
+        "tokenSymbol": "LP"
+      }
+    ],
+    "marketName": "Main Pool",
+    "middleLogoList": [
+      {
+        "tokenLogo": "https://static.coinall.ltd/cdn/explorer/okexchain/exchain_usdc.png",
+        "tokenName": "USDC"
+      }
+    ],
+    "monthlyRoi": "0.00673",
+    "network": "Solana",
+    "networkLogo": "https://static.coinall.ltd/cdn/invest/network/logo/SOL.png",
+    "platformId": 10700,
+    "platformLogo": "https://static.coinall.ltd/cdn/web3/protocol/logo/kamino-none.jpg/type=jpg_350_0?v=1779381152048",
+    "platformName": "Kamino",
+    "platformUrl": "https://app.kamino.finance",
+    "pointTag": 0,
+    "poolVersion": 1,
+    "productExtInfoList": [],
+    "protocolIpRestrict": false,
+    "rate": "0.08190",
+    "rateDetails": [
+      {
+        "rate": "0.0819",
+        "title": "Loan rate",
+        "tokenAddress": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "tokenSymbol": "USDC",
+        "type": 1
+      }
+    ],
+    "rateType": 0,
+    "rateTypeDesc": "APY",
+    "ratingName": "Leading",
+    "ratingTypeId": 1,
+    "shareUrl": "https://web3.okx.com/defi/detail/29130#source=okxapp",
+    "showBonusInfo": false,
+    "supportedBTCAddressType": [],
+    "topLeftLogoList": [],
+    "topRightLogoList": [],
+    "tvl": "142322727.26340",
+    "underlyingToken": [
+      {
+        "isBaseToken": false,
+        "tokenAddress": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "tokenLogo": "https://static.coinall.ltd/cdn/explorer/okexchain/exchain_usdc.png",
+        "tokenSymbol": "USDC"
+      }
+    ],
+    "weeklyRoi": "0.00157",
+    "yearlyRoi": "0.08190"
+  }
+}

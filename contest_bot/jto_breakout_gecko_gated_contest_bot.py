@@ -27,6 +27,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
 
+import indicators as _indicators
+
 # ── Import OnchainOS from the same skill directory ─────────────────
 sys.path.insert(0, str(Path(__file__).parent))
 import asyncio
@@ -36,6 +38,7 @@ from fundamentals_oracle import FundamentalsOracle
 from gecko_wrap import ArtifactLogger, GeckoGate, HourlyCircuitBreaker
 from local_memory import LocalMemory
 from local_panel import LocalPanel
+from net_flow import NetFlowSignal, compute_net_flow
 from onchainos import OnchainOS
 
 # ── Gecko wrap layer (circuit breaker + ledger) ─────────────────────
@@ -80,16 +83,20 @@ except Exception as exc:  # broad — any wiring failure should not crash the bo
     print(f"[lab] local panel disabled: {type(exc).__name__}: {exc}")
 
 # ── Config ─────────────────────────────────────────────────────────
-PAPER_TRADE = True  # contest over 2026-05-21 — back to paper as the test harness for new code (Track B voices etc.). Validate in paper + demo before any future live flip (founder go-ahead required, per project_x402_stub_then_live).
+# Default PAPER (safe). Live is an explicit, deliberate RUNTIME env flip —
+# `PAPER_TRADE=false python3 ...` — so the repo never carries a live default and
+# no accidental commit can arm real money. Founder go-ahead required per
+# project_x402_stub_then_live; the __main__ block still demands a typed CONFIRM.
+PAPER_TRADE = os.environ.get("PAPER_TRADE", "true").strip().lower() not in ("false", "0", "no")
 CHAIN = "solana"
 POLL_SEC = 30
 TIMEFRAME = "5m"
 ENTRY_TYPE = "price_breakout"
-USD_PER_TRADE = 45  # iter-3.2 live 2026-05-20: $50 → $45. With MAX_CONCURRENT=2 and $99.64 live budget, $45 × 2 = $90 deployed leaves $9.64 for slippage + tx fees. Below singleTxLimit ($50) policy cap with room.
+USD_PER_TRADE = int(os.environ.get("USD_PER_TRADE", "45"))  # runtime-overridable for "run and adjust": e.g. USD_PER_TRADE=25 for a smaller first live session. Default 45 (contest-proven). With MAX_CONCURRENT=2: 45×2=$90 deployed of ~$100 wallet — leaves little headroom, so start smaller on the first oracle-gated live run.
 STOP_LOSS_PCT = 3
-TAKE_PROFIT_PCT = 4  # iter-3.5 live 2026-05-20: 8 → 4. Founder observation + live peaks confirm: these memes oscillate ~2% naturally; +8% requires a 4x-of-normal move that almost never happens in chop. PYTH peak was +1.53% (just 0.47% short of trail activation) before drifting back. With trail-activate-at-2% catching pokes and TP-at-4% catching real momentum, 3 × +2-4% trades outperforms 1 × +8% miracle.
+TAKE_PROFIT_PCT = 2  # s41 2026-05-22: 4 → 2. Quant symbol study: universe oscillates ~2%, rarely +4% (only WIF reached it); +4% TP was structurally unreachable. Founder: "take 1-2%, not 4%". TODO: validate TP2 EV via calibration harness. PRIOR iter-3.5: 8 → 4. Founder observation + live peaks confirm: these memes oscillate ~2% naturally; +8% requires a 4x-of-normal move that almost never happens in chop. PYTH peak was +1.53% (just 0.47% short of trail activation) before drifting back. With trail-activate-at-2% catching pokes and TP-at-4% catching real momentum, 3 × +2-4% trades outperforms 1 × +8% miracle.
 STALL_GREEN_EXIT_AGE_MIN = 60  # iter-3.5 live 2026-05-20: stall-exit overlay (founder rule). If a position is open ≥60min AND pnl ≥STALL_GREEN_EXIT_MIN_PCT, force-close at market. Catches the "drifted +2-3% then died" failure mode that neither trail (no peak retracement) nor TP (never hit 4%) catches.
-STALL_GREEN_EXIT_MIN_PCT = 2.0  # see STALL_GREEN_EXIT_AGE_MIN above.
+STALL_GREEN_EXIT_MIN_PCT = 1.0  # s41 2026-05-22: 2.0 → 1.0 — book a +1% stalled-green (founder: "take at least 1%"). see STALL_GREEN_EXIT_AGE_MIN above.
 # iter-3.8 flat-stall exit (2026-05-21, quant-approved simple rule). Catches
 # the BONK no-man's-land BELOW the +2% stall_green_exit threshold: a position
 # that climbs to +1-2%, fades, and oscillates there for hours without ever
@@ -104,12 +111,17 @@ FLAT_STALL_PNL_LO = -0.5  # iter-3.9 2026-05-21: 0.3 → -0.5. Widened the band 
 FLAT_STALL_PNL_HI = 2.0  # ... (below STALL_GREEN_EXIT_MIN_PCT)
 FLAT_STALL_NO_NEW_HIGH_MIN = 30  # AND no new high in this many minutes
 TRAIL_STOP_PCT = 1
-TRAIL_ACTIVATE_AFTER_PCT = 2  # iter-3.1 E-LITE 2026-05-20: 5 → 2. Founder + analyst-pair call: in a 14h contest window with N=1-2 trades, the stall failure mode (position drifts +1-4% then dies, hits time-stop near $0 PnL) dominates the upside-clip risk. Trail at activate=+2% + give-back=1% converts modal stalls into +1-1.5% realized wins. Real momentum still rides — the trail tracks peak, never gives back >1%, so a +2%→+12% runner closes at ~+11%. Trade-off accepted: some wigglers that go +2% → +1% → +5% will exit at +1% instead of riding to +5%. At N=1, quant says lift is statistically indistinguishable from baseline; founder's call is "we need to actually book something."  # 2026-05-20 autonomous iter-2 (was 2 → 1 per quant analysis): tighter trail captures more of the peak. On meme-class vol (1-5%/h), 2% trail was getting swept on noise before TP; 1% trail locks in profits closer to peak. Highest-EV single-param change per quant — expected +1.3% [+0.4, +2.1] lift over 20h.
-MAX_DAILY_TRADES = 3  # reverted 3 (overnight, founder B): participation grant is the goal (qualified: $363 vol + $107 balance). Keep conservative — preserve the $100+ floor; bot waits for a clean trend trade, abstains in chop. Don't risk what we have.
-MAX_CONCURRENT = 2  # iter-3.2 mixed-slots 2026-05-20: 1 → 2 (founder call). Sticking with 1 concentrates risk on a single instrument — if BONK stalls 12h, we exit the contest with $0 realized PnL. Two slots = two parallel chances at TP, with informal diversification from the universe (PYTH/DRIFT/TNSR are the less-meme half). Capital math: $50 × 2 = $100 = full wallet deployed; max drawdown both-SL = -$3 (-3% on $100); max gain both-TP = +$8 (+8% on $100). No idle capital is the contest mindset.
-SESSION_LOSS_PAUSE = 2
+TRAIL_ACTIVATE_AFTER_PCT = 1  # s41 2026-05-22: 2 → 1 — protect gains from +1% (founder: capture small wins in chop, don't wait for 4%). PRIOR iter-3.1 E-LITE 2026-05-20: 5 → 2. Founder + analyst-pair call: in a 14h contest window with N=1-2 trades, the stall failure mode (position drifts +1-4% then dies, hits time-stop near $0 PnL) dominates the upside-clip risk. Trail at activate=+2% + give-back=1% converts modal stalls into +1-1.5% realized wins. Real momentum still rides — the trail tracks peak, never gives back >1%, so a +2%→+12% runner closes at ~+11%. Trade-off accepted: some wigglers that go +2% → +1% → +5% will exit at +1% instead of riding to +5%. At N=1, quant says lift is statistically indistinguishable from baseline; founder's call is "we need to actually book something."  # 2026-05-20 autonomous iter-2 (was 2 → 1 per quant analysis): tighter trail captures more of the peak. On meme-class vol (1-5%/h), 2% trail was getting swept on noise before TP; 1% trail locks in profits closer to peak. Highest-EV single-param change per quant — expected +1.3% [+0.4, +2.1] lift over 20h.
+MAX_DAILY_TRADES = int(os.environ.get("MAX_DAILY_TRADES", "3"))  # env-overridable (2026-05-23 overnight). Default 3 (conservative contest setting). Raise for paper data-gathering experiments.
+MAX_CONCURRENT = int(os.environ.get("MAX_CONCURRENT", "2"))  # env-overridable. Default 2. Raise for paper data-gathering (more parallel trades = more sample).
+SESSION_LOSS_PAUSE = int(os.environ.get("SESSION_LOSS_PAUSE", "2"))  # env-overridable (2026-05-23 overnight). Default 2 (sit out after 2 consecutive losses). Raise for paper data-gathering.
 MAX_BUDGET_USD = 100  # total budget cap — GLOBAL across all INSTRUMENTS
 DASHBOARD_PORT = int(os.environ.get("DASHBOARD_PORT", "8265"))
+# GECKO_STATE_DIR: env-overridable state directory. Default = the contest_bot/
+# directory (so the live bot on port 8265 finds its existing state files on
+# its next restart). Set to a separate path for isolated test instances so
+# they never touch the live bot's state files.
+_STATE_BASE = Path(os.environ["GECKO_STATE_DIR"]) if os.environ.get("GECKO_STATE_DIR") else Path(__file__).parent
 
 # ── Multi-instrument config (s40-lab-#4) ───────────────────────────
 # Per founder direction: iterate JTO → JUP → PYTH each poll, evaluate
@@ -118,22 +130,22 @@ DASHBOARD_PORT = int(os.environ.get("DASHBOARD_PORT", "8265"))
 # Same $100 wallet — positions compete for budget. MAX_CONCURRENT,
 # daily_trades, and total_spent_usd remain GLOBAL counters.
 INSTRUMENTS: list[dict] = [
-    # iter-3 2026-05-20: trimmed to high-vol candidates only. Dropped MEW
-    # (today's loser) + JTO/JUP/RAY/ORCA/HNT (low-vol established) per
-    # quant's memes-only recommendation. PYTH kept (today's winner via
-    # momentum-lens fire). DRIFT/TNSR kept (newer infra, more vol than
-    # major DeFi).
+    # Wave 2a universe refresh (s42 2026-05-22):
+    #   KEEP: PYTH (best performer), WIF (liquid meme, no tax confirmed).
+    #   ADD: JUP, RAY, JTO — liquid infra with no transfer tax (onchainos
+    #        token-scan: buyTaxes=null, sellTaxes=null, isHoneypot=false for all).
+    #        Mints verified via `onchainos token info --address <mint> --chain solana`.
+    #   DROP: POPCAT — low-vol meme, marginal breakout frequency, no infra moat.
+    #          BOME — lowest-tier meme, small daily DEX vol, no structural edge.
+    #          (Both had null taxes per scanner but lack the liquidity depth that
+    #           makes $45 fills clean; JUP/RAY/JTO are far more liquid.)
+    #   onchainos batch scan riskLevel: PYTH=MEDIUM, WIF=LOW, JUP=MEDIUM,
+    #     RAY=LOW, JTO=LOW. No honeypots, no taxes across the board.
     {"symbol": "PYTH", "mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3", "chain": "solana"},
-    # Memes (high-vol)
-    # BONK removed 2026-05-21 (founder call): two BONK positions stalled in
-    # the +1-1.6% no-man's-land for 3h+ each without reaching TP/trail/stall
-    # triggers. Dropping it from rotation — it kept binding a slot at low conviction.
-    {"symbol": "WIF", "mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", "chain": "solana"},
-    {"symbol": "POPCAT", "mint": "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr", "chain": "solana"},
-    {"symbol": "BOME", "mint": "ukHH6c7mMyiWCf1b9pnWe25TSpkDDt3H5pQZgZ74J82", "chain": "solana"},
-    # Newer infra (more volatile than major DeFi)
-    {"symbol": "DRIFT", "mint": "DriFtupJYLTosbwoN8koMbEYSx54aFAVLddWsbksjwg7", "chain": "solana"},
-    {"symbol": "TNSR", "mint": "TNSRxcUxoT9xBG3de7PiJyTDYu7kskLqcpddxnEJAS6", "chain": "solana"},
+    {"symbol": "WIF",  "mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", "chain": "solana"},
+    {"symbol": "JUP",  "mint": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",  "chain": "solana"},
+    {"symbol": "RAY",  "mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", "chain": "solana"},
+    {"symbol": "JTO",  "mint": "jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL",  "chain": "solana"},
 ]
 
 ENTRY_PARAMS = {
@@ -204,7 +216,7 @@ _REBUILD_STATE = "--rebuild-state" in sys.argv
 _state_file_exists = _STATE_STORE.path.exists()
 _loaded = BotState() if _REBUILD_STATE else _STATE_STORE.load()
 if _REBUILD_STATE or not _state_file_exists:
-    artifact_path = Path(__file__).parent / f"artifact_{datetime.now(UTC).strftime('%Y%m%d')}.jsonl"
+    artifact_path = _STATE_BASE / f"artifact_{datetime.now(UTC).strftime('%Y%m%d')}.jsonl"
     if artifact_path.exists():
         rebuilt = _STATE_STORE.rebuild_from_artifact(artifact_path)
         if rebuilt.positions or rebuilt.daily_trades:
@@ -224,6 +236,12 @@ _LAST_PANEL: dict[str, dict] = {}
 # S41: the most-recent Gecko Oracle (fundamentals) verdict per instrument, for
 # the dashboard's Oracle panel — the live, corpus-grounded value-investor read.
 _LAST_FUND: dict[str, dict] = {}
+
+# S41 studio: per-instrument ADX/RSI/MFI snapshot, updated every poll from
+# the candles already fetched for breakout detection. Keyed by symbol.
+# Shape: {instrument, adx, rsi, mfi, ema_stack, regime, price, ts,
+#          bull_trigger, bear_trigger}
+_LAST_INDEX: dict[str, dict] = {}
 
 # Oracle grounding floor (s41): minimum citations for an oracle verdict to get
 # a vote in the gate. Per founder principle "approve or decline ONLY with
@@ -246,6 +264,118 @@ def _fund_snapshot(v: Any) -> dict[str, Any]:
         "key_drivers": v.key_drivers[:2],
         "ts": v.ts.isoformat(),
     }
+def _compute_index_snapshot(symbol: str, candles: list[dict]) -> dict:
+    """Compute ADX/RSI/MFI snapshot from already-fetched candles.
+
+    Called inside evaluate_breakout() to reuse the same candle data — no
+    extra network fetch. Returns a dict suitable for _LAST_INDEX[symbol]
+    and the /api/state 'indexes' payload.
+
+    bull_trigger / bear_trigger are DETERMINISTIC strings derived from
+    the indicators (no LLM). They make "what would flip this?" visible on
+    the dashboard without any latency cost.
+    """
+    snap = _indicators.compute_latest(candles)
+    adx_v = snap.get("adx")
+    plus_di_v = snap.get("plus_di")
+    minus_di_v = snap.get("minus_di")
+    rsi_v = snap.get("rsi")
+    mfi_v = snap.get("mfi")
+    ema9 = snap.get("ema9")
+    ema21 = snap.get("ema21")
+    ema50 = snap.get("ema50")
+    price = snap.get("price")
+
+    # EMA stack: all three must be non-None
+    if ema9 is not None and ema21 is not None and ema50 is not None:
+        if ema9 > ema21 > ema50:
+            ema_stack = "up"
+        elif ema9 < ema21 < ema50:
+            ema_stack = "down"
+        else:
+            ema_stack = "tangled"
+    else:
+        ema_stack = "tangled"
+
+    # Regime from ADX
+    if adx_v is not None:
+        if adx_v >= 25:
+            regime = "TREND"
+        elif adx_v <= 18:
+            regime = "CHOP"
+        else:
+            regime = "transition"
+    else:
+        regime = "unknown"
+
+    # Deterministic conditional triggers — DIRECTION-AWARE (+DI vs -DI).
+    # s42: ADX measures trend STRENGTH, not direction. A high ADX in a DOWNtrend
+    # is not a long setup. The trigger only says "momentum confirms" when the
+    # trend points UP (+DI > -DI) — otherwise it falsely greenlit downtrends
+    # (the POPCAT false-alarm: ADX 48 but -DI>+DI = a falling knife).
+    plus_di = snap.get("plus_di")
+    minus_di = snap.get("minus_di")
+    up_dir = plus_di is not None and minus_di is not None and plus_di > minus_di
+    down_dir = plus_di is not None and minus_di is not None and minus_di > plus_di
+
+    bull_parts: list[str] = []
+    bear_parts: list[str] = []
+    if adx_v is not None and adx_v >= 25 and up_dir:
+        bull_parts.append("ADX>25 +DI>-DI")
+    if mfi_v is not None and mfi_v >= 55:
+        bull_parts.append("MFI>55")
+    if ema_stack == "up":
+        bull_parts.append("EMA stack up")
+    if rsi_v is not None and 40 <= rsi_v <= 65:
+        bull_parts.append("RSI in range")
+    # "momentum confirms" requires up-direction; otherwise it's not a long.
+    bull_trigger = (
+        " & ".join(bull_parts) + " → momentum confirms"
+        if (bull_parts and up_dir)
+        else "no clean long setup"
+    )
+
+    if adx_v is not None and adx_v >= 25 and down_dir:
+        bear_parts.append("-DI>+DI → downtrend, longs blocked")
+    if mfi_v is not None and mfi_v < 45:
+        bear_parts.append("MFI<45 → buying exhausted")
+    if rsi_v is not None and rsi_v > 70:
+        bear_parts.append("RSI>70 → overbought")
+    if adx_v is not None and adx_v <= 18:
+        bear_parts.append("ADX<18 → chop")
+    if ema_stack == "down":
+        bear_parts.append("EMA stack down")
+    bear_trigger = "; ".join(bear_parts) if bear_parts else "no warning signals"
+
+    def _r(v: float | None) -> float | None:
+        return round(v, 2) if v is not None else None
+
+    chop_v = snap.get("chop")
+    bb_width_v = snap.get("bb_width")
+
+    return {
+        "instrument": symbol,
+        "adx": _r(adx_v),
+        "plus_di": _r(plus_di_v),
+        "minus_di": _r(minus_di_v),
+        "rsi": _r(rsi_v),
+        "mfi": _r(mfi_v),
+        "bb_width": _r(bb_width_v),
+        "chop": _r(chop_v),
+        "ema_stack": ema_stack,
+        "regime": regime,
+        "price": price,
+        "ts": datetime.now(UTC).isoformat(),
+        "bull_trigger": bull_trigger,
+        "bear_trigger": bear_trigger,
+        # Wave-2b fields — populated separately after network calls.
+        # None here means "not yet computed this poll cycle".
+        "net_flow": None,       # NetFlowSignal dict snapshot, or None
+        "net_flow_verdict": None,  # "accumulation" | "distribution" | "neutral" | None
+        "regime_1h": None,      # "TREND-UP" | "TREND-DOWN" | "CHOP" | None
+    }
+
+
 total_spent_usd = _loaded.total_spent_usd  # tracks cumulative live spend against MAX_BUDGET_USD
 # iter-3.x 2026-05-20: realized PnL persisted across reboots so the
 # dashboard tile doesn't reset to 0 on every restart. Source of truth is
@@ -294,7 +424,7 @@ def _persist_state() -> None:
     )
 
 
-DASHBOARD_HTML = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>My Strategy Dashboard</title><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#0a0e14;color:#ccd6f6;font-family:'SF Mono','Fira Code',monospace;font-size:13px;padding:16px}h2{color:#00e676;margin-bottom:10px;font-size:15px}.panel{background:#12171f;border:1px solid #252d3a;border-radius:8px;padding:14px;margin-bottom:12px}.row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #1a2030}.row:last-child{border-bottom:none}.label{color:#8892b0}.green{color:#00e676}.red{color:#ff5252}.yellow{color:#ffd740}.blue{color:#448aff}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}table{width:100%;border-collapse:collapse}th{color:#448aff;text-align:left;padding:6px 8px;border-bottom:1px solid #252d3a;font-weight:normal}td{padding:5px 8px;border-bottom:1px solid #1a2030}.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px}.badge-paper{background:#1a2a4a;color:#448aff}.badge-live{background:#2a1a1a;color:#ff5252}.feed-item{padding:3px 0;border-bottom:1px solid #1a2030;font-size:12px}.ts{color:#4a5568;margin-right:8px}</style></head><body><div class='panel'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><h2>&#x1F40B; My Strategy</h2><span id='mode-badge' class='badge'></span></div><div class='grid2'><div><div class='row'><span class='label'>Entry</span><span id='entry-type'></span></div><div class='row'><span class='label'>Stop Loss</span><span class='red' id='sl'></span></div><div class='row'><span class='label'>Take Profit</span><span class='green' id='tp'></span></div><div class='row'><span class='label'>Poll</span><span id='poll'></span></div></div><div><div class='row'><span class='label'>Wallet</span><span class='blue' id='wallet'></span></div><div class='row'><span class='label'>Session PnL</span><span id='session-pnl'></span></div><div class='row'><span class='label'>Trades</span><span id='trades'></span></div><div class='row'><span class='label'>Win Rate</span><span id='winrate'></span></div></div></div></div><div class='panel'><h2>Open Positions (<span id='open-count'>0</span>)</h2><table><thead><tr><th>Symbol</th><th>Entry</th><th>Current</th><th>PnL</th><th>TP target</th><th>SL trigger</th><th>Time-stop</th><th>Since</th></tr></thead><tbody id='pos-body'></tbody></table></div><div class='panel'><h2>&#x1F5E3;&#xFE0F; Agent Voices &mdash; latest decisions</h2><div id='voices'></div></div><div class='panel'><h2>&#x1F52E; Gecko Oracle &mdash; fundamentals verdict (live, grounded)</h2><div id='oracle'></div></div><div class='panel'><h2>Signal Feed</h2><div id='feed'></div></div><script>async function refresh(){try{const r=await fetch('/api/state');const d=await r.json();const mb=document.getElementById('mode-badge');mb.textContent=d.mode==='paper'?'PAPER 📄':'LIVE 🔴';mb.className='badge badge-'+(d.mode==='paper'?'paper':'live');document.getElementById('entry-type').textContent=d.entry_type||'';document.getElementById('sl').textContent='-'+d.sl_pct+'%';document.getElementById('tp').textContent='+'+d.tp_pct+'%';document.getElementById('poll').textContent=d.poll_sec+'s';document.getElementById('wallet').textContent=d.wallet||'—';const s=d.stats||{};const pnl=s.pnl_usd||0;const pe=document.getElementById('session-pnl');pe.textContent=(pnl>=0?'+':'')+'$'+pnl.toFixed(2);pe.className=pnl>=0?'green':'red';document.getElementById('trades').textContent=(s.daily_trades||0)+'/'+(s.daily_limit||0)+' today';const wr=(s.wins&&s.total_trades)?Math.round(s.wins/s.total_trades*100):0;document.getElementById('winrate').textContent=s.total_trades?(wr+'% ('+s.wins+'W/'+s.losses+'L)'):'—';const open=(d.positions||[]).filter(p=>p.status==='open');document.getElementById('open-count').textContent=open.length;document.getElementById('pos-body').innerHTML=open.map(p=>{const pct=p.pnl_pct||0;const cl=pct>=0?'green':'red';const since=(p.entry_ts||'').slice(11,19);const tpStr=(p.tp_price||0).toFixed(6);const slStr=(p.sl_price||0).toFixed(6);const tse=(p.time_stop_eta||'').slice(11,19);return '<tr><td>'+(p.symbol||p.token.slice(0,12))+'</td><td>'+(p.entry_price||0).toFixed(6)+'</td><td>'+(p.current_price||0).toFixed(6)+'</td><td class=\"'+cl+'\">'+(pct>=0?'+':'')+pct.toFixed(1)+'%</td><td class=\"green\">'+tpStr+'</td><td class=\"red\">'+slStr+'</td><td>'+tse+'</td><td>'+since+'</td></tr>';}).join('');const feed=document.getElementById('feed');feed.innerHTML=(d.signal_feed||[]).slice(-30).reverse().map(e=>{const cl=e.type==='buy'?'green':e.type==='sell'?'red':e.type==='filter'?'yellow':'';return '<div class=\"feed-item\"><span class=\"ts\">'+(e.ts||'').slice(11,19)+'</span><span class=\"'+cl+'\">'+e.msg+'</span></div>';}).join('');const vc=function(v){return v==='bullish'?'green':v==='bearish'?'red':v==='abstain'?'blue':'yellow';};const vbox=document.getElementById('voices');vbox.innerHTML=(d.panel||[]).slice(0,6).map(function(p){const act=p.action==='act'?'green':'red';const reg=p.regime==='TREND'?'green':p.regime==='CHOP'?'red':'yellow';const voices=(p.voices||[]).map(function(o){return '<span style=\"margin-right:10px\">'+o.name.replace('_voice','').replace('_analyst','')+': <span class=\"'+vc(o.verdict)+'\">'+o.verdict+'</span> '+(o.confidence!=null?o.confidence.toFixed(2):'')+'</span>';}).join('');return '<div class=\"feed-item\"><span class=\"ts\">'+(p.ts||'').slice(11,19)+'</span><b>'+p.instrument+'</b> regime <span class=\"'+reg+'\">'+p.regime+'</span> &rarr; <span class=\"'+act+'\">'+p.action+'</span> <span class=\"label\">('+(p.rule||'')+')</span><br>&nbsp;&nbsp;'+voices+'</div>';}).join('')||'<div class=\"feed-item label\">no panel decisions yet</div>';var oc2=function(v){return v==='act'?'green':v==='pass'?'red':'yellow';};var obox=document.getElementById('oracle');obox.innerHTML=(d.oracle||[]).slice(0,8).map(function(o){var kd=(o.key_drivers||[]).slice(0,1).join('');return '<div class=feed-item><b>'+o.instrument+'</b> <span class='+oc2(o.verdict)+'>'+o.verdict+'</span> '+(o.confidence!=null?o.confidence.toFixed(2):'')+' <span class=label>('+(o.citations||0)+' cites'+(o.grounded?'':', ungrounded — no gate')+')</span>'+(kd?'<br>&nbsp;&nbsp;<span class=label>'+kd+'</span>':'')+'</div>';}).join('')||'<div class=feed-item>no oracle verdicts yet</div>';}catch(err){console.error(err);}}setInterval(refresh,5000);refresh();</script></body></html>"
+DASHBOARD_HTML = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>My Strategy Dashboard</title><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#0a0e14;color:#ccd6f6;font-family:'SF Mono','Fira Code',monospace;font-size:13px;padding:16px}h2{color:#00e676;margin-bottom:10px;font-size:15px}.panel{background:#12171f;border:1px solid #252d3a;border-radius:8px;padding:14px;margin-bottom:12px}.row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #1a2030}.row:last-child{border-bottom:none}.label{color:#8892b0}.green{color:#00e676}.red{color:#ff5252}.yellow{color:#ffd740}.blue{color:#448aff}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}table{width:100%;border-collapse:collapse}th{color:#448aff;text-align:left;padding:6px 8px;border-bottom:1px solid #252d3a;font-weight:normal}td{padding:5px 8px;border-bottom:1px solid #1a2030}.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px}.badge-paper{background:#1a2a4a;color:#448aff}.badge-live{background:#2a1a1a;color:#ff5252}.feed-item{padding:3px 0;border-bottom:1px solid #1a2030;font-size:12px}.ts{color:#4a5568;margin-right:8px}.reading{font-size:11px;color:#8892b0;margin-top:2px;padding-left:8px;font-style:italic}</style></head><body><div class='panel'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><h2>&#x1F40B; My Strategy</h2><span id='mode-badge' class='badge'></span></div><div class='grid2'><div><div class='row'><span class='label'>Entry</span><span id='entry-type'></span></div><div class='row'><span class='label'>Stop Loss</span><span class='red' id='sl'></span></div><div class='row'><span class='label'>Take Profit</span><span class='green' id='tp'></span></div><div class='row'><span class='label'>Poll</span><span id='poll'></span></div></div><div><div class='row'><span class='label'>Wallet</span><span class='blue' id='wallet'></span></div><div class='row'><span class='label'>Session PnL</span><span id='session-pnl'></span></div><div class='row'><span class='label'>Trades</span><span id='trades'></span></div><div class='row'><span class='label'>Win Rate</span><span id='winrate'></span></div></div></div></div><div class='panel'><h2>Open Positions (<span id='open-count'>0</span>)</h2><table><thead><tr><th>Symbol</th><th>Entry</th><th>Current</th><th>PnL</th><th>TP target</th><th>SL trigger</th><th>Time-stop</th><th>Since</th></tr></thead><tbody id='pos-body'></tbody></table></div><div class='panel'><h2>&#x1F5E3;&#xFE0F; Agent Voices &mdash; latest decisions</h2><div id='voices'></div></div><div class='panel'><h2>&#x1F4CA; Indexes (ADX / RSI / MFI / CHOP / bbw)</h2><div id='indexes'></div></div><div class='panel'><h2>&#x1F52E; Gecko Oracle &mdash; fundamentals verdict (live, grounded)</h2><div id='oracle'></div></div><div class='panel'><h2>Signal Feed</h2><div id='feed'></div></div><script>async function refresh(){try{const r=await fetch('/api/state');const d=await r.json();const mb=document.getElementById('mode-badge');mb.textContent=d.mode==='paper'?'PAPER 📄':'LIVE 🔴';mb.className='badge badge-'+(d.mode==='paper'?'paper':'live');document.getElementById('entry-type').textContent=d.entry_type||'';document.getElementById('sl').textContent='-'+d.sl_pct+'%';document.getElementById('tp').textContent='+'+d.tp_pct+'%';document.getElementById('poll').textContent=d.poll_sec+'s';document.getElementById('wallet').textContent=d.wallet||'—';const s=d.stats||{};const pnl=s.pnl_usd||0;const pe=document.getElementById('session-pnl');pe.textContent=(pnl>=0?'+':'')+'$'+pnl.toFixed(2);pe.className=pnl>=0?'green':'red';document.getElementById('trades').textContent=(s.daily_trades||0)+'/'+(s.daily_limit||0)+' today';const wr=(s.wins&&s.total_trades)?Math.round(s.wins/s.total_trades*100):0;document.getElementById('winrate').textContent=s.total_trades?(wr+'% ('+s.wins+'W/'+s.losses+'L)'):'—';const open=(d.positions||[]).filter(p=>p.status==='open');document.getElementById('open-count').textContent=open.length;document.getElementById('pos-body').innerHTML=open.map(p=>{const pct=p.pnl_pct||0;const cl=pct>=0?'green':'red';const since=(p.entry_ts||'').slice(11,19);const tpStr=(p.tp_price||0).toFixed(6);const slStr=(p.sl_price||0).toFixed(6);const tse=(p.time_stop_eta||'').slice(11,19);return '<tr><td>'+(p.symbol||p.token.slice(0,12))+'</td><td>'+(p.entry_price||0).toFixed(6)+'</td><td>'+(p.current_price||0).toFixed(6)+'</td><td class='+cl+'>'+(pct>=0?'+':'')+pct.toFixed(1)+'%</td><td class=green>'+tpStr+'</td><td class=red>'+slStr+'</td><td>'+tse+'</td><td>'+since+'</td></tr>';}).join('');const feed=document.getElementById('feed');feed.innerHTML=(d.signal_feed||[]).slice(-30).reverse().map(e=>{const cl=e.type==='buy'?'green':e.type==='sell'?'red':e.type==='filter'?'yellow':'';return '<div class=feed-item><span class=ts>'+(e.ts||'').slice(11,19)+'</span><span class='+cl+'>'+e.msg+'</span></div>';}).join('');const vc=function(v){return v==='bullish'?'green':v==='bearish'?'red':v==='abstain'?'blue':'yellow';};const vbox=document.getElementById('voices');vbox.innerHTML=(d.panel||[]).slice(0,6).map(function(p){const act=p.action==='act'?'green':'red';const reg=p.regime==='TREND'?'green':p.regime==='CHOP'?'red':'yellow';const voices=(p.voices||[]).map(function(o){const rtext=o.name==='chart_analyst'&&o.reasoning?'<div class=reading>'+o.reasoning+'</div>':'';return '<span style=margin-right:10px>'+o.name.replace('_voice','').replace('_analyst','')+': <span class='+vc(o.verdict)+'>'+o.verdict+'</span> '+(o.confidence!=null?o.confidence.toFixed(2):'')+'</span>'+rtext;}).join('');return '<div class=feed-item><span class=ts>'+(p.ts||'').slice(11,19)+'</span><b>'+p.instrument+'</b> regime <span class='+reg+'>'+p.regime+'</span> &rarr; <span class='+act+'>'+p.action+'</span> <span class=label>('+(p.rule||'')+')</span><br>&nbsp;&nbsp;'+voices+'</div>';}).join('')||'<div class=feed-item>no panel decisions yet</div>';var ixbox=document.getElementById('indexes');var adxCl=function(v){return v==null?'label':v>=25?'green':v<=18?'red':'yellow';};var rsiCl=function(v){return v==null?'label':v>70?'red':'green';};var mfiCl=function(v){return v==null?'label':v>=55?'green':'label';};var chopCl=function(v){return v==null?'label':v>61.8?'red':v<38.2?'green':'yellow';};var bbwCl=function(v){return v==null?'label':v>2.0?'green':v<1.0?'yellow':'label';};ixbox.innerHTML=(d.indexes||[]).map(function(ix){var adxv=ix.adx!=null?ix.adx.toFixed(1):'n/a';var rsiv=ix.rsi!=null?ix.rsi.toFixed(1):'n/a';var mfiv=ix.mfi!=null?ix.mfi.toFixed(1):'n/a';var chopv=ix.chop!=null?ix.chop.toFixed(1):'n/a';var bbwv=ix.bb_width!=null?ix.bb_width.toFixed(2)+'%':'n/a';var regCl=ix.regime==='TREND'?'green':ix.regime==='CHOP'?'red':'yellow';var stackCl=ix.ema_stack==='up'?'green':ix.ema_stack==='down'?'red':'yellow';return '<div class=feed-item><b>'+ix.instrument+'</b> <span class=label>$'+(ix.price!=null?ix.price.toFixed(5):'n/a')+'</span> regime <span class='+regCl+'>'+ix.regime+'</span> EMA <span class='+stackCl+'>'+ix.ema_stack+'</span><br>&nbsp;&nbsp;ADX <span class='+adxCl(ix.adx)+'>'+adxv+'</span> RSI <span class='+rsiCl(ix.rsi)+'>'+rsiv+'</span> MFI <span class='+mfiCl(ix.mfi)+'>'+mfiv+'</span> CHOP <span class='+chopCl(ix.chop)+'>'+chopv+'</span> bbw <span class='+bbwCl(ix.bb_width)+'>'+bbwv+'</span><br>&nbsp;&nbsp;<span class=green>bull: '+ix.bull_trigger+'</span><br>&nbsp;&nbsp;<span class=red>bear: '+ix.bear_trigger+'</span><br>&nbsp;&nbsp;1h <span class='+(ix.regime_1h==='TREND-UP'?'green':ix.regime_1h==='TREND-DOWN'?'red':'yellow')+'>'+( ix.regime_1h||'?')+'</span> flow <span class='+(ix.net_flow_verdict==='accumulation'?'green':ix.net_flow_verdict==='distribution'?'red':'label')+'>'+( ix.net_flow_verdict||'n/a')+'</span></div>';}).join('')||'<div class=feed-item>waiting for first poll...</div>';var oc2=function(v){return v==='act'?'green':v==='pass'?'red':'yellow';};var obox=document.getElementById('oracle');obox.innerHTML=(d.oracle||[]).slice(0,8).map(function(o){var kd=(o.key_drivers||[]).slice(0,1).join('');return '<div class=feed-item><b>'+o.instrument+'</b> <span class='+oc2(o.verdict)+'>'+o.verdict+'</span> '+(o.confidence!=null?o.confidence.toFixed(2):'')+' <span class=label>('+(o.citations||0)+' cites'+(o.grounded?'':', ungrounded — no gate')+')</span>'+(kd?'<br>&nbsp;&nbsp;<span class=label>'+kd+'</span>':'')+'</div>';}).join('')||'<div class=feed-item>no oracle verdicts yet</div>';}catch(err){console.error(err);}}setInterval(refresh,5000);refresh();</script></body></html>"
 
 
 # ── TA helpers ─────────────────────────────────────────────────────
@@ -444,6 +574,11 @@ class _DashHandler(BaseHTTPRequestHandler):
                 "oracle": sorted(
                     _LAST_FUND.values(), key=lambda o: o.get("ts", ""), reverse=True
                 ),
+                # S41 studio: ADX/RSI/MFI index snapshot per instrument,
+                # newest-first, for the dashboard's Indexes panel.
+                "indexes": sorted(
+                    _LAST_INDEX.values(), key=lambda x: x.get("ts", ""), reverse=True
+                ),
                 "stats": {
                     "total_trades": (wins + losses) if (wins or losses) else len(closed),
                     "wins": wins,
@@ -554,6 +689,53 @@ _BTC_SNAPSHOT: dict[str, object] = {}
 # Cached snapshot is reused within a single tick; recomputed otherwise.
 _BTC_CURRENT_TICK_ID: int = 0
 _BTC_SNAPSHOT_TICK_ID: int = -1
+
+# ── 1h regime cache (Wave-2b multi-TF modulator) ──────────────────────
+# Per-instrument 1h candle cache. Refreshed every _1H_REGIME_REFRESH_POLLS
+# polls (~6 min at 30s/poll). The regime string feeds coordinator_rules as
+# regime_1h to raise the chart floor on TREND-DOWN / CHOP 1h tapes.
+# Key: instrument symbol; Value: (regime_str, fetch_ts, poll_count_at_fetch)
+_1H_REGIME_CACHE: dict[str, tuple[str, float, int]] = {}
+# Refresh 1h candles every N polls (12 × 30s = 6 min — low-freq is intentional;
+# 1h regime is a macro read, not a tick read).
+_1H_REGIME_REFRESH_POLLS: int = 12
+# Global poll counter incremented at the top of each poll_instruments() call.
+# Shared with the BTC tick counter (which is a separate concept); this one
+# tracks the coarser per-instrument 1h cadence.
+_POLL_COUNT: int = 0
+
+
+def _get_regime_1h(inst: dict) -> str:
+    """Return cached 1h regime for *inst*, refreshing every _1H_REGIME_REFRESH_POLLS.
+
+    Fail-open: on any fetch/compute error returns "CHOP" (conservative — raises
+    the chart floor but doesn't block trading outright). A None-regime would
+    fail-open the other way (no floor raise), which is less safe during an
+    outage. We want to err cautiously, so "CHOP" is the right degraded default.
+    """
+    global _1H_REGIME_CACHE
+    sym = inst["symbol"]
+    mint = inst["mint"]
+
+    cached = _1H_REGIME_CACHE.get(sym)
+    if cached is not None:
+        _regime, _ts, _poll = cached
+        polls_elapsed = _POLL_COUNT - _poll
+        if polls_elapsed < _1H_REGIME_REFRESH_POLLS:
+            return _regime
+
+    try:
+        # 30 bars of 1H gives 30 hours; need ≥28 for ADX warm-up.
+        candles_1h = oc.get_candles(mint, "1H", limit=30)
+        if not candles_1h:
+            raise ValueError("empty 1h candles")
+        regime = _indicators.compute_regime_1h(candles_1h)
+    except Exception as exc:
+        print(f"[regime_1h] {sym} fetch failed ({type(exc).__name__}: {exc}) — defaulting CHOP")
+        regime = "CHOP"
+
+    _1H_REGIME_CACHE[sym] = (regime, time.time(), _POLL_COUNT)
+    return regime
 
 
 def _median(vals: list[float]) -> float:
@@ -730,6 +912,11 @@ def evaluate_breakout(inst: dict) -> dict | None:
     }
     _LAST_SNAPSHOTS[sym] = snap
 
+    # Item 1 (S41 studio): compute ADX/RSI/MFI from the same candles —
+    # no extra network fetch. Warm up silently if warmup not met yet.
+    if candles:
+        _LAST_INDEX[sym] = _compute_index_snapshot(sym, candles)
+
     if len(candles) < lookback + 1:
         return None
 
@@ -779,9 +966,18 @@ def poll_instruments() -> None:
     BTC overlay runs ONCE at the top of each tick. price_breakout and
     volume_spike fire in parallel with OR semantics — either firing
     produces a candidate. Voices grade what crosses the bar.
+
+    Wave-2b gates (per-instrument, BEFORE open_position):
+      1. 1h regime — low-frequency (refresh every ~6 min). regime_1h is
+         stored in _LAST_INDEX and passed to the coordinator via market_state.
+      2. net-flow CVD gate — fires ONLY on candidates (after safety). If the
+         on-chain net-flow verdict is "distribution", the candidate is blocked
+         (distribution spike = sellers hitting bids = falling-knife). Neutral
+         and accumulation pass. Fail-open on None.
     """
-    global _BTC_CURRENT_TICK_ID
+    global _BTC_CURRENT_TICK_ID, _POLL_COUNT
     _BTC_CURRENT_TICK_ID += 1  # invalidate prior tick's BTC cache
+    _POLL_COUNT += 1            # drives 1h regime refresh cadence
 
     btc_ok, btc_reason = btc_overlay_passes()
     if not btc_ok:
@@ -792,6 +988,7 @@ def poll_instruments() -> None:
         return
 
     for inst in INSTRUMENTS:
+        sym = inst["symbol"]
         # GLOBAL guards re-checked every instrument — a fill on the
         # previous iteration must block subsequent ones in this tick.
         if sum(1 for p in positions if p["status"] == "open") >= MAX_CONCURRENT:
@@ -799,7 +996,18 @@ def poll_instruments() -> None:
         if daily_trades >= MAX_DAILY_TRADES:
             return
 
+        # ── Wave-2b Item 2: fetch/cache 1h regime ─────────────────────
+        # Low-freq: refreshes every _1H_REGIME_REFRESH_POLLS polls (~6 min).
+        # Fail-open on network error (returns "CHOP" — conservative default).
+        regime_1h = _get_regime_1h(inst)
+
         bo_cand = evaluate_breakout(inst)
+        # Patch regime_1h into the index snapshot AFTER evaluate_breakout creates it.
+        # evaluate_breakout initialises _LAST_INDEX[sym] with regime_1h=None;
+        # we overwrite it here so the dashboard + eval telemetry always see the
+        # live value (not None) from this poll onwards.
+        if sym in _LAST_INDEX:
+            _LAST_INDEX[sym]["regime_1h"] = regime_1h
         # Reuse the candles evaluate_breakout already fetched (via the
         # snapshot side-channel would be cleaner, but a single refetch
         # keeps the call sites independent and avoids hidden coupling
@@ -807,12 +1015,17 @@ def poll_instruments() -> None:
         vs_fires, vs_signal = evaluate_volume_spike(inst)
         bo_fires = bo_cand is not None
 
-        _LAST_SIGNAL_CHECK[inst["symbol"]] = {
+        _LAST_SIGNAL_CHECK[sym] = {
             "breakout": bo_fires,
             "volume_spike": vs_fires,
         }
 
+        # FIX #5 — eval telemetry: one row per symbol per poll for gate evaluation.
+        # For no-signal polls the panel never ran, so chart/regime fields will be
+        # null — that's correct; the quant needs the full indicator series including
+        # quiet polls to evaluate gate calibration over a 5-day paper period.
         if not (bo_fires or vs_fires):
+            _log_eval_telemetry(sym, action="no_signal", decline_reason=None)
             continue
 
         if bo_fires and vs_fires:
@@ -823,21 +1036,63 @@ def poll_instruments() -> None:
             primitive = "volume_spike"
 
         # Build a unified signal_data carrying BOTH signal types if both fired.
-        signal_data: dict = {"primitive": primitive, "instrument": inst["symbol"]}
+        signal_data: dict = {"primitive": primitive, "instrument": sym}
         if bo_cand is not None:
             signal_data.update(bo_cand["signal_data"])
         if vs_signal is not None:
             signal_data.update(vs_signal)
 
         token = bo_cand["token"] if bo_cand else inst["mint"]
-        symbol = bo_cand["symbol"] if bo_cand else f"{inst['symbol']}-USDC"
+        symbol = bo_cand["symbol"] if bo_cand else f"{sym}-USDC"
 
         ok, failed = passes_safety(token)
         if not ok:
-            _log("filter", f"[{inst['symbol']}] ✗ safety: {', '.join(failed)}")
+            _log("filter", f"[{sym}] ✗ safety: {', '.join(failed)}")
             continue
 
-        _log("info", f"[{inst['symbol']}] ✓ candidate via {primitive}")
+        # ── Wave-2b Item 1: net-flow CVD gate ─────────────────────────
+        # Gate runs AFTER safety, BEFORE open_position (and before the panel).
+        # Only blocks "distribution" — neutral/accumulation/None pass through.
+        # Fail-open on None (network error → don't block a real setup).
+        try:
+            nf_signal: NetFlowSignal | None = compute_net_flow(token, sym, oc)
+        except Exception:
+            nf_signal = None  # safety net — must not reach trading loop
+
+        if nf_signal is not None:
+            # Update _LAST_INDEX snapshot with live net-flow data.
+            if sym in _LAST_INDEX:
+                _LAST_INDEX[sym]["net_flow"] = {
+                    "net_flow_usd": nf_signal.net_flow_usd,
+                    "smart_money_buys": nf_signal.smart_money_buys,
+                    "buy_usd": nf_signal.buy_usd,
+                    "sell_usd": nf_signal.sell_usd,
+                    "trade_count": nf_signal.trade_count,
+                }
+                _LAST_INDEX[sym]["net_flow_verdict"] = nf_signal.verdict
+
+            if nf_signal.verdict == "distribution":
+                _log(
+                    "filter",
+                    f"[{sym}] ✗ net-flow: distribution "
+                    f"(net ${nf_signal.net_flow_usd:+.0f}, SM buys {nf_signal.smart_money_buys}) "
+                    f"— decline_reason=distribution_flow",
+                )
+                _log_eval_telemetry(sym, action="decline", decline_reason="distribution_flow")
+                continue
+
+            _log(
+                "info",
+                f"[{sym}] net-flow: {nf_signal.verdict} "
+                f"(net ${nf_signal.net_flow_usd:+.0f}, SM buys {nf_signal.smart_money_buys})",
+            )
+        else:
+            _log("info", f"[{sym}] net-flow: unavailable — pass-through (fail-open)")
+
+        _log("info", f"[{sym}] ✓ candidate via {primitive} (1h regime: {regime_1h})")
+        # Pass regime_1h into signal_data so open_position → market_state → panel
+        # coordinator can use it as the multi-TF modulator.
+        signal_data["regime_1h"] = regime_1h
         open_position(token, symbol, signal_data)
 
 
@@ -919,6 +1174,10 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
         "hourly_pnl_delta": 0.0,
         "max_daily_trades": MAX_DAILY_TRADES,
         "max_budget_usd": MAX_BUDGET_USD,
+        # Wave-2b: 1h regime passed through from poll_instruments() via
+        # signal_data so the panel coordinator can use the multi-TF modulator
+        # without a second network call. None = unknown = fail-open.
+        "regime_1h": signal_data.get("regime_1h"),
     }
 
     # ── Local-lab panel (runs BEFORE the Gecko shadow gate) ─────────
@@ -953,7 +1212,9 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
                     "name": o.voice_name,
                     "verdict": o.verdict,
                     "confidence": round(o.confidence, 2),
-                    "reasoning": (o.reasoning or "")[:140],
+                    # Item 2: full reasoning for chart_analyst (the bot's actual
+                    # read); 300 chars for other voices. Dashboard renders it.
+                    "reasoning": (o.reasoning or "")[:(300 if o.voice_name == "chart_analyst" else 200)],
                 }
                 for o in local_decision.voice_opinions
             ],
@@ -970,6 +1231,13 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
                 "total_cost_usd": local_decision.total_cost_usd,
             },
             decision_id=local_decision.decision_id,
+        )
+        # FIX #5 — eval telemetry for candidate polls (panel ran).
+        # _LAST_PANEL[instrument] was just updated above, so all fields are fresh.
+        _log_eval_telemetry(
+            instrument,
+            action=local_decision.action,
+            decline_reason=local_decision.reason if local_decision.action != "act" else None,
         )
         if local_decision.action != "act":
             _log("filter", f"[LOCAL] ✗ {local_decision.reason}")
@@ -1188,7 +1456,12 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
 # collection (lab-first, transplant to PRD per local_lab_strategy). The
 # return-series alone supports the highest-merit v2 signal (autocorrelation
 # of returns: mean-reverting ⇒ stall, persistent ⇒ pause) — no volume needed.
-_TELEMETRY_PATH = Path(__file__).parent / f"poll_telemetry_{datetime.now(UTC).strftime('%Y%m%d')}.jsonl"
+_TELEMETRY_PATH = _STATE_BASE / f"poll_telemetry_{datetime.now(UTC).strftime('%Y%m%d')}.jsonl"
+
+# Per-poll per-symbol evaluation telemetry for the quant gate evaluation.
+# One JSONL row per symbol per poll: indicators + panel decision + action.
+# Respects GECKO_STATE_DIR like all other state files. Never crashes the loop.
+_EVAL_TELEMETRY_PATH = _STATE_BASE / f"eval_telemetry_{datetime.now(UTC).strftime('%Y%m%d')}.jsonl"
 
 
 def _log_telemetry(row: dict) -> None:
@@ -1198,6 +1471,52 @@ def _log_telemetry(row: dict) -> None:
         with open(_TELEMETRY_PATH, "a", encoding="utf-8") as f:
             f.write(json.dumps(row) + "\n")
     except OSError:
+        pass
+
+
+def _log_eval_telemetry(sym: str, action: str | None, decline_reason: str | None) -> None:
+    """Append one eval-telemetry row for sym to eval_telemetry_YYYYMMDD.jsonl.
+
+    Pulls indicator snapshot from _LAST_INDEX[sym] and the most-recent
+    panel decision from _LAST_PANEL[sym] (if present). All fields are
+    best-effort: missing values write null. Never raises — instrumentation
+    must never break trading.
+    """
+    try:
+        idx = _LAST_INDEX.get(sym) or {}
+        panel = _LAST_PANEL.get(sym) or {}
+        # Extract regime + chart voice from the panel's voices list
+        voices = panel.get("voices") or []
+        regime_v = next((v for v in voices if v.get("name") == "regime_analyst"), {})
+        chart_v = next((v for v in voices if v.get("name") == "chart_analyst"), {})
+        row = {
+            "ts": datetime.now(UTC).isoformat(),
+            "symbol": sym,
+            "price": idx.get("price"),
+            "adx": idx.get("adx"),
+            "plus_di": idx.get("plus_di"),
+            "minus_di": idx.get("minus_di"),
+            "rsi": idx.get("rsi"),
+            "mfi": idx.get("mfi"),
+            "bb_width": idx.get("bb_width"),
+            "chop": idx.get("chop"),
+            # range_24h_pct is not in _LAST_INDEX — best effort from snapshot
+            "range_24h_pct": _LAST_SNAPSHOTS.get(sym, {}).get("range_pct"),
+            "regime": panel.get("regime"),
+            "chart_verdict": chart_v.get("verdict"),
+            "chart_conf": chart_v.get("confidence"),
+            "action": action,
+            "decline_reason": decline_reason,
+            # Wave-2b fields — None when not yet computed this poll.
+            "regime_1h": idx.get("regime_1h"),
+            "net_flow_verdict": idx.get("net_flow_verdict"),
+            "net_flow_usd": (idx.get("net_flow") or {}).get("net_flow_usd"),
+            "smart_money_buys": (idx.get("net_flow") or {}).get("smart_money_buys"),
+        }
+        with open(_EVAL_TELEMETRY_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+    except Exception:
+        # Never propagate — instrumentation must never break trading.
         pass
 
 
@@ -1408,7 +1727,7 @@ def main() -> None:
             "confirmation": "CONFIRM",
             "budget_cap": MAX_BUDGET_USD,
         }
-        _ack_path = _P(__file__).parent / "jto_breakout_gecko_gated_contest_live_ack.jsonl"
+        _ack_path = _STATE_BASE / "jto_breakout_gecko_gated_contest_live_ack.jsonl"
         with open(_ack_path, "a") as _f:
             _f.write(_json.dumps(_ack) + "\n")
         print("\n✅ Live mode confirmed. Starting bot...\n")
