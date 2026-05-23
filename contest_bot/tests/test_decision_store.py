@@ -140,3 +140,38 @@ def test_record_appends_jsonl_and_attach_outcome_patches(tmp_path):
         },
     }
     assert decs.docs[did]["coordinator"]["action"] == "act"  # mongo got it too
+
+
+from decision_store.sync import sync_run
+
+
+def test_sync_loads_jsonl_into_coll(tmp_path):
+    reg, sims, decs = _mk(tmp_path)
+    run_id = reg.start(
+        SimulationDoc(
+            run_id="",
+            strategy_id="jto",
+            agent_group="default",
+            symbol_universe=["PYTH"],
+            universe_label="majors",
+            config={},
+            mode="paper",
+            code_commit="abc",
+        )
+    )
+    rec = reg.recorder()
+    did = rec.record(
+        DecisionDoc(
+            run_id=run_id,
+            symbol="PYTH",
+            symbol_group="majors",
+            signal={},
+            indicators={},
+            voices=[],
+            oracle=None,
+            coordinator={"action": "act"},
+        )
+    )
+    fresh_sims, fresh_decs = _FakeColl(), _FakeColl()  # simulate a previously-down mongo
+    n = sync_run(tmp_path / run_id, fresh_sims, fresh_decs)
+    assert n == 1 and fresh_decs.docs[did]["symbol"] == "PYTH" and run_id in fresh_sims.docs
