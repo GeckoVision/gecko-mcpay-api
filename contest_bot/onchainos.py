@@ -19,6 +19,30 @@ from typing import Any
 
 ONCHAINOS_BIN = "onchainos"
 
+
+class KlineSortError(Exception):
+    """Raised when get_candles cannot guarantee ascending-by-ts ordering.
+
+    The ascending sort in get_candles is load-bearing: every indicator and the
+    breakout logic assume candles[-1] is the newest bar. A silently mis-ordered
+    series corrupts all of them, so we fail loud rather than trade on garbage.
+    """
+
+
+def _assert_candles_ascending(candles: list[dict[str, Any]]) -> None:
+    """Guard the load-bearing ascending-by-ts invariant. Raises KlineSortError
+    on the first out-of-order pair. A silently mis-ordered candle series
+    corrupts every indicator, so we fail loud instead of trading on garbage.
+    Pure + side-effect-free so the invariant is unit-testable in isolation.
+    """
+    for i in range(1, len(candles)):
+        if candles[i]["ts"] < candles[i - 1]["ts"]:
+            raise KlineSortError(
+                f"candles not ascending by ts at index {i}: "
+                f"{candles[i - 1]['ts']} -> {candles[i]['ts']}"
+            )
+
+
 # Chain name -> numeric chain ID (for security token-scan --tokens flag)
 CHAIN_IDS: dict[str, str] = {
     "solana": "501",
@@ -419,7 +443,7 @@ class OnchainOS:
         onchainos market kline --address <token> --chain <chain> --bar <bar> --limit <n>
         bar: 1s, 1m, 5m, 15m, 30m, 1H, 4H, 1D, 1W
         limit: max 299
-        Returns list of {ts, open, high, low, close, volume, confirm},
+        Returns list of {ts, open, high, low, close, volume, vol_usd, confirm},
         ascending by ts (oldest-first).
 
         S44 Fix 0.1 (forming-candle bug) — the kline CLI returns the newest bar
@@ -429,6 +453,10 @@ class OnchainOS:
         forming bar is excluded so EVERY downstream consumer (breakout, BTC
         overlay, volume_spike, indicators, backtest) reasons over CLOSED bars
         only. Pass drop_forming=False to keep the live bar (real-time spot read).
+
+        S44 Fix 0.3 — vol_usd (the kline volUsd field) is now captured for
+        RVOL/VWAP features, and an explicit ascending-order guard runs after the
+        sort (a silently mis-ordered series corrupts every indicator).
         """
         data = _run_cli(
             "market", "kline",
@@ -457,6 +485,8 @@ class OnchainOS:
                 "low": float(c.get("low", c.get("l", 0)) or 0),
                 "close": float(c.get("close", c.get("c", 0)) or 0),
                 "volume": float(c.get("volume", c.get("vol", 0)) or 0),
+                # S44 Fix 0.3: USD volume (volUsd) — was discarded pre-S44.
+                "vol_usd": float(c.get("volUsd", c.get("vol_usd", 0)) or 0),
                 "confirm": confirm,
             })
         # iter-3.11 2026-05-21 CRITICAL FIX: the OKX kline CLI returns candles
@@ -476,6 +506,10 @@ class OnchainOS:
         # is dropped (a mid-series confirm==0 is a data anomaly we leave alone).
         if drop_forming and result and result[-1]["confirm"] == 0:
             result.pop()
+
+        # S44 Fix 0.3: guard the load-bearing ascending sort. A mis-ordered
+        # series silently corrupts every indicator; fail loud instead.
+        _assert_candles_ascending(result)
         return result
 
     # ── Signals ───────────────────────────────────────────────────
