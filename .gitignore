@@ -111,3 +111,6 @@ gecko-okx-quickstart/artifact_*.jsonl
 gecko-okx-quickstart/__pycache__/
 gecko-okx-quickstart/**/__pycache__/
 gecko-okx-quickstart/.env
+
+# s46: derived regime window index (regenerable via build_tape.py regimes --write)
+scripts/calibration/data/tape/regime_windows.json

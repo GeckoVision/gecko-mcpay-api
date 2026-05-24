@@ -30,7 +30,8 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 BIRDEYE_OHLCV_URL = "https://public-api.birdeye.so/defi/ohlcv"
 BIRDEYE_MAX_RECORDS = 1000
@@ -78,9 +79,7 @@ def parse_response(payload: dict[str, Any]) -> list[dict[str, float]]:
     return out
 
 
-def _default_fetcher(
-    url: str, params: dict[str, Any], headers: dict[str, str]
-) -> dict[str, Any]:
+def _default_fetcher(url: str, params: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
     import httpx
 
     resp = httpx.get(url, params=params, headers=headers, timeout=20.0)

@@ -24,7 +24,8 @@ TDD'd against a captured real fixture (tests/fixtures/tape/okx_*).
 from __future__ import annotations
 
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 OKX_HISTORY_CANDLES_URL = "https://www.okx.com/api/v5/market/history-candles"
 OKX_MAX_LIMIT = 300  # history-candles honours up to 300 rows/call
