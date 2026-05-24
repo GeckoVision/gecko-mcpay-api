@@ -19,6 +19,30 @@ from typing import Any
 
 ONCHAINOS_BIN = "onchainos"
 
+
+class KlineSortError(Exception):
+    """Raised when get_candles cannot guarantee ascending-by-ts ordering.
+
+    The ascending sort in get_candles is load-bearing: every indicator and the
+    breakout logic assume candles[-1] is the newest bar. A silently mis-ordered
+    series corrupts all of them, so we fail loud rather than trade on garbage.
+    """
+
+
+def _assert_candles_ascending(candles: list[dict[str, Any]]) -> None:
+    """Guard the load-bearing ascending-by-ts invariant. Raises KlineSortError
+    on the first out-of-order pair. A silently mis-ordered candle series
+    corrupts every indicator, so we fail loud instead of trading on garbage.
+    Pure + side-effect-free so the invariant is unit-testable in isolation.
+    """
+    for i in range(1, len(candles)):
+        if candles[i]["ts"] < candles[i - 1]["ts"]:
+            raise KlineSortError(
+                f"candles not ascending by ts at index {i}: "
+                f"{candles[i - 1]['ts']} -> {candles[i]['ts']}"
+            )
+
+
 # Chain name -> numeric chain ID (for security token-scan --tokens flag)
 CHAIN_IDS: dict[str, str] = {
     "solana": "501",
@@ -413,13 +437,26 @@ class OnchainOS:
     # ── Market Data ───────────────────────────────────────────────
 
     def get_candles(
-        self, token: str, bar: str = "1H", limit: int = 100
+        self, token: str, bar: str = "1H", limit: int = 100, drop_forming: bool = True
     ) -> list[dict[str, Any]]:
         """
         onchainos market kline --address <token> --chain <chain> --bar <bar> --limit <n>
         bar: 1s, 1m, 5m, 15m, 30m, 1H, 4H, 1D, 1W
         limit: max 299
-        Returns list of {ts, open, high, low, close, volume}.
+        Returns list of {ts, open, high, low, close, volume, vol_usd, confirm},
+        ascending by ts (oldest-first).
+
+        S44 Fix 0.1 (forming-candle bug) — the kline CLI returns the newest bar
+        with confirm == "0" (still forming: high/close keep moving). The bot
+        evaluated breakouts on that bar → premature fires that mean-revert
+        ("enter at exhausted micro-tops"). With drop_forming=True (default) the
+        forming bar is excluded so EVERY downstream consumer (breakout, BTC
+        overlay, volume_spike, indicators, backtest) reasons over CLOSED bars
+        only. Pass drop_forming=False to keep the live bar (real-time spot read).
+
+        S44 Fix 0.3 — vol_usd (the kline volUsd field) is now captured for
+        RVOL/VWAP features, and an explicit ascending-order guard runs after the
+        sort (a silently mis-ordered series corrupts every indicator).
         """
         data = _run_cli(
             "market", "kline",
@@ -435,6 +472,12 @@ class OnchainOS:
         for c in candles:
             if not isinstance(c, dict):
                 continue
+            # confirm: "1" = closed bar, "0" = still-forming newest bar.
+            # Absent → assume closed (older CLIs / aggregated bars).
+            try:
+                confirm = int(c.get("confirm", "1"))
+            except (TypeError, ValueError):
+                confirm = 1
             result.append({
                 "ts": float(c.get("ts", c.get("time", 0)) or 0),
                 "open": float(c.get("open", c.get("o", 0)) or 0),
@@ -442,6 +485,9 @@ class OnchainOS:
                 "low": float(c.get("low", c.get("l", 0)) or 0),
                 "close": float(c.get("close", c.get("c", 0)) or 0),
                 "volume": float(c.get("volume", c.get("vol", 0)) or 0),
+                # S44 Fix 0.3: USD volume (volUsd) — was discarded pre-S44.
+                "vol_usd": float(c.get("volUsd", c.get("vol_usd", 0)) or 0),
+                "confirm": confirm,
             })
         # iter-3.11 2026-05-21 CRITICAL FIX: the OKX kline CLI returns candles
         # NEWEST-FIRST (descending ts). Every consumer in the bot assumes the
@@ -453,6 +499,17 @@ class OnchainOS:
         # volume_spike by accident. Sorting ascending here fixes breakout +
         # BTC overlay + volume_spike + the backtest harness in one place.
         result.sort(key=lambda r: r["ts"])
+
+        # S44 Fix 0.1: drop the forming (confirm == 0) bar so signals evaluate
+        # on the last CLOSED bar. Done AFTER the sort so we strip the true
+        # newest bar regardless of source order. Only the trailing forming bar
+        # is dropped (a mid-series confirm==0 is a data anomaly we leave alone).
+        if drop_forming and result and result[-1]["confirm"] == 0:
+            result.pop()
+
+        # S44 Fix 0.3: guard the load-bearing ascending sort. A mis-ordered
+        # series silently corrupts every indicator; fail loud instead.
+        _assert_candles_ascending(result)
         return result
 
     # ── Signals ───────────────────────────────────────────────────
