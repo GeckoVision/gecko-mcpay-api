@@ -77,3 +77,17 @@ def test_index_roundtrip_and_list_tapes(tmp_path, monkeypatch) -> None:
     assert idx["generated"] == "2026-05-23"
     assert idx["tapes"]["SOL_4H"]["bars"] == 1
     assert set(storage.list_tapes()) == {("SOL", "4H"), ("BTC", "1H")}
+
+
+def test_list_tapes_ignores_reserved_and_nontf_files(tmp_path, monkeypatch) -> None:
+    """regime_windows.json / tape_index.json (and any non-tf-suffixed json) must
+    NOT be mis-parsed as a (symbol, tf) tape — this caused a phantom
+    'regime'/'windows' index entry before the VALID_TFS guard."""
+    monkeypatch.setattr(storage, "TAPE_DIR", str(tmp_path))
+    monkeypatch.setattr(storage, "INDEX_PATH", str(tmp_path / "tape_index.json"))
+    storage.write_tape("BTC", "1H", [_candle(1000)])
+    # drop decoy files that contain underscores but are not tapes
+    (tmp_path / "regime_windows.json").write_text("{}")
+    (tmp_path / "tape_index.json").write_text("{}")
+    (tmp_path / "some_notes.json").write_text("{}")  # not a valid tf -> ignored
+    assert set(storage.list_tapes()) == {("BTC", "1H")}

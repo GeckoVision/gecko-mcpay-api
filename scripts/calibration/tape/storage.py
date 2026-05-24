@@ -26,6 +26,10 @@ TAPE_DIR = os.path.normpath(TAPE_DIR)
 INDEX_PATH = os.path.join(TAPE_DIR, "tape_index.json")
 
 CANDLE_KEYS = ("ts", "open", "high", "low", "close", "volume")
+# Valid tf suffixes — guards list_tapes against non-candle JSON files in TAPE_DIR
+# (e.g. tape_index.json, regime_windows.json) being mis-parsed as a (sym, tf) tape.
+VALID_TFS = ("5m", "15m", "1H", "4H")
+RESERVED_FILES = ("tape_index.json", "regime_windows.json")
 
 
 def tape_path(symbol: str, tf: str) -> str:
@@ -125,9 +129,10 @@ def list_tapes() -> list[tuple[str, str]]:
         return []
     out: list[tuple[str, str]] = []
     for fn in sorted(os.listdir(TAPE_DIR)):
-        if fn.endswith(".json") and fn != "tape_index.json" and "_" in fn:
-            stem = fn[:-5]
-            sym, _, tf = stem.rpartition("_")
-            if sym and tf:
-                out.append((sym, tf))
+        if not fn.endswith(".json") or fn in RESERVED_FILES or "_" not in fn:
+            continue
+        stem = fn[:-5]
+        sym, _, tf = stem.rpartition("_")
+        if sym and tf in VALID_TFS:
+            out.append((sym, tf))
     return out
