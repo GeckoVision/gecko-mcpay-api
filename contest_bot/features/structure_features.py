@@ -69,11 +69,14 @@ class OverheadRoomFeature:
 
     k: int = st.DEFAULT_PIVOT_K
     cluster_pct: float = st.DEFAULT_CLUSTER_PCT
+    lookback: int = st.DEFAULT_LOOKBACK
     name: str = "overhead_room_pct"
 
     def compute(self, candles: dict, i: int) -> float:
         highs, lows, closes = _hlc(candles)
-        room = st.distance_to_next_resistance(highs, lows, closes, i, self.k, self.cluster_pct)
+        room = st.distance_to_next_resistance(
+            highs, lows, closes, i, self.k, self.cluster_pct, self.lookback
+        )
         return OPEN_SKY_ROOM_PCT if room is None else room
 
 
@@ -91,6 +94,7 @@ class RoomToRunGate:
     room_multiple: float = ROOM_FEE_MULTIPLE
     k: int = st.DEFAULT_PIVOT_K
     cluster_pct: float = st.DEFAULT_CLUSTER_PCT
+    lookback: int = st.DEFAULT_LOOKBACK
     name: str = "room_to_run_gate"
 
     @property
@@ -99,7 +103,9 @@ class RoomToRunGate:
 
     def passes(self, candles: dict, i: int) -> bool:
         highs, lows, closes = _hlc(candles)
-        room = st.distance_to_next_resistance(highs, lows, closes, i, self.k, self.cluster_pct)
+        room = st.distance_to_next_resistance(
+            highs, lows, closes, i, self.k, self.cluster_pct, self.lookback
+        )
         return room is None or room >= self.threshold_pct
 
     def compute(self, candles: dict, i: int) -> float:
@@ -119,11 +125,14 @@ class NotIntoResistanceVeto:
     min_room_pct: float = ROOM_FEE_MULTIPLE * DEFAULT_FEE_RT
     k: int = st.DEFAULT_PIVOT_K
     cluster_pct: float = st.DEFAULT_CLUSTER_PCT
+    lookback: int = st.DEFAULT_LOOKBACK
     name: str = "not_into_resistance_veto"
 
     def _room(self, candles: dict, i: int) -> float | None:
         highs, lows, closes = _hlc(candles)
-        return st.distance_to_next_resistance(highs, lows, closes, i, self.k, self.cluster_pct)
+        return st.distance_to_next_resistance(
+            highs, lows, closes, i, self.k, self.cluster_pct, self.lookback
+        )
 
     def passes(self, candles: dict, i: int) -> bool:
         room = self._room(candles, i)
@@ -150,11 +159,12 @@ class NotMidRangeVeto:
 
     half_width: float = MID_RANGE_HALF_WIDTH
     k: int = st.DEFAULT_PIVOT_K
+    lookback: int = st.DEFAULT_LOOKBACK
     name: str = "not_mid_range_veto"
 
     def _pos(self, candles: dict, i: int) -> float | None:
         highs, lows, closes = _hlc(candles)
-        return st.range_position(highs, lows, closes, i, self.k)
+        return st.range_position(highs, lows, closes, i, self.k, self.lookback)
 
     def passes(self, candles: dict, i: int) -> bool:
         pos = self._pos(candles, i)
@@ -178,11 +188,12 @@ class StructureNotDownVeto:
     anti-predictive). Strictly causal."""
 
     k: int = st.DEFAULT_PIVOT_K
+    lookback: int = st.DEFAULT_LOOKBACK
     name: str = "structure_not_down_veto"
 
     def passes(self, candles: dict, i: int) -> bool:
         highs, lows, _closes = _hlc(candles)
-        return st.market_structure(highs, lows, i, self.k) != "DOWN"
+        return st.market_structure(highs, lows, i, self.k, self.lookback) != "DOWN"
 
     def compute(self, candles: dict, i: int) -> float:
         return 1.0 if self.passes(candles, i) else 0.0
@@ -201,6 +212,7 @@ class StructureStackGate:
     half_width: float = MID_RANGE_HALF_WIDTH
     k: int = st.DEFAULT_PIVOT_K
     cluster_pct: float = st.DEFAULT_CLUSTER_PCT
+    lookback: int = st.DEFAULT_LOOKBACK
     name: str = "structure_stack_gate"
 
     def __post_init__(self) -> None:
@@ -209,9 +221,10 @@ class StructureStackGate:
             room_multiple=self.room_multiple,
             k=self.k,
             cluster_pct=self.cluster_pct,
+            lookback=self.lookback,
         )
-        self._notdown = StructureNotDownVeto(k=self.k)
-        self._notmid = NotMidRangeVeto(half_width=self.half_width, k=self.k)
+        self._notdown = StructureNotDownVeto(k=self.k, lookback=self.lookback)
+        self._notmid = NotMidRangeVeto(half_width=self.half_width, k=self.k, lookback=self.lookback)
 
     def passes(self, candles: dict, i: int) -> bool:
         return (
@@ -224,7 +237,9 @@ class StructureStackGate:
         if not self.passes(candles, i):
             return 0.0
         highs, lows, closes = _hlc(candles)
-        room = st.distance_to_next_resistance(highs, lows, closes, i, self.k, self.cluster_pct)
+        room = st.distance_to_next_resistance(
+            highs, lows, closes, i, self.k, self.cluster_pct, self.lookback
+        )
         return OPEN_SKY_ROOM_PCT if room is None else room
 
 

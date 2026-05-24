@@ -42,10 +42,21 @@ DEFAULT_PIVOT_K = 2
 # other are merged into one level (a support/resistance band, not a point).
 DEFAULT_CLUSTER_PCT = 0.5
 
+# Bounded recency window for pivot scanning. Only the most-recent DEFAULT_LOOKBACK
+# bars before i are scanned for pivots. This is BOTH a performance bound (pivot
+# detection becomes O(lookback) per call, not O(i) — avoiding O(n^2) over a long
+# tape) AND a correctness choice: recent support/resistance is what a breakout
+# interacts with; ancient pivots are stale. Tunable per call.
+DEFAULT_LOOKBACK = 120
+
 
 # ── Swing-pivot detection (fractal highs / lows) ────────────────────
 def confirmed_pivots(
-    highs: list[float], lows: list[float], i: int, k: int = DEFAULT_PIVOT_K
+    highs: list[float],
+    lows: list[float],
+    i: int,
+    k: int = DEFAULT_PIVOT_K,
+    lookback: int = DEFAULT_LOOKBACK,
 ) -> tuple[list[int], list[int]]:
     """Return (pivot_high_indices, pivot_low_indices) CONFIRMED as of bar i.
 
@@ -55,13 +66,19 @@ def confirmed_pivots(
     printed after it (j + k <= i), so candidate centers are scanned in
     [k, i-k]. Pivot-lows are the mirror (strict local minimum).
 
+    Only the most-recent `lookback` bars before i are scanned (the recency bound):
+    candidate centers j run over [max(k, i-lookback), i-k]. This bounds the cost to
+    O(lookback) per call and keeps S/R recent. Pass lookback large (e.g. i) to
+    recover the unbounded full-history scan.
+
     Strictly causal: the furthest-right read is high[j+k] with j+k <= i, so no
     bar after i is ever touched.
     """
     pivot_hi: list[int] = []
     pivot_lo: list[int] = []
     last = i - k  # furthest center whose right wing (j+k) still lands at <= i
-    for j in range(k, last + 1):
+    first = max(k, i - lookback)
+    for j in range(first, last + 1):
         wh = highs[j - k : j + k + 1]
         wl = lows[j - k : j + k + 1]
         cj_h, cj_l = highs[j], lows[j]
@@ -127,13 +144,14 @@ def sr_levels(
     i: int,
     k: int = DEFAULT_PIVOT_K,
     cluster_pct: float = DEFAULT_CLUSTER_PCT,
+    lookback: int = DEFAULT_LOOKBACK,
 ) -> tuple[list[Level], list[Level]]:
     """(resistance_levels, support_levels) as of bar i, from CONFIRMED pivots.
 
     Resistance levels come from clustered pivot-highs, support from pivot-lows.
     Each is sorted ascending by price. Strictly causal (uses confirmed_pivots).
     """
-    pivot_hi, pivot_lo = confirmed_pivots(highs, lows, i, k)
+    pivot_hi, pivot_lo = confirmed_pivots(highs, lows, i, k, lookback)
     res = cluster_levels([(highs[j], j) for j in pivot_hi], "resistance", cluster_pct)
     sup = cluster_levels([(lows[j], j) for j in pivot_lo], "support", cluster_pct)
     return res, sup
@@ -147,6 +165,7 @@ def distance_to_next_resistance(
     i: int,
     k: int = DEFAULT_PIVOT_K,
     cluster_pct: float = DEFAULT_CLUSTER_PCT,
+    lookback: int = DEFAULT_LOOKBACK,
 ) -> float | None:
     """% distance UP from the entry close to the NEAREST clustered resistance
     level strictly ABOVE it (the headroom a long must clear before stalling).
@@ -158,7 +177,7 @@ def distance_to_next_resistance(
     px = closes[i]
     if px <= 0:
         return None
-    res, _sup = sr_levels(highs, lows, i, k, cluster_pct)
+    res, _sup = sr_levels(highs, lows, i, k, cluster_pct, lookback)
     above = [lvl.price for lvl in res if lvl.price > px]
     if not above:
         return None
@@ -172,6 +191,7 @@ def distance_to_next_support(
     i: int,
     k: int = DEFAULT_PIVOT_K,
     cluster_pct: float = DEFAULT_CLUSTER_PCT,
+    lookback: int = DEFAULT_LOOKBACK,
 ) -> float | None:
     """% distance DOWN from the entry close to the NEAREST clustered support
     level strictly BELOW it (the cushion under the entry). None if no confirmed
@@ -179,7 +199,7 @@ def distance_to_next_support(
     px = closes[i]
     if px <= 0:
         return None
-    _res, sup = sr_levels(highs, lows, i, k, cluster_pct)
+    _res, sup = sr_levels(highs, lows, i, k, cluster_pct, lookback)
     below = [lvl.price for lvl in sup if lvl.price < px]
     if not below:
         return None
@@ -188,7 +208,11 @@ def distance_to_next_support(
 
 # ── Market-structure classification (HH/HL / LH/LL / RANGE) ─────────
 def market_structure(
-    highs: list[float], lows: list[float], i: int, k: int = DEFAULT_PIVOT_K
+    highs: list[float],
+    lows: list[float],
+    i: int,
+    k: int = DEFAULT_PIVOT_K,
+    lookback: int = DEFAULT_LOOKBACK,
 ) -> str:
     """Classify swing structure as of bar i from the last two CONFIRMED pivots:
 
@@ -201,7 +225,7 @@ def market_structure(
     structural signal is vetoing DOWN. This function exposes the raw label; the
     veto framing lives in structure_features.py.
     """
-    pivot_hi, pivot_lo = confirmed_pivots(highs, lows, i, k)
+    pivot_hi, pivot_lo = confirmed_pivots(highs, lows, i, k, lookback)
     if len(pivot_hi) < 2 or len(pivot_lo) < 2:
         return "RANGE"
     h2 = [highs[j] for j in pivot_hi[-2:]]
@@ -217,20 +241,29 @@ def market_structure(
 
 # ── Range boundaries + position within range ────────────────────────
 def range_boundaries(
-    highs: list[float], lows: list[float], i: int, k: int = DEFAULT_PIVOT_K
+    highs: list[float],
+    lows: list[float],
+    i: int,
+    k: int = DEFAULT_PIVOT_K,
+    lookback: int = DEFAULT_LOOKBACK,
 ) -> tuple[float | None, float | None]:
     """(range_high, range_low) as of bar i: the highest confirmed pivot-high and
     the lowest confirmed pivot-low. Either may be None if no pivot of that kind
     has been confirmed. These bound the structural range the price is moving in.
     Strictly causal."""
-    pivot_hi, pivot_lo = confirmed_pivots(highs, lows, i, k)
+    pivot_hi, pivot_lo = confirmed_pivots(highs, lows, i, k, lookback)
     rng_hi = max((highs[j] for j in pivot_hi), default=None)
     rng_lo = min((lows[j] for j in pivot_lo), default=None)
     return rng_hi, rng_lo
 
 
 def range_position(
-    highs: list[float], lows: list[float], closes: list[float], i: int, k: int = DEFAULT_PIVOT_K
+    highs: list[float],
+    lows: list[float],
+    closes: list[float],
+    i: int,
+    k: int = DEFAULT_PIVOT_K,
+    lookback: int = DEFAULT_LOOKBACK,
 ) -> float | None:
     """Position of the entry close WITHIN the structural range, in [0, 1]:
       0.0 = at the range low (support), 1.0 = at the range high (resistance),
@@ -238,7 +271,7 @@ def range_position(
     None if the range is undefined (missing a boundary) or degenerate (high<=low).
     The mid-range zone (~0.4-0.6) is the chop dead-zone the veto features target.
     Strictly causal."""
-    rng_hi, rng_lo = range_boundaries(highs, lows, i, k)
+    rng_hi, rng_lo = range_boundaries(highs, lows, i, k, lookback)
     if rng_hi is None or rng_lo is None or rng_hi <= rng_lo:
         return None
     px = closes[i]
@@ -247,6 +280,7 @@ def range_position(
 
 __all__ = [
     "DEFAULT_CLUSTER_PCT",
+    "DEFAULT_LOOKBACK",
     "DEFAULT_PIVOT_K",
     "Level",
     "cluster_levels",
