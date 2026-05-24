@@ -39,10 +39,10 @@ Propose a trade or strategy. Gecko's multi-voice adversarial panel returns a gro
 
 **"We don't ask you to trust the oracle. We show you the number."**
 
-> **+0.6% gating delta — CI-clean, across regimes.**
+> **+0.6% gating delta — pooled across regimes, CI-clean.**
 > The trades Gecko approves beat the ones it defers. Backtested on our own multi-regime data, before anyone risks a cent.
 
-*(Visual: the ACT-beats-DEFER bars / the gating-delta chart. Caveat line: "replicated · sign-robust · hardening across regimes.")*
+*(Visual: the ACT-beats-DEFER bars / the gating-delta chart. Caveat line: "pooled · CI-clean · strongest in uptrends · per-regime hardening.")*
 
 ## Section 4 — Not a bot
 
