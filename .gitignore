@@ -52,8 +52,9 @@ docs/external/
 
 # Pitch deck working files (Notion exports + .pptx; tracked separately if needed)
 gecko_pitch/
-apps/
-apps/*
+# Only the heavy local video project is ignored — apps/cli + apps/demo-agent
+# are real tracked packages (a broad apps/* silently swallowed new files in them).
+apps/demo-video/
 
 # Context-mode local session telemetry
 .github/context-mode/sessions/
