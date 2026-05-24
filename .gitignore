@@ -17,6 +17,10 @@ CLAUDE.local.md
 *.keypair.json
 gecko-demo-treasury.json
 
+# Private strategy / pitch / findings — sensitive, never in the public repo.
+# Lives on-disk only (see private/README.md). Code stays tracked; strategy goes here.
+/private/
+
 # Build
 dist/
 build/
