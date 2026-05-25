@@ -608,7 +608,7 @@ class _DashHandler(BaseHTTPRequestHandler):
                 snap = dict(p)
                 ep = float(p.get("entry_price") or 0)
                 if ep > 0:
-                    snap["tp_price"] = ep * (1 + TAKE_PROFIT_PCT / 100)
+                    snap["tp_price"] = ep * (1 + (p.get("tp_pct") or TAKE_PROFIT_PCT) / 100)
                     snap["sl_price"] = ep * (1 - STOP_LOSS_PCT / 100)
                 if p["status"] == "open":
                     pd = oc.get_price_info(p["token"])
@@ -1403,6 +1403,19 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
         _log("info", f"[ORACLE] {instrument}: no cached verdict (degraded)")
 
     ts = datetime.utcnow().isoformat()
+    # Adaptive TP (s60): scale TP to volatility — TP% = clamp(1.5 x ATR%, 0.5, 3.0).
+    # Validated by scripts/calibration/adaptive_tp_validation.py: beats fixed-2% CI-clean
+    # on win-rate (44.6%->55.5%) + drawdown (exit hygiene, not alpha). Per-position; falls
+    # back to TAKE_PROFIT_PCT if candles/ATR unavailable (and for older positions w/o tp_pct).
+    adaptive_tp_pct = float(TAKE_PROFIT_PCT)
+    try:
+        if ms_candles and len(ms_candles) >= 16 and entry_price > 0:
+            _atr_series = _indicators.atr(highs, lows, closes, 14)
+            _atr_last = next((a for a in reversed(_atr_series) if a is not None), None)
+            if _atr_last:
+                adaptive_tp_pct = max(0.5, min(3.0, 1.5 * (_atr_last / entry_price * 100.0)))
+    except Exception:  # never let TP sizing break entry; fall back to fixed TP
+        adaptive_tp_pct = float(TAKE_PROFIT_PCT)
     pos = {
         "token": token,
         "symbol": symbol_str,
@@ -1414,6 +1427,7 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
         "signal_data": signal_data,
         "mode": "paper",
         "fundamentals_decision_id": fund_decision_id,
+        "tp_pct": round(adaptive_tp_pct, 4),
     }
 
     # ── Decision-record store (s43): record this act-decision ──────────
@@ -1789,8 +1803,8 @@ def monitor_positions() -> None:
 
         # Tiered take profit
 
-        # Flat take profit
-        if pnl_pct >= TAKE_PROFIT_PCT:
+        # Flat take profit (adaptive per-position TP; fallback to fixed for old positions)
+        if pnl_pct >= pos.get("tp_pct", TAKE_PROFIT_PCT):
             close_position(pos, "take_profit", current_price)
             continue
 
