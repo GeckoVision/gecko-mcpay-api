@@ -50,3 +50,19 @@ def test_null_provider_yields_all_pending():
     decs = [{"instrument": "WIF", "action": "act", "ts": "t1"}]
     entries, pending = live.enrich(decs, live.null_candle_provider)
     assert entries == [] and pending == 1
+
+
+def test_entry_index_picks_closed_bar_no_lookahead():
+    ts = [100.0, 200.0, 300.0, 400.0]  # ascending
+    assert live.entry_index(ts, 250.0) == 1  # bar at/just-before the decision
+    assert live.entry_index(ts, 300.0) == 2  # exact match -> that bar
+    assert live.entry_index(ts, 400.0) == 3  # last bar
+    assert live.entry_index(ts, 99.0) == -1  # decision predates the series
+    assert live.entry_index(ts, 500.0) == 3  # after last -> last bar
+
+
+def test_iso_to_ms_parses_utc():
+    ms = live.iso_to_ms("2026-05-25T00:00:00+00:00")
+    assert ms is not None and abs(ms - 1779667200000.0) < 1.0
+    assert live.iso_to_ms(None) is None
+    assert live.iso_to_ms("not-a-date") is None
