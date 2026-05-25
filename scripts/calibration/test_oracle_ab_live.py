@@ -1,0 +1,52 @@
+"""Tests for oracle_ab_live — the growing live Oracle A/B from the bot decision log.
+
+Load-bearing: action→arm mapping (act→ON, decline→REJECTED) must be exact, and
+enrichment must NEVER fabricate an outcome — a None from the candle provider counts
+as pending and is excluded, so the A/B only ever uses real closed-window returns.
+
+Run: uv run pytest scripts/calibration/test_oracle_ab_live.py -q
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import oracle_ab_live as live
+
+
+def test_to_entry_maps_action_to_verdict():
+    assert (
+        live._to_entry({"instrument": "WIF", "action": "act", "ts": "t"}, 1.5)["verdict"] == "act"
+    )
+    assert (
+        live._to_entry({"instrument": "JTO", "action": "decline", "ts": "t"}, -0.3)["verdict"]
+        == "defer"
+    )
+
+
+def test_enrich_excludes_pending_never_fabricates():
+    decs = [
+        {"instrument": "WIF", "action": "act", "ts": "t1"},
+        {"instrument": "JTO", "action": "decline", "ts": "t2"},
+        {"instrument": "PYTH", "action": "act", "ts": "t3"},
+    ]
+    # provider has an outcome for WIF + PYTH, but JTO's window is still open (None)
+    outcomes = {"WIF": 2.0, "PYTH": -1.0, "JTO": None}
+
+    def provider(sym, ts, hold_h):
+        return outcomes[sym]
+
+    entries, pending = live.enrich(decs, provider)
+    assert pending == 1  # JTO excluded, not faked
+    assert len(entries) == 2
+    assert {e["sym"] for e in entries} == {"WIF", "PYTH"}
+    assert all("pnl_real" in e for e in entries)
+
+
+def test_null_provider_yields_all_pending():
+    decs = [{"instrument": "WIF", "action": "act", "ts": "t1"}]
+    entries, pending = live.enrich(decs, live.null_candle_provider)
+    assert entries == [] and pending == 1
