@@ -39,7 +39,7 @@ def _post(payload: dict) -> object:
     req = urllib.request.Request(
         HL_INFO, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}
     )
-    with urllib.request.urlopen(req, timeout=20) as r:  # noqa: S310 — fixed HTTPS host
+    with urllib.request.urlopen(req, timeout=20) as r:
         return json.loads(r.read().decode())
 
 
@@ -55,7 +55,7 @@ def funding_history(coin: str, days: int) -> list[dict]:
             recs = _post(
                 {"type": "fundingHistory", "coin": coin, "startTime": cursor, "endTime": end}
             )
-        except Exception as e:  # noqa: BLE001 — one bad window must not abort the coin
+        except Exception as e:
             print(f"    {coin}: window {cursor} error ({type(e).__name__}); skipping window")
             cursor = end
             continue
