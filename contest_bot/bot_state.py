@@ -63,6 +63,16 @@ class BotState(BaseModel):
     realized_pnl_today: float = 0.0
     wins_today: int = 0
     losses_today: int = 0
+    # S0-4 (Sprint 0): liveness heartbeat. Written by the bot's main loop on
+    # every poll iteration via _record_heartbeat(). Dashboard alarms on
+    # stale (`now() - still_alive_at > 2 * POLL_SEC`) so a hung-but-not-
+    # crashed process is visible. Closes audit category
+    # `operational_liveness` FLAG → PASS. Empty string = never written
+    # (cold-start state before the first poll cycle).
+    still_alive_at: str = ""
+    # S0-4: monotonic poll counter, useful for forensic post-mortem
+    # ("how many polls did the bot complete before the deadlock?")
+    poll_count: int = 0
 
 
 class BotStateStore:
