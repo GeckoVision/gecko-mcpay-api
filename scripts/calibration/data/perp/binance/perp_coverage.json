@@ -1,0 +1,362 @@
+{
+  "generated_at": "2026-05-26T19:30:27.352397Z",
+  "venue": "binance",
+  "kind": "perp_ohlcv",
+  "timeframe": "4h",
+  "days_requested": 730,
+  "n_coins_requested": 50,
+  "n_coins_written": 50,
+  "universe_selected_at": "2026-05-26T19:17:52.084630Z",
+  "coins": {
+    "BTC": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "BTC/USDT:USDT",
+      "last_close": 75889.1
+    },
+    "ETH": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "ETH/USDT:USDT",
+      "last_close": 2069.05
+    },
+    "ZEC": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "ZEC/USDT:USDT",
+      "last_close": 584.07
+    },
+    "SOL": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "SOL/USDT:USDT",
+      "last_close": 83.45
+    },
+    "NEAR": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "NEAR/USDT:USDT",
+      "last_close": 2.631
+    },
+    "WLD": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "WLD/USDT:USDT",
+      "last_close": 0.3778
+    },
+    "XRP": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "XRP/USDT:USDT",
+      "last_close": 1.3291
+    },
+    "DOGE": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "DOGE/USDT:USDT",
+      "last_close": 0.10071
+    },
+    "BNB": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "BNB/USDT:USDT",
+      "last_close": 656.49
+    },
+    "TON": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "TON/USDT:USDT",
+      "last_close": 1.9812
+    },
+    "SUI": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "SUI/USDT:USDT",
+      "last_close": 1.0073
+    },
+    "TAO": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "TAO/USDT:USDT",
+      "last_close": 279.8
+    },
+    "ONDO": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "ONDO/USDT:USDT",
+      "last_close": 0.4065
+    },
+    "PHA": {
+      "n": 3075,
+      "first_ts": 1735545600000,
+      "last_ts": 1779811200000,
+      "symbol": "PHA/USDT:USDT",
+      "last_close": 0.05616
+    },
+    "ADA": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "ADA/USDT:USDT",
+      "last_close": 0.2391
+    },
+    "FIL": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "FIL/USDT:USDT",
+      "last_close": 1.002
+    },
+    "FET": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "FET/USDT:USDT",
+      "last_close": 0.2451
+    },
+    "RENDER": {
+      "n": 4017,
+      "first_ts": 1721980800000,
+      "last_ts": 1779811200000,
+      "symbol": "RENDER/USDT:USDT",
+      "last_close": 2.267
+    },
+    "INJ": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "INJ/USDT:USDT",
+      "last_close": 5.631
+    },
+    "LINK": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "LINK/USDT:USDT",
+      "last_close": 9.367
+    },
+    "AVAX": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "AVAX/USDT:USDT",
+      "last_close": 9.14
+    },
+    "ENA": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "ENA/USDT:USDT",
+      "last_close": 0.09733
+    },
+    "NIL": {
+      "n": 2570,
+      "first_ts": 1742817600000,
+      "last_ts": 1779811200000,
+      "symbol": "NIL/USDT:USDT",
+      "last_close": 0.07602
+    },
+    "TIA": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "TIA/USDT:USDT",
+      "last_close": 0.466
+    },
+    "VIRTUAL": {
+      "n": 3194,
+      "first_ts": 1733832000000,
+      "last_ts": 1779811200000,
+      "symbol": "VIRTUAL/USDT:USDT",
+      "last_close": 0.8055
+    },
+    "TRX": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "TRX/USDT:USDT",
+      "last_close": 0.37397
+    },
+    "PUMP": {
+      "n": 1924,
+      "first_ts": 1752120000000,
+      "last_ts": 1779811200000,
+      "symbol": "PUMP/USDT:USDT",
+      "last_close": 0.001794
+    },
+    "PAXG": {
+      "n": 2553,
+      "first_ts": 1743062400000,
+      "last_ts": 1779811200000,
+      "symbol": "PAXG/USDT:USDT",
+      "last_close": 4501.63
+    },
+    "BCH": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "BCH/USDT:USDT",
+      "last_close": 344.56
+    },
+    "DOT": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "DOT/USDT:USDT",
+      "last_close": 1.239
+    },
+    "EDEN": {
+      "n": 1431,
+      "first_ts": 1759219200000,
+      "last_ts": 1779811200000,
+      "symbol": "EDEN/USDT:USDT",
+      "last_close": 0.06729
+    },
+    "AAVE": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "AAVE/USDT:USDT",
+      "last_close": 85.94
+    },
+    "PENGU": {
+      "n": 3151,
+      "first_ts": 1734451200000,
+      "last_ts": 1779811200000,
+      "symbol": "PENGU/USDT:USDT",
+      "last_close": 0.00854
+    },
+    "ASTER": {
+      "n": 1496,
+      "first_ts": 1758283200000,
+      "last_ts": 1779811200000,
+      "symbol": "ASTER/USDT:USDT",
+      "last_close": 0.6796
+    },
+    "WLFI": {
+      "n": 1659,
+      "first_ts": 1755936000000,
+      "last_ts": 1779811200000,
+      "symbol": "WLFI/USDT:USDT",
+      "last_close": 0.0571
+    },
+    "LTC": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "LTC/USDT:USDT",
+      "last_close": 51.74
+    },
+    "UNI": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "UNI/USDT:USDT",
+      "last_close": 3.248
+    },
+    "GENIUS": {
+      "n": 245,
+      "first_ts": 1776297600000,
+      "last_ts": 1779811200000,
+      "symbol": "GENIUS/USDT:USDT",
+      "last_close": 0.6919
+    },
+    "ERA": {
+      "n": 1880,
+      "first_ts": 1752753600000,
+      "last_ts": 1779811200000,
+      "symbol": "ERA/USDT:USDT",
+      "last_close": 0.1361
+    },
+    "IO": {
+      "n": 4286,
+      "first_ts": 1718107200000,
+      "last_ts": 1779811200000,
+      "symbol": "IO/USDT:USDT",
+      "last_close": 0.1787
+    },
+    "EIGEN": {
+      "n": 3616,
+      "first_ts": 1727755200000,
+      "last_ts": 1779811200000,
+      "symbol": "EIGEN/USDT:USDT",
+      "last_close": 0.2493
+    },
+    "XPL": {
+      "n": 1665,
+      "first_ts": 1755849600000,
+      "last_ts": 1779811200000,
+      "symbol": "XPL/USDT:USDT",
+      "last_close": 0.0871
+    },
+    "TRUMP": {
+      "n": 2960,
+      "first_ts": 1737201600000,
+      "last_ts": 1779811200000,
+      "symbol": "TRUMP/USDT:USDT",
+      "last_close": 2.002
+    },
+    "MMT": {
+      "n": 1220,
+      "first_ts": 1762257600000,
+      "last_ts": 1779811200000,
+      "symbol": "MMT/USDT:USDT",
+      "last_close": 0.1269
+    },
+    "ARB": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "ARB/USDT:USDT",
+      "last_close": 0.1079
+    },
+    "ICP": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "ICP/USDT:USDT",
+      "last_close": 2.666
+    },
+    "OPG": {
+      "n": 206,
+      "first_ts": 1776859200000,
+      "last_ts": 1779811200000,
+      "symbol": "OPG/USDT:USDT",
+      "last_close": 0.2233
+    },
+    "ATOM": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "ATOM/USDT:USDT",
+      "last_close": 2.191
+    },
+    "SAGA": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "SAGA/USDT:USDT",
+      "last_close": 0.02032
+    },
+    "DASH": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "symbol": "DASH/USDT:USDT",
+      "last_close": 43.66
+    }
+  }
+}

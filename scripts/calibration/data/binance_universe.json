@@ -1,0 +1,306 @@
+{
+  "selected_at": "2026-05-26T19:17:52.084630Z",
+  "n": 50,
+  "ranking": [
+    {
+      "symbol": "BTC",
+      "perp_symbol": "BTC/USDT:USDT",
+      "spot_symbol": "BTC/USDT",
+      "vol_quote_24h": 12484569782.07
+    },
+    {
+      "symbol": "ETH",
+      "perp_symbol": "ETH/USDT:USDT",
+      "spot_symbol": "ETH/USDT",
+      "vol_quote_24h": 9782496140.84
+    },
+    {
+      "symbol": "ZEC",
+      "perp_symbol": "ZEC/USDT:USDT",
+      "spot_symbol": "ZEC/USDT",
+      "vol_quote_24h": 1742246969.01
+    },
+    {
+      "symbol": "SOL",
+      "perp_symbol": "SOL/USDT:USDT",
+      "spot_symbol": "SOL/USDT",
+      "vol_quote_24h": 1635373524.1207
+    },
+    {
+      "symbol": "NEAR",
+      "perp_symbol": "NEAR/USDT:USDT",
+      "spot_symbol": "NEAR/USDT",
+      "vol_quote_24h": 1084572296.362
+    },
+    {
+      "symbol": "WLD",
+      "perp_symbol": "WLD/USDT:USDT",
+      "spot_symbol": "WLD/USDT",
+      "vol_quote_24h": 1064322874.799
+    },
+    {
+      "symbol": "XRP",
+      "perp_symbol": "XRP/USDT:USDT",
+      "spot_symbol": "XRP/USDT",
+      "vol_quote_24h": 548042267.9895
+    },
+    {
+      "symbol": "DOGE",
+      "perp_symbol": "DOGE/USDT:USDT",
+      "spot_symbol": "DOGE/USDT",
+      "vol_quote_24h": 380726444.31123
+    },
+    {
+      "symbol": "BNB",
+      "perp_symbol": "BNB/USDT:USDT",
+      "spot_symbol": "BNB/USDT",
+      "vol_quote_24h": 321576212.167
+    },
+    {
+      "symbol": "TON",
+      "perp_symbol": "TON/USDT:USDT",
+      "spot_symbol": "TON/USDT",
+      "vol_quote_24h": 287743960.76402
+    },
+    {
+      "symbol": "SUI",
+      "perp_symbol": "SUI/USDT:USDT",
+      "spot_symbol": "SUI/USDT",
+      "vol_quote_24h": 285258174.5222
+    },
+    {
+      "symbol": "TAO",
+      "perp_symbol": "TAO/USDT:USDT",
+      "spot_symbol": "TAO/USDT",
+      "vol_quote_24h": 258714691.03
+    },
+    {
+      "symbol": "ONDO",
+      "perp_symbol": "ONDO/USDT:USDT",
+      "spot_symbol": "ONDO/USDT",
+      "vol_quote_24h": 219288241.75311
+    },
+    {
+      "symbol": "PHA",
+      "perp_symbol": "PHA/USDT:USDT",
+      "spot_symbol": "PHA/USDT",
+      "vol_quote_24h": 204574006.22198
+    },
+    {
+      "symbol": "ADA",
+      "perp_symbol": "ADA/USDT:USDT",
+      "spot_symbol": "ADA/USDT",
+      "vol_quote_24h": 169242932.4886
+    },
+    {
+      "symbol": "FIL",
+      "perp_symbol": "FIL/USDT:USDT",
+      "spot_symbol": "FIL/USDT",
+      "vol_quote_24h": 160310712.556
+    },
+    {
+      "symbol": "FET",
+      "perp_symbol": "FET/USDT:USDT",
+      "spot_symbol": "FET/USDT",
+      "vol_quote_24h": 151783786.3108
+    },
+    {
+      "symbol": "RENDER",
+      "perp_symbol": "RENDER/USDT:USDT",
+      "spot_symbol": "RENDER/USDT",
+      "vol_quote_24h": 148985061.4285
+    },
+    {
+      "symbol": "INJ",
+      "perp_symbol": "INJ/USDT:USDT",
+      "spot_symbol": "INJ/USDT",
+      "vol_quote_24h": 140493754.0634
+    },
+    {
+      "symbol": "LINK",
+      "perp_symbol": "LINK/USDT:USDT",
+      "spot_symbol": "LINK/USDT",
+      "vol_quote_24h": 129517981.591
+    },
+    {
+      "symbol": "AVAX",
+      "perp_symbol": "AVAX/USDT:USDT",
+      "spot_symbol": "AVAX/USDT",
+      "vol_quote_24h": 119526693.099
+    },
+    {
+      "symbol": "ENA",
+      "perp_symbol": "ENA/USDT:USDT",
+      "spot_symbol": "ENA/USDT",
+      "vol_quote_24h": 110386871.77734
+    },
+    {
+      "symbol": "NIL",
+      "perp_symbol": "NIL/USDT:USDT",
+      "spot_symbol": "NIL/USDT",
+      "vol_quote_24h": 106325119.600908
+    },
+    {
+      "symbol": "TIA",
+      "perp_symbol": "TIA/USDT:USDT",
+      "spot_symbol": "TIA/USDT",
+      "vol_quote_24h": 90504050.1959
+    },
+    {
+      "symbol": "VIRTUAL",
+      "perp_symbol": "VIRTUAL/USDT:USDT",
+      "spot_symbol": "VIRTUAL/USDT",
+      "vol_quote_24h": 87537710.61451
+    },
+    {
+      "symbol": "TRX",
+      "perp_symbol": "TRX/USDT:USDT",
+      "spot_symbol": "TRX/USDT",
+      "vol_quote_24h": 86280967.1065
+    },
+    {
+      "symbol": "PUMP",
+      "perp_symbol": "PUMP/USDT:USDT",
+      "spot_symbol": "PUMP/USDT",
+      "vol_quote_24h": 78718363.967751
+    },
+    {
+      "symbol": "PAXG",
+      "perp_symbol": "PAXG/USDT:USDT",
+      "spot_symbol": "PAXG/USDT",
+      "vol_quote_24h": 78516613.4001
+    },
+    {
+      "symbol": "BCH",
+      "perp_symbol": "BCH/USDT:USDT",
+      "spot_symbol": "BCH/USDT",
+      "vol_quote_24h": 75392737.51
+    },
+    {
+      "symbol": "DOT",
+      "perp_symbol": "DOT/USDT:USDT",
+      "spot_symbol": "DOT/USDT",
+      "vol_quote_24h": 72787015.006
+    },
+    {
+      "symbol": "EDEN",
+      "perp_symbol": "EDEN/USDT:USDT",
+      "spot_symbol": "EDEN/USDT",
+      "vol_quote_24h": 70180297.30971
+    },
+    {
+      "symbol": "AAVE",
+      "perp_symbol": "AAVE/USDT:USDT",
+      "spot_symbol": "AAVE/USDT",
+      "vol_quote_24h": 67234388.865
+    },
+    {
+      "symbol": "PENGU",
+      "perp_symbol": "PENGU/USDT:USDT",
+      "spot_symbol": "PENGU/USDT",
+      "vol_quote_24h": 65233493.032148
+    },
+    {
+      "symbol": "ASTER",
+      "perp_symbol": "ASTER/USDT:USDT",
+      "spot_symbol": "ASTER/USDT",
+      "vol_quote_24h": 62813715.6011
+    },
+    {
+      "symbol": "WLFI",
+      "perp_symbol": "WLFI/USDT:USDT",
+      "spot_symbol": "WLFI/USDT",
+      "vol_quote_24h": 62329536.6129
+    },
+    {
+      "symbol": "LTC",
+      "perp_symbol": "LTC/USDT:USDT",
+      "spot_symbol": "LTC/USDT",
+      "vol_quote_24h": 61058770.43
+    },
+    {
+      "symbol": "UNI",
+      "perp_symbol": "UNI/USDT:USDT",
+      "spot_symbol": "UNI/USDT",
+      "vol_quote_24h": 57650658.352
+    },
+    {
+      "symbol": "GENIUS",
+      "perp_symbol": "GENIUS/USDT:USDT",
+      "spot_symbol": "GENIUS/USDT",
+      "vol_quote_24h": 55493567.552
+    },
+    {
+      "symbol": "ERA",
+      "perp_symbol": "ERA/USDT:USDT",
+      "spot_symbol": "ERA/USDT",
+      "vol_quote_24h": 55096119.942
+    },
+    {
+      "symbol": "IO",
+      "perp_symbol": "IO/USDT:USDT",
+      "spot_symbol": "IO/USDT",
+      "vol_quote_24h": 54988756.3302
+    },
+    {
+      "symbol": "EIGEN",
+      "perp_symbol": "EIGEN/USDT:USDT",
+      "spot_symbol": "EIGEN/USDT",
+      "vol_quote_24h": 53005528.1521
+    },
+    {
+      "symbol": "XPL",
+      "perp_symbol": "XPL/USDT:USDT",
+      "spot_symbol": "XPL/USDT",
+      "vol_quote_24h": 50089668.1469
+    },
+    {
+      "symbol": "TRUMP",
+      "perp_symbol": "TRUMP/USDT:USDT",
+      "spot_symbol": "TRUMP/USDT",
+      "vol_quote_24h": 49962515.25661
+    },
+    {
+      "symbol": "MMT",
+      "perp_symbol": "MMT/USDT:USDT",
+      "spot_symbol": "MMT/USDT",
+      "vol_quote_24h": 48603220.2704
+    },
+    {
+      "symbol": "ARB",
+      "perp_symbol": "ARB/USDT:USDT",
+      "spot_symbol": "ARB/USDT",
+      "vol_quote_24h": 45880711.38439
+    },
+    {
+      "symbol": "ICP",
+      "perp_symbol": "ICP/USDT:USDT",
+      "spot_symbol": "ICP/USDT",
+      "vol_quote_24h": 45597067.14
+    },
+    {
+      "symbol": "OPG",
+      "perp_symbol": "OPG/USDT:USDT",
+      "spot_symbol": "OPG/USDT",
+      "vol_quote_24h": 44746123.3913
+    },
+    {
+      "symbol": "ATOM",
+      "perp_symbol": "ATOM/USDT:USDT",
+      "spot_symbol": "ATOM/USDT",
+      "vol_quote_24h": 44695562.414
+    },
+    {
+      "symbol": "SAGA",
+      "perp_symbol": "SAGA/USDT:USDT",
+      "spot_symbol": "SAGA/USDT",
+      "vol_quote_24h": 43384120.773377
+    },
+    {
+      "symbol": "DASH",
+      "perp_symbol": "DASH/USDT:USDT",
+      "spot_symbol": "DASH/USDT",
+      "vol_quote_24h": 41062016.45
+    }
+  ]
+}
