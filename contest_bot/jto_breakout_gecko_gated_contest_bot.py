@@ -556,6 +556,123 @@ def _persist_state() -> None:
     )
 
 
+# S0-5 (Sprint 0): explicit state machine with dwell-time SLOs + alerts.
+# The bot has three logical states besides startup:
+#   - running          : the default — poll cycles executing normally
+#   - cooling-down     : circuit breaker tripped, awaiting pause expiry
+#   - session-loss-pause: consec_losses >= SESSION_LOSS_PAUSE, sitting out
+# Plus a transient "boot" state that should resolve within seconds.
+#
+# Per-state SLOs name "longer than this is a silent failure to investigate."
+# Cooling-down's 60min pause + 15min buffer = 75min SLO (alert if breaker
+# stays tripped beyond expected pause). Session-loss-pause 4h SLO catches
+# the case where consec_losses got stuck (bug in close_position reset) and
+# never recovers. Running has no SLO — it's the desired state.
+#
+# Audit-prompt category `operational_liveness` FAIL → PASS: dwell overruns
+# become explicit log events (state_dwell_alert in DecisionKind from S0-1)
+# instead of silent stuck-states. Generalises the circuit-breaker deadlock
+# incident (May session) into a structural fix.
+_STATE_SLOS_SEC: dict[str, float | None] = {
+    "boot": 60.0,
+    "running": None,  # running is the desired state — no SLO
+    "cooling-down": 75 * 60.0,  # 60min configured pause + 15min buffer
+    "session-loss-pause": 4 * 3600.0,  # 4h — way longer than a normal session
+}
+_state_machine: dict = {
+    "current_state": "boot",
+    "entered_at": datetime.now(UTC).isoformat(),
+    "entered_at_ts": time.time(),
+    "last_alert_at_ts": 0.0,
+    "alerts_emitted": 0,
+}
+
+
+def _transition_state(new_state: str, reason: str) -> None:
+    """S0-5: log a state transition and reset the dwell timer. Idempotent —
+    calling with the same `new_state` is a no-op. Best-effort logging."""
+    global _state_machine
+    old_state = _state_machine["current_state"]
+    if old_state == new_state:
+        return
+    now_ts = time.time()
+    now_iso = datetime.now(UTC).isoformat()
+    dwell_sec = now_ts - _state_machine.get("entered_at_ts", now_ts)
+    try:
+        _LOGGER.log(
+            "state_transition",
+            {
+                "from": old_state,
+                "to": new_state,
+                "reason": reason,
+                "dwell_sec_in_from": round(dwell_sec, 1),
+                "ts": now_iso,
+            },
+        )
+    except Exception as exc:
+        print(f"[state_machine] transition log failed (non-fatal): {exc}")
+    _state_machine.update(
+        {
+            "current_state": new_state,
+            "entered_at": now_iso,
+            "entered_at_ts": now_ts,
+            "last_alert_at_ts": 0.0,
+            "alerts_emitted": 0,
+        }
+    )
+    print(f"[state_machine] {old_state} → {new_state} (was in {dwell_sec:.0f}s) reason={reason}")
+
+
+def _check_dwell_slo() -> None:
+    """S0-5: emit a state_dwell_alert when the current state has been
+    active longer than its SLO. Rate-limited to one alert per 5min per
+    state so a persistent overrun doesn't spam the artifact log."""
+    state = _state_machine["current_state"]
+    slo = _STATE_SLOS_SEC.get(state)
+    if slo is None:
+        return
+    now_ts = time.time()
+    dwell_sec = now_ts - _state_machine.get("entered_at_ts", now_ts)
+    if dwell_sec < slo:
+        return
+    if (now_ts - _state_machine.get("last_alert_at_ts", 0.0)) < 300.0:
+        return
+    try:
+        _LOGGER.log(
+            "state_dwell_alert",
+            {
+                "state": state,
+                "dwell_sec": round(dwell_sec, 1),
+                "slo_sec": slo,
+                "overrun_sec": round(dwell_sec - slo, 1),
+                "ts": datetime.now(UTC).isoformat(),
+            },
+        )
+    except Exception as exc:
+        print(f"[state_machine] dwell-alert log failed (non-fatal): {exc}")
+    _state_machine["last_alert_at_ts"] = now_ts
+    _state_machine["alerts_emitted"] = _state_machine.get("alerts_emitted", 0) + 1
+    print(f"[state_machine] ⚠ DWELL ALERT: '{state}' active for {dwell_sec:.0f}s (SLO {slo:.0f}s)")
+
+
+def _detect_state_and_transition() -> str:
+    """S0-5: detect the bot's logical state from existing pause conditions
+    and transition if needed. Idempotent. Returns the (new or unchanged)
+    current state. Called every iteration AFTER _record_heartbeat."""
+    paused_breaker, breaker_reason = _BREAKER.check()
+    if paused_breaker:
+        _transition_state("cooling-down", breaker_reason)
+        return "cooling-down"
+    if consec_losses >= SESSION_LOSS_PAUSE:
+        _transition_state(
+            "session-loss-pause",
+            f"consec_losses={consec_losses} >= SESSION_LOSS_PAUSE={SESSION_LOSS_PAUSE}",
+        )
+        return "session-loss-pause"
+    _transition_state("running", "default")
+    return "running"
+
+
 def _record_heartbeat() -> None:
     """S0-4: write `still_alive_at = now()` on every poll iteration.
 
@@ -587,7 +704,7 @@ def _record_heartbeat() -> None:
         print(f"[heartbeat] state persist failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
-DASHBOARD_HTML = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>My Strategy Dashboard</title><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#0a0e14;color:#ccd6f6;font-family:'SF Mono','Fira Code',monospace;font-size:13px;padding:16px}h2{color:#00e676;margin-bottom:10px;font-size:15px}.panel{background:#12171f;border:1px solid #252d3a;border-radius:8px;padding:14px;margin-bottom:12px}.row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #1a2030}.row:last-child{border-bottom:none}.label{color:#8892b0}.green{color:#00e676}.red{color:#ff5252}.yellow{color:#ffd740}.blue{color:#448aff}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}table{width:100%;border-collapse:collapse}th{color:#448aff;text-align:left;padding:6px 8px;border-bottom:1px solid #252d3a;font-weight:normal}td{padding:5px 8px;border-bottom:1px solid #1a2030}.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px}.badge-paper{background:#1a2a4a;color:#448aff}.badge-live{background:#2a1a1a;color:#ff5252}.feed-item{padding:3px 0;border-bottom:1px solid #1a2030;font-size:12px}.ts{color:#4a5568;margin-right:8px}.reading{font-size:11px;color:#8892b0;margin-top:2px;padding-left:8px;font-style:italic}</style></head><body><div class='panel'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><h2>&#x1F40B; My Strategy</h2><div><span id='mode-badge' class='badge'></span><span id='heartbeat' class='badge' style='margin-left:6px'>—</span></div></div><div class='grid2'><div><div class='row'><span class='label'>Entry</span><span id='entry-type'></span></div><div class='row'><span class='label'>Stop Loss</span><span class='red' id='sl'></span></div><div class='row'><span class='label'>Take Profit</span><span class='green' id='tp'></span></div><div class='row'><span class='label'>Poll</span><span id='poll'></span></div></div><div><div class='row'><span class='label'>Wallet</span><span class='blue' id='wallet'></span></div><div class='row'><span class='label'>Session PnL</span><span id='session-pnl'></span></div><div class='row'><span class='label'>Trades</span><span id='trades'></span></div><div class='row'><span class='label'>Win Rate</span><span id='winrate'></span></div></div></div></div><div class='panel'><h2>Open Positions (<span id='open-count'>0</span>)</h2><table><thead><tr><th>Symbol</th><th>Entry</th><th>Current</th><th>PnL</th><th>TP target</th><th>SL trigger</th><th>Time-stop</th><th>Since</th></tr></thead><tbody id='pos-body'></tbody></table></div><div class='panel'><h2>&#x1F5E3;&#xFE0F; Agent Voices &mdash; latest decisions</h2><div id='voices'></div></div><div class='panel'><h2>&#x1F4CA; Indexes (ADX / RSI / MFI / CHOP / bbw)</h2><div id='indexes'></div></div><div class='panel'><h2>&#x1F52E; Gecko Oracle &mdash; fundamentals verdict (live, grounded)</h2><div id='oracle'></div></div><div class='panel'><h2>Signal Feed</h2><div id='feed'></div></div><script>async function refresh(){try{const r=await fetch('/api/state');const d=await r.json();const mb=document.getElementById('mode-badge');mb.textContent=d.mode==='paper'?'PAPER 📄':'LIVE 🔴';mb.className='badge badge-'+(d.mode==='paper'?'paper':'live');var hb=d.liveness||{};var hbEl=document.getElementById('heartbeat');if(hbEl){if(hb.still_alive_at){var ageSec=(Date.now()-new Date(hb.still_alive_at).getTime())/1000;var thr=hb.stale_threshold_sec||60;hbEl.textContent=ageSec<thr?('❤ '+Math.round(ageSec)+'s'):('⚠ STALE '+Math.round(ageSec)+'s');hbEl.style.color=ageSec<thr?'#00e676':'#ff5252';}else{hbEl.textContent='— never beat';hbEl.style.color='#ffd740';}}document.getElementById('entry-type').textContent=d.entry_type||'';document.getElementById('sl').textContent='-'+d.sl_pct+'%';document.getElementById('tp').textContent='+'+d.tp_pct+'%';document.getElementById('poll').textContent=d.poll_sec+'s';document.getElementById('wallet').textContent=d.wallet||'—';const s=d.stats||{};const pnl=s.pnl_usd||0;const pe=document.getElementById('session-pnl');pe.textContent=(pnl>=0?'+':'')+'$'+pnl.toFixed(2);pe.className=pnl>=0?'green':'red';document.getElementById('trades').textContent=(s.daily_trades||0)+'/'+(s.daily_limit||0)+' today';const wr=(s.wins&&s.total_trades)?Math.round(s.wins/s.total_trades*100):0;document.getElementById('winrate').textContent=s.total_trades?(wr+'% ('+s.wins+'W/'+s.losses+'L)'):'—';const open=(d.positions||[]).filter(p=>p.status==='open');document.getElementById('open-count').textContent=open.length;document.getElementById('pos-body').innerHTML=open.map(p=>{const pct=p.pnl_pct||0;const cl=pct>=0?'green':'red';const since=(p.entry_ts||'').slice(11,19);const tpStr=(p.tp_price||0).toFixed(6);const slStr=(p.sl_price||0).toFixed(6);const tse=(p.time_stop_eta||'').slice(11,19);return '<tr><td>'+(p.symbol||p.token.slice(0,12))+'</td><td>'+(p.entry_price||0).toFixed(6)+'</td><td>'+(p.current_price||0).toFixed(6)+'</td><td class='+cl+'>'+(pct>=0?'+':'')+pct.toFixed(1)+'%</td><td class=green>'+tpStr+'</td><td class=red>'+slStr+'</td><td>'+tse+'</td><td>'+since+'</td></tr>';}).join('');const feed=document.getElementById('feed');feed.innerHTML=(d.signal_feed||[]).slice(-30).reverse().map(e=>{const cl=e.type==='buy'?'green':e.type==='sell'?'red':e.type==='filter'?'yellow':'';return '<div class=feed-item><span class=ts>'+(e.ts||'').slice(11,19)+'</span><span class='+cl+'>'+e.msg+'</span></div>';}).join('');const vc=function(v){return v==='bullish'?'green':v==='bearish'?'red':v==='abstain'?'blue':'yellow';};const vbox=document.getElementById('voices');vbox.innerHTML=(d.panel||[]).slice(0,6).map(function(p){const act=p.action==='act'?'green':'red';const reg=p.regime==='TREND'?'green':p.regime==='CHOP'?'red':'yellow';const voices=(p.voices||[]).map(function(o){const rtext=o.name==='chart_analyst'&&o.reasoning?'<div class=reading>'+o.reasoning+'</div>':'';return '<span style=margin-right:10px>'+o.name.replace('_voice','').replace('_analyst','')+': <span class='+vc(o.verdict)+'>'+o.verdict+'</span> '+(o.confidence!=null?o.confidence.toFixed(2):'')+'</span>'+rtext;}).join('');return '<div class=feed-item><span class=ts>'+(p.ts||'').slice(11,19)+'</span><b>'+p.instrument+'</b> regime <span class='+reg+'>'+p.regime+'</span> &rarr; <span class='+act+'>'+p.action+'</span> <span class=label>('+(p.rule||'')+')</span><br>&nbsp;&nbsp;'+voices+'</div>';}).join('')||'<div class=feed-item>no panel decisions yet</div>';var ixbox=document.getElementById('indexes');var adxCl=function(v){return v==null?'label':v>=25?'green':v<=18?'red':'yellow';};var rsiCl=function(v){return v==null?'label':v>70?'red':'green';};var mfiCl=function(v){return v==null?'label':v>=55?'green':'label';};var chopCl=function(v){return v==null?'label':v>61.8?'red':v<38.2?'green':'yellow';};var bbwCl=function(v){return v==null?'label':v>2.0?'green':v<1.0?'yellow':'label';};ixbox.innerHTML=(d.indexes||[]).map(function(ix){var adxv=ix.adx!=null?ix.adx.toFixed(1):(ix.bars_seen!=null&&ix.bars_min_adx!=null&&ix.bars_seen<ix.bars_min_adx?'warming '+ix.bars_seen+'/'+ix.bars_min_adx:'n/a');var rsiv=ix.rsi!=null?ix.rsi.toFixed(1):'n/a';var mfiv=ix.mfi!=null?ix.mfi.toFixed(1):'n/a';var chopv=ix.chop!=null?ix.chop.toFixed(1):'n/a';var bbwv=ix.bb_width!=null?ix.bb_width.toFixed(2)+'%':'n/a';var regCl=ix.regime==='TREND'?'green':ix.regime==='CHOP'?'red':'yellow';var stackCl=ix.ema_stack==='up'?'green':ix.ema_stack==='down'?'red':'yellow';return '<div class=feed-item><b>'+ix.instrument+'</b> <span class=label>$'+(ix.price!=null?ix.price.toFixed(5):'n/a')+'</span> regime <span class='+regCl+'>'+ix.regime+'</span> EMA <span class='+stackCl+'>'+ix.ema_stack+'</span><br>&nbsp;&nbsp;ADX <span class='+adxCl(ix.adx)+'>'+adxv+'</span> RSI <span class='+rsiCl(ix.rsi)+'>'+rsiv+'</span> MFI <span class='+mfiCl(ix.mfi)+'>'+mfiv+'</span> CHOP <span class='+chopCl(ix.chop)+'>'+chopv+'</span> bbw <span class='+bbwCl(ix.bb_width)+'>'+bbwv+'</span><br>&nbsp;&nbsp;<span class=green>bull: '+ix.bull_trigger+'</span><br>&nbsp;&nbsp;<span class=red>bear: '+ix.bear_trigger+'</span><br>&nbsp;&nbsp;1h <span class='+(ix.regime_1h==='TREND-UP'?'green':ix.regime_1h==='TREND-DOWN'?'red':'yellow')+'>'+( ix.regime_1h||'?')+'</span> flow <span class='+(ix.net_flow_verdict==='accumulation'?'green':ix.net_flow_verdict==='distribution'?'red':'label')+'>'+( ix.net_flow_verdict||'n/a')+'</span></div>';}).join('')||'<div class=feed-item>waiting for first poll...</div>';var oc2=function(v){return v==='act'?'green':v==='pass'?'red':'yellow';};var obox=document.getElementById('oracle');obox.innerHTML=(d.oracle||[]).slice(0,8).map(function(o){var kd=(o.key_drivers||[]).slice(0,1).join('');return '<div class=feed-item><b>'+o.instrument+'</b> <span class='+oc2(o.verdict)+'>'+o.verdict+'</span> '+(o.confidence!=null?o.confidence.toFixed(2):'')+' <span class=label>('+(o.citations||0)+' cites'+(o.grounded?'':', ungrounded — no gate')+')</span>'+(kd?'<br>&nbsp;&nbsp;<span class=label>'+kd+'</span>':'')+'</div>';}).join('')||'<div class=feed-item>no oracle verdicts yet</div>';}catch(err){console.error(err);}}setInterval(refresh,5000);refresh();</script></body></html>"
+DASHBOARD_HTML = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>My Strategy Dashboard</title><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#0a0e14;color:#ccd6f6;font-family:'SF Mono','Fira Code',monospace;font-size:13px;padding:16px}h2{color:#00e676;margin-bottom:10px;font-size:15px}.panel{background:#12171f;border:1px solid #252d3a;border-radius:8px;padding:14px;margin-bottom:12px}.row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #1a2030}.row:last-child{border-bottom:none}.label{color:#8892b0}.green{color:#00e676}.red{color:#ff5252}.yellow{color:#ffd740}.blue{color:#448aff}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}table{width:100%;border-collapse:collapse}th{color:#448aff;text-align:left;padding:6px 8px;border-bottom:1px solid #252d3a;font-weight:normal}td{padding:5px 8px;border-bottom:1px solid #1a2030}.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px}.badge-paper{background:#1a2a4a;color:#448aff}.badge-live{background:#2a1a1a;color:#ff5252}.feed-item{padding:3px 0;border-bottom:1px solid #1a2030;font-size:12px}.ts{color:#4a5568;margin-right:8px}.reading{font-size:11px;color:#8892b0;margin-top:2px;padding-left:8px;font-style:italic}</style></head><body><div class='panel'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><h2>&#x1F40B; My Strategy</h2><div><span id='mode-badge' class='badge'></span><span id='heartbeat' class='badge' style='margin-left:6px'>—</span><span id='state-badge' class='badge' style='margin-left:6px'>—</span></div></div><div class='grid2'><div><div class='row'><span class='label'>Entry</span><span id='entry-type'></span></div><div class='row'><span class='label'>Stop Loss</span><span class='red' id='sl'></span></div><div class='row'><span class='label'>Take Profit</span><span class='green' id='tp'></span></div><div class='row'><span class='label'>Poll</span><span id='poll'></span></div></div><div><div class='row'><span class='label'>Wallet</span><span class='blue' id='wallet'></span></div><div class='row'><span class='label'>Session PnL</span><span id='session-pnl'></span></div><div class='row'><span class='label'>Trades</span><span id='trades'></span></div><div class='row'><span class='label'>Win Rate</span><span id='winrate'></span></div></div></div></div><div class='panel'><h2>Open Positions (<span id='open-count'>0</span>)</h2><table><thead><tr><th>Symbol</th><th>Entry</th><th>Current</th><th>PnL</th><th>TP target</th><th>SL trigger</th><th>Time-stop</th><th>Since</th></tr></thead><tbody id='pos-body'></tbody></table></div><div class='panel'><h2>&#x1F5E3;&#xFE0F; Agent Voices &mdash; latest decisions</h2><div id='voices'></div></div><div class='panel'><h2>&#x1F4CA; Indexes (ADX / RSI / MFI / CHOP / bbw)</h2><div id='indexes'></div></div><div class='panel'><h2>&#x1F52E; Gecko Oracle &mdash; fundamentals verdict (live, grounded)</h2><div id='oracle'></div></div><div class='panel'><h2>Signal Feed</h2><div id='feed'></div></div><script>async function refresh(){try{const r=await fetch('/api/state');const d=await r.json();const mb=document.getElementById('mode-badge');mb.textContent=d.mode==='paper'?'PAPER 📄':'LIVE 🔴';mb.className='badge badge-'+(d.mode==='paper'?'paper':'live');var hb=d.liveness||{};var hbEl=document.getElementById('heartbeat');if(hbEl){if(hb.still_alive_at){var ageSec=(Date.now()-new Date(hb.still_alive_at).getTime())/1000;var thr=hb.stale_threshold_sec||60;hbEl.textContent=ageSec<thr?('❤ '+Math.round(ageSec)+'s'):('⚠ STALE '+Math.round(ageSec)+'s');hbEl.style.color=ageSec<thr?'#00e676':'#ff5252';}else{hbEl.textContent='— never beat';hbEl.style.color='#ffd740';}}var sm=d.state_machine||{};var smEl=document.getElementById('state-badge');if(smEl){var st=sm.current_state||'?';var dw=sm.dwell_sec!=null?Math.round(sm.dwell_sec):0;var slo=sm.slo_sec;var over=slo!=null&&dw>slo;var alerts=sm.alerts_emitted||0;var dwLbl=dw<60?(dw+'s'):dw<3600?(Math.round(dw/60)+'m'):(Math.round(dw/3600)+'h');smEl.textContent=st+' '+dwLbl+(over?(' ⚠ SLO '+(alerts>0?('('+alerts+')'):'')):'');smEl.style.color=over?'#ff5252':(st==='running'?'#00e676':(st==='boot'?'#ffd740':'#ffd740'));}document.getElementById('entry-type').textContent=d.entry_type||'';document.getElementById('sl').textContent='-'+d.sl_pct+'%';document.getElementById('tp').textContent='+'+d.tp_pct+'%';document.getElementById('poll').textContent=d.poll_sec+'s';document.getElementById('wallet').textContent=d.wallet||'—';const s=d.stats||{};const pnl=s.pnl_usd||0;const pe=document.getElementById('session-pnl');pe.textContent=(pnl>=0?'+':'')+'$'+pnl.toFixed(2);pe.className=pnl>=0?'green':'red';document.getElementById('trades').textContent=(s.daily_trades||0)+'/'+(s.daily_limit||0)+' today';const wr=(s.wins&&s.total_trades)?Math.round(s.wins/s.total_trades*100):0;document.getElementById('winrate').textContent=s.total_trades?(wr+'% ('+s.wins+'W/'+s.losses+'L)'):'—';const open=(d.positions||[]).filter(p=>p.status==='open');document.getElementById('open-count').textContent=open.length;document.getElementById('pos-body').innerHTML=open.map(p=>{const pct=p.pnl_pct||0;const cl=pct>=0?'green':'red';const since=(p.entry_ts||'').slice(11,19);const tpStr=(p.tp_price||0).toFixed(6);const slStr=(p.sl_price||0).toFixed(6);const tse=(p.time_stop_eta||'').slice(11,19);return '<tr><td>'+(p.symbol||p.token.slice(0,12))+'</td><td>'+(p.entry_price||0).toFixed(6)+'</td><td>'+(p.current_price||0).toFixed(6)+'</td><td class='+cl+'>'+(pct>=0?'+':'')+pct.toFixed(1)+'%</td><td class=green>'+tpStr+'</td><td class=red>'+slStr+'</td><td>'+tse+'</td><td>'+since+'</td></tr>';}).join('');const feed=document.getElementById('feed');feed.innerHTML=(d.signal_feed||[]).slice(-30).reverse().map(e=>{const cl=e.type==='buy'?'green':e.type==='sell'?'red':e.type==='filter'?'yellow':'';return '<div class=feed-item><span class=ts>'+(e.ts||'').slice(11,19)+'</span><span class='+cl+'>'+e.msg+'</span></div>';}).join('');const vc=function(v){return v==='bullish'?'green':v==='bearish'?'red':v==='abstain'?'blue':'yellow';};const vbox=document.getElementById('voices');vbox.innerHTML=(d.panel||[]).slice(0,6).map(function(p){const act=p.action==='act'?'green':'red';const reg=p.regime==='TREND'?'green':p.regime==='CHOP'?'red':'yellow';const voices=(p.voices||[]).map(function(o){const rtext=o.name==='chart_analyst'&&o.reasoning?'<div class=reading>'+o.reasoning+'</div>':'';return '<span style=margin-right:10px>'+o.name.replace('_voice','').replace('_analyst','')+': <span class='+vc(o.verdict)+'>'+o.verdict+'</span> '+(o.confidence!=null?o.confidence.toFixed(2):'')+'</span>'+rtext;}).join('');return '<div class=feed-item><span class=ts>'+(p.ts||'').slice(11,19)+'</span><b>'+p.instrument+'</b> regime <span class='+reg+'>'+p.regime+'</span> &rarr; <span class='+act+'>'+p.action+'</span> <span class=label>('+(p.rule||'')+')</span><br>&nbsp;&nbsp;'+voices+'</div>';}).join('')||'<div class=feed-item>no panel decisions yet</div>';var ixbox=document.getElementById('indexes');var adxCl=function(v){return v==null?'label':v>=25?'green':v<=18?'red':'yellow';};var rsiCl=function(v){return v==null?'label':v>70?'red':'green';};var mfiCl=function(v){return v==null?'label':v>=55?'green':'label';};var chopCl=function(v){return v==null?'label':v>61.8?'red':v<38.2?'green':'yellow';};var bbwCl=function(v){return v==null?'label':v>2.0?'green':v<1.0?'yellow':'label';};ixbox.innerHTML=(d.indexes||[]).map(function(ix){var adxv=ix.adx!=null?ix.adx.toFixed(1):(ix.bars_seen!=null&&ix.bars_min_adx!=null&&ix.bars_seen<ix.bars_min_adx?'warming '+ix.bars_seen+'/'+ix.bars_min_adx:'n/a');var rsiv=ix.rsi!=null?ix.rsi.toFixed(1):'n/a';var mfiv=ix.mfi!=null?ix.mfi.toFixed(1):'n/a';var chopv=ix.chop!=null?ix.chop.toFixed(1):'n/a';var bbwv=ix.bb_width!=null?ix.bb_width.toFixed(2)+'%':'n/a';var regCl=ix.regime==='TREND'?'green':ix.regime==='CHOP'?'red':'yellow';var stackCl=ix.ema_stack==='up'?'green':ix.ema_stack==='down'?'red':'yellow';return '<div class=feed-item><b>'+ix.instrument+'</b> <span class=label>$'+(ix.price!=null?ix.price.toFixed(5):'n/a')+'</span> regime <span class='+regCl+'>'+ix.regime+'</span> EMA <span class='+stackCl+'>'+ix.ema_stack+'</span><br>&nbsp;&nbsp;ADX <span class='+adxCl(ix.adx)+'>'+adxv+'</span> RSI <span class='+rsiCl(ix.rsi)+'>'+rsiv+'</span> MFI <span class='+mfiCl(ix.mfi)+'>'+mfiv+'</span> CHOP <span class='+chopCl(ix.chop)+'>'+chopv+'</span> bbw <span class='+bbwCl(ix.bb_width)+'>'+bbwv+'</span><br>&nbsp;&nbsp;<span class=green>bull: '+ix.bull_trigger+'</span><br>&nbsp;&nbsp;<span class=red>bear: '+ix.bear_trigger+'</span><br>&nbsp;&nbsp;1h <span class='+(ix.regime_1h==='TREND-UP'?'green':ix.regime_1h==='TREND-DOWN'?'red':'yellow')+'>'+( ix.regime_1h||'?')+'</span> flow <span class='+(ix.net_flow_verdict==='accumulation'?'green':ix.net_flow_verdict==='distribution'?'red':'label')+'>'+( ix.net_flow_verdict||'n/a')+'</span></div>';}).join('')||'<div class=feed-item>waiting for first poll...</div>';var oc2=function(v){return v==='act'?'green':v==='pass'?'red':'yellow';};var obox=document.getElementById('oracle');obox.innerHTML=(d.oracle||[]).slice(0,8).map(function(o){var kd=(o.key_drivers||[]).slice(0,1).join('');return '<div class=feed-item><b>'+o.instrument+'</b> <span class='+oc2(o.verdict)+'>'+o.verdict+'</span> '+(o.confidence!=null?o.confidence.toFixed(2):'')+' <span class=label>('+(o.citations||0)+' cites'+(o.grounded?'':', ungrounded — no gate')+')</span>'+(kd?'<br>&nbsp;&nbsp;<span class=label>'+kd+'</span>':'')+'</div>';}).join('')||'<div class=feed-item>no oracle verdicts yet</div>';}catch(err){console.error(err);}}setInterval(refresh,5000);refresh();</script></body></html>"
 
 
 # ── TA helpers ─────────────────────────────────────────────────────
@@ -760,6 +877,18 @@ class _DashHandler(BaseHTTPRequestHandler):
                     "still_alive_at": still_alive_at,
                     "poll_count": poll_count,
                     "stale_threshold_sec": POLL_SEC * 2,
+                },
+                # S0-5: state-machine snapshot. Dashboard can render the
+                # current state + dwell + alert count next to the heartbeat
+                # so silent stuck-states become visible at a glance.
+                "state_machine": {
+                    "current_state": _state_machine.get("current_state"),
+                    "entered_at": _state_machine.get("entered_at"),
+                    "dwell_sec": round(
+                        time.time() - _state_machine.get("entered_at_ts", time.time()), 1
+                    ),
+                    "slo_sec": _STATE_SLOS_SEC.get(_state_machine.get("current_state")),
+                    "alerts_emitted": _state_machine.get("alerts_emitted", 0),
                 },
             }
             body = json.dumps(payload).encode()
@@ -2093,6 +2222,12 @@ def main() -> None:
             # but never raise) so a transient disk error never crashes the
             # trading loop.
             _record_heartbeat()
+            # S0-5: detect logical state from existing pause conditions
+            # (breaker / consec-losses) and emit state_transition events
+            # on changes; check dwell-time SLOs and emit alerts on overrun.
+            # Both BEFORE the early-continue so paused states are tracked.
+            _detect_state_and_transition()
+            _check_dwell_slo()
             reset_daily()
             if should_pause():
                 time.sleep(POLL_SEC * 2)
