@@ -29,8 +29,10 @@ def test_hour_floor_join(monkeypatch):
         H = 3_600_000
         fund = [{"ts": i * H + 2, "fundingRate": 0.001, "premium": 0.0005} for i in range(5)]
         perp = [{"ts": i * H, "close": 100.0 + i} for i in range(5)]
-        json.dump(fund, open(os.path.join(fund_dir, "BTC_funding.json"), "w"))
-        json.dump(perp, open(os.path.join(perp_dir, "BTC_perp.json"), "w"))
+        with open(os.path.join(fund_dir, "BTC_funding.json"), "w") as fh:
+            json.dump(fund, fh)
+        with open(os.path.join(perp_dir, "BTC_perp.json"), "w") as fh:
+            json.dump(perp, fh)
         monkeypatch.setattr(cr, "FUND_DIR", fund_dir)
         monkeypatch.setattr(cr, "PERP_DIR", perp_dir)
         monkeypatch.setattr(cr, "COINS", ["BTC"])
