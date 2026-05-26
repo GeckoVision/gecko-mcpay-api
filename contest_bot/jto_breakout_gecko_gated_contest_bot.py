@@ -1351,6 +1351,23 @@ def poll_instruments() -> None:
         ok, failed = passes_safety(token)
         if not ok:
             _log("filter", f"[{sym}] ✗ safety: {', '.join(failed)}")
+            # S0-6: counterfactual log — candidate fired but failed pre-gate
+            # safety check. Without this row the artifact ledger only sees
+            # candidates that REACHED the gate; counterfactual_capture audit
+            # category was incomplete by exactly this gap. Includes the
+            # failure reasons so the gating-delta analysis can attribute.
+            _LOGGER.log(
+                "candidate_blocked",
+                {
+                    "symbol": sym,
+                    "token": token,
+                    "primitive": primitive,
+                    "regime_1h": regime_1h,
+                    "stage": "safety",
+                    "reasons": failed,
+                    "signal_data": signal_data,
+                },
+            )
             continue
 
         # ── Wave-2b Item 1: net-flow CVD gate ─────────────────────────
@@ -1382,6 +1399,29 @@ def poll_instruments() -> None:
                     f"— decline_reason=distribution_flow",
                 )
                 _log_eval_telemetry(sym, action="decline", decline_reason="distribution_flow")
+                # S0-6: counterfactual log — candidate fired + passed safety
+                # but was killed by the net-flow distribution gate. Captures
+                # the per-candidate net-flow snapshot so the gating-delta
+                # analysis can measure "how often did distribution_flow kill
+                # candidates that would have been profitable" — which is the
+                # raw substrate the Oracle's calibration needs.
+                _LOGGER.log(
+                    "candidate_blocked",
+                    {
+                        "symbol": sym,
+                        "token": token,
+                        "primitive": primitive,
+                        "regime_1h": regime_1h,
+                        "stage": "net_flow",
+                        "reasons": ["distribution_flow"],
+                        "net_flow": {
+                            "net_flow_usd": nf_signal.net_flow_usd,
+                            "smart_money_buys": nf_signal.smart_money_buys,
+                            "verdict": nf_signal.verdict,
+                        },
+                        "signal_data": signal_data,
+                    },
+                )
                 continue
 
             _log(
