@@ -433,7 +433,13 @@ def _compute_index_snapshot(symbol: str, candles: list[dict]) -> dict:
     if adx_v is not None and adx_v >= 25 and down_dir:
         bear_parts.append("-DI>+DI → downtrend, longs blocked")
     if mfi_v is not None and mfi_v < 45:
-        bear_parts.append("MFI<45 → buying exhausted")
+        # MFI<45 means money is flowing OUT (buyers absent / sellers dominant) — a
+        # long-entry blocker for this trend-following bot. The prior label
+        # ("buying exhausted") inverted the sign: "exhausted" implies buyers were
+        # active and stopped, which is the OVERBOUGHT (high MFI) case. Low MFI =
+        # buyers absent; deeply oversold MFI would be "sellers exhausted" (bullish
+        # reversal). Relabeled per Sprint 0 audit (`feature_layer` FAIL → PASS).
+        bear_parts.append("MFI<45 → buyers absent (money outflow)")
     if rsi_v is not None and rsi_v > 70:
         bear_parts.append("RSI>70 → overbought")
     if adx_v is not None and adx_v <= 18:
