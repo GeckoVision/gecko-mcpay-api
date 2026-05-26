@@ -3,6 +3,9 @@ name = "gecko-workspace"
 version = "0.1.0"
 description = "Builder Bootstrap Platform — turn an idea into a knowledge base, business plan, validation report, and PRD."
 requires-python = ">=3.11"
+dependencies = [
+    "scikit-learn>=1.8.0",
+]
 
 [tool.uv.workspace]
 members = [
@@ -125,4 +128,5 @@ dev = [
     # S12-HARDEN-05: in-process Mongo for transcript-store tests. CI runs
     # without a real Mongo; mongomock provides a drop-in pymongo fake.
     "mongomock>=4.1",
+    "ccxt>=4.4",
 ]
