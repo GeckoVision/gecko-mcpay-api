@@ -26,6 +26,8 @@ MINT_TO_SYM = {
     "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3": "PYTH",
     "jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL": "JTO",
     "ukHH6c7mMyiWCf1b9pnWe25TSpkDDt3H5pQZgZ74J82": "BOME",
+    "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN": "JUP",
+    "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R": "RAY",
 }
 
 
@@ -86,23 +88,26 @@ def main() -> int:
 
     os.makedirs(OUT_DIR, exist_ok=True)
     for sym, recs in by_sym.items():
+        # CRITICAL: only write a tape for symbols that HAVE data in THIS execution.
+        # Writing an empty [] would clobber an existing tape built from another pull
+        # (e.g. a 2-token pull would erase the other 4 universe tapes). Skip empties.
+        if not recs:
+            print(f"  {sym:5} n=0  (not in this execution — tape left untouched)")
+            continue
         recs.sort(key=lambda x: x["ts"])
         with open(os.path.join(OUT_DIR, f"{sym}_1H_flow.json"), "w") as f:
             json.dump(recs, f)
-        if recs:
-            ts = [x["ts"] for x in recs]
-            nets = [x["net"] for x in recs]
+        ts = [x["ts"] for x in recs]
+        nets = [x["net"] for x in recs]
 
-            def fmt(t):
-                return dt.datetime.utcfromtimestamp(t / 1000).strftime("%Y-%m-%d %H:%M")
+        def fmt(t):
+            return dt.datetime.utcfromtimestamp(t / 1000).strftime("%Y-%m-%d %H:%M")
 
-            print(
-                f"  {sym:5} n={len(recs):5}  {fmt(min(ts))} -> {fmt(max(ts))}  "
-                f"net[min/med/max]=[{min(nets):+,.0f}/{st.median(nets):+,.0f}/{max(nets):+,.0f}]  "
-                f"hrs_with_trades={len(recs)}"
-            )
-        else:
-            print(f"  {sym:5} n=0  (NO DATA)")
+        print(
+            f"  {sym:5} n={len(recs):5}  {fmt(min(ts))} -> {fmt(max(ts))}  "
+            f"net[min/med/max]=[{min(nets):+,.0f}/{st.median(nets):+,.0f}/{max(nets):+,.0f}]  "
+            f"hrs_with_trades={len(recs)}"
+        )
     return 0
 
 
