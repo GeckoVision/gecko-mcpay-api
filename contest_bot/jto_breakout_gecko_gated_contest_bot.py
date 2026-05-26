@@ -89,6 +89,15 @@ except Exception as exc:  # broad — any wiring failure should not crash the bo
 # no accidental commit can arm real money. Founder go-ahead required per
 # project_x402_stub_then_live; the __main__ block still demands a typed CONFIRM.
 PAPER_TRADE = os.environ.get("PAPER_TRADE", "true").strip().lower() not in ("false", "0", "no")
+# S0-1: OBSERVATION_MODE — when on, the bot evaluates every breakout-test
+# candidate, runs the voices + Oracle, logs the would-be entry to the
+# artifact ledger, but DOES NOT place orders (paper or live). Audit fix for
+# `strategy_fitness` FAIL: this bot is mounted on a strategy class proven 8
+# nulls + carry-mirage absent of +EV; keeping it firing while we sprint is
+# dishonest. Observation mode keeps the data substrate (counterfactual log,
+# voice telemetry, Oracle gating-delta) flowing without arming the strategy.
+# Default off. Flip via `OBSERVATION_MODE=1 python3 jto_breakout_*.py`.
+OBSERVATION_MODE = os.environ.get("OBSERVATION_MODE", "0").strip().lower() in ("1", "true", "yes")
 CHAIN = "solana"
 POLL_SEC = 30
 TIMEFRAME = "5m"
@@ -635,6 +644,10 @@ class _DashHandler(BaseHTTPRequestHandler):
                 state_positions.append(snap)
             payload = {
                 "mode": "paper" if PAPER_TRADE else "live",
+                # S0-1: surface observation-mode state so the dashboard can
+                # render the "entries gated off" banner and the audit prompt
+                # sees `strategy_fitness=PASS via observation_mode`.
+                "observation_mode": OBSERVATION_MODE,
                 "strategy": "jto_breakout_gecko_gated_contest",
                 "entry_type": ENTRY_TYPE,
                 "sl_pct": STOP_LOSS_PCT,
@@ -1194,12 +1207,52 @@ def poll_instruments() -> None:
         # Pass regime_1h into signal_data so open_position → market_state → panel
         # coordinator can use it as the multi-TF modulator.
         signal_data["regime_1h"] = regime_1h
+        # S0-1: OBSERVATION_MODE gate. When on, every cleared candidate is logged
+        # to the counterfactual ledger as the would-be entry, but no order is
+        # placed. The voices + Oracle still run inside open_position normally,
+        # so the data substrate (panel telemetry, Oracle gating-delta, drift
+        # baselines) keeps flowing — only the swap_execute is skipped.
+        # Defense-in-depth: open_position() also early-returns under
+        # OBSERVATION_MODE in case any other caller path is added later.
+        if OBSERVATION_MODE:
+            _LOGGER.log(
+                "candidate_observation",
+                {
+                    "token": token,
+                    "symbol": symbol,
+                    "primitive": primitive,
+                    "regime_1h": regime_1h,
+                    "signal_data": signal_data,
+                    "reason": "OBSERVATION_MODE on — entry skipped, counterfactual logged",
+                },
+            )
+            _log(
+                "filter",
+                f"[{sym}] ◯ observation-mode: would-enter via {primitive}, logged not-fired",
+            )
+            _log_eval_telemetry(sym, action="decline", decline_reason="observation_mode")
+            continue
         open_position(token, symbol, signal_data)
 
 
 # ── Position lifecycle ─────────────────────────────────────────────
 def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
     global daily_trades, total_spent_usd
+    # S0-1 defense-in-depth: if any future call path bypasses the
+    # poll_instruments OBSERVATION_MODE gate, this early-return ensures
+    # no entry leaks through. The candidate is still logged so the
+    # counterfactual stays complete.
+    if OBSERVATION_MODE:
+        _LOGGER.log(
+            "candidate_observation",
+            {
+                "token": token,
+                "symbol": symbol_str,
+                "signal_data": signal_data,
+                "reason": "OBSERVATION_MODE on — defensive early-return inside open_position()",
+            },
+        )
+        return
     if daily_trades >= MAX_DAILY_TRADES:
         return
     if sum(1 for p in positions if p["status"] == "open") >= MAX_CONCURRENT:
@@ -1886,6 +1939,7 @@ def main() -> None:
 ║                                       ║
 ╠══════════════════════════════════════╣
 ║  Mode   : {"PAPER 📄" if PAPER_TRADE else "LIVE  🔴":<29} ║
+║  Obs    : {"ON — entries gated off" if OBSERVATION_MODE else "OFF — entries armed":<29} ║
 ║  Entry  : {ENTRY_TYPE:<29} ║
 ║  SL -{STOP_LOSS_PCT}%  TP +{TAKE_PROFIT_PCT}%                      ║
 ╚══════════════════════════════════════╝

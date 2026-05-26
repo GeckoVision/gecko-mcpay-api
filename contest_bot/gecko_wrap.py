@@ -79,6 +79,26 @@ DecisionKind = Literal[
     "position_open",
     "position_close",
     "outcome_patch",
+    # S0-1 (Sprint 0): every breakout-test candidate that would have entered
+    # under OBSERVATION_MODE — logged with the would-be entry payload so the
+    # counterfactual stays complete while orders are gated off.
+    "candidate_observation",
+    # S0-6 (Sprint 0): every breakout-test candidate that fired but was
+    # filtered before reaching the gate (safety check, distribution flow).
+    # Closes the counterfactual_capture gap — without this, candidates
+    # killed by deterministic pre-gate filters are absent from the artifact
+    # ledger and the Oracle's gating-delta cannot measure against them.
+    "candidate_blocked",
+    # S0-4 (Sprint 0): liveness heartbeat row written on every poll cycle.
+    # Dashboard reads `bot_state.json` for the live counter, but the
+    # artifact log gets a row per cycle too so dwell SLOs (S0-5) and
+    # post-mortem reconciliation have an immutable event stream.
+    "heartbeat",
+    # S0-5 (Sprint 0): explicit state-machine entry/exit events with
+    # dwell-time alerts. Audit category `operational_liveness` — turns
+    # silent dwell-overruns into traced events.
+    "state_transition",
+    "state_dwell_alert",
 ]
 
 
