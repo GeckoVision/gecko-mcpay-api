@@ -1,0 +1,361 @@
+{
+  "generated_at": "2026-05-26T19:26:25.043545Z",
+  "venue": "binance",
+  "kind": "funding",
+  "days_requested": 730,
+  "n_coins_requested": 50,
+  "n_coins_written": 50,
+  "universe_selected_at": "2026-05-26T19:17:52.084630Z",
+  "coins": {
+    "BTC": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 5.223,
+      "perp_symbol": "BTC/USDT:USDT"
+    },
+    "ETH": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 5.423,
+      "perp_symbol": "ETH/USDT:USDT"
+    },
+    "ZEC": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": -6.533,
+      "perp_symbol": "ZEC/USDT:USDT"
+    },
+    "SOL": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 2.043,
+      "perp_symbol": "SOL/USDT:USDT"
+    },
+    "NEAR": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 4.02,
+      "perp_symbol": "NEAR/USDT:USDT"
+    },
+    "WLD": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 0.803,
+      "perp_symbol": "WLD/USDT:USDT"
+    },
+    "XRP": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 4.322,
+      "perp_symbol": "XRP/USDT:USDT"
+    },
+    "DOGE": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 5.223,
+      "perp_symbol": "DOGE/USDT:USDT"
+    },
+    "BNB": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 0.317,
+      "perp_symbol": "BNB/USDT:USDT"
+    },
+    "TON": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 0.863,
+      "perp_symbol": "TON/USDT:USDT"
+    },
+    "SUI": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 3.367,
+      "perp_symbol": "SUI/USDT:USDT"
+    },
+    "TAO": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 1.354,
+      "perp_symbol": "TAO/USDT:USDT"
+    },
+    "ONDO": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": -2.179,
+      "perp_symbol": "ONDO/USDT:USDT"
+    },
+    "PHA": {
+      "n": 3074,
+      "first_ts": 1735560000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": -7.608,
+      "perp_symbol": "PHA/USDT:USDT"
+    },
+    "ADA": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 5.132,
+      "perp_symbol": "ADA/USDT:USDT"
+    },
+    "FIL": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 3.974,
+      "perp_symbol": "FIL/USDT:USDT"
+    },
+    "FET": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": -4.385,
+      "perp_symbol": "FET/USDT:USDT"
+    },
+    "RENDER": {
+      "n": 4016,
+      "first_ts": 1721995200000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 2.159,
+      "perp_symbol": "RENDER/USDT:USDT"
+    },
+    "INJ": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": -1.121,
+      "perp_symbol": "INJ/USDT:USDT"
+    },
+    "LINK": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 6.243,
+      "perp_symbol": "LINK/USDT:USDT"
+    },
+    "AVAX": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 0.995,
+      "perp_symbol": "AVAX/USDT:USDT"
+    },
+    "ENA": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": -7.466,
+      "perp_symbol": "ENA/USDT:USDT"
+    },
+    "NIL": {
+      "n": 2570,
+      "first_ts": 1742803200000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 1.837,
+      "perp_symbol": "NIL/USDT:USDT"
+    },
+    "TIA": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": -4.597,
+      "perp_symbol": "TIA/USDT:USDT"
+    },
+    "VIRTUAL": {
+      "n": 3193,
+      "first_ts": 1733846400000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": -1.761,
+      "perp_symbol": "VIRTUAL/USDT:USDT"
+    },
+    "TRX": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": -1.101,
+      "perp_symbol": "TRX/USDT:USDT"
+    },
+    "PUMP": {
+      "n": 2330,
+      "first_ts": 1744473600000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 5.655,
+      "perp_symbol": "PUMP/USDT:USDT"
+    },
+    "PAXG": {
+      "n": 2553,
+      "first_ts": 1743062400001,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 2.353,
+      "perp_symbol": "PAXG/USDT:USDT"
+    },
+    "BCH": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": -3.423,
+      "perp_symbol": "BCH/USDT:USDT"
+    },
+    "DOT": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 0.556,
+      "perp_symbol": "DOT/USDT:USDT"
+    },
+    "EDEN": {
+      "n": 1431,
+      "first_ts": 1759219200005,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 0.534,
+      "perp_symbol": "EDEN/USDT:USDT"
+    },
+    "AAVE": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 5.351,
+      "perp_symbol": "AAVE/USDT:USDT"
+    },
+    "PENGU": {
+      "n": 3151,
+      "first_ts": 1734451200000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": -0.449,
+      "perp_symbol": "PENGU/USDT:USDT"
+    },
+    "ASTER": {
+      "n": 1496,
+      "first_ts": 1758283200000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 5.375,
+      "perp_symbol": "ASTER/USDT:USDT"
+    },
+    "WLFI": {
+      "n": 1658,
+      "first_ts": 1755950400000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": -5.916,
+      "perp_symbol": "WLFI/USDT:USDT"
+    },
+    "LTC": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 6.203,
+      "perp_symbol": "LTC/USDT:USDT"
+    },
+    "UNI": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 6.572,
+      "perp_symbol": "UNI/USDT:USDT"
+    },
+    "GENIUS": {
+      "n": 244,
+      "first_ts": 1776312000008,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 11.382,
+      "perp_symbol": "GENIUS/USDT:USDT"
+    },
+    "ERA": {
+      "n": 1967,
+      "first_ts": 1752753600000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": -22.299,
+      "perp_symbol": "ERA/USDT:USDT"
+    },
+    "IO": {
+      "n": 4285,
+      "first_ts": 1718121600000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": -8.114,
+      "perp_symbol": "IO/USDT:USDT"
+    },
+    "EIGEN": {
+      "n": 3615,
+      "first_ts": 1727769600000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 0.478,
+      "perp_symbol": "EIGEN/USDT:USDT"
+    },
+    "XPL": {
+      "n": 1664,
+      "first_ts": 1755864000001,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 3.532,
+      "perp_symbol": "XPL/USDT:USDT"
+    },
+    "TRUMP": {
+      "n": 2959,
+      "first_ts": 1737216000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": -7.822,
+      "perp_symbol": "TRUMP/USDT:USDT"
+    },
+    "MMT": {
+      "n": 1220,
+      "first_ts": 1762257600000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": -27.171,
+      "perp_symbol": "MMT/USDT:USDT"
+    },
+    "ARB": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 6.112,
+      "perp_symbol": "ARB/USDT:USDT"
+    },
+    "ICP": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 0.12,
+      "perp_symbol": "ICP/USDT:USDT"
+    },
+    "OPG": {
+      "n": 205,
+      "first_ts": 1776873600000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 3.353,
+      "perp_symbol": "OPG/USDT:USDT"
+    },
+    "ATOM": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": -6.171,
+      "perp_symbol": "ATOM/USDT:USDT"
+    },
+    "SAGA": {
+      "n": 4380,
+      "first_ts": 1716753600000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": 2.35,
+      "perp_symbol": "SAGA/USDT:USDT"
+    },
+    "DASH": {
+      "n": 2190,
+      "first_ts": 1716768000000,
+      "last_ts": 1779811200000,
+      "ann_mean_pct": -8.7,
+      "perp_symbol": "DASH/USDT:USDT"
+    }
+  }
+}

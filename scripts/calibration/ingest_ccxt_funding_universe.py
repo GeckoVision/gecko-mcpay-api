@@ -33,11 +33,14 @@ import argparse
 import datetime as dt
 import json
 import os
+import sys
 import time
 
-from scripts.calibration import ccxt_spine
-
 _HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE)
+
+import ccxt_spine  # noqa: E402  flat import matches sibling carry_*_validation.py pattern
+
 OUT_DIR = os.path.join(_HERE, "data", "funding", "binance")
 MANIFEST_PATH = os.path.join(OUT_DIR, "funding_coverage.json")
 
