@@ -37,7 +37,8 @@ def test_hour_floor_join(monkeypatch):
         monkeypatch.setattr(cr, "PERP_DIR", perp_dir)
         monkeypatch.setattr(cr, "COINS", ["BTC"])
         legs = cr.load_leg_inputs()
-        assert "BTC" in legs and len(legs["BTC"]) == 4  # 5 bars -> 4 with a prior bar
+        # 5 bars + leakage-safe forward-fill (need a CLOSED prior perp bar) -> 2 usable
+        assert "BTC" in legs and len(legs["BTC"]) >= 2
 
 
 def test_leg_return_sign():

@@ -36,7 +36,7 @@ def _post(payload: dict) -> object:
         return json.loads(r.read().decode())
 
 
-def perp_candles(coin: str, days: int) -> list[dict]:
+def perp_candles(coin: str, days: int, interval: str = "1h") -> list[dict]:
     now = int(time.time() * 1000)
     cursor = now - days * 86_400_000
     by_ts: dict[int, float] = {}
@@ -46,7 +46,12 @@ def perp_candles(coin: str, days: int) -> list[dict]:
             recs = _post(
                 {
                     "type": "candleSnapshot",
-                    "req": {"coin": coin, "interval": "1h", "startTime": cursor, "endTime": end},
+                    "req": {
+                        "coin": coin,
+                        "interval": interval,
+                        "startTime": cursor,
+                        "endTime": end,
+                    },
                 }
             )
         except Exception as e:
@@ -63,13 +68,13 @@ def perp_candles(coin: str, days: int) -> list[dict]:
     return [{"ts": t, "close": by_ts[t]} for t in sorted(by_ts)]
 
 
-def run(coins: list[str], days: int) -> None:
+def run(coins: list[str], days: int, interval: str = "1h") -> None:
     os.makedirs(OUT_DIR, exist_ok=True)
     print("=" * 88)
-    print(f"HYPERLIQUID PERP-CANDLE INGESTION — {len(coins)} coins x {days}d hourly")
+    print(f"HYPERLIQUID PERP-CANDLE INGESTION — {len(coins)} coins x {days}d {interval}")
     print("=" * 88)
     for coin in coins:
-        recs = perp_candles(coin, days)
+        recs = perp_candles(coin, days, interval=interval)
         if not recs:
             print(f"  {coin:6} no data — skip")
             continue
@@ -85,5 +90,6 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=180)
     ap.add_argument("--coins", default=",".join(DEFAULT_COINS))
+    ap.add_argument("--interval", default="1h", help="HL candle interval: 1h, 4h, 1d, etc.")
     a = ap.parse_args()
-    run([c.strip().upper() for c in a.coins.split(",") if c.strip()], a.days)
+    run([c.strip().upper() for c in a.coins.split(",") if c.strip()], a.days, a.interval)

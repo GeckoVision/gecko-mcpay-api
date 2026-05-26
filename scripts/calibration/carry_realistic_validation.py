@@ -36,20 +36,35 @@ COINS = cx.COINS
 W, HOURS_YR = cx.W, cx.HOURS_YR
 
 
+def _hr(x: object) -> int:
+    return (int(x) // 3_600_000) * 3_600_000
+
+
+def _perp_at(
+    perp_ts_sorted: list[int], perp_dict: dict[int, float], interval_ms: int, t: int
+) -> float | None:
+    """Forward-fill: perp price at hour t = close of the most recent FULLY-CLOSED bar
+    (bar_open + interval_ms <= t). Leakage-safe — never peeks at an unclosed bar. Uses
+    bisect for O(log n). interval_ms inferred from the perp ts spacing in the caller."""
+    import bisect
+
+    target = t - interval_ms  # last bar_open with close ≤ t
+    idx = bisect.bisect_right(perp_ts_sorted, target) - 1
+    if idx < 0:
+        return None
+    return perp_dict[perp_ts_sorted[idx]]
+
+
 def load_leg_inputs() -> dict[str, dict[int, tuple[float, float, float]]]:
-    """Per coin: {ts: (funding, perp_ret, spot_ret)} on the common hourly grid (ts with a
-    valid prior bar for the returns). spot = perp_close/(1+premium)."""
+    """Per coin: {ts: (funding, perp_ret, spot_ret)} on the hourly funding grid; perp
+    forward-filled from the bar that has CLOSED by hour t (handles 1h or 4h perp).
+    spot = perp_close/(1+premium). interval_ms inferred from the median perp ts spacing."""
     out: dict[str, dict[int, tuple[float, float, float]]] = {}
     for c in COINS:
         fp = os.path.join(FUND_DIR, f"{c}_funding.json")
         pp = os.path.join(PERP_DIR, f"{c}_perp.json")
         if not (os.path.exists(fp) and os.path.exists(pp)):
             continue
-        # HL funding ts carry a few-ms offset; perp candle ts are exact :00 -> floor both
-        # to the hour so the two series join.
-        def _hr(x: object) -> int:
-            return (int(x) // 3_600_000) * 3_600_000
-
         with open(fp) as f:
             fund = {
                 _hr(r["ts"]): (float(r["fundingRate"]), float(r.get("premium", 0) or 0))
@@ -57,20 +72,28 @@ def load_leg_inputs() -> dict[str, dict[int, tuple[float, float, float]]]:
             }
         with open(pp) as f:
             perp = {_hr(r["ts"]): float(r["close"]) for r in json.load(f)}
-        common = sorted(set(fund) & set(perp))
+        perp_ts = sorted(perp)
+        if len(perp_ts) < 3:
+            continue
+        # infer interval from median spacing (1h or 4h on HL)
+        gaps = sorted(perp_ts[i] - perp_ts[i - 1] for i in range(1, min(50, len(perp_ts))))
+        interval_ms = int(gaps[len(gaps) // 2]) or 3_600_000
+        # intersect funding times that have a valid forward-filled perp + a prior one
+        fund_ts = sorted(t for t in fund if t >= perp_ts[0] + 2 * interval_ms)
         rec: dict[int, tuple[float, float, float]] = {}
-        for i in range(1, len(common)):
-            t, tp = common[i], common[i - 1]
-            pc, pp_prev = perp[t], perp[tp]
+        for i in range(1, len(fund_ts)):
+            t, tp = fund_ts[i], fund_ts[i - 1]
+            pc = _perp_at(perp_ts, perp, interval_ms, t)
+            pc_prev = _perp_at(perp_ts, perp, interval_ms, tp)
+            if pc is None or pc_prev is None or pc <= 0 or pc_prev <= 0:
+                continue
             fr_t, prem_t = fund[t]
             _, prem_prev = fund[tp]
-            if pc <= 0 or pp_prev <= 0:
-                continue
             spot_t = pc / (1 + prem_t)
-            spot_prev = pp_prev / (1 + prem_prev)
+            spot_prev = pc_prev / (1 + prem_prev)
             if spot_prev <= 0:
                 continue
-            perp_ret = (pc - pp_prev) / pp_prev
+            perp_ret = (pc - pc_prev) / pc_prev
             spot_ret = (spot_t - spot_prev) / spot_prev
             rec[t] = (fr_t, perp_ret, spot_ret)
         out[c] = rec
