@@ -1,4 +1,4 @@
-"""memory_voice v2 — pure-Python feature-rule evaluator (Sprint 6 Phase C).
+"""memory_voice v2 — pure-Python feature-rule evaluator (Sprint 6 Phase C + Phase D).
 
 Replaces v1's LLM-based memory-grading with a deterministic, zero-cost,
 interpretable voice that reads:
@@ -36,7 +36,9 @@ came clustered at extreme RSI/MFI values).
 
 from __future__ import annotations
 
+import json
 import logging
+import pathlib
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -70,12 +72,52 @@ MINUS_EV_COHORT: frozenset[str] = frozenset(
 # signal, we use SOFT_SOLANA_* CONFIDENCE constants below — half the
 # Binance cohort confidence. The vote contributes to the panel but does
 # NOT dominate; other voices can override.
-SOLANA_PLUS_EV_COHORT: frozenset[str] = frozenset(
+# Default cohorts (from Phase D #1, 2026-05-27, 365d derivation).
+# Used IFF the rolling cohort JSON (Phase D #2) is missing or unreadable.
+# Rolling re-derivation overwrites these via load_solana_cohorts_from_json().
+_DEFAULT_SOLANA_PLUS_EV: frozenset[str] = frozenset(
     {"MUON", "GOOGLX", "CHZ", "KMNO", "ZEC", "CAKE", "DRIFT", "HIMSON", "GRASS", "PRIME"}
 )
-SOLANA_MINUS_EV_COHORT: frozenset[str] = frozenset(
+_DEFAULT_SOLANA_MINUS_EV: frozenset[str] = frozenset(
     {"WIF", "IO", "ATH", "VIRTUAL", "ORDI", "FIDA", "BIO", "PYTH", "FARTCOIN", "BONK"}
 )
+
+
+def _try_load_cohort_json(path: pathlib.Path) -> tuple[frozenset[str], frozenset[str]] | None:
+    """Read a cohort result JSON; return (plus_ev, minus_ev) or None.
+
+    JSON shape (matches scripts/calibration/derive_solana_cohort.py output):
+        {"plus_ev_cohort": ["MUON", ...], "minus_ev_cohort": ["WIF", ...], ...}
+    """
+    try:
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text())
+        plus = data.get("plus_ev_cohort")
+        minus = data.get("minus_ev_cohort")
+        if not isinstance(plus, list) or not isinstance(minus, list):
+            return None
+        if not plus or not minus:
+            return None
+        return frozenset(str(s).upper() for s in plus), frozenset(str(s).upper() for s in minus)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+# Phase D #2: Solana cohort JSON path. Auto-loads at module import; falls
+# back to _DEFAULT_* constants if missing. Rolling re-derivation (cron
+# scheduled scripts/calibration/derive_rolling_solana_cohort.py) overwrites
+# this file; next bot restart picks up the fresh cohort.
+SOLANA_COHORT_JSON_PATH = (
+    pathlib.Path(__file__).resolve().parents[2]
+    / "scripts" / "calibration" / "data" / "solana" / "_cohort_result.json"
+)
+_loaded = _try_load_cohort_json(SOLANA_COHORT_JSON_PATH)
+if _loaded is not None:
+    SOLANA_PLUS_EV_COHORT, SOLANA_MINUS_EV_COHORT = _loaded
+else:
+    SOLANA_PLUS_EV_COHORT = _DEFAULT_SOLANA_PLUS_EV
+    SOLANA_MINUS_EV_COHORT = _DEFAULT_SOLANA_MINUS_EV
 
 # ── Indicator exhaustion thresholds ──────────────────────────────────────
 # Per Phase A autopsy data:

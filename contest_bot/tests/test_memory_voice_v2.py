@@ -29,6 +29,9 @@ from voices.memory_voice_v2 import (  # noqa: E402
     SOLANA_COHORT_BULLISH_CONFIDENCE,
     SOLANA_MINUS_EV_COHORT,
     SOLANA_PLUS_EV_COHORT,
+    _DEFAULT_SOLANA_MINUS_EV,
+    _DEFAULT_SOLANA_PLUS_EV,
+    _try_load_cohort_json,
     would_decline_for_backtest,
 )
 
@@ -321,23 +324,31 @@ def test_solana_plus_ev_votes_bullish_at_soft_confidence() -> None:
     assert "chronic_solana_plus_ev_cohort" in out.reasoning
 
 
-def test_bot_universe_wif_pyth_classified_as_solana_minus_ev() -> None:
-    """Regression: WIF + PYTH MUST land in SOLANA_MINUS_EV per Phase D #1 derivation."""
-    assert "WIF" in SOLANA_MINUS_EV_COHORT
-    assert "PYTH" in SOLANA_MINUS_EV_COHORT
+def test_bot_universe_wif_pyth_in_default_solana_minus_ev() -> None:
+    """Regression on the IMMUTABLE Phase D #1 DEFAULTS — WIF + PYTH must always
+    land in the 365d-derived MINUS_EV cohort. The loaded SOLANA_MINUS_EV_COHORT
+    can shift via rolling re-derivation (Phase D #2); the DEFAULTS don't."""
+    assert "WIF" in _DEFAULT_SOLANA_MINUS_EV
+    assert "PYTH" in _DEFAULT_SOLANA_MINUS_EV
 
 
-def test_bot_universe_jto_jup_ray_NOT_in_either_solana_cohort() -> None:
-    """Regression: JTO/JUP/RAY are NEUTRAL in the Solana cohort (not in either list)."""
+def test_bot_universe_jto_jup_ray_NOT_in_default_solana_cohorts() -> None:
+    """Regression on DEFAULTS: JTO/JUP/RAY are NEUTRAL in the 365d derivation.
+
+    Note: rolling 90d cohort (Phase D #2) may classify them differently — that's
+    the POINT of rolling re-derivation. We test the immutable defaults here.
+    """
     for sym in ("JTO", "JUP", "RAY"):
-        assert sym not in SOLANA_MINUS_EV_COHORT
-        assert sym not in SOLANA_PLUS_EV_COHORT
+        assert sym not in _DEFAULT_SOLANA_MINUS_EV
+        assert sym not in _DEFAULT_SOLANA_PLUS_EV
 
 
 def test_solana_cohort_lists_have_10_each() -> None:
-    """Phase D #1 derives top/bottom 10 each — regression-prevent if list shrinks."""
-    assert len(SOLANA_PLUS_EV_COHORT) == 10
-    assert len(SOLANA_MINUS_EV_COHORT) == 10
+    """Phase D #1 derives top/bottom 10 each. The LOADED cohort (from JSON)
+    may have fewer if rolling-window data has few tokens with >=N trades;
+    test DEFAULTS for stability."""
+    assert len(_DEFAULT_SOLANA_PLUS_EV) == 10
+    assert len(_DEFAULT_SOLANA_MINUS_EV) == 10
 
 
 def test_solana_cohort_soft_does_not_drive_backtest_decline() -> None:
@@ -362,7 +373,63 @@ def test_solana_minus_ev_overrides_solana_plus_ev_at_same_confidence() -> None:
 
 
 def test_solana_cohort_lists_disjoint() -> None:
-    """Solana plus/minus must not share symbols."""
+    """Solana plus/minus must not share symbols (in the DEFAULTS)."""
+    assert _DEFAULT_SOLANA_PLUS_EV.isdisjoint(_DEFAULT_SOLANA_MINUS_EV)
+
+
+# ── Phase D #2: rolling cohort JSON loader ───────────────────────────────
+
+
+def test_try_load_cohort_json_returns_none_on_missing_file(tmp_path: Path) -> None:
+    assert _try_load_cohort_json(tmp_path / "nope.json") is None
+
+
+def test_try_load_cohort_json_returns_none_on_malformed_json(tmp_path: Path) -> None:
+    p = tmp_path / "broken.json"
+    p.write_text("not json at all")
+    assert _try_load_cohort_json(p) is None
+
+
+def test_try_load_cohort_json_returns_none_on_empty_cohorts(tmp_path: Path) -> None:
+    """Defensive: empty cohort lists in JSON should NOT replace defaults."""
+    import json
+    p = tmp_path / "empty.json"
+    p.write_text(json.dumps({"plus_ev_cohort": [], "minus_ev_cohort": []}))
+    assert _try_load_cohort_json(p) is None
+
+
+def test_try_load_cohort_json_returns_none_on_missing_keys(tmp_path: Path) -> None:
+    import json
+    p = tmp_path / "incomplete.json"
+    p.write_text(json.dumps({"plus_ev_cohort": ["X"]}))  # no minus_ev_cohort
+    assert _try_load_cohort_json(p) is None
+
+
+def test_try_load_cohort_json_reads_valid_payload(tmp_path: Path) -> None:
+    """Happy path: valid JSON contract loads into two frozensets, upper-cased."""
+    import json
+    p = tmp_path / "good.json"
+    p.write_text(json.dumps({
+        "plus_ev_cohort": ["alpha", "BETA"],
+        "minus_ev_cohort": ["gamma"],
+    }))
+    result = _try_load_cohort_json(p)
+    assert result is not None
+    plus, minus = result
+    assert plus == frozenset({"ALPHA", "BETA"})
+    assert minus == frozenset({"GAMMA"})
+
+
+def test_loaded_solana_cohort_either_matches_defaults_or_is_rolling() -> None:
+    """The active SOLANA_*_COHORT is either the DEFAULT or a JSON-loaded variant.
+
+    Don't assert specific members (those drift with rolling re-derivation) —
+    just confirm the shape constraints are honored.
+    """
+    assert isinstance(SOLANA_PLUS_EV_COHORT, frozenset)
+    assert isinstance(SOLANA_MINUS_EV_COHORT, frozenset)
+    assert len(SOLANA_PLUS_EV_COHORT) >= 1
+    assert len(SOLANA_MINUS_EV_COHORT) >= 1
     assert SOLANA_PLUS_EV_COHORT.isdisjoint(SOLANA_MINUS_EV_COHORT)
 
 
