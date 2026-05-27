@@ -121,8 +121,9 @@ FLAT_STALL_AGE_MIN = 90  # position must be at least this old
 FLAT_STALL_PNL_LO = -0.5  # iter-3.9 2026-05-21: 0.3 → -0.5. Widened the band DOWN to catch the breakeven dead-zone (BOME peaked +0.58%, then flat-lined around 0% for 70min — momentum thesis dead but no rule caught it: above SL, below the +0.3% flat-stall floor). Now: a position that peaked weak and went flat-to-slightly-red gets exited as a failed thesis. Below -0.5% the SL owns it (directional losers handled separately).
 FLAT_STALL_PNL_HI = 2.0  # ... (below STALL_GREEN_EXIT_MIN_PCT)
 FLAT_STALL_NO_NEW_HIGH_MIN = 30  # AND no new high in this many minutes
-TRAIL_STOP_PCT = 1
-TRAIL_ACTIVATE_AFTER_PCT = 1  # s41 2026-05-22: 2 → 1 — protect gains from +1% (founder: capture small wins in chop, don't wait for 4%). PRIOR iter-3.1 E-LITE 2026-05-20: 5 → 2. Founder + analyst-pair call: in a 14h contest window with N=1-2 trades, the stall failure mode (position drifts +1-4% then dies, hits time-stop near $0 PnL) dominates the upside-clip risk. Trail at activate=+2% + give-back=1% converts modal stalls into +1-1.5% realized wins. Real momentum still rides — the trail tracks peak, never gives back >1%, so a +2%→+12% runner closes at ~+11%. Trade-off accepted: some wigglers that go +2% → +1% → +5% will exit at +1% instead of riding to +5%. At N=1, quant says lift is statistically indistinguishable from baseline; founder's call is "we need to actually book something."  # 2026-05-20 autonomous iter-2 (was 2 → 1 per quant analysis): tighter trail captures more of the peak. On meme-class vol (1-5%/h), 2% trail was getting swept on noise before TP; 1% trail locks in profits closer to peak. Highest-EV single-param change per quant — expected +1.3% [+0.4, +2.1] lift over 20h.
+TRAIL_STOP_PCT = 0.5  # Sprint 7 2026-05-27 (autopsy finding): 1 → 0.5 — tighten trail-back per Sprint 6 Phase A 19-trade autopsy. trailing_stop mean -2.12% (one -6.28% disaster from polling-gap slippage) is 2x worse than stop_loss mean (-3.08% capped). Tightening give-back to 0.5% locks in gains closer to peak. PRIOR 2026-05-20 autonomous iter-2 (was 2 → 1 per quant analysis): tighter trail captures more of the peak. On meme-class vol (1-5%/h), 2% trail was getting swept on noise before TP; 1% trail locks in profits closer to peak.
+TRAIL_ACTIVATE_AFTER_PCT = 1  # s41 2026-05-22: 2 → 1 — protect gains from +1% (founder: capture small wins in chop, don't wait for 4%). PRIOR iter-3.1 E-LITE 2026-05-20: 5 → 2. Founder + analyst-pair call: in a 14h contest window with N=1-2 trades, the stall failure mode (position drifts +1-4% then dies, hits time-stop near $0 PnL) dominates the upside-clip risk. Trail at activate=+2% + give-back=1% converts modal stalls into +1-1.5% realized wins. Real momentum still rides — the trail tracks peak, never gives back >1%, so a +2%→+12% runner closes at ~+11%.
+TRAIL_MIN_PNL_PCT = -1.0  # Sprint 7 2026-05-27: NEW safety guard. trailing_stop must never produce a worse-than-near-break-even outcome. If pnl_pct <= TRAIL_MIN_PNL_PCT when the trailing condition would fire, the position falls through to the stop_loss check (correctly labeled, capped at -STOP_LOSS_PCT). Caps the disaster mode the autopsy surfaced: poll-gap slippage that takes pnl from +1% peak straight past 0% to -6% without firing in the right order. Combined with the eval-order swap (stop_loss BEFORE trailing in monitor_positions), trailing_stop labels are now bounded to pnl ∈ (-1%, +∞).
 MAX_DAILY_TRADES = int(os.environ.get("MAX_DAILY_TRADES", "3"))  # env-overridable (2026-05-23 overnight). Default 3 (conservative contest setting). Raise for paper data-gathering experiments.
 MAX_CONCURRENT = int(os.environ.get("MAX_CONCURRENT", "2"))  # env-overridable. Default 2. Raise for paper data-gathering (more parallel trades = more sample).
 SESSION_LOSS_PAUSE = int(os.environ.get("SESSION_LOSS_PAUSE", "2"))  # env-overridable (2026-05-23 overnight). Default 2 (sit out after 2 consecutive losses). Raise for paper data-gathering.
@@ -2091,6 +2092,63 @@ def _mins_since(ts_iso: str, default: float = 0.0) -> float:
         return default
 
 
+# Sentinel for "use module default" in _evaluate_stop_exits kwargs.
+# Distinct from None, because None for trail_stop_pct means "trailing disabled."
+_USE_MODULE_DEFAULT: object = object()
+
+
+def _evaluate_stop_exits(
+    pnl_pct: float,
+    peak_pct: float,
+    current_price: float,
+    peak_price: float,
+    *,
+    stop_loss_pct: float | object = _USE_MODULE_DEFAULT,
+    trail_activate_pct: float | object = _USE_MODULE_DEFAULT,
+    trail_stop_pct: float | None | object = _USE_MODULE_DEFAULT,
+    trail_min_pnl_pct: float | object = _USE_MODULE_DEFAULT,
+) -> str | None:
+    """Sprint 7 (2026-05-27 autopsy) — pure exit-decision helper.
+
+    Returns ``"stop_loss"`` / ``"trailing_stop"`` / ``None``.
+
+    Order matters: stop_loss is the hard floor and is checked FIRST so a
+    poll-gap drop that satisfies both stop_loss AND trailing is correctly
+    recorded as stop_loss (not trailing_stop). Trailing has an additional
+    safety guard requiring ``pnl_pct > trail_min_pnl_pct`` — if pnl has
+    already breached the trail-min-floor (default -1%) when the retrace
+    condition fires, the trailing branch declines and the position falls
+    through to the stop_loss check or stays open until the next poll.
+
+    This fixes the bot-honesty Fix 1 + Sprint 6 Phase A finding: trailing_stop
+    mean was -2.12% with one disaster at -6.28% (poll-gap slippage). Post-fix,
+    trailing_stop is bounded to pnl ∈ (-1%, +∞); -3% to -6% bleed-throughs
+    get labeled stop_loss and capped at -STOP_LOSS_PCT.
+
+    All thresholds are kwarg-defaulted to the module constants so tests can
+    pin values without touching module state. None of the kwargs mutates
+    anything; this function is pure and side-effect-free.
+    """
+    sl = STOP_LOSS_PCT if stop_loss_pct is _USE_MODULE_DEFAULT else stop_loss_pct
+    ta = TRAIL_ACTIVATE_AFTER_PCT if trail_activate_pct is _USE_MODULE_DEFAULT else trail_activate_pct
+    ts = TRAIL_STOP_PCT if trail_stop_pct is _USE_MODULE_DEFAULT else trail_stop_pct
+    tm = TRAIL_MIN_PNL_PCT if trail_min_pnl_pct is _USE_MODULE_DEFAULT else trail_min_pnl_pct
+
+    # Stop-loss wins over everything. Eval order is the load-bearing fix.
+    if pnl_pct <= -sl:
+        return "stop_loss"
+
+    # Trailing only fires if (a) trail is configured, (b) peak ever cleared
+    # the activation gate, (c) current price retraced >= trail_stop_pct from
+    # peak, AND (d) pnl is still above the trail safety floor.
+    if ts is not None and peak_price > 0 and peak_pct >= ta:
+        trail_retrace_pct = (peak_price - current_price) / peak_price * 100
+        if trail_retrace_pct >= ts and pnl_pct > tm:
+            return "trailing_stop"
+
+    return None
+
+
 # ── Monitor open positions ─────────────────────────────────────────
 def monitor_positions() -> None:
     for pos in [p for p in positions if p["status"] == "open"]:
@@ -2132,24 +2190,21 @@ def monitor_positions() -> None:
             }
         )
 
-        # Trailing stop with activate_after_pct gate (iter-3 2026-05-20):
-        # Trail only fires AFTER position has been >= TRAIL_ACTIVATE_AFTER_PCT
-        # green from entry. This prevents trail from closing positions that
-        # only briefly touched green — letting real winners ride toward TP
-        # before the trail engages. MEW (peak +0.06%) and PYTH (peak +1.93%)
-        # would NOT have triggered trail under iter-3.
-        if TRAIL_STOP_PCT is not None:
-            peak = pos["peak_price"]
-            peak_pct = (peak - ep) / ep * 100 if ep else 0.0
-            if peak_pct >= TRAIL_ACTIVATE_AFTER_PCT:
-                trail = (peak - current_price) / peak * 100 if peak else 0.0
-                if trail >= TRAIL_STOP_PCT:
-                    close_position(pos, "trailing_stop", current_price)
-                    continue
-
-        # Stop loss
-        if pnl_pct <= -STOP_LOSS_PCT:
-            close_position(pos, "stop_loss", current_price)
+        # Stop-loss + trailing-stop are evaluated together by the Sprint 7
+        # pure helper (2026-05-27). Stop-loss is checked FIRST so a poll-gap
+        # drop that satisfies both is recorded as stop_loss (not trailing).
+        # Trailing has a safety guard: pnl_pct must stay above
+        # TRAIL_MIN_PNL_PCT for the trailing branch to fire — otherwise the
+        # position falls through to stop_loss on this or the next poll.
+        # See _evaluate_stop_exits docstring for full rationale + autopsy ref.
+        stop_exit_reason = _evaluate_stop_exits(
+            pnl_pct=pnl_pct,
+            peak_pct=peak_pct,
+            current_price=current_price,
+            peak_price=pos["peak_price"],
+        )
+        if stop_exit_reason:
+            close_position(pos, stop_exit_reason, current_price)
             continue
 
         # Tiered take profit
