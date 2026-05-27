@@ -73,6 +73,50 @@ def test_load_universe_filters_empty_files(tmp_path: Path) -> None:
     assert "BAD" not in uni
 
 
+# ── Phase D: Venue refactor ──────────────────────────────────────────────
+
+
+def test_venue_solana_picks_up_dex_suffix_files(tmp_path: Path) -> None:
+    """VENUE_SOLANA reads <SYMBOL>_dex.json (not _perp.json)."""
+    import json
+    (tmp_path / "JTO_dex.json").write_text(
+        json.dumps([{"ts": 1716753600000, "open": 2.0, "high": 2.1, "low": 1.9, "close": 2.05, "volume": 100}])
+    )
+    custom = loader.Venue(name="solana_test", data_dir=tmp_path, file_suffix="_dex")
+    syms = loader.available_symbols(venue=custom)
+    assert syms == ["JTO"]
+    df = loader.load_ohlcv("JTO", venue=custom)
+    assert len(df) == 1
+    assert df["close"].iloc[0] == 2.05
+
+
+def test_venue_solana_does_not_pick_up_perp_files(tmp_path: Path) -> None:
+    """A _perp file in a solana-venue dir is invisible (different suffix)."""
+    import json
+    (tmp_path / "AAVE_perp.json").write_text(
+        json.dumps([{"ts": 1716753600000, "open": 100, "high": 102, "low": 99, "close": 101, "volume": 1000}])
+    )
+    custom = loader.Venue(name="solana_test", data_dir=tmp_path, file_suffix="_dex")
+    assert loader.available_symbols(venue=custom) == []
+
+
+def test_legacy_perp_dir_kwarg_still_works(tmp_path: Path) -> None:
+    """Back-compat: existing callers passing perp_dir=... still work."""
+    import json
+    (tmp_path / "X_perp.json").write_text(
+        json.dumps([{"ts": 1716753600000, "open": 1, "high": 1, "low": 1, "close": 1, "volume": 0}])
+    )
+    assert loader.available_symbols(perp_dir=tmp_path) == ["X"]
+
+
+def test_venue_binance_constants_unchanged() -> None:
+    """VENUE_BINANCE constants must match the legacy DEFAULT_PERP_DIR for safety."""
+    assert loader.VENUE_BINANCE.file_suffix == "_perp"
+    assert loader.VENUE_BINANCE.data_dir == loader.DEFAULT_PERP_DIR
+    assert loader.VENUE_SOLANA.file_suffix == "_dex"
+    assert loader.VENUE_SOLANA.data_dir.name == "solana"
+
+
 # ── signals ────────────────────────────────────────────────────────────────
 
 

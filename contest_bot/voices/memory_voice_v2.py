@@ -45,7 +45,7 @@ from voices.base import MemoryReader, VoiceOpinion, VoiceVerdict
 
 logger = logging.getLogger(__name__)
 
-# ── Phase B by-symbol cohorts (PR #54) ───────────────────────────────────
+# ── Phase B by-symbol cohorts (PR #54) — BINANCE PERP UNIVERSE ───────────
 # Top 10 +EV across 730d/50-coin Binance backtest, mean +EV.
 PLUS_EV_COHORT: frozenset[str] = frozenset(
     {"RENDER", "ZEC", "ARB", "TAO", "ENA", "WLD", "ETH", "ICP", "INJ", "ONDO"}
@@ -53,6 +53,28 @@ PLUS_EV_COHORT: frozenset[str] = frozenset(
 # Bottom 10 -EV — chronic losers across the same backtest.
 MINUS_EV_COHORT: frozenset[str] = frozenset(
     {"BCH", "EIGEN", "UNI", "SOL", "LINK", "BNB", "WLFI", "MMT", "TIA", "BTC"}
+)
+
+# ── Phase D #1 cohorts (PR #5x) — SOLANA DEX UNIVERSE ────────────────────
+# Derived from 40 Solana-ecosystem tokens × 365d daily-momentum backtest
+# (scripts/calibration/derive_solana_cohort.py). Train/test OOS validation
+# (early-half train → late-half test) showed +195.9% lift from declining
+# the chronic-loser cohort. 7/10 stable across train/test boundary.
+#
+# TIMESCALE CAVEAT (load-bearing — DO NOT IGNORE):
+# This cohort is derived from a DAILY strategy (5d breakout lookback, 15d
+# max hold). The live bot runs 30s polls. **Two of the live bot's autopsy
+# WINNERS (WIF + PYTH) are in this MINUS_EV list.** The daily-strategy edge
+# on these tokens doesn't necessarily transfer to the bot's intra-day
+# strategy. To respect the empirical bot-evidence vs the daily-backtest
+# signal, we use SOFT_SOLANA_* CONFIDENCE constants below — half the
+# Binance cohort confidence. The vote contributes to the panel but does
+# NOT dominate; other voices can override.
+SOLANA_PLUS_EV_COHORT: frozenset[str] = frozenset(
+    {"MUON", "GOOGLX", "CHZ", "KMNO", "ZEC", "CAKE", "DRIFT", "HIMSON", "GRASS", "PRIME"}
+)
+SOLANA_MINUS_EV_COHORT: frozenset[str] = frozenset(
+    {"WIF", "IO", "ATH", "VIRTUAL", "ORDI", "FIDA", "BIO", "PYTH", "FARTCOIN", "BONK"}
 )
 
 # ── Indicator exhaustion thresholds ──────────────────────────────────────
@@ -75,8 +97,12 @@ MEMORY_WINDOW = 20
 REALIZED_MIN_PNL_PCT = 0.5  # matches bot's MIN_REALIZED_WIN_PCT (Fix 2)
 
 # ── Confidence caps ──────────────────────────────────────────────────────
-COHORT_BEARISH_CONFIDENCE = 0.65  # chronic -EV symbol → bearish
-COHORT_BULLISH_CONFIDENCE = 0.55  # chronic +EV symbol → mild bullish
+COHORT_BEARISH_CONFIDENCE = 0.65  # chronic -EV symbol → bearish (Binance cohort)
+COHORT_BULLISH_CONFIDENCE = 0.55  # chronic +EV symbol → mild bullish (Binance cohort)
+# Solana cohort: SOFTER per timescale-mismatch caveat above. Vote influences
+# the panel but doesn't auto-decline; other voices can override.
+SOLANA_COHORT_BEARISH_CONFIDENCE = 0.40
+SOLANA_COHORT_BULLISH_CONFIDENCE = 0.40
 EXHAUSTION_BEARISH_CONFIDENCE = 0.70  # max — never dominates 4-voice panel
 REALIZED_CONFIDENCE = 0.55
 
@@ -108,6 +134,8 @@ class MemoryVoiceV2:
         *,
         plus_ev_cohort: frozenset[str] = PLUS_EV_COHORT,
         minus_ev_cohort: frozenset[str] = MINUS_EV_COHORT,
+        solana_plus_ev_cohort: frozenset[str] = SOLANA_PLUS_EV_COHORT,
+        solana_minus_ev_cohort: frozenset[str] = SOLANA_MINUS_EV_COHORT,
         rsi_exhaustion_threshold: float = RSI_EXHAUSTION_THRESHOLD,
         mfi_exhaustion_threshold: float = MFI_EXHAUSTION_THRESHOLD,
         cold_start_min_outcomes: int = COLD_START_MIN_OUTCOMES,
@@ -115,6 +143,8 @@ class MemoryVoiceV2:
     ) -> None:
         self._plus_ev = plus_ev_cohort
         self._minus_ev = minus_ev_cohort
+        self._solana_plus_ev = solana_plus_ev_cohort
+        self._solana_minus_ev = solana_minus_ev_cohort
         self._rsi_threshold = rsi_exhaustion_threshold
         self._mfi_threshold = mfi_exhaustion_threshold
         self._cold_start = cold_start_min_outcomes
@@ -140,7 +170,20 @@ class MemoryVoiceV2:
                     verdict="bearish",
                     confidence=COHORT_BEARISH_CONFIDENCE,
                     rule="chronic_minus_ev_cohort",
-                    observation=f"{symbol} in chronic -EV cohort (Phase B 730d backtest)",
+                    observation=f"{symbol} in chronic -EV cohort (Phase B 730d backtest, Binance)",
+                )
+            )
+
+        # Rule 1b: Solana-DEX chronic -EV cohort (SOFTER — see timescale caveat
+        # at module top). For the live bot which trades JTO/JUP/WIF/PYTH/RAY,
+        # this is the cohort rule that ACTUALLY FIRES.
+        if symbol in self._solana_minus_ev:
+            rules.append(
+                _RuleResult(
+                    verdict="bearish",
+                    confidence=SOLANA_COHORT_BEARISH_CONFIDENCE,
+                    rule="chronic_solana_minus_ev_cohort",
+                    observation=f"{symbol} in chronic -EV Solana cohort (Phase D 365d daily-momentum sim)",
                 )
             )
 
@@ -169,7 +212,18 @@ class MemoryVoiceV2:
                     verdict="bullish",
                     confidence=COHORT_BULLISH_CONFIDENCE,
                     rule="chronic_plus_ev_cohort",
-                    observation=f"{symbol} in chronic +EV cohort (Phase B 730d backtest)",
+                    observation=f"{symbol} in chronic +EV cohort (Phase B 730d backtest, Binance)",
+                )
+            )
+
+        # Rule 3b: Solana-DEX chronic +EV cohort (SOFTER — same timescale caveat)
+        if symbol in self._solana_plus_ev:
+            rules.append(
+                _RuleResult(
+                    verdict="bullish",
+                    confidence=SOLANA_COHORT_BULLISH_CONFIDENCE,
+                    rule="chronic_solana_plus_ev_cohort",
+                    observation=f"{symbol} in chronic +EV Solana cohort (Phase D 365d daily-momentum sim)",
                 )
             )
 
@@ -346,18 +400,19 @@ def would_decline_for_backtest(
     rsi_threshold: float = RSI_EXHAUSTION_THRESHOLD,
     mfi_threshold: float = MFI_EXHAUSTION_THRESHOLD,
 ) -> bool:
-    """Sync wrapper for the v2 cohort + exhaustion rules (NO realized-outcomes path).
+    """Sync wrapper for the v2 BINANCE cohort + exhaustion rules.
 
-    Returns True if v2 would vote bearish on this entry candidate, indicating
-    the coordinator should decline. Used by the Phase C backtest validation
-    (scripts/analysis/backtest/ runner with --with-v2-rules).
+    Returns True if v2 would vote bearish on this entry candidate (HARD
+    confidence sufficient to drive a decline). Used by the Phase C backtest
+    validation (scripts/analysis/backtest/ runner with --with-v2-rules).
 
     Excludes the realized-outcomes path because backtest entries have no
-    live ledger history — that path's effect can only be validated against
-    the live bot's accumulated decisions over time.
+    live ledger history. Excludes the SOLANA cohort because at SOFT
+    confidence (0.40) it doesn't drive a decline by itself; the Solana
+    cohort is informational/influential, not gating, at the backtest layer.
 
-    Decision tree mirrors MemoryVoiceV2.grade() exactly:
-    - Chronic -EV cohort symbol → True (decline)
+    Decision tree mirrors MemoryVoiceV2.grade() for the HARD-confidence rules:
+    - Binance chronic -EV cohort symbol → True (decline)
     - Indicator exhaustion (RSI + MFI both elevated) → True (decline)
     - Else → False (allow)
     """
@@ -383,5 +438,9 @@ __all__ = [
     "MemoryVoiceV2",
     "PLUS_EV_COHORT",
     "RSI_EXHAUSTION_THRESHOLD",
+    "SOLANA_COHORT_BEARISH_CONFIDENCE",
+    "SOLANA_COHORT_BULLISH_CONFIDENCE",
+    "SOLANA_MINUS_EV_COHORT",
+    "SOLANA_PLUS_EV_COHORT",
     "would_decline_for_backtest",
 ]
