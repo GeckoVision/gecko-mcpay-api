@@ -42,6 +42,9 @@ class BacktestConfig:
     trail_stop_pct: float | None = simulator.DEFAULT_TRAIL_STOP_PCT
     trail_min_pnl_pct: float = simulator.DEFAULT_TRAIL_MIN_PNL_PCT
     flip_cost_pct: float = simulator.DEFAULT_FLIP_COST_PCT
+    # Sprint 6 Phase C 2026-05-27: apply memory_voice v2's cohort filter
+    # (decline entries on chronic -EV cohort symbols per Phase B by-symbol).
+    apply_v2_cohort_filter: bool = False
 
 
 def run_backtest(
@@ -54,6 +57,21 @@ def run_backtest(
     """
     cfg = config or BacktestConfig(name="default")
     uni = universe if universe is not None else loader.load_universe()
+
+    # Sprint 6 Phase C: optional v2 cohort filter — skip symbols v2 would decline
+    if cfg.apply_v2_cohort_filter:
+        # Lazy import — backtest is otherwise bot-module-free; only fires when on.
+        import sys as _sys
+        from pathlib import Path as _P
+
+        _bot_dir = _P(__file__).resolve().parents[3] / "contest_bot"
+        if str(_bot_dir) not in _sys.path:
+            _sys.path.insert(0, str(_bot_dir))
+        from voices.memory_voice_v2 import would_decline_for_backtest
+
+        declined_symbols = {s for s in uni if would_decline_for_backtest(s)}
+        uni = {s: df for s, df in uni.items() if s not in declined_symbols}
+
     all_trades: list[pd.DataFrame] = []
     for sym, df in uni.items():
         candidates = signals.candidate_entries(
@@ -184,6 +202,14 @@ def main(argv: list[str] | None = None) -> int:
             "AND post-Sprint-7 (trail_stop_pct=0.5, safety floor=-1.0) for A/B comparison"
         ),
     )
+    ap.add_argument(
+        "--ab-v2-cohort",
+        action="store_true",
+        help=(
+            "Run BOTH post-Sprint-7 WITHOUT v2 cohort filter AND post-Sprint-7 WITH "
+            "v2 cohort filter (Phase C — skip entries on chronic -EV symbols per Phase B)"
+        ),
+    )
     ap.add_argument("--symbol-limit", type=int, default=None, help="cap symbol count (for fast iteration)")
     args = ap.parse_args(argv)
 
@@ -205,6 +231,14 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         configs.append(BacktestConfig(name="post_sprint7"))
+    elif args.ab_v2_cohort:
+        configs.append(BacktestConfig(name="post_sprint7_no_v2_filter"))
+        configs.append(
+            BacktestConfig(
+                name="post_sprint7_with_v2_cohort",
+                apply_v2_cohort_filter=True,
+            )
+        )
     else:
         configs.append(BacktestConfig(name="default_sprint7"))
 

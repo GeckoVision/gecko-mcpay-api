@@ -336,13 +336,52 @@ def _elapsed_ms(started: float) -> int:
     return int((time.monotonic() - started) * 1000)
 
 
+def would_decline_for_backtest(
+    symbol: str,
+    rsi: float | None = None,
+    mfi: float | None = None,
+    *,
+    plus_ev_cohort: frozenset[str] = PLUS_EV_COHORT,
+    minus_ev_cohort: frozenset[str] = MINUS_EV_COHORT,
+    rsi_threshold: float = RSI_EXHAUSTION_THRESHOLD,
+    mfi_threshold: float = MFI_EXHAUSTION_THRESHOLD,
+) -> bool:
+    """Sync wrapper for the v2 cohort + exhaustion rules (NO realized-outcomes path).
+
+    Returns True if v2 would vote bearish on this entry candidate, indicating
+    the coordinator should decline. Used by the Phase C backtest validation
+    (scripts/analysis/backtest/ runner with --with-v2-rules).
+
+    Excludes the realized-outcomes path because backtest entries have no
+    live ledger history — that path's effect can only be validated against
+    the live bot's accumulated decisions over time.
+
+    Decision tree mirrors MemoryVoiceV2.grade() exactly:
+    - Chronic -EV cohort symbol → True (decline)
+    - Indicator exhaustion (RSI + MFI both elevated) → True (decline)
+    - Else → False (allow)
+    """
+    norm = str(symbol).split("-")[0].upper()
+    if norm in minus_ev_cohort:
+        return True
+    if (
+        rsi is not None
+        and mfi is not None
+        and rsi >= rsi_threshold
+        and mfi >= mfi_threshold
+    ):
+        return True
+    return False
+
+
 __all__ = [
     "COHORT_BEARISH_CONFIDENCE",
     "COHORT_BULLISH_CONFIDENCE",
     "EXHAUSTION_BEARISH_CONFIDENCE",
+    "MFI_EXHAUSTION_THRESHOLD",
     "MINUS_EV_COHORT",
     "MemoryVoiceV2",
     "PLUS_EV_COHORT",
     "RSI_EXHAUSTION_THRESHOLD",
-    "MFI_EXHAUSTION_THRESHOLD",
+    "would_decline_for_backtest",
 ]
