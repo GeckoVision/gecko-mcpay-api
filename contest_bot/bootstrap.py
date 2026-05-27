@@ -20,7 +20,8 @@ from local_panel import LocalPanel
 from voices.base import LocalVoice
 from voices.chart_analyst import ChartAnalystVoice
 from voices.coordinator_rules import coordinator
-from voices.memory_voice import MemoryVoice
+from voices.memory_voice import MemoryVoice  # noqa: F401 — kept for v1 callers; v2 replaces in panel
+from voices.memory_voice_v2 import MemoryVoiceV2
 from voices.regime_analyst import RegimeAnalystVoice
 from voices.risk_voice import RiskVoice
 
@@ -42,7 +43,12 @@ def build_local_panel(memory: LocalMemory) -> LocalPanel:
     # without an explicit annotation, which mypy --strict rejects.
     voices: list[LocalVoice] = [
         ChartAnalystVoice(client=client),
-        MemoryVoice(client=client),
+        # Sprint 6 Phase C 2026-05-27: replaced LLM-based MemoryVoice (v1) with
+        # pure-Python feature-rule MemoryVoiceV2. v2 reads Phase B by-symbol
+        # cohorts + indicator exhaustion + realized outcomes. Zero LLM cost,
+        # ~10ms latency vs v1's ~1500ms. Same wire-name 'memory_voice' so
+        # dashboard plumbing unchanged.
+        MemoryVoiceV2(),
         RiskVoice(client=client),
         # B3 (S40): deterministic chop/trend classifier — votes + logs now;
         # the coordinator wires it into the rule chain as a gate-modulator in B6.
