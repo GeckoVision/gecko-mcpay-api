@@ -129,4 +129,7 @@ dev = [
     # without a real Mongo; mongomock provides a drop-in pymongo fake.
     "mongomock>=4.1",
     "ccxt>=4.4",
+    "pandas>=3.0.3",
+    "pyarrow>=24.0.0",
+    "duckdb>=1.5.3",
 ]
