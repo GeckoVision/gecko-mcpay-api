@@ -121,3 +121,4 @@ gecko-okx-quickstart/.env
 scripts/calibration/data/tape/regime_windows.json
 analysis/data/
 scripts/calibration/data/solana/
+analysis/data/phase_e/
