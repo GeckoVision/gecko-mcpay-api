@@ -25,6 +25,7 @@ from voices.memory_voice_v2 import (  # noqa: E402
     MINUS_EV_COHORT,
     MemoryVoiceV2,
     PLUS_EV_COHORT,
+    would_decline_for_backtest,
 )
 
 
@@ -251,3 +252,45 @@ def test_known_cohort_membership(symbol: str, expected_verdict: str) -> None:
     voice = MemoryVoiceV2()
     out = _grade(voice, _state(symbol), FakeMemory())
     assert out.verdict == expected_verdict
+
+
+# ── would_decline_for_backtest sync wrapper ─────────────────────────────
+
+
+def test_would_decline_chronic_minus_ev_cohort() -> None:
+    assert would_decline_for_backtest("BCH") is True
+    assert would_decline_for_backtest("EIGEN") is True
+    assert would_decline_for_backtest("BTC") is True
+
+
+def test_would_decline_plus_ev_cohort_returns_false() -> None:
+    """Plus-EV cohort gets a bullish vote, not bearish — should NOT decline."""
+    assert would_decline_for_backtest("RENDER") is False
+    assert would_decline_for_backtest("ZEC") is False
+
+
+def test_would_decline_indicator_exhaustion() -> None:
+    assert would_decline_for_backtest("UNKNOWN", rsi=76.0, mfi=99.3) is True
+    assert would_decline_for_backtest("UNKNOWN", rsi=80.0, mfi=95.0) is True
+
+
+def test_would_decline_neutral_indicators_returns_false() -> None:
+    assert would_decline_for_backtest("UNKNOWN", rsi=50.0, mfi=50.0) is False
+
+
+def test_would_decline_minus_ev_overrides_indicators() -> None:
+    """Even neutral indicators on a -EV cohort symbol → decline."""
+    assert would_decline_for_backtest("BCH", rsi=50.0, mfi=50.0) is True
+
+
+def test_would_decline_handles_suffixed_symbol() -> None:
+    """The function should strip -USDC suffix like the voice does."""
+    assert would_decline_for_backtest("BCH-USDC") is True
+    assert would_decline_for_backtest("RENDER-USDC") is False
+
+
+def test_would_decline_handles_none_indicators() -> None:
+    """No RSI/MFI data — only cohort can fire."""
+    assert would_decline_for_backtest("UNKNOWN") is False
+    assert would_decline_for_backtest("UNKNOWN", rsi=None, mfi=None) is False
+    assert would_decline_for_backtest("BCH", rsi=None, mfi=None) is True
