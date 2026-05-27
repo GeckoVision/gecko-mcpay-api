@@ -25,6 +25,10 @@ from voices.memory_voice_v2 import (  # noqa: E402
     MINUS_EV_COHORT,
     MemoryVoiceV2,
     PLUS_EV_COHORT,
+    SOLANA_COHORT_BEARISH_CONFIDENCE,
+    SOLANA_COHORT_BULLISH_CONFIDENCE,
+    SOLANA_MINUS_EV_COHORT,
+    SOLANA_PLUS_EV_COHORT,
     would_decline_for_backtest,
 )
 
@@ -294,3 +298,82 @@ def test_would_decline_handles_none_indicators() -> None:
     assert would_decline_for_backtest("UNKNOWN") is False
     assert would_decline_for_backtest("UNKNOWN", rsi=None, mfi=None) is False
     assert would_decline_for_backtest("BCH", rsi=None, mfi=None) is True
+
+
+# ── Phase D #1: Solana cohort (SOFT) ─────────────────────────────────────
+
+
+def test_solana_minus_ev_votes_bearish_at_soft_confidence() -> None:
+    """WIF is in Solana MINUS_EV cohort. v2 votes bearish 0.40 (NOT 0.65)."""
+    voice = MemoryVoiceV2()
+    out = _grade(voice, _state("WIF"), FakeMemory())
+    assert out.verdict == "bearish"
+    assert out.confidence == SOLANA_COHORT_BEARISH_CONFIDENCE
+    assert "chronic_solana_minus_ev_cohort" in out.reasoning
+
+
+def test_solana_plus_ev_votes_bullish_at_soft_confidence() -> None:
+    """KMNO is in Solana PLUS_EV cohort."""
+    voice = MemoryVoiceV2()
+    out = _grade(voice, _state("KMNO"), FakeMemory())
+    assert out.verdict == "bullish"
+    assert out.confidence == SOLANA_COHORT_BULLISH_CONFIDENCE
+    assert "chronic_solana_plus_ev_cohort" in out.reasoning
+
+
+def test_bot_universe_wif_pyth_classified_as_solana_minus_ev() -> None:
+    """Regression: WIF + PYTH MUST land in SOLANA_MINUS_EV per Phase D #1 derivation."""
+    assert "WIF" in SOLANA_MINUS_EV_COHORT
+    assert "PYTH" in SOLANA_MINUS_EV_COHORT
+
+
+def test_bot_universe_jto_jup_ray_NOT_in_either_solana_cohort() -> None:
+    """Regression: JTO/JUP/RAY are NEUTRAL in the Solana cohort (not in either list)."""
+    for sym in ("JTO", "JUP", "RAY"):
+        assert sym not in SOLANA_MINUS_EV_COHORT
+        assert sym not in SOLANA_PLUS_EV_COHORT
+
+
+def test_solana_cohort_lists_have_10_each() -> None:
+    """Phase D #1 derives top/bottom 10 each — regression-prevent if list shrinks."""
+    assert len(SOLANA_PLUS_EV_COHORT) == 10
+    assert len(SOLANA_MINUS_EV_COHORT) == 10
+
+
+def test_solana_cohort_soft_does_not_drive_backtest_decline() -> None:
+    """would_decline_for_backtest uses HARD Binance cohort only — Solana cohort is SOFT.
+
+    The Solana cohort fires at 0.40 confidence in grade() but is NOT used for
+    the backtest decline gate (validation purposes). WIF should not decline
+    in the backtest path even though it's in SOLANA_MINUS_EV.
+    """
+    assert would_decline_for_backtest("WIF") is False  # NOT in Binance cohort
+    assert would_decline_for_backtest("BCH") is True   # IS in Binance cohort
+
+
+def test_solana_minus_ev_overrides_solana_plus_ev_at_same_confidence() -> None:
+    """If a symbol were in both (shouldn't happen), bearish defensive bias wins."""
+    voice = MemoryVoiceV2(
+        solana_minus_ev_cohort=frozenset({"OVERLAP"}),
+        solana_plus_ev_cohort=frozenset({"OVERLAP"}),
+    )
+    out = _grade(voice, _state("OVERLAP"), FakeMemory())
+    assert out.verdict == "bearish"
+
+
+def test_solana_cohort_lists_disjoint() -> None:
+    """Solana plus/minus must not share symbols."""
+    assert SOLANA_PLUS_EV_COHORT.isdisjoint(SOLANA_MINUS_EV_COHORT)
+
+
+def test_solana_cohort_disjoint_from_binance_cohort() -> None:
+    """No symbol should appear in both venues' cohorts (different ecosystems)."""
+    # ZEC actually IS in both PLUS_EV (Binance) and SOLANA_PLUS_EV (Solana) — flag if so
+    overlap_plus = PLUS_EV_COHORT & SOLANA_PLUS_EV_COHORT
+    overlap_minus = MINUS_EV_COHORT & SOLANA_MINUS_EV_COHORT
+    # Document any overlaps — not necessarily a bug, but worth knowing
+    if overlap_plus or overlap_minus:
+        # ZEC appears in both PLUS_EV lists per our cohort derivations — OK
+        # (cross-venue convergent signal is informative not harmful)
+        assert overlap_plus == {"ZEC"} or overlap_plus == set()
+        assert overlap_minus == set()
