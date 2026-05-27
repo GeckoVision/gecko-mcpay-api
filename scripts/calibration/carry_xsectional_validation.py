@@ -133,12 +133,18 @@ def cpcv_on(rets: list[float]) -> ofr.CPCVResult:
     return ofr.cpcv_paths(samples, CPCV_N_GROUPS, CPCV_N_TEST, CPCV_EMBARGO)
 
 
-def pbo_by_coin(per_coin: dict[str, list[tuple[int, float]]]) -> ofr.PBOResult:
+def pbo_by_coin(per_coin: dict[str, list[tuple[int, float]]], n_bins: int = 10) -> ofr.PBOResult:
+    """PBO with ``n_bins`` contiguous time-partitions × per-coin variants.
+
+    Default ``n_bins=10`` matches the original layout; ``n_bins`` is the kwarg
+    Sprint 4.5 (private/strategy/2026-05-26-carry-universe-pbo-finer-partition-precommit.md)
+    varies to test partition-granularity sensitivity of the PBO 0.254 result.
+    """
     names = [c for c in per_coin if len(per_coin[c]) >= 10]
     if len(names) < 2:
         return ofr.PBOResult(float("nan"), 0, len(names), float("nan"), note="need >=2 coins")
     all_ts = sorted({t for c in names for t, _ in per_coin[c]})
-    lo, span, nb = all_ts[0], max(1, all_ts[-1] - all_ts[0]), 10
+    lo, span, nb = all_ts[0], max(1, all_ts[-1] - all_ts[0]), n_bins
     matrix = []
     for b in range(nb):
         row = []

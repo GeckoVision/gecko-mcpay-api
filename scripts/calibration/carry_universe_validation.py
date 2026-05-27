@@ -220,6 +220,112 @@ def build(
     return port, per_coin
 
 
+# ── PBO partition-strategy sweep (Sprint 4.5) ──────────────────────────
+# Pre-commit interpretation lives at
+# private/strategy/2026-05-26-carry-universe-pbo-finer-partition-precommit.md
+# — names DEPLOY/PAPER ONLY/REJECT actions per branch BEFORE any variant runs.
+#
+# All four strategies share the same partition AXIS (contiguous time blocks);
+# the only thing that varies is the number of bins. Per the pre-commit, NO
+# OTHER STRATEGIES may be added after seeing the results — that's the textbook
+# overfitting move the rigor stack is designed to catch.
+PBO_PARTITION_STRATEGIES: dict[str, int] = {
+    "time_10": 10,  # current default — baseline
+    "time_20": 20,  # finer — tests week-to-week consistency
+    "time_5": 5,    # coarser sanity check — floor
+    "walk_forward_2": 2,  # extreme — pure walk-forward (1st year IS vs 2nd year OOS)
+}
+
+
+def pbo_sweep(per_coin: dict[str, list[tuple[int, float]]]) -> dict[str, dict]:
+    """Run pbo_by_coin under each strategy in PBO_PARTITION_STRATEGIES; return
+    ``{name: {pbo, n_combinations, n_variants, median_logit, note}}``. Used by
+    render_verdict so the verdict block can show all four side-by-side.
+
+    Progressive print on each variant completion (stdout flushed) so the
+    operator sees partial results before the slow variants land. The
+    GECKO_PBO_SKIP_SLOW=1 env flag skips variants whose n_bins >= 16 (i.e.
+    `time_20`) — for fast iteration when only the cheaper variants are
+    needed. The skipped variant lands as a skip entry in the output dict.
+    """
+    import time as _time
+    skip_slow = os.environ.get("GECKO_PBO_SKIP_SLOW", "").strip().lower() in ("1", "true", "yes")
+    out: dict[str, dict] = {}
+    for name, n_bins in PBO_PARTITION_STRATEGIES.items():
+        if skip_slow and n_bins >= 16:
+            print(f"  [pbo_sweep] {name:18s} n_bins={n_bins:3d} SKIPPED (GECKO_PBO_SKIP_SLOW=1)", flush=True)
+            out[name] = {
+                "pbo": float("nan"),
+                "n_combinations": 0,
+                "n_variants": 0,
+                "median_logit": float("nan"),
+                "note": "skipped (GECKO_PBO_SKIP_SLOW=1)",
+                "n_bins": n_bins,
+            }
+            continue
+        print(f"  [pbo_sweep] {name:18s} n_bins={n_bins:3d} running...", flush=True)
+        t0 = _time.time()
+        try:
+            res = cx.pbo_by_coin(per_coin, n_bins=n_bins)
+        except Exception as exc:
+            elapsed = _time.time() - t0
+            print(f"  [pbo_sweep] {name:18s} ERR after {elapsed:.1f}s: {type(exc).__name__}: {exc}", flush=True)
+            out[name] = {
+                "pbo": float("nan"),
+                "n_combinations": 0,
+                "n_variants": 0,
+                "median_logit": float("nan"),
+                "note": f"err: {type(exc).__name__}: {exc}",
+                "n_bins": n_bins,
+            }
+            continue
+        elapsed = _time.time() - t0
+        print(
+            f"  [pbo_sweep] {name:18s} n_bins={n_bins:3d} PBO={res.pbo:.4f} "
+            f"(n_combos={res.n_combinations:>6d}) in {elapsed:.1f}s",
+            flush=True,
+        )
+        out[name] = {
+            "pbo": res.pbo,
+            "n_combinations": res.n_combinations,
+            "n_variants": res.n_variants,
+            "median_logit": res.median_logit,
+            "note": res.note,
+            "n_bins": n_bins,
+        }
+    return out
+
+
+def pbo_branch(pbo_sweep_result: dict[str, dict], threshold: float = 0.20) -> str:
+    """Classify the sweep against the pre-committed branches A/B/C.
+
+    Returns one of:
+      - "A_all_pass" — every variant cleared < threshold → upgrade to DEPLOY
+      - "B_mixed_b1_walkforward_only_fails" — only walk_forward_2 fails
+      - "B_mixed_b2_time20_only_fails" — only time_20 fails
+      - "B_mixed_b3_time5_only_fails" — only time_5 fails (anomalous)
+      - "B_mixed_other" — some other mixed pattern (PAPER ONLY + investigate)
+      - "C_all_fail" — every variant ≥ threshold → close lane
+    """
+    def passes(name: str) -> bool:
+        v = pbo_sweep_result.get(name, {}).get("pbo")
+        return isinstance(v, (int, float)) and v == v and v < threshold
+
+    pass_set = {n for n in PBO_PARTITION_STRATEGIES if passes(n)}
+    fail_set = set(PBO_PARTITION_STRATEGIES) - pass_set
+    if len(pass_set) == len(PBO_PARTITION_STRATEGIES):
+        return "A_all_pass"
+    if len(fail_set) == len(PBO_PARTITION_STRATEGIES):
+        return "C_all_fail"
+    if fail_set == {"walk_forward_2"}:
+        return "B_mixed_b1_walkforward_only_fails"
+    if fail_set == {"time_20"}:
+        return "B_mixed_b2_time20_only_fails"
+    if fail_set == {"time_5"}:
+        return "B_mixed_b3_time5_only_fails"
+    return "B_mixed_other"
+
+
 # ── Verdict block ───────────────────────────────────────────────────────
 def render_verdict(
     *,
@@ -253,6 +359,13 @@ def render_verdict(
     cpcv = cx.cpcv_on(port)
     dsr = ofr.deflated_sharpe_ratio(port, [ofr.sharpe_ratio(port)], n_trials=1)
     pbo = cx.pbo_by_coin(per_coin)
+    # Sprint 4.5: sweep PBO under 4 partition-granularity variants. The default
+    # `pbo` above stays as the headline gate; the sweep adds the granularity
+    # sensitivity analysis. Per pre-commit interpretation (Op-1), branch
+    # classification follows the verbatim rules in
+    # private/strategy/2026-05-26-carry-universe-pbo-finer-partition-precommit.md
+    pbo_sweep_result = pbo_sweep(per_coin)
+    pbo_branch_label = pbo_branch(pbo_sweep_result, threshold=0.20)
 
     gates = {
         "net carry CI excludes 0 (lower bound > 0)": lo_e > 0,
@@ -304,6 +417,21 @@ def render_verdict(
     text_lines.append(
         f"  PBO:                       {pbo.pbo:.3f}  (threshold < 0.20)"
     )
+    text_lines.append(f"  PBO sweep (Sprint 4.5, finer-partition):")
+    for sweep_name, sweep_r in pbo_sweep_result.items():
+        v = sweep_r["pbo"]
+        status = (
+            "PASS" if (isinstance(v, (int, float)) and v == v and v < 0.20)
+            else "FAIL" if (isinstance(v, (int, float)) and v == v and v >= 0.20)
+            else "NaN"
+        )
+        bins = sweep_r["n_bins"]
+        combos = sweep_r["n_combinations"]
+        v_str = f"{v:.3f}" if (isinstance(v, (int, float)) and v == v) else "nan"
+        text_lines.append(
+            f"    {sweep_name:18s} (n_bins={bins:3d}, combos={combos:>6d}) → PBO={v_str}  [{status}]"
+        )
+    text_lines.append(f"  pre-commit branch classification: {pbo_branch_label}")
     text_lines.append(
         f"  Max DD (cumulative):       {mdd * 100:+.3f}%   Calmar: {calmar:+.3f}"
     )
@@ -341,6 +469,8 @@ def render_verdict(
         "annualized_pct": ann_pct,
         "annualized_ci_pct": [ann_lo_pct, ann_hi_pct],
         "annualized_sharpe": shp,
+        "pbo_sweep": pbo_sweep_result,
+        "pbo_branch": pbo_branch_label,
         "cpcv_median_sharpe": cpcv.median,
         "cpcv_pct_paths_negative": cpcv.pct_paths_negative,
         "dsr": dsr.dsr,

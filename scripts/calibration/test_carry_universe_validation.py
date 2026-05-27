@@ -1,4 +1,4 @@
-"""Unit tests for ``carry_universe_validation`` — Sprint 4 S4-1.
+"""Unit tests for ``carry_universe_validation`` — Sprint 4 S4-1 + Sprint 4.5.
 
 Per ``feedback_lighter_tests``: synthetic legs data + monkeypatch on the
 file-loader; no real Binance data needed. Tests cover:
@@ -6,16 +6,34 @@ file-loader; no real Binance data needed. Tests cover:
 - ``build()`` cross-sectional weekly book on synthetic 50-coin data
 - ``render_verdict()`` gate logic + verdict-block taxonomy
 - ``load_universe`` filtering (subset for testing)
+- Sprint 4.5: ``pbo_sweep`` + ``pbo_branch`` classification
 """
 
 from __future__ import annotations
 
 import json
+import math
 import os
 
 import pytest
 
 from scripts.calibration import carry_universe_validation as cuv
+from scripts.calibration import overfitting_rigor as ofr_local
+
+
+# ── Auto-mock the heavy PBO compute for ALL tests in this file ─────────
+# pbo_by_coin under time_20 (n_bins=20) does C(20,10)=184k combinations and
+# is intrinsically minutes-slow even on small data. PBO math is covered by
+# overfitting_rigor's own tests; tests in this file verify orchestration.
+# Per-test monkeypatches (e.g. TestPboSweep) take precedence over this
+# autouse default within their own test scope.
+@pytest.fixture(autouse=True)
+def _fast_pbo_default(monkeypatch):
+    def fast_pbo_by_coin(per_coin, n_bins=10):
+        return ofr_local.PBOResult(
+            pbo=0.15, n_combinations=42, n_variants=10, median_logit=0.5,
+        )
+    monkeypatch.setattr(cuv.cx, "pbo_by_coin", fast_pbo_by_coin)
 
 
 class TestBarAt:
@@ -185,6 +203,120 @@ class TestRenderVerdict:
         assert expected.issubset(gates)
         # Plus the Kamino-benchmark gate dynamic name
         assert any("Kamino" in g for g in gates)
+
+
+class TestPboSweep:
+    def _synthetic_per_coin(
+        self, n_coins: int = 10, n_events: int = 200, mean_pnl: float = 0.0001
+    ) -> dict[str, list[tuple[int, float]]]:
+        ts_step = 8 * 3600 * 1000
+        return {
+            f"C{i:02d}": [(t * ts_step, mean_pnl + (i - n_coins / 2) * 1e-5) for t in range(n_events)]
+            for i in range(n_coins)
+        }
+
+    def test_sweep_runs_all_four_strategies(self, monkeypatch):
+        # Mock cx.pbo_by_coin: time_20 is C(20,10)=184k combos so the real
+        # call is intrinsically slow in unit tests. PBO math is tested
+        # elsewhere in overfitting_rigor's own tests; here we verify
+        # orchestration shape only.
+        from scripts.calibration import overfitting_rigor as ofr_local
+        canned_returns = {n: 0.15 for n in cuv.PBO_PARTITION_STRATEGIES}  # all PASS
+        def fake_pbo_by_coin(per_coin, n_bins=10):
+            # Find which strategy this n_bins maps to
+            name = next(
+                (k for k, v in cuv.PBO_PARTITION_STRATEGIES.items() if v == n_bins),
+                "?",
+            )
+            return ofr_local.PBOResult(
+                pbo=canned_returns[name],
+                n_combinations=42,
+                n_variants=10,
+                median_logit=0.5,
+            )
+        monkeypatch.setattr(cuv.cx, "pbo_by_coin", fake_pbo_by_coin)
+        result = cuv.pbo_sweep({})  # input shape doesn't matter — fake ignores
+        assert set(result.keys()) == {"time_10", "time_20", "time_5", "walk_forward_2"}
+        for name, r in result.items():
+            assert "pbo" in r
+            assert "n_combinations" in r
+            assert "n_bins" in r
+            assert r["n_bins"] == cuv.PBO_PARTITION_STRATEGIES[name]
+
+    def test_sweep_handles_degenerate_input_per_strategy(self, monkeypatch):
+        # Single coin — pbo_by_coin returns nan with note. Mock to skip the
+        # real (slow) compute; the orchestration should propagate NaN cleanly.
+        import math
+        from scripts.calibration import overfitting_rigor as ofr_local
+        def fake_pbo_by_coin(per_coin, n_bins=10):
+            return ofr_local.PBOResult(
+                pbo=math.nan, n_combinations=0, n_variants=1, median_logit=math.nan,
+                note="need >=2 coins",
+            )
+        monkeypatch.setattr(cuv.cx, "pbo_by_coin", fake_pbo_by_coin)
+        result = cuv.pbo_sweep({})
+        for name, r in result.items():
+            assert "pbo" in r
+            assert math.isnan(r["pbo"])
+            assert r["note"] == "need >=2 coins"
+
+    def test_sweep_swallows_per_strategy_exceptions(self, monkeypatch):
+        # If pbo_by_coin raises (shouldn't normally, but defense-in-depth),
+        # the sweep continues with an "err" note for that strategy.
+        def flaky_pbo_by_coin(per_coin, n_bins=10):
+            if n_bins == 20:
+                raise RuntimeError("simulated PBO compute failure")
+            from scripts.calibration import overfitting_rigor as ofr_local
+            return ofr_local.PBOResult(0.10, 42, 10, 0.5)
+        monkeypatch.setattr(cuv.cx, "pbo_by_coin", flaky_pbo_by_coin)
+        result = cuv.pbo_sweep({})
+        # 3 strategies return clean; time_20 should have an err note
+        for name in ("time_10", "time_5", "walk_forward_2"):
+            assert result[name]["pbo"] == 0.10
+        assert "err" in result["time_20"]["note"].lower()
+
+    def test_branch_classification_all_pass(self):
+        sweep = {n: {"pbo": 0.10, "n_bins": v} for n, v in cuv.PBO_PARTITION_STRATEGIES.items()}
+        assert cuv.pbo_branch(sweep) == "A_all_pass"
+
+    def test_branch_classification_all_fail(self):
+        sweep = {n: {"pbo": 0.30, "n_bins": v} for n, v in cuv.PBO_PARTITION_STRATEGIES.items()}
+        assert cuv.pbo_branch(sweep) == "C_all_fail"
+
+    def test_branch_classification_b1_walkforward_only_fails(self):
+        sweep = {n: {"pbo": 0.10, "n_bins": v} for n, v in cuv.PBO_PARTITION_STRATEGIES.items()}
+        sweep["walk_forward_2"]["pbo"] = 0.30
+        assert cuv.pbo_branch(sweep) == "B_mixed_b1_walkforward_only_fails"
+
+    def test_branch_classification_b2_time20_only_fails(self):
+        sweep = {n: {"pbo": 0.10, "n_bins": v} for n, v in cuv.PBO_PARTITION_STRATEGIES.items()}
+        sweep["time_20"]["pbo"] = 0.30
+        assert cuv.pbo_branch(sweep) == "B_mixed_b2_time20_only_fails"
+
+    def test_branch_classification_b3_time5_only_fails(self):
+        sweep = {n: {"pbo": 0.10, "n_bins": v} for n, v in cuv.PBO_PARTITION_STRATEGIES.items()}
+        sweep["time_5"]["pbo"] = 0.30
+        assert cuv.pbo_branch(sweep) == "B_mixed_b3_time5_only_fails"
+
+    def test_branch_classification_b_mixed_other(self):
+        # time_5 AND time_20 fail — not one of the named B1/B2/B3 sub-branches
+        sweep = {n: {"pbo": 0.10, "n_bins": v} for n, v in cuv.PBO_PARTITION_STRATEGIES.items()}
+        sweep["time_5"]["pbo"] = 0.30
+        sweep["time_20"]["pbo"] = 0.30
+        assert cuv.pbo_branch(sweep) == "B_mixed_other"
+
+    def test_branch_threshold_is_respected(self):
+        # PBO 0.19 passes <0.20; PBO 0.21 fails. Verify the boundary.
+        sweep = {n: {"pbo": 0.19, "n_bins": v} for n, v in cuv.PBO_PARTITION_STRATEGIES.items()}
+        assert cuv.pbo_branch(sweep, threshold=0.20) == "A_all_pass"
+        sweep = {n: {"pbo": 0.21, "n_bins": v} for n, v in cuv.PBO_PARTITION_STRATEGIES.items()}
+        assert cuv.pbo_branch(sweep, threshold=0.20) == "C_all_fail"
+
+    def test_branch_classification_nan_treated_as_fail(self):
+        import math
+        sweep = {n: {"pbo": math.nan, "n_bins": v} for n, v in cuv.PBO_PARTITION_STRATEGIES.items()}
+        # NaN does not pass < threshold, so all fail = C_all_fail
+        assert cuv.pbo_branch(sweep) == "C_all_fail"
 
 
 class TestVerdictBlockTextFormat:
