@@ -1,0 +1,12 @@
+{
+  "name": "gecko-copy-trade-grader",
+  "description": "Rigor-graded scorecard for any public crypto copy-trader or trading bot. Computes Sharpe + Sortino + true max-DD + catastrophic-rate + stability + selection-deflated Sharpe. Outputs A/B/C/D grade. Catches the 34% of OKX top-50 traders that grade D under proper rigor.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Gecko",
+    "github": "ernanibmurtinho"
+  },
+  "license": "MIT",
+  "keywords": ["copy-trading", "okx", "rigor", "sharpe", "leaderboard", "due-diligence"],
+  "repository": "https://github.com/ernanibmurtinho/gecko-mcpay-api"
+}

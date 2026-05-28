@@ -1,0 +1,24 @@
+{
+  "name": "gecko-copy-trade-grader",
+  "version": "0.1.0",
+  "description": "Rigor-graded scorecard for any public crypto copy-trader or trading bot. Pulls OKX smartmoney leaderboards (or accepts manual per-trade input), computes Sharpe / max-DD / catastrophic-rate / stability / selection-deflated Sharpe, outputs A/B/C/D grade. Use before clicking 'Copy' on OKX — empirically only 11% of OKX top-50 leaderboard appearances are persistently skilled.",
+  "author": "Gecko",
+  "license": "MIT",
+  "keywords": ["copy-trading", "okx", "rigor", "sharpe", "drawdown", "leaderboard", "selection-bias", "deflated-sharpe", "walk-forward", "due-diligence"],
+  "main": "SKILL.md",
+  "scripts": {
+    "grade": "python3 grade.py",
+    "sample": "python3 grade.py --sample",
+    "test": "python3 -m pytest tests/ -q"
+  },
+  "tags": ["copy-trading", "okx", "rigor", "sharpe", "drawdown", "leaderboard"],
+  "triggers": [
+    "Grade this trader",
+    "Should I copy this OKX trader",
+    "Is this trader actually good",
+    "Run rigor on the OKX leaderboard",
+    "Show me Gecko-Rank vs OKX-Rank delta",
+    "Find the most underrated traders on OKX",
+    "Cross-period stability of OKX top traders"
+  ]
+}
