@@ -1,0 +1,12 @@
+{
+  "name": "gecko-trade-agent",
+  "version": "0.2.0",
+  "description": "Self-hostable trading agent with a transparent multi-voice gate + pre-execution devil's advocate. Five voices — chart, regime, memory, risk, strategist — debate every entry through a code-pinned coordinator, surfaced live in a dashboard. Paper-default; honest about edge (10 published nulls, breakout is -EV in chop). For crypto operators evaluating someone else's signals, not building new ones. Plugs into OKX onchainOS today; SendAI Solana Agent Kit landing in Phase B.",
+  "author": "Gecko",
+  "license": "MIT",
+  "keywords": ["trading-agent","agentic-trading","multi-agent","devils-advocate","oracle","solana","paper-trade","risk-management","dashboard","self-hostable"],
+  "main": "SKILL.md",
+  "scripts": { "test": "python3 -m pytest tests/ -q", "start": "python3 bot.py" },
+  "tags": ["trading-agent","agentic-trading","multi-agent","oracle","solana","paper-trade","self-hostable"],
+  "triggers": ["Start the Gecko trade agent","Run the gecko trading panel","Self-host a trading agent","Show me the agent voices trading","Paper trade with a transparent gate"]
+}

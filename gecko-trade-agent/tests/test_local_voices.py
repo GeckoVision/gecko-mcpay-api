@@ -681,9 +681,15 @@ def test_bootstrap_returns_panel_when_env_set(
     mem = LocalMemory(path=tmp_path / "bs_set.jsonl")
     panel = build_local_panel(memory=mem)
     assert isinstance(panel, LocalPanel)
-    # Four voices (B3 added regime_analyst): chart_analyst, memory_voice,
-    # risk_voice, regime_analyst.
+    # Five voices (Sprint 21 added strategist_voice): chart_analyst,
+    # memory_voice, risk_voice, regime_analyst, strategist_voice.
     names = [v.voice_name for v in panel._voices]
-    assert names == ["chart_analyst", "memory_voice", "risk_voice", "regime_analyst"]
+    assert names == [
+        "chart_analyst",
+        "memory_voice",
+        "risk_voice",
+        "regime_analyst",
+        "strategist_voice",
+    ]
     # Coordinator is the imported function.
     assert panel._coordinator is coordinator

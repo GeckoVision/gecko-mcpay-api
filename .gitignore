@@ -71,6 +71,21 @@ contest_bot/bot_state.json
 contest_bot/bot_state.json.tmp
 contest_bot/artifact_*.jsonl
 contest_bot/local_memory.jsonl
+
+# Sprint 21 — gecko-trade-agent skill ships as code only; the runtime
+# artifacts the local bot produces (daily logs, per-instrument memory,
+# state snapshots, overnight backups) must NEVER land in source control.
+# Mirrors the contest_bot/ rules above; same hazard.
+gecko-trade-agent/bot_state.json
+gecko-trade-agent/bot_state.json.tmp
+gecko-trade-agent/bot_state.*.json
+gecko-trade-agent/artifact_*.jsonl
+gecko-trade-agent/local_memory.jsonl
+# Pre-rename name kept for symmetry (in case anyone untars an old branch)
+gecko-okx-quickstart/bot_state.json
+gecko-okx-quickstart/bot_state.*.json
+gecko-okx-quickstart/artifact_*.jsonl
+gecko-okx-quickstart/local_memory.jsonl
 contest_bot/jto_breakout_gecko_gated_contest_live_ack.jsonl
 
 # Skill installs from `npx skills add okx/...` and `okx/plugin-store`.

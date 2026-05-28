@@ -1,0 +1,9 @@
+{
+  "name": "gecko-trade-agent",
+  "description": "Self-hostable trading agent with a transparent 5-voice gate including a pre-execution devil's advocate. Paper-default; honest about edge — 10 published nulls, breakout is -EV in chop. For crypto operators evaluating someone else's signals, not building new ones. Plugs into OKX onchainOS today; SendAI Solana Agent Kit landing in Phase B.",
+  "version": "0.2.0",
+  "author": { "name": "Gecko", "github": "ernanibmurtinho" },
+  "license": "MIT",
+  "keywords": ["trading-agent","agentic-trading","multi-agent","devils-advocate","oracle","solana","paper-trade","risk-management","dashboard","self-hostable"],
+  "repository": "https://github.com/ernanibmurtinho/gecko-mcpay-api"
+}

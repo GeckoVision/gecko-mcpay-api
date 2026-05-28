@@ -1,9 +1,0 @@
-{
-  "name": "gecko-okx-quickstart",
-  "description": "Ready-to-go OKX onchainOS trading bot with a transparent multi-voice gate. Boots a paper-mode studio in one command: chart, regime, memory, and risk voices vote on every entry through a code-pinned coordinator, surfaced live in a dashboard. Built and hardened during the OKX Agentic Trading Contest.",
-  "version": "0.1.0",
-  "author": { "name": "Gecko", "github": "ernanibmurtinho" },
-  "license": "MIT",
-  "keywords": ["trading-bot","agentic-trading","multi-agent","onchainos","okx","solana","paper-trade","risk-management","dashboard"],
-  "repository": "https://github.com/ernanibmurtinho/gecko-mcpay-api"
-}
