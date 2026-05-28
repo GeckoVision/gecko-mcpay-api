@@ -103,7 +103,31 @@ CHAIN = "solana"
 POLL_SEC = 30
 TIMEFRAME = "5m"
 ENTRY_TYPE = "price_breakout"
-USD_PER_TRADE = int(os.environ.get("USD_PER_TRADE", "45"))  # runtime-overridable for "run and adjust": e.g. USD_PER_TRADE=25 for a smaller first live session. Default 45 (contest-proven). With MAX_CONCURRENT=2: 45×2=$90 deployed of ~$100 wallet — leaves little headroom, so start smaller on the first oracle-gated live run.
+# Fix 4 (2026-05-27 backtest plan): volume_spike-only entries had negative
+# expectancy in the honesty-sprint audit — require price_breakout confirmation.
+# Default ON (strict). Set GECKO_ENTRY_REQUIRE_BREAKOUT=0 for legacy OR semantics.
+
+
+def _entry_require_breakout() -> bool:
+    return os.environ.get("GECKO_ENTRY_REQUIRE_BREAKOUT", "1").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def _breakout_magnitude_enabled() -> bool:
+    return os.environ.get("GECKO_BREAKOUT_MAGNITUDE", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+BREAKOUT_MAGNITUDE_MIN_PCT = float(os.environ.get("GECKO_BREAKOUT_MAGNITUDE_MIN_PCT", "0.5"))
+USD_PER_TRADE = int(
+    os.environ.get("USD_PER_TRADE", "45")
+)  # runtime-overridable for "run and adjust": e.g. USD_PER_TRADE=25 for a smaller first live session. Default 45 (contest-proven). With MAX_CONCURRENT=2: 45×2=$90 deployed of ~$100 wallet — leaves little headroom, so start smaller on the first oracle-gated live run.
 STOP_LOSS_PCT = 3
 TAKE_PROFIT_PCT = 2  # s41 2026-05-22: 4 → 2. Quant symbol study: universe oscillates ~2%, rarely +4% (only WIF reached it); +4% TP was structurally unreachable. Founder: "take 1-2%, not 4%". TODO: validate TP2 EV via calibration harness. PRIOR iter-3.5: 8 → 4. Founder observation + live peaks confirm: these memes oscillate ~2% naturally; +8% requires a 4x-of-normal move that almost never happens in chop. PYTH peak was +1.53% (just 0.47% short of trail activation) before drifting back. With trail-activate-at-2% catching pokes and TP-at-4% catching real momentum, 3 × +2-4% trades outperforms 1 × +8% miracle.
 STALL_GREEN_EXIT_AGE_MIN = 60  # iter-3.5 live 2026-05-20: stall-exit overlay (founder rule). If a position is open ≥60min AND pnl ≥STALL_GREEN_EXIT_MIN_PCT, force-close at market. Catches the "drifted +2-3% then died" failure mode that neither trail (no peak retracement) nor TP (never hit 4%) catches.
@@ -121,19 +145,29 @@ FLAT_STALL_AGE_MIN = 90  # position must be at least this old
 FLAT_STALL_PNL_LO = -0.5  # iter-3.9 2026-05-21: 0.3 → -0.5. Widened the band DOWN to catch the breakeven dead-zone (BOME peaked +0.58%, then flat-lined around 0% for 70min — momentum thesis dead but no rule caught it: above SL, below the +0.3% flat-stall floor). Now: a position that peaked weak and went flat-to-slightly-red gets exited as a failed thesis. Below -0.5% the SL owns it (directional losers handled separately).
 FLAT_STALL_PNL_HI = 2.0  # ... (below STALL_GREEN_EXIT_MIN_PCT)
 FLAT_STALL_NO_NEW_HIGH_MIN = 30  # AND no new high in this many minutes
-TRAIL_STOP_PCT = 0.5  # Sprint 7 2026-05-27 (autopsy finding): 1 → 0.5 — tighten trail-back per Sprint 6 Phase A 19-trade autopsy. trailing_stop mean -2.12% (one -6.28% disaster from polling-gap slippage) is 2x worse than stop_loss mean (-3.08% capped). Tightening give-back to 0.5% locks in gains closer to peak. PRIOR 2026-05-20 autonomous iter-2 (was 2 → 1 per quant analysis): tighter trail captures more of the peak. On meme-class vol (1-5%/h), 2% trail was getting swept on noise before TP; 1% trail locks in profits closer to peak.
+TRAIL_STOP_PCT = 0.3  # Setup C experiment 2026-05-28: 0.5 → 0.3. Sprint 8 shadow harness showed tight_trail_03 fixes ~70% of give-back damage (-9.37% → -0.52% sum on 20 historical closes), win-rate 35%→55%. Revert to 0.5 if mean per-trade drops below pre-experiment baseline after N≥15 closes. PRIOR Sprint 7 2026-05-27 (autopsy finding): 1 → 0.5 — tighten trail-back per Sprint 6 Phase A 19-trade autopsy. trailing_stop mean -2.12% (one -6.28% disaster from polling-gap slippage) is 2x worse than stop_loss mean (-3.08% capped). Tightening give-back to 0.5% locks in gains closer to peak. PRIOR 2026-05-20 autonomous iter-2 (was 2 → 1 per quant analysis): tighter trail captures more of the peak. On meme-class vol (1-5%/h), 2% trail was getting swept on noise before TP; 1% trail locks in profits closer to peak.
 TRAIL_ACTIVATE_AFTER_PCT = 1  # s41 2026-05-22: 2 → 1 — protect gains from +1% (founder: capture small wins in chop, don't wait for 4%). PRIOR iter-3.1 E-LITE 2026-05-20: 5 → 2. Founder + analyst-pair call: in a 14h contest window with N=1-2 trades, the stall failure mode (position drifts +1-4% then dies, hits time-stop near $0 PnL) dominates the upside-clip risk. Trail at activate=+2% + give-back=1% converts modal stalls into +1-1.5% realized wins. Real momentum still rides — the trail tracks peak, never gives back >1%, so a +2%→+12% runner closes at ~+11%.
 TRAIL_MIN_PNL_PCT = -1.0  # Sprint 7 2026-05-27: NEW safety guard. trailing_stop must never produce a worse-than-near-break-even outcome. If pnl_pct <= TRAIL_MIN_PNL_PCT when the trailing condition would fire, the position falls through to the stop_loss check (correctly labeled, capped at -STOP_LOSS_PCT). Caps the disaster mode the autopsy surfaced: poll-gap slippage that takes pnl from +1% peak straight past 0% to -6% without firing in the right order. Combined with the eval-order swap (stop_loss BEFORE trailing in monitor_positions), trailing_stop labels are now bounded to pnl ∈ (-1%, +∞).
-MAX_DAILY_TRADES = int(os.environ.get("MAX_DAILY_TRADES", "3"))  # env-overridable (2026-05-23 overnight). Default 3 (conservative contest setting). Raise for paper data-gathering experiments.
-MAX_CONCURRENT = int(os.environ.get("MAX_CONCURRENT", "2"))  # env-overridable. Default 2. Raise for paper data-gathering (more parallel trades = more sample).
-SESSION_LOSS_PAUSE = int(os.environ.get("SESSION_LOSS_PAUSE", "2"))  # env-overridable (2026-05-23 overnight). Default 2 (sit out after 2 consecutive losses). Raise for paper data-gathering.
+MAX_DAILY_TRADES = int(
+    os.environ.get("MAX_DAILY_TRADES", "3")
+)  # env-overridable (2026-05-23 overnight). Default 3 (conservative contest setting). Raise for paper data-gathering experiments.
+MAX_CONCURRENT = int(
+    os.environ.get("MAX_CONCURRENT", "2")
+)  # env-overridable. Default 2. Raise for paper data-gathering (more parallel trades = more sample).
+SESSION_LOSS_PAUSE = int(
+    os.environ.get("SESSION_LOSS_PAUSE", "2")
+)  # env-overridable (2026-05-23 overnight). Default 2 (sit out after 2 consecutive losses). Raise for paper data-gathering.
 MAX_BUDGET_USD = 100  # total budget cap — GLOBAL across all INSTRUMENTS
 DASHBOARD_PORT = int(os.environ.get("DASHBOARD_PORT", "8265"))
 # GECKO_STATE_DIR: env-overridable state directory. Default = the contest_bot/
 # directory (so the live bot on port 8265 finds its existing state files on
 # its next restart). Set to a separate path for isolated test instances so
 # they never touch the live bot's state files.
-_STATE_BASE = Path(os.environ["GECKO_STATE_DIR"]) if os.environ.get("GECKO_STATE_DIR") else Path(__file__).parent
+_STATE_BASE = (
+    Path(os.environ["GECKO_STATE_DIR"])
+    if os.environ.get("GECKO_STATE_DIR")
+    else Path(__file__).parent
+)
 
 # ── Multi-instrument config (s40-lab-#4) ───────────────────────────
 # Per founder direction: iterate JTO → JUP → PYTH each poll, evaluate
@@ -153,11 +187,15 @@ INSTRUMENTS: list[dict] = [
     #           makes $45 fills clean; JUP/RAY/JTO are far more liquid.)
     #   onchainos batch scan riskLevel: PYTH=MEDIUM, WIF=LOW, JUP=MEDIUM,
     #     RAY=LOW, JTO=LOW. No honeypots, no taxes across the board.
+    # Setup C experiment 2026-05-28 (founder + Sprint 8 + Phase 2 synthesis):
+    # DROPPED JTO + JUP — Sprint 8 finding: 99% of bot damage = 3 catastrophic
+    #   SL trades, ALL on JTO×2 + JUP×1 (mean PnL: JTO -2.19%, JUP -0.80%).
+    #   WIF (+0.55% mean, n=8), PYTH (+0.42% mean, n=2), RAY (-0.50% mean, n=1)
+    #   are not catastrophic-prone. Restore JTO/JUP only if this experiment
+    #   shows the bot needs them for trade frequency.
     {"symbol": "PYTH", "mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3", "chain": "solana"},
-    {"symbol": "WIF",  "mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", "chain": "solana"},
-    {"symbol": "JUP",  "mint": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",  "chain": "solana"},
-    {"symbol": "RAY",  "mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", "chain": "solana"},
-    {"symbol": "JTO",  "mint": "jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL",  "chain": "solana"},
+    {"symbol": "WIF", "mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", "chain": "solana"},
+    {"symbol": "RAY", "mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", "chain": "solana"},
 ]
 
 ENTRY_PARAMS = {
@@ -246,9 +284,20 @@ def build_decision_doc(
         indicators={
             k: snap.get(k)
             for k in (
-                "adx", "plus_di", "minus_di", "rsi", "mfi", "chop", "bb_width",
-                "range_24h_pct", "ema_stack", "regime", "regime_1h",
-                "adx_slope", "adx_distance", "chop_distance",
+                "adx",
+                "plus_di",
+                "minus_di",
+                "rsi",
+                "mfi",
+                "chop",
+                "bb_width",
+                "range_24h_pct",
+                "ema_stack",
+                "regime",
+                "regime_1h",
+                "adx_slope",
+                "adx_distance",
+                "chop_distance",
             )
         },
         voices=panel_voices,
@@ -278,6 +327,25 @@ SAFETY = {"honeypot_check": True, "phishing_exclude": True}
 # ── OnchainOS client ───────────────────────────────────────────────
 oc = OnchainOS(chain=CHAIN)
 WALLET_ADDRESS = ""
+
+
+# ── Replayer seam (Phase 1, 2026-05-27) ────────────────────────────
+# Pure dependency-injection hook. Tests or the offline replayer can install
+# a `CandleProvider`-shaped object (`get_candles` + `get_price_info`) and the
+# poll/monitor lifecycle will route every candle/price read through it
+# instead of the live OnchainOS CLI. Default `_OC_OVERRIDE is None` keeps
+# the live code path byte-identical to pre-seam behaviour.
+# See scripts/calibration/contest_bot_replayer.py for the replayer harness.
+_OC_OVERRIDE: Any = None
+
+
+def _get_oc() -> Any:
+    """Return the active candle/price provider — override when injected,
+    else the module-level live `oc` client. Used by every candle/price read
+    inside the poll_instruments / monitor_positions lifecycle so the replayer
+    can swap in a deterministic tape-backed provider without touching the
+    bot's trading logic."""
+    return _OC_OVERRIDE if _OC_OVERRIDE is not None else oc
 
 
 def _spot_from_price_response(resp: object) -> float:
@@ -370,6 +438,8 @@ def _fund_snapshot(v: Any) -> dict[str, Any]:
         "key_drivers": v.key_drivers[:2],
         "ts": v.ts.isoformat(),
     }
+
+
 def _compute_index_snapshot(symbol: str, candles: list[dict]) -> dict:
     """Compute ADX/RSI/MFI snapshot from already-fetched candles.
 
@@ -493,9 +563,9 @@ def _compute_index_snapshot(symbol: str, candles: list[dict]) -> dict:
         "bars_min_adx": 28,
         # Wave-2b fields — populated separately after network calls.
         # None here means "not yet computed this poll cycle".
-        "net_flow": None,       # NetFlowSignal dict snapshot, or None
+        "net_flow": None,  # NetFlowSignal dict snapshot, or None
         "net_flow_verdict": None,  # "accumulation" | "distribution" | "neutral" | None
-        "regime_1h": None,      # "TREND-UP" | "TREND-DOWN" | "CHOP" | None
+        "regime_1h": None,  # "TREND-UP" | "TREND-DOWN" | "CHOP" | None
     }
 
 
@@ -899,14 +969,10 @@ class _DashHandler(BaseHTTPRequestHandler):
                 "signal_feed": signal_feed[-50:],
                 # Studio Phase 1: latest panel decisions (voices + regime) per
                 # instrument, newest-first, for the dashboard's Voices panel.
-                "panel": sorted(
-                    _LAST_PANEL.values(), key=lambda p: p.get("ts", ""), reverse=True
-                ),
+                "panel": sorted(_LAST_PANEL.values(), key=lambda p: p.get("ts", ""), reverse=True),
                 # S41: live Gecko Oracle (fundamentals) verdicts per instrument,
                 # newest-first, for the dashboard's Oracle panel.
-                "oracle": sorted(
-                    _LAST_FUND.values(), key=lambda o: o.get("ts", ""), reverse=True
-                ),
+                "oracle": sorted(_LAST_FUND.values(), key=lambda o: o.get("ts", ""), reverse=True),
                 # S41 studio: ADX/RSI/MFI index snapshot per instrument,
                 # newest-first, for the dashboard's Indexes panel.
                 "indexes": sorted(
@@ -1088,7 +1154,7 @@ def _get_regime_1h(inst: dict) -> str:
 
     try:
         # 30 bars of 1H gives 30 hours; need ≥28 for ADX warm-up.
-        candles_1h = oc.get_candles(mint, "1H", limit=30)
+        candles_1h = _get_oc().get_candles(mint, "1H", limit=30)
         if not candles_1h:
             raise ValueError("empty 1h candles")
         regime = _indicators.compute_regime_1h(candles_1h)
@@ -1137,7 +1203,7 @@ def btc_overlay_passes() -> tuple[bool, str]:
     condition = str(BTC_OVERLAY.get("condition", "above_ma"))
 
     try:
-        candles = oc.get_candles(BTC_WBTC_MINT, "5m", limit=max(ma_period, 24))
+        candles = _get_oc().get_candles(BTC_WBTC_MINT, "5m", limit=max(ma_period, 24))
     except Exception as exc:  # broad — never let an RPC blip halt the bot
         snap = {
             "ok": True,
@@ -1220,7 +1286,7 @@ def evaluate_volume_spike(
     """
     mint = inst["mint"]
     if candles is None:
-        candles = oc.get_candles(mint, TIMEFRAME, limit=max(VOL_SPIKE_AVG_BARS + 1, 24))
+        candles = _get_oc().get_candles(mint, TIMEFRAME, limit=max(VOL_SPIKE_AVG_BARS + 1, 24))
     if not candles or len(candles) < 2:
         return False, None
     window = candles[-VOL_SPIKE_AVG_BARS:]
@@ -1256,8 +1322,9 @@ def evaluate_breakout(inst: dict) -> dict | None:
     lookback = int(ENTRY_PARAMS.get("lookback_bars", 4))
     confirm = float(ENTRY_PARAMS.get("confirm_pct", 0.2))
 
-    candles = oc.get_candles(mint, TIMEFRAME, limit=max(lookback + 4, 24))
-    price_data = oc.get_price_info(mint)
+    _oc = _get_oc()
+    candles = _oc.get_candles(mint, TIMEFRAME, limit=max(lookback + 4, 24))
+    price_data = _oc.get_price_info(mint)
     spot = _spot_from_price_response(price_data)
     if spot == 0.0 and candles:
         spot = float(candles[-1].get("close") or 0)
@@ -1298,6 +1365,21 @@ def evaluate_breakout(inst: dict) -> dict | None:
     snap["delta_pct"] = round(delta_pct, 3)
     snap["range_pct"] = round(range_pct, 3)
 
+    if _breakout_magnitude_enabled():
+        atr_pct = 0.0
+        if len(candles) >= 15:
+            highs = [float(c["high"]) for c in candles]
+            lows = [float(c["low"]) for c in candles]
+            closes = [float(c["close"]) for c in candles]
+            atr_series = _indicators.atr(highs, lows, closes, 14)
+            atr_last = next((a for a in reversed(atr_series) if a is not None), None)
+            if atr_last and close > 0:
+                atr_pct = atr_last / close * 100.0
+        min_move_pct = max(atr_pct, BREAKOUT_MAGNITUDE_MIN_PCT)
+        required_close = prior_high * (1 + min_move_pct / 100.0)
+        if close < required_close:
+            return None
+
     if delta_pct < confirm:
         return None
 
@@ -1320,6 +1402,69 @@ def evaluate_breakout(inst: dict) -> dict | None:
     }
 
 
+def _deterministic_coordinator_gate(sym: str, regime_1h: str | None) -> tuple[str, str | None]:
+    """Coordinator path when the LLM panel is disabled (replay / no-key boot).
+
+    Synthetic bullish chart @ 0.90 — gates must decline bad setups; the
+    panel is not doing that work in replay. Reads chop/mfi from _LAST_INDEX.
+    """
+    from voices.base import VoiceOpinion
+    from voices.coordinator_rules import coordinator
+
+    idx = _LAST_INDEX.get(sym) or {}
+    chop = idx.get("chop")
+    mfi = idx.get("mfi")
+    regime = idx.get("regime", "unknown")
+    if regime == "CHOP":
+        regime_verdict, regime_conf = "bearish", 0.70
+    else:
+        regime_verdict, regime_conf = "bullish", 0.50
+
+    opinions = [
+        VoiceOpinion(
+            voice_name="chart_analyst",
+            verdict="bullish",
+            confidence=0.93,
+            reasoning="deterministic_replay",
+            observations=[],
+            raw_response="",
+            elapsed_ms=0,
+            cost_usd=None,
+        ),
+        VoiceOpinion(
+            voice_name="regime_analyst",
+            verdict=regime_verdict,
+            confidence=regime_conf,
+            reasoning="deterministic_replay",
+            observations=[],
+            raw_response="",
+            elapsed_ms=0,
+            cost_usd=None,
+        ),
+        VoiceOpinion(
+            voice_name="risk_voice",
+            verdict="abstain",
+            confidence=0.0,
+            reasoning="deterministic_replay",
+            observations=[],
+            raw_response="",
+            elapsed_ms=0,
+            cost_usd=None,
+        ),
+        VoiceOpinion(
+            voice_name="memory_voice",
+            verdict="abstain",
+            confidence=0.0,
+            reasoning="deterministic_replay",
+            observations=[],
+            raw_response="",
+            elapsed_ms=0,
+            cost_usd=None,
+        ),
+    ]
+    return coordinator(opinions, regime_1h=regime_1h, chop=chop, mfi=mfi)
+
+
 def poll_instruments() -> None:
     """Iterate INSTRUMENTS once per poll. MAX_CONCURRENT / daily_trades /
     total_spent_usd guards are checked PER ITERATION so a fill on JTO
@@ -1339,7 +1484,7 @@ def poll_instruments() -> None:
     """
     global _BTC_CURRENT_TICK_ID, _POLL_COUNT
     _BTC_CURRENT_TICK_ID += 1  # invalidate prior tick's BTC cache
-    _POLL_COUNT += 1            # drives 1h regime refresh cadence
+    _POLL_COUNT += 1  # drives 1h regime refresh cadence
 
     btc_ok, btc_reason = btc_overlay_passes()
     if not btc_ok:
@@ -1397,6 +1542,23 @@ def poll_instruments() -> None:
         else:
             primitive = "volume_spike"
 
+        # Fix 4 — block volume_spike-only when breakout confirmation required.
+        if _entry_require_breakout() and primitive == "volume_spike":
+            _log("filter", f"[{sym}] ✗ volume_spike alone blocked (require breakout)")
+            _log_eval_telemetry(sym, action="decline", decline_reason="volume_spike_alone_blocked")
+            _LOGGER.log(
+                "candidate_blocked",
+                {
+                    "symbol": sym,
+                    "token": inst["mint"],
+                    "primitive": primitive,
+                    "regime_1h": regime_1h,
+                    "stage": "entry_primitive",
+                    "reasons": ["volume_spike_alone_blocked"],
+                },
+            )
+            continue
+
         # Build a unified signal_data carrying BOTH signal types if both fired.
         signal_data: dict = {"primitive": primitive, "instrument": sym}
         if bo_cand is not None:
@@ -1434,7 +1596,7 @@ def poll_instruments() -> None:
         # Only blocks "distribution" — neutral/accumulation/None pass through.
         # Fail-open on None (network error → don't block a real setup).
         try:
-            nf_signal: NetFlowSignal | None = compute_net_flow(token, sym, oc)
+            nf_signal: NetFlowSignal | None = compute_net_flow(token, sym, _get_oc())
         except Exception:
             nf_signal = None  # safety net — must not reach trading loop
 
@@ -1520,6 +1682,12 @@ def poll_instruments() -> None:
             )
             _log_eval_telemetry(sym, action="decline", decline_reason="observation_mode")
             continue
+        if _LOCAL_PANEL is None:
+            dc_action, dc_reason = _deterministic_coordinator_gate(sym, regime_1h)
+            if dc_action != "act":
+                _log("filter", f"[{sym}] ✗ coordinator (deterministic): {dc_reason}")
+                _log_eval_telemetry(sym, action="decline", decline_reason=dc_reason)
+                continue
         open_position(token, symbol, signal_data)
 
 
@@ -1554,7 +1722,7 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
         )
         return
 
-    price_data = oc.get_price_info(token)
+    price_data = _get_oc().get_price_info(token)
     entry_price = _spot_from_price_response(price_data)
     if entry_price <= 0:
         print(f"[SKIP] No price for {symbol_str or token[:12]}")
@@ -1575,7 +1743,7 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
     # silently bottlenecks every panel decision into chart_below_threshold.
     # ~50ms call; only fires on candidate entries (not every poll).
     try:
-        ms_candles = oc.get_candles(token, TIMEFRAME, limit=30)
+        ms_candles = _get_oc().get_candles(token, TIMEFRAME, limit=30)
     except Exception as exc:
         print(f"[market_state] candle fetch failed for {symbol_str}: {exc}")
         ms_candles = []
@@ -1649,9 +1817,12 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
             "action": local_decision.action,
             "rule": local_decision.coordinator_rule_fired,
             "regime": (
-                "TREND" if _regime and _regime.verdict == "bullish"
-                else "CHOP" if _regime and _regime.verdict == "bearish"
-                else "transitional" if _regime and _regime.verdict == "neutral"
+                "TREND"
+                if _regime and _regime.verdict == "bullish"
+                else "CHOP"
+                if _regime and _regime.verdict == "bearish"
+                else "transitional"
+                if _regime and _regime.verdict == "neutral"
                 else "?"
             ),
             "voices": [
@@ -1661,7 +1832,9 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
                     "confidence": round(o.confidence, 2),
                     # Item 2: full reasoning for chart_analyst (the bot's actual
                     # read); 300 chars for other voices. Dashboard renders it.
-                    "reasoning": (o.reasoning or "")[:(300 if o.voice_name == "chart_analyst" else 200)],
+                    "reasoning": (o.reasoning or "")[
+                        : (300 if o.voice_name == "chart_analyst" else 200)
+                    ],
                 }
                 for o in local_decision.voice_opinions
             ],
@@ -1913,7 +2086,7 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
                 # Real USDC received = to_amount_raw / 10^to_decimals.
                 try:
                     if result.to_amount_raw and result.to_decimals:
-                        usdc_received = float(result.to_amount_raw) / (10 ** result.to_decimals)
+                        usdc_received = float(result.to_amount_raw) / (10**result.to_decimals)
                         pnl_usd = round(usdc_received - cost_usd, 4)
                         pnl_pct = round(pnl_usd / cost_usd * 100, 2) if cost_usd else 0.0
                     else:
@@ -1927,7 +2100,9 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
                 # Exit swap FAILED — do NOT mark the position closed. Leave it
                 # open so the next monitor tick retries. Booking a close here
                 # would strand the token in the wallet (the PYTH bug).
-                print(f"   [ERROR] Exit swap failed: {result.error} — position stays OPEN for retry")
+                print(
+                    f"   [ERROR] Exit swap failed: {result.error} — position stays OPEN for retry"
+                )
                 return
 
     pos.update(
@@ -2130,7 +2305,11 @@ def _evaluate_stop_exits(
     anything; this function is pure and side-effect-free.
     """
     sl = STOP_LOSS_PCT if stop_loss_pct is _USE_MODULE_DEFAULT else stop_loss_pct
-    ta = TRAIL_ACTIVATE_AFTER_PCT if trail_activate_pct is _USE_MODULE_DEFAULT else trail_activate_pct
+    ta = (
+        TRAIL_ACTIVATE_AFTER_PCT
+        if trail_activate_pct is _USE_MODULE_DEFAULT
+        else trail_activate_pct
+    )
     ts = TRAIL_STOP_PCT if trail_stop_pct is _USE_MODULE_DEFAULT else trail_stop_pct
     tm = TRAIL_MIN_PNL_PCT if trail_min_pnl_pct is _USE_MODULE_DEFAULT else trail_min_pnl_pct
 
@@ -2152,7 +2331,7 @@ def _evaluate_stop_exits(
 # ── Monitor open positions ─────────────────────────────────────────
 def monitor_positions() -> None:
     for pos in [p for p in positions if p["status"] == "open"]:
-        price_data = oc.get_price_info(pos["token"])
+        price_data = _get_oc().get_price_info(pos["token"])
         current_price = _spot_from_price_response(price_data)
         if not current_price:
             continue
@@ -2335,7 +2514,6 @@ def main() -> None:
             sys.exit(0)
         # Log acknowledgment
         import json as _json
-        from pathlib import Path as _P
 
         _ack = {
             "ts": datetime.utcnow().isoformat(),
