@@ -71,6 +71,23 @@ class Citation(BaseModel):
     snippet: str | None = None
 
 
+class DissentEntry(BaseModel):
+    """Mirror the trade-oracle wire DissentEntry shape (Sprint 18 #3 — see
+    ``packages/gecko-core/.../trade_panel/models.py:DissentEntry``).
+
+    Carries WHICH voice dissented + WHAT they said. ``extra='allow'``
+    so additive wire changes (richer ``on_topic`` taxonomy, future
+    severity field) don't force a client bump.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    voice: str
+    stance: Literal["oppose", "abstain"] | None = None
+    verbatim: str | None = None
+    on_topic: str | None = None
+
+
 class VerdictPayload(BaseModel):
     """Parsed verdict envelope. ``extra='allow'`` so the model survives
     additive wire changes (e.g. SHED-01 ``shed`` field, FREE-04 freshness
@@ -83,6 +100,12 @@ class VerdictPayload(BaseModel):
     citations: list[Citation] = Field(default_factory=list)
     turns: list[dict[str, Any]] = Field(default_factory=list)
     dissent_count: int | None = None
+    # Sprint 20 #2 (2026-05-28) — structured dissent surface. Optional +
+    # defaults to [] so older Oracle deploys (pre-Sprint-18-merge) keep
+    # working; new deploys populate it. Each entry names a voice +
+    # closing-line verbatim + on_topic. The bot's terminal Dissent: line
+    # (Sprint 20 #3) reads from this list, not from dissent_count.
+    dissent: list[DissentEntry] = Field(default_factory=list)
     backtest: dict[str, Any] | None = None
 
 
