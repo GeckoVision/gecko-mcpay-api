@@ -67,6 +67,14 @@ class FundamentalsVerdict(BaseModel):
     key_drivers: list[str] = Field(default_factory=list)
     blocker_questions: list[str] = Field(default_factory=list)
     citations_count: int = 0
+    # Sprint 20 #3 (2026-05-28) — structured dissent surface from the L1
+    # Oracle. Each entry: {"voice": str, "stance": "oppose"|"abstain",
+    # "verbatim": str, "on_topic": str}. Default [] when the Oracle is
+    # pre-Sprint-18 OR the panel was unanimous (consensus IS the signal).
+    # Consumed by the bot's [ORACLE] log line + dashboard Oracle panel
+    # to render the Dissent: line Marina sees on every trade decision.
+    dissent: list[dict[str, Any]] = Field(default_factory=list)
+    dissent_count: int = 0
     ts: datetime
     ttl_seconds: int = DEFAULT_TTL_S
     raw_envelope: dict[str, Any] = Field(default_factory=dict)
@@ -280,15 +288,32 @@ class FundamentalsOracle:
             confidence = 0.0
         drivers_raw = envelope.get("key_drivers") or []
         key_drivers = [str(x) for x in drivers_raw] if isinstance(drivers_raw, list) else []
-        blockers_raw = (
-            envelope.get("blocker_questions")
-            or envelope.get("blockers")
-            or envelope.get("dissent")
-            or []
-        )
+        # Sprint 20 #3: blocker_questions and dissent are NOW DISTINCT surfaces
+        # on the L1 envelope (Sprint 18 #3 made dissent a structured list of
+        # DissentEntry dicts, NOT a fallback for blockers). The old fallback
+        # `or envelope.get("dissent")` would str()-ify those dicts into
+        # blockers, polluting the artifact log. Read each from its own key.
+        blockers_raw = envelope.get("blocker_questions") or envelope.get("blockers") or []
         blocker_questions = [str(x) for x in blockers_raw] if isinstance(blockers_raw, list) else []
         cites = envelope.get("evidence_citations") or envelope.get("citations") or []
         citations_count = len(cites) if isinstance(cites, list) else 0
+
+        # Sprint 20 #3 — structured dissent surface. Pass dict-shape through
+        # unchanged (the bot reads voice/stance/verbatim/on_topic at render
+        # time); skip non-dict entries defensively so a malformed server-side
+        # entry doesn't crash the verdict construction.
+        dissent_raw = envelope.get("dissent") or []
+        if isinstance(dissent_raw, list):
+            dissent = [d for d in dissent_raw if isinstance(d, dict) and d.get("voice")]
+        else:
+            dissent = []
+        dissent_count_raw = envelope.get("dissent_count")
+        try:
+            dissent_count = (
+                int(dissent_count_raw) if dissent_count_raw is not None else len(dissent)
+            )
+        except (TypeError, ValueError):
+            dissent_count = len(dissent)
 
         return FundamentalsVerdict(
             instrument=sym,
@@ -298,6 +323,8 @@ class FundamentalsOracle:
             key_drivers=key_drivers,
             blocker_questions=blocker_questions,
             citations_count=citations_count,
+            dissent=dissent,
+            dissent_count=dissent_count,
             ts=datetime.now(UTC),
             ttl_seconds=self._ttl_seconds,
             raw_envelope=envelope,
