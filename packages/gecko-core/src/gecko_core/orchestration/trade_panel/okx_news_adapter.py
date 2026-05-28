@@ -25,11 +25,24 @@ USAGE (in the agent runtime):
 
 If `okx-agent-trade-kit` is not available (CI / tests / offline dev), use
 the NullNewsProvider from `news_provider.py` — same Protocol, no-op.
+
+DEPLOYMENT GAP (2026-05-28): the deployed /trade_research handler in
+packages/gecko-api/main.py runs in ECS WITHOUT an MCP transport — it
+cannot invoke `mcp__okx-agent-trade-kit__*` tools. Wiring this provider
+into the deployed handler requires EITHER:
+  - A direct-HTTP OKX news adapter (needs public OKX REST endpoint URL
+    + API key in SSM at /gecko-api/OKX_API_KEY + ECS task env wire), OR
+  - An MCP-host sidecar in ECS (deferred infra lift).
+Until that lands, the deployed Pattern E reachability for live news is
+NOT satisfied. The local CLI / agent-runtime path (which DOES have MCP
+transport) can pass `OKXNewsProvider(mcp_call=...)` today.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from gecko_core.orchestration.trade_panel.news_provider import (
     NewsProvider,
@@ -92,7 +105,8 @@ class OKXNewsProvider:
             except Exception as exc:
                 _log.debug(
                     "okx_news.coin_endpoint_failed protocol=%s err=%s",
-                    proto, exc,
+                    proto,
+                    exc,
                 )
 
         # Fallback: keyword search for protocols without a clean ticker
@@ -106,7 +120,8 @@ class OKXNewsProvider:
             except Exception as exc:
                 _log.warning(
                     "okx_news.search_endpoint_failed protocol=%s err=%s",
-                    proto, exc,
+                    proto,
+                    exc,
                 )
 
         if not articles:
@@ -151,4 +166,4 @@ def _normalize_articles(resp: dict[str, Any] | list[Any]) -> list[dict[str, Any]
 assert isinstance(OKXNewsProvider(mcp_call=lambda t, a: None), NewsProvider)  # type: ignore[arg-type]
 
 
-__all__ = ["OKXNewsProvider", "MCPCallable"]
+__all__ = ["MCPCallable", "OKXNewsProvider"]

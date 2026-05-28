@@ -40,6 +40,7 @@ from gecko_core.orchestration.trade_panel.grounding_gate import apply_grounding_
 from gecko_core.orchestration.trade_panel.models import (
     CITATION_SNIPPET_MAX_LEN,
     Citation,
+    DissentEntry,
     TradePanelTurn,
     TradePanelVerdict,
     TradeVerdictLiteral,
@@ -367,6 +368,102 @@ def _count_abstains(turns: list[TradePanelTurn]) -> int:
     return count
 
 
+# Sprint 18 — short ``on_topic`` per voice, used to summarize what a dissent
+# is about without having to parse the prose body. Stays in sync with the
+# closing-line tokens by construction (one line per primary analyst).
+_VOICE_ON_TOPIC: dict[str, str] = {
+    TECHNICAL_ANALYST: "trend read",
+    SENTIMENT_ANALYST: "sentiment band",
+    FUNDAMENTAL_ANALYST: "protocol health",
+    RISK_MANAGER: "risk band",
+}
+
+
+def _extract_dissent_entries(
+    turns: list[TradePanelTurn],
+    final_verdict: str,
+    *,
+    max_entries: int = 5,
+) -> list[DissentEntry]:
+    """Sprint 18 — surface structured dissent against the coordinator's verdict.
+
+    Two flavors:
+      - ``oppose``: a primary analyst's directional closing-line token points
+        the OTHER way from the verdict (e.g. risk_manager 'unacceptable' on
+        an 'act' verdict). The closing-line value is the verbatim — never
+        paraphrased; per the model docstring, paraphrasing sands down the
+        wedge.
+      - ``abstain``: a primary analyst explicitly punted (technical 'mixed',
+        fundamental 'stable'). Surfaces on directional verdicts AND on
+        'defer' — for 'defer' it's the dominant signal.
+
+    The strategist + bull_bear_debater + coordinator are intentionally
+    EXCLUDED — they don't have directional closing-line tokens (strategist
+    is free-text intent, debater poses a question, coordinator IS the
+    verdict).
+
+    Returns at most ``max_entries`` entries in canonical agent order
+    (technical → sentiment → fundamental → risk). Always returns ``[]``
+    when no voice opposes or abstains — empty is the honest default.
+    """
+    entries: list[DissentEntry] = []
+
+    # ``oppose`` arm: only meaningful when the verdict has a clean opposite.
+    if final_verdict in {"act", "pass"}:
+        opposite = "pass" if final_verdict == "act" else "act"
+        for turn in turns:
+            if turn.agent not in _VERDICT_ALIGNS_ACT:
+                continue  # skip strategist / debater / coordinator
+            directional = _voice_directional(turn.agent, turn.parsed_verdict)
+            if directional != opposite:
+                continue
+            parsed = turn.parsed_verdict or {}
+            # The closing-line value (e.g. 'bearish') is the verbatim token —
+            # truthful by construction (the regex captured it from the
+            # model's own closing line).
+            raw_val = next(iter(parsed.values()), "") if parsed else ""
+            verbatim = str(raw_val).strip()[:300] if raw_val else ""
+            if not verbatim:
+                continue  # parsed_verdict was malformed; skip rather than guess
+            entries.append(
+                DissentEntry(
+                    voice=turn.agent,
+                    stance="oppose",
+                    verbatim=verbatim,
+                    on_topic=_VOICE_ON_TOPIC.get(turn.agent, ""),
+                )
+            )
+
+    # ``abstain`` arm: applies on all verdicts. For 'defer' this is usually
+    # the dominant signal (defer often FOLLOWS from too many abstentions);
+    # for directional verdicts the abstain is a softer "this voice didn't
+    # join the call" surface.
+    for turn in turns:
+        if turn.agent not in _ABSTAIN_TOKENS:
+            continue
+        parsed = turn.parsed_verdict or {}
+        if not parsed:
+            continue
+        raw_val = next(iter(parsed.values()), "")
+        verbatim = str(raw_val).strip().lower() if raw_val else ""
+        if verbatim not in _ABSTAIN_TOKENS[turn.agent]:
+            continue
+        # Don't double-surface a voice that already appears as 'oppose'.
+        if any(e.voice == turn.agent for e in entries):
+            continue
+        entries.append(
+            DissentEntry(
+                voice=turn.agent,
+                stance="abstain",
+                verbatim=verbatim[:300],
+                on_topic=_VOICE_ON_TOPIC.get(turn.agent, ""),
+            )
+        )
+
+    # Bound the envelope size per the model's max_length=5.
+    return entries[:max_entries]
+
+
 # --- S37-WS2 — coordinator verdict escalation rules ----------------------
 # Two deterministic DEFER escalations on already-parsed turn tokens.
 # Per repo memory feedback_prompt_iteration_plateau, coordinator verdict
@@ -552,6 +649,8 @@ def _build_verdict_from_coordinator(
     coord_turn = next((t for t in turns if t.agent == COORDINATOR), None)
     if coord_turn is None:
         # No coordinator turn at all — defer with empty drivers, dissent 0.
+        # Still surface abstain entries (Sprint 18) if any voice punted —
+        # that's the dominant signal when the coordinator never spoke.
         return TradePanelVerdict(
             verdict="defer",
             confidence=0.0,
@@ -559,6 +658,7 @@ def _build_verdict_from_coordinator(
             dissent_count=0,
             blocker_questions=["coordinator turn missing"],
             turns=turns,
+            dissent=_extract_dissent_entries(turns, "defer"),
         )
 
     block = _extract_json_block(coord_turn.content) or {}
@@ -691,6 +791,14 @@ def _build_verdict_from_coordinator(
         confidence = min(raw_confidence, anchored)
         confidence = max(_CONF_FLOOR, min(_CONF_CEILING, confidence))
 
+    # Sprint 18 #3 — structured dissent surface. Re-derived from the SAME
+    # turn tokens that drove `dissent_count`, but typed: voice + verbatim +
+    # on_topic. Note the `verdict` here is post-S24-defer-override, so the
+    # extracted entries reflect the FINAL verdict's opposites — if a 'pass'
+    # was flipped to 'defer' by the dissent_count>=3 escalation, the abstain
+    # arm dominates the surface (which is the honest read).
+    dissent_entries = _extract_dissent_entries(turns, verdict)
+
     return TradePanelVerdict(
         verdict=verdict,
         confidence=round(confidence, 2),
@@ -698,6 +806,7 @@ def _build_verdict_from_coordinator(
         dissent_count=dissent_count,
         blocker_questions=blocker_questions,
         turns=turns,
+        dissent=dissent_entries,
     )
 
 
@@ -2074,6 +2183,7 @@ async def run_trade_panel_with_retrieval(
         from gecko_core.orchestration.trade_panel.news_provider import (
             merge_news_chunks,
         )
+
         before_news = len(chunks)
         chunks = await merge_news_chunks(
             chunks,

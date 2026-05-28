@@ -41,8 +41,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import datetime, timezone
-from typing import Any, Iterable, Protocol, runtime_checkable
+from collections.abc import Iterable
+from datetime import UTC, datetime
+from typing import Any, Protocol, runtime_checkable
 
 _log = logging.getLogger(__name__)
 
@@ -134,7 +135,7 @@ def build_news_chunk(
         "source": source,
         "provider_kind": provider_kind,
         "url": url or "",
-        "published_ts": published_ts or datetime.now(timezone.utc).isoformat(),
+        "published_ts": published_ts or datetime.now(UTC).isoformat(),
         "protocol": (protocol or "").lower(),
         "freshness_tier": "live_only",
     }
