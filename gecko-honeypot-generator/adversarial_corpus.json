@@ -1,0 +1,1113 @@
+[
+  {
+    "kind": "typo",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PPYTH",
+    "attacker_mint": null,
+    "description": "insertion: doubled 'P' at position 0",
+    "expected_block_reason": "symbol 'PPYTH' not in allowlist; lookalike of 'PYTH'",
+    "visual_collision_hint": "legit='PYTH' attack='PPYTH' codepoints=['0x50', '0x50', '0x59', '0x54', '0x48']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PYYTH",
+    "attacker_mint": null,
+    "description": "insertion: doubled 'Y' at position 1",
+    "expected_block_reason": "symbol 'PYYTH' not in allowlist; lookalike of 'PYTH'",
+    "visual_collision_hint": "legit='PYTH' attack='PYYTH' codepoints=['0x50', '0x59', '0x59', '0x54', '0x48']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PYTTH",
+    "attacker_mint": null,
+    "description": "insertion: doubled 'T' at position 2",
+    "expected_block_reason": "symbol 'PYTTH' not in allowlist; lookalike of 'PYTH'",
+    "visual_collision_hint": "legit='PYTH' attack='PYTTH' codepoints=['0x50', '0x59', '0x54', '0x54', '0x48']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PYTHH",
+    "attacker_mint": null,
+    "description": "insertion: doubled 'H' at position 3",
+    "expected_block_reason": "symbol 'PYTHH' not in allowlist; lookalike of 'PYTH'",
+    "visual_collision_hint": "legit='PYTH' attack='PYTHH' codepoints=['0x50', '0x59', '0x54', '0x48', '0x48']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "YPTH",
+    "attacker_mint": null,
+    "description": "transposition: swapped chars at 0,1",
+    "expected_block_reason": "symbol 'YPTH' not in allowlist; lookalike of 'PYTH'",
+    "visual_collision_hint": "legit='PYTH' attack='YPTH' codepoints=['0x59', '0x50', '0x54', '0x48']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PTYH",
+    "attacker_mint": null,
+    "description": "transposition: swapped chars at 1,2",
+    "expected_block_reason": "symbol 'PTYH' not in allowlist; lookalike of 'PYTH'",
+    "visual_collision_hint": "legit='PYTH' attack='PTYH' codepoints=['0x50', '0x54', '0x59', '0x48']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PYHT",
+    "attacker_mint": null,
+    "description": "transposition: swapped chars at 2,3",
+    "expected_block_reason": "symbol 'PYHT' not in allowlist; lookalike of 'PYTH'",
+    "visual_collision_hint": "legit='PYTH' attack='PYHT' codepoints=['0x50', '0x59', '0x48', '0x54']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "YTH",
+    "attacker_mint": null,
+    "description": "deletion: removed char at 0",
+    "expected_block_reason": "symbol 'YTH' not in allowlist; lookalike of 'PYTH'",
+    "visual_collision_hint": "legit='PYTH' attack='YTH' codepoints=['0x59', '0x54', '0x48']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PTH",
+    "attacker_mint": null,
+    "description": "deletion: removed char at 1",
+    "expected_block_reason": "symbol 'PTH' not in allowlist; lookalike of 'PYTH'",
+    "visual_collision_hint": "legit='PYTH' attack='PTH' codepoints=['0x50', '0x54', '0x48']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PYH",
+    "attacker_mint": null,
+    "description": "deletion: removed char at 2",
+    "expected_block_reason": "symbol 'PYH' not in allowlist; lookalike of 'PYTH'",
+    "visual_collision_hint": "legit='PYTH' attack='PYH' codepoints=['0x50', '0x59', '0x48']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PYT",
+    "attacker_mint": null,
+    "description": "deletion: removed char at 3",
+    "expected_block_reason": "symbol 'PYT' not in allowlist; lookalike of 'PYTH'",
+    "visual_collision_hint": "legit='PYTH' attack='PYT' codepoints=['0x50', '0x59', '0x54']"
+  },
+  {
+    "kind": "unicode",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "РYTH",
+    "attacker_mint": null,
+    "description": "unicode lookalike: Latin 'P' → CYRILLIC 'Р' (U+0420) at pos 0",
+    "expected_block_reason": "non-ASCII codepoint U+0420 in symbol — Cyrillic/Greek confusable",
+    "visual_collision_hint": "legit='PYTH' attack='РYTH' codepoints=['0x420', '0x59', '0x54', '0x48']"
+  },
+  {
+    "kind": "unicode",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "ΡYTH",
+    "attacker_mint": null,
+    "description": "unicode lookalike: Latin 'P' → GREEK 'Ρ' (U+03A1) at pos 0",
+    "expected_block_reason": "non-ASCII codepoint U+03A1 in symbol — Cyrillic/Greek confusable",
+    "visual_collision_hint": "legit='PYTH' attack='ΡYTH' codepoints=['0x3a1', '0x59', '0x54', '0x48']"
+  },
+  {
+    "kind": "unicode",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PУTH",
+    "attacker_mint": null,
+    "description": "unicode lookalike: Latin 'Y' → CYRILLIC 'У' (U+0423) at pos 1",
+    "expected_block_reason": "non-ASCII codepoint U+0423 in symbol — Cyrillic/Greek confusable",
+    "visual_collision_hint": "legit='PYTH' attack='PУTH' codepoints=['0x50', '0x423', '0x54', '0x48']"
+  },
+  {
+    "kind": "unicode",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PΥTH",
+    "attacker_mint": null,
+    "description": "unicode lookalike: Latin 'Y' → GREEK 'Υ' (U+03A5) at pos 1",
+    "expected_block_reason": "non-ASCII codepoint U+03A5 in symbol — Cyrillic/Greek confusable",
+    "visual_collision_hint": "legit='PYTH' attack='PΥTH' codepoints=['0x50', '0x3a5', '0x54', '0x48']"
+  },
+  {
+    "kind": "unicode",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PYТH",
+    "attacker_mint": null,
+    "description": "unicode lookalike: Latin 'T' → CYRILLIC 'Т' (U+0422) at pos 2",
+    "expected_block_reason": "non-ASCII codepoint U+0422 in symbol — Cyrillic/Greek confusable",
+    "visual_collision_hint": "legit='PYTH' attack='PYТH' codepoints=['0x50', '0x59', '0x422', '0x48']"
+  },
+  {
+    "kind": "unicode",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PYΤH",
+    "attacker_mint": null,
+    "description": "unicode lookalike: Latin 'T' → GREEK 'Τ' (U+03A4) at pos 2",
+    "expected_block_reason": "non-ASCII codepoint U+03A4 in symbol — Cyrillic/Greek confusable",
+    "visual_collision_hint": "legit='PYTH' attack='PYΤH' codepoints=['0x50', '0x59', '0x3a4', '0x48']"
+  },
+  {
+    "kind": "unicode",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PYTН",
+    "attacker_mint": null,
+    "description": "unicode lookalike: Latin 'H' → CYRILLIC 'Н' (U+041D) at pos 3",
+    "expected_block_reason": "non-ASCII codepoint U+041D in symbol — Cyrillic/Greek confusable",
+    "visual_collision_hint": "legit='PYTH' attack='PYTН' codepoints=['0x50', '0x59', '0x54', '0x41d']"
+  },
+  {
+    "kind": "unicode",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PYTΗ",
+    "attacker_mint": null,
+    "description": "unicode lookalike: Latin 'H' → GREEK 'Η' (U+0397) at pos 3",
+    "expected_block_reason": "non-ASCII codepoint U+0397 in symbol — Cyrillic/Greek confusable",
+    "visual_collision_hint": "legit='PYTH' attack='PYTΗ' codepoints=['0x50', '0x59', '0x54', '0x397']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PY​TH",
+    "attacker_mint": null,
+    "description": "injected U+200B ZERO WIDTH SPACE at position 2",
+    "expected_block_reason": "hidden codepoint U+200B ZERO WIDTH SPACE in symbol — symbol-equivalence fails string match",
+    "visual_collision_hint": "legit='PYTH' attack='PY​TH' codepoints=['0x50', '0x59', '0x200b', '0x54', '0x48']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "​PYTH",
+    "attacker_mint": null,
+    "description": "injected U+200B ZERO WIDTH SPACE as prefix",
+    "expected_block_reason": "hidden codepoint U+200B ZERO WIDTH SPACE — visible string matches but string match fails",
+    "visual_collision_hint": "legit='PYTH' attack='​PYTH' codepoints=['0x200b', '0x50', '0x59', '0x54', '0x48']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PY‌TH",
+    "attacker_mint": null,
+    "description": "injected U+200C ZERO WIDTH NON-JOINER at position 2",
+    "expected_block_reason": "hidden codepoint U+200C ZERO WIDTH NON-JOINER in symbol — symbol-equivalence fails string match",
+    "visual_collision_hint": "legit='PYTH' attack='PY‌TH' codepoints=['0x50', '0x59', '0x200c', '0x54', '0x48']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "‌PYTH",
+    "attacker_mint": null,
+    "description": "injected U+200C ZERO WIDTH NON-JOINER as prefix",
+    "expected_block_reason": "hidden codepoint U+200C ZERO WIDTH NON-JOINER — visible string matches but string match fails",
+    "visual_collision_hint": "legit='PYTH' attack='‌PYTH' codepoints=['0x200c', '0x50', '0x59', '0x54', '0x48']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PY‍TH",
+    "attacker_mint": null,
+    "description": "injected U+200D ZERO WIDTH JOINER at position 2",
+    "expected_block_reason": "hidden codepoint U+200D ZERO WIDTH JOINER in symbol — symbol-equivalence fails string match",
+    "visual_collision_hint": "legit='PYTH' attack='PY‍TH' codepoints=['0x50', '0x59', '0x200d', '0x54', '0x48']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "‍PYTH",
+    "attacker_mint": null,
+    "description": "injected U+200D ZERO WIDTH JOINER as prefix",
+    "expected_block_reason": "hidden codepoint U+200D ZERO WIDTH JOINER — visible string matches but string match fails",
+    "visual_collision_hint": "legit='PYTH' attack='‍PYTH' codepoints=['0x200d', '0x50', '0x59', '0x54', '0x48']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PY﻿TH",
+    "attacker_mint": null,
+    "description": "injected U+FEFF ZERO WIDTH NO-BREAK SPACE (BOM) at position 2",
+    "expected_block_reason": "hidden codepoint U+FEFF ZERO WIDTH NO-BREAK SPACE (BOM) in symbol — symbol-equivalence fails string match",
+    "visual_collision_hint": "legit='PYTH' attack='PY﻿TH' codepoints=['0x50', '0x59', '0xfeff', '0x54', '0x48']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "﻿PYTH",
+    "attacker_mint": null,
+    "description": "injected U+FEFF ZERO WIDTH NO-BREAK SPACE (BOM) as prefix",
+    "expected_block_reason": "hidden codepoint U+FEFF ZERO WIDTH NO-BREAK SPACE (BOM) — visible string matches but string match fails",
+    "visual_collision_hint": "legit='PYTH' attack='﻿PYTH' codepoints=['0xfeff', '0x50', '0x59', '0x54', '0x48']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PY⁠TH",
+    "attacker_mint": null,
+    "description": "injected U+2060 WORD JOINER at position 2",
+    "expected_block_reason": "hidden codepoint U+2060 WORD JOINER in symbol — symbol-equivalence fails string match",
+    "visual_collision_hint": "legit='PYTH' attack='PY⁠TH' codepoints=['0x50', '0x59', '0x2060', '0x54', '0x48']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "⁠PYTH",
+    "attacker_mint": null,
+    "description": "injected U+2060 WORD JOINER as prefix",
+    "expected_block_reason": "hidden codepoint U+2060 WORD JOINER — visible string matches but string match fails",
+    "visual_collision_hint": "legit='PYTH' attack='⁠PYTH' codepoints=['0x2060', '0x50', '0x59', '0x54', '0x48']"
+  },
+  {
+    "kind": "mint_sub",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PYTH",
+    "attacker_mint": "FakeNewMintForPYTH11111111111111111111XXXXXX",
+    "description": "symbol 'PYTH' but mint 'FakeNewMintForPYTH11...' instead of legitimate 'HZ1JovNiVvGrGNiiYvEo...'",
+    "expected_block_reason": "mint 'FakeNewMintForPYTH11...' does NOT match canonical 'HZ1JovNiVvGrGNiiYvEo...' for symbol 'PYTH'"
+  },
+  {
+    "kind": "mint_sub",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PYTH",
+    "attacker_mint": "ScamPYTHMintDeployedToday22222222XXXXXXXXXXX",
+    "description": "symbol 'PYTH' but mint 'ScamPYTHMintDeployed...' instead of legitimate 'HZ1JovNiVvGrGNiiYvEo...'",
+    "expected_block_reason": "mint 'ScamPYTHMintDeployed...' does NOT match canonical 'HZ1JovNiVvGrGNiiYvEo...' for symbol 'PYTH'"
+  },
+  {
+    "kind": "mint_sub",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "PYTH",
+    "attacker_mint": "MaliciousPYTHToken333333333333333333XXXXXXXX",
+    "description": "symbol 'PYTH' but mint 'MaliciousPYTHToken33...' instead of legitimate 'HZ1JovNiVvGrGNiiYvEo...'",
+    "expected_block_reason": "mint 'MaliciousPYTHToken33...' does NOT match canonical 'HZ1JovNiVvGrGNiiYvEo...' for symbol 'PYTH'"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "FAKE-PYTH-sell_disabled",
+    "attacker_mint": "DevnetHoneypot_sell_disabled_PYTHXXXXXXXXXXX",
+    "description": "contract honeypot pattern: sell_disabled",
+    "expected_block_reason": "contract pattern 'sell_disabled' detected: Buy succeeds but sell() reverts; classic rug holder-trap",
+    "visual_collision_hint": "legit='PYTH' attack='FAKE-PYTH-sell_disabled' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x50', '0x59', '0x54', '0x48', '0x2d', '0x73', '0x65', '0x6c', '0x6c', '0x5f', '0x64', '0x69', '0x73', '0x61', '0x62', '0x6c', '0x65', '0x64']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "FAKE-PYTH-buy_tax_100",
+    "attacker_mint": "DevnetHoneypot_buy_tax_100_PYTHXXXXXXXXXXXXX",
+    "description": "contract honeypot pattern: buy_tax_100",
+    "expected_block_reason": "contract pattern 'buy_tax_100' detected: 100% buy tax — input goes entirely to contract owner",
+    "visual_collision_hint": "legit='PYTH' attack='FAKE-PYTH-buy_tax_100' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x50', '0x59', '0x54', '0x48', '0x2d', '0x62', '0x75', '0x79', '0x5f', '0x74', '0x61', '0x78', '0x5f', '0x31', '0x30', '0x30']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "FAKE-PYTH-sell_tax_99",
+    "attacker_mint": "DevnetHoneypot_sell_tax_99_PYTHXXXXXXXXXXXXX",
+    "description": "contract honeypot pattern: sell_tax_99",
+    "expected_block_reason": "contract pattern 'sell_tax_99' detected: 99% sell tax — exiting takes 99% of value",
+    "visual_collision_hint": "legit='PYTH' attack='FAKE-PYTH-sell_tax_99' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x50', '0x59', '0x54', '0x48', '0x2d', '0x73', '0x65', '0x6c', '0x6c', '0x5f', '0x74', '0x61', '0x78', '0x5f', '0x39', '0x39']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "FAKE-PYTH-blacklist_owner",
+    "attacker_mint": "DevnetHoneypot_blacklist_owner_PYTHXXXXXXXXX",
+    "description": "contract honeypot pattern: blacklist_owner",
+    "expected_block_reason": "contract pattern 'blacklist_owner' detected: Owner has freeze() method that blacklists any address",
+    "visual_collision_hint": "legit='PYTH' attack='FAKE-PYTH-blacklist_owner' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x50', '0x59', '0x54', '0x48', '0x2d', '0x62', '0x6c', '0x61', '0x63', '0x6b', '0x6c', '0x69', '0x73', '0x74', '0x5f', '0x6f', '0x77', '0x6e', '0x65', '0x72']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "FAKE-PYTH-hidden_mint_authority",
+    "attacker_mint": "DevnetHoneypot_hidden_mint_authority_PYTHXXX",
+    "description": "contract honeypot pattern: hidden_mint_authority",
+    "expected_block_reason": "contract pattern 'hidden_mint_authority' detected: Owner retains mint_to authority — infinite dilution",
+    "visual_collision_hint": "legit='PYTH' attack='FAKE-PYTH-hidden_mint_authority' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x50', '0x59', '0x54', '0x48', '0x2d', '0x68', '0x69', '0x64', '0x64', '0x65', '0x6e', '0x5f', '0x6d', '0x69', '0x6e', '0x74', '0x5f', '0x61', '0x75', '0x74', '0x68', '0x6f', '0x72', '0x69', '0x74', '0x79']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "FAKE-PYTH-transfer_pause",
+    "attacker_mint": "DevnetHoneypot_transfer_pause_PYTHXXXXXXXXXX",
+    "description": "contract honeypot pattern: transfer_pause",
+    "expected_block_reason": "contract pattern 'transfer_pause' detected: Owner can pause all transfers, freezing positions",
+    "visual_collision_hint": "legit='PYTH' attack='FAKE-PYTH-transfer_pause' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x50', '0x59', '0x54', '0x48', '0x2d', '0x74', '0x72', '0x61', '0x6e', '0x73', '0x66', '0x65', '0x72', '0x5f', '0x70', '0x61', '0x75', '0x73', '0x65']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "FAKE-PYTH-liquidity_pull",
+    "attacker_mint": "DevnetHoneypot_liquidity_pull_PYTHXXXXXXXXXX",
+    "description": "contract honeypot pattern: liquidity_pull",
+    "expected_block_reason": "contract pattern 'liquidity_pull' detected: LP not locked; owner can drain liquidity at any time",
+    "visual_collision_hint": "legit='PYTH' attack='FAKE-PYTH-liquidity_pull' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x50', '0x59', '0x54', '0x48', '0x2d', '0x6c', '0x69', '0x71', '0x75', '0x69', '0x64', '0x69', '0x74', '0x79', '0x5f', '0x70', '0x75', '0x6c', '0x6c']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "FAKE-PYTH-renounce_lie",
+    "attacker_mint": "DevnetHoneypot_renounce_lie_PYTHXXXXXXXXXXXX",
+    "description": "contract honeypot pattern: renounce_lie",
+    "expected_block_reason": "contract pattern 'renounce_lie' detected: renounceOwnership() returned but proxy owner still has admin",
+    "visual_collision_hint": "legit='PYTH' attack='FAKE-PYTH-renounce_lie' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x50', '0x59', '0x54', '0x48', '0x2d', '0x72', '0x65', '0x6e', '0x6f', '0x75', '0x6e', '0x63', '0x65', '0x5f', '0x6c', '0x69', '0x65']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "FAKE-PYTH-hidden_fee_modifier",
+    "attacker_mint": "DevnetHoneypot_hidden_fee_modifier_PYTHXXXXX",
+    "description": "contract honeypot pattern: hidden_fee_modifier",
+    "expected_block_reason": "contract pattern 'hidden_fee_modifier' detected: Setter that increases tax post-launch (rug after volume)",
+    "visual_collision_hint": "legit='PYTH' attack='FAKE-PYTH-hidden_fee_modifier' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x50', '0x59', '0x54', '0x48', '0x2d', '0x68', '0x69', '0x64', '0x64', '0x65', '0x6e', '0x5f', '0x66', '0x65', '0x65', '0x5f', '0x6d', '0x6f', '0x64', '0x69', '0x66', '0x69', '0x65', '0x72']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "PYTH",
+    "legitimate_mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+    "attacker_symbol": "FAKE-PYTH-blocklist_function",
+    "attacker_mint": "DevnetHoneypot_blocklist_function_PYTHXXXXXX",
+    "description": "contract honeypot pattern: blocklist_function",
+    "expected_block_reason": "contract pattern 'blocklist_function' detected: Bot/contract maintains tx-blocklist; tx may fail mid-execution",
+    "visual_collision_hint": "legit='PYTH' attack='FAKE-PYTH-blocklist_function' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x50', '0x59', '0x54', '0x48', '0x2d', '0x62', '0x6c', '0x6f', '0x63', '0x6b', '0x6c', '0x69', '0x73', '0x74', '0x5f', '0x66', '0x75', '0x6e', '0x63', '0x74', '0x69', '0x6f', '0x6e']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "WWIF",
+    "attacker_mint": null,
+    "description": "insertion: doubled 'W' at position 0",
+    "expected_block_reason": "symbol 'WWIF' not in allowlist; lookalike of 'WIF'",
+    "visual_collision_hint": "legit='WIF' attack='WWIF' codepoints=['0x57', '0x57', '0x49', '0x46']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "WIIF",
+    "attacker_mint": null,
+    "description": "insertion: doubled 'I' at position 1",
+    "expected_block_reason": "symbol 'WIIF' not in allowlist; lookalike of 'WIF'",
+    "visual_collision_hint": "legit='WIF' attack='WIIF' codepoints=['0x57', '0x49', '0x49', '0x46']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "WIFF",
+    "attacker_mint": null,
+    "description": "insertion: doubled 'F' at position 2",
+    "expected_block_reason": "symbol 'WIFF' not in allowlist; lookalike of 'WIF'",
+    "visual_collision_hint": "legit='WIF' attack='WIFF' codepoints=['0x57', '0x49', '0x46', '0x46']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "IWF",
+    "attacker_mint": null,
+    "description": "transposition: swapped chars at 0,1",
+    "expected_block_reason": "symbol 'IWF' not in allowlist; lookalike of 'WIF'",
+    "visual_collision_hint": "legit='WIF' attack='IWF' codepoints=['0x49', '0x57', '0x46']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "WFI",
+    "attacker_mint": null,
+    "description": "transposition: swapped chars at 1,2",
+    "expected_block_reason": "symbol 'WFI' not in allowlist; lookalike of 'WIF'",
+    "visual_collision_hint": "legit='WIF' attack='WFI' codepoints=['0x57', '0x46', '0x49']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "IF",
+    "attacker_mint": null,
+    "description": "deletion: removed char at 0",
+    "expected_block_reason": "symbol 'IF' not in allowlist; lookalike of 'WIF'",
+    "visual_collision_hint": "legit='WIF' attack='IF' codepoints=['0x49', '0x46']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "WF",
+    "attacker_mint": null,
+    "description": "deletion: removed char at 1",
+    "expected_block_reason": "symbol 'WF' not in allowlist; lookalike of 'WIF'",
+    "visual_collision_hint": "legit='WIF' attack='WF' codepoints=['0x57', '0x46']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "WI",
+    "attacker_mint": null,
+    "description": "deletion: removed char at 2",
+    "expected_block_reason": "symbol 'WI' not in allowlist; lookalike of 'WIF'",
+    "visual_collision_hint": "legit='WIF' attack='WI' codepoints=['0x57', '0x49']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "W1F",
+    "attacker_mint": null,
+    "description": "substitution: 'I' → '1' at position 1",
+    "expected_block_reason": "symbol 'W1F' not in allowlist; visual-similar substitution",
+    "visual_collision_hint": "legit='WIF' attack='W1F' codepoints=['0x57', '0x31', '0x46']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "WlF",
+    "attacker_mint": null,
+    "description": "substitution: 'I' → 'l' at position 1",
+    "expected_block_reason": "symbol 'WlF' not in allowlist; visual-similar substitution",
+    "visual_collision_hint": "legit='WIF' attack='WlF' codepoints=['0x57', '0x6c', '0x46']"
+  },
+  {
+    "kind": "unicode",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "WІF",
+    "attacker_mint": null,
+    "description": "unicode lookalike: Latin 'I' → CYRILLIC 'І' (U+0406) at pos 1",
+    "expected_block_reason": "non-ASCII codepoint U+0406 in symbol — Cyrillic/Greek confusable",
+    "visual_collision_hint": "legit='WIF' attack='WІF' codepoints=['0x57', '0x406', '0x46']"
+  },
+  {
+    "kind": "unicode",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "WΙF",
+    "attacker_mint": null,
+    "description": "unicode lookalike: Latin 'I' → GREEK 'Ι' (U+0399) at pos 1",
+    "expected_block_reason": "non-ASCII codepoint U+0399 in symbol — Cyrillic/Greek confusable",
+    "visual_collision_hint": "legit='WIF' attack='WΙF' codepoints=['0x57', '0x399', '0x46']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "W​IF",
+    "attacker_mint": null,
+    "description": "injected U+200B ZERO WIDTH SPACE at position 1",
+    "expected_block_reason": "hidden codepoint U+200B ZERO WIDTH SPACE in symbol — symbol-equivalence fails string match",
+    "visual_collision_hint": "legit='WIF' attack='W​IF' codepoints=['0x57', '0x200b', '0x49', '0x46']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "​WIF",
+    "attacker_mint": null,
+    "description": "injected U+200B ZERO WIDTH SPACE as prefix",
+    "expected_block_reason": "hidden codepoint U+200B ZERO WIDTH SPACE — visible string matches but string match fails",
+    "visual_collision_hint": "legit='WIF' attack='​WIF' codepoints=['0x200b', '0x57', '0x49', '0x46']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "W‌IF",
+    "attacker_mint": null,
+    "description": "injected U+200C ZERO WIDTH NON-JOINER at position 1",
+    "expected_block_reason": "hidden codepoint U+200C ZERO WIDTH NON-JOINER in symbol — symbol-equivalence fails string match",
+    "visual_collision_hint": "legit='WIF' attack='W‌IF' codepoints=['0x57', '0x200c', '0x49', '0x46']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "‌WIF",
+    "attacker_mint": null,
+    "description": "injected U+200C ZERO WIDTH NON-JOINER as prefix",
+    "expected_block_reason": "hidden codepoint U+200C ZERO WIDTH NON-JOINER — visible string matches but string match fails",
+    "visual_collision_hint": "legit='WIF' attack='‌WIF' codepoints=['0x200c', '0x57', '0x49', '0x46']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "W‍IF",
+    "attacker_mint": null,
+    "description": "injected U+200D ZERO WIDTH JOINER at position 1",
+    "expected_block_reason": "hidden codepoint U+200D ZERO WIDTH JOINER in symbol — symbol-equivalence fails string match",
+    "visual_collision_hint": "legit='WIF' attack='W‍IF' codepoints=['0x57', '0x200d', '0x49', '0x46']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "‍WIF",
+    "attacker_mint": null,
+    "description": "injected U+200D ZERO WIDTH JOINER as prefix",
+    "expected_block_reason": "hidden codepoint U+200D ZERO WIDTH JOINER — visible string matches but string match fails",
+    "visual_collision_hint": "legit='WIF' attack='‍WIF' codepoints=['0x200d', '0x57', '0x49', '0x46']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "W﻿IF",
+    "attacker_mint": null,
+    "description": "injected U+FEFF ZERO WIDTH NO-BREAK SPACE (BOM) at position 1",
+    "expected_block_reason": "hidden codepoint U+FEFF ZERO WIDTH NO-BREAK SPACE (BOM) in symbol — symbol-equivalence fails string match",
+    "visual_collision_hint": "legit='WIF' attack='W﻿IF' codepoints=['0x57', '0xfeff', '0x49', '0x46']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "﻿WIF",
+    "attacker_mint": null,
+    "description": "injected U+FEFF ZERO WIDTH NO-BREAK SPACE (BOM) as prefix",
+    "expected_block_reason": "hidden codepoint U+FEFF ZERO WIDTH NO-BREAK SPACE (BOM) — visible string matches but string match fails",
+    "visual_collision_hint": "legit='WIF' attack='﻿WIF' codepoints=['0xfeff', '0x57', '0x49', '0x46']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "W⁠IF",
+    "attacker_mint": null,
+    "description": "injected U+2060 WORD JOINER at position 1",
+    "expected_block_reason": "hidden codepoint U+2060 WORD JOINER in symbol — symbol-equivalence fails string match",
+    "visual_collision_hint": "legit='WIF' attack='W⁠IF' codepoints=['0x57', '0x2060', '0x49', '0x46']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "⁠WIF",
+    "attacker_mint": null,
+    "description": "injected U+2060 WORD JOINER as prefix",
+    "expected_block_reason": "hidden codepoint U+2060 WORD JOINER — visible string matches but string match fails",
+    "visual_collision_hint": "legit='WIF' attack='⁠WIF' codepoints=['0x2060', '0x57', '0x49', '0x46']"
+  },
+  {
+    "kind": "mint_sub",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "WIF",
+    "attacker_mint": "FakeNewMintForPYTH11111111111111111111XXXXXX",
+    "description": "symbol 'WIF' but mint 'FakeNewMintForPYTH11...' instead of legitimate 'EKpQGSJtjMFqKZ9KQanS...'",
+    "expected_block_reason": "mint 'FakeNewMintForPYTH11...' does NOT match canonical 'EKpQGSJtjMFqKZ9KQanS...' for symbol 'WIF'"
+  },
+  {
+    "kind": "mint_sub",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "WIF",
+    "attacker_mint": "ScamPYTHMintDeployedToday22222222XXXXXXXXXXX",
+    "description": "symbol 'WIF' but mint 'ScamPYTHMintDeployed...' instead of legitimate 'EKpQGSJtjMFqKZ9KQanS...'",
+    "expected_block_reason": "mint 'ScamPYTHMintDeployed...' does NOT match canonical 'EKpQGSJtjMFqKZ9KQanS...' for symbol 'WIF'"
+  },
+  {
+    "kind": "mint_sub",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "WIF",
+    "attacker_mint": "MaliciousWIFToken333333333333333333XXXXXXXXX",
+    "description": "symbol 'WIF' but mint 'MaliciousWIFToken333...' instead of legitimate 'EKpQGSJtjMFqKZ9KQanS...'",
+    "expected_block_reason": "mint 'MaliciousWIFToken333...' does NOT match canonical 'EKpQGSJtjMFqKZ9KQanS...' for symbol 'WIF'"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "FAKE-WIF-sell_disabled",
+    "attacker_mint": "DevnetHoneypot_sell_disabled_WIFXXXXXXXXXXXX",
+    "description": "contract honeypot pattern: sell_disabled",
+    "expected_block_reason": "contract pattern 'sell_disabled' detected: Buy succeeds but sell() reverts; classic rug holder-trap",
+    "visual_collision_hint": "legit='WIF' attack='FAKE-WIF-sell_disabled' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x57', '0x49', '0x46', '0x2d', '0x73', '0x65', '0x6c', '0x6c', '0x5f', '0x64', '0x69', '0x73', '0x61', '0x62', '0x6c', '0x65', '0x64']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "FAKE-WIF-buy_tax_100",
+    "attacker_mint": "DevnetHoneypot_buy_tax_100_WIFXXXXXXXXXXXXXX",
+    "description": "contract honeypot pattern: buy_tax_100",
+    "expected_block_reason": "contract pattern 'buy_tax_100' detected: 100% buy tax — input goes entirely to contract owner",
+    "visual_collision_hint": "legit='WIF' attack='FAKE-WIF-buy_tax_100' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x57', '0x49', '0x46', '0x2d', '0x62', '0x75', '0x79', '0x5f', '0x74', '0x61', '0x78', '0x5f', '0x31', '0x30', '0x30']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "FAKE-WIF-sell_tax_99",
+    "attacker_mint": "DevnetHoneypot_sell_tax_99_WIFXXXXXXXXXXXXXX",
+    "description": "contract honeypot pattern: sell_tax_99",
+    "expected_block_reason": "contract pattern 'sell_tax_99' detected: 99% sell tax — exiting takes 99% of value",
+    "visual_collision_hint": "legit='WIF' attack='FAKE-WIF-sell_tax_99' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x57', '0x49', '0x46', '0x2d', '0x73', '0x65', '0x6c', '0x6c', '0x5f', '0x74', '0x61', '0x78', '0x5f', '0x39', '0x39']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "FAKE-WIF-blacklist_owner",
+    "attacker_mint": "DevnetHoneypot_blacklist_owner_WIFXXXXXXXXXX",
+    "description": "contract honeypot pattern: blacklist_owner",
+    "expected_block_reason": "contract pattern 'blacklist_owner' detected: Owner has freeze() method that blacklists any address",
+    "visual_collision_hint": "legit='WIF' attack='FAKE-WIF-blacklist_owner' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x57', '0x49', '0x46', '0x2d', '0x62', '0x6c', '0x61', '0x63', '0x6b', '0x6c', '0x69', '0x73', '0x74', '0x5f', '0x6f', '0x77', '0x6e', '0x65', '0x72']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "FAKE-WIF-hidden_mint_authority",
+    "attacker_mint": "DevnetHoneypot_hidden_mint_authority_WIFXXXX",
+    "description": "contract honeypot pattern: hidden_mint_authority",
+    "expected_block_reason": "contract pattern 'hidden_mint_authority' detected: Owner retains mint_to authority — infinite dilution",
+    "visual_collision_hint": "legit='WIF' attack='FAKE-WIF-hidden_mint_authority' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x57', '0x49', '0x46', '0x2d', '0x68', '0x69', '0x64', '0x64', '0x65', '0x6e', '0x5f', '0x6d', '0x69', '0x6e', '0x74', '0x5f', '0x61', '0x75', '0x74', '0x68', '0x6f', '0x72', '0x69', '0x74', '0x79']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "FAKE-WIF-transfer_pause",
+    "attacker_mint": "DevnetHoneypot_transfer_pause_WIFXXXXXXXXXXX",
+    "description": "contract honeypot pattern: transfer_pause",
+    "expected_block_reason": "contract pattern 'transfer_pause' detected: Owner can pause all transfers, freezing positions",
+    "visual_collision_hint": "legit='WIF' attack='FAKE-WIF-transfer_pause' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x57', '0x49', '0x46', '0x2d', '0x74', '0x72', '0x61', '0x6e', '0x73', '0x66', '0x65', '0x72', '0x5f', '0x70', '0x61', '0x75', '0x73', '0x65']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "FAKE-WIF-liquidity_pull",
+    "attacker_mint": "DevnetHoneypot_liquidity_pull_WIFXXXXXXXXXXX",
+    "description": "contract honeypot pattern: liquidity_pull",
+    "expected_block_reason": "contract pattern 'liquidity_pull' detected: LP not locked; owner can drain liquidity at any time",
+    "visual_collision_hint": "legit='WIF' attack='FAKE-WIF-liquidity_pull' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x57', '0x49', '0x46', '0x2d', '0x6c', '0x69', '0x71', '0x75', '0x69', '0x64', '0x69', '0x74', '0x79', '0x5f', '0x70', '0x75', '0x6c', '0x6c']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "FAKE-WIF-renounce_lie",
+    "attacker_mint": "DevnetHoneypot_renounce_lie_WIFXXXXXXXXXXXXX",
+    "description": "contract honeypot pattern: renounce_lie",
+    "expected_block_reason": "contract pattern 'renounce_lie' detected: renounceOwnership() returned but proxy owner still has admin",
+    "visual_collision_hint": "legit='WIF' attack='FAKE-WIF-renounce_lie' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x57', '0x49', '0x46', '0x2d', '0x72', '0x65', '0x6e', '0x6f', '0x75', '0x6e', '0x63', '0x65', '0x5f', '0x6c', '0x69', '0x65']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "FAKE-WIF-hidden_fee_modifier",
+    "attacker_mint": "DevnetHoneypot_hidden_fee_modifier_WIFXXXXXX",
+    "description": "contract honeypot pattern: hidden_fee_modifier",
+    "expected_block_reason": "contract pattern 'hidden_fee_modifier' detected: Setter that increases tax post-launch (rug after volume)",
+    "visual_collision_hint": "legit='WIF' attack='FAKE-WIF-hidden_fee_modifier' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x57', '0x49', '0x46', '0x2d', '0x68', '0x69', '0x64', '0x64', '0x65', '0x6e', '0x5f', '0x66', '0x65', '0x65', '0x5f', '0x6d', '0x6f', '0x64', '0x69', '0x66', '0x69', '0x65', '0x72']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "WIF",
+    "legitimate_mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
+    "attacker_symbol": "FAKE-WIF-blocklist_function",
+    "attacker_mint": "DevnetHoneypot_blocklist_function_WIFXXXXXXX",
+    "description": "contract honeypot pattern: blocklist_function",
+    "expected_block_reason": "contract pattern 'blocklist_function' detected: Bot/contract maintains tx-blocklist; tx may fail mid-execution",
+    "visual_collision_hint": "legit='WIF' attack='FAKE-WIF-blocklist_function' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x57', '0x49', '0x46', '0x2d', '0x62', '0x6c', '0x6f', '0x63', '0x6b', '0x6c', '0x69', '0x73', '0x74', '0x5f', '0x66', '0x75', '0x6e', '0x63', '0x74', '0x69', '0x6f', '0x6e']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "RRAY",
+    "attacker_mint": null,
+    "description": "insertion: doubled 'R' at position 0",
+    "expected_block_reason": "symbol 'RRAY' not in allowlist; lookalike of 'RAY'",
+    "visual_collision_hint": "legit='RAY' attack='RRAY' codepoints=['0x52', '0x52', '0x41', '0x59']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "RAAY",
+    "attacker_mint": null,
+    "description": "insertion: doubled 'A' at position 1",
+    "expected_block_reason": "symbol 'RAAY' not in allowlist; lookalike of 'RAY'",
+    "visual_collision_hint": "legit='RAY' attack='RAAY' codepoints=['0x52', '0x41', '0x41', '0x59']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "RAYY",
+    "attacker_mint": null,
+    "description": "insertion: doubled 'Y' at position 2",
+    "expected_block_reason": "symbol 'RAYY' not in allowlist; lookalike of 'RAY'",
+    "visual_collision_hint": "legit='RAY' attack='RAYY' codepoints=['0x52', '0x41', '0x59', '0x59']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "ARY",
+    "attacker_mint": null,
+    "description": "transposition: swapped chars at 0,1",
+    "expected_block_reason": "symbol 'ARY' not in allowlist; lookalike of 'RAY'",
+    "visual_collision_hint": "legit='RAY' attack='ARY' codepoints=['0x41', '0x52', '0x59']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "RYA",
+    "attacker_mint": null,
+    "description": "transposition: swapped chars at 1,2",
+    "expected_block_reason": "symbol 'RYA' not in allowlist; lookalike of 'RAY'",
+    "visual_collision_hint": "legit='RAY' attack='RYA' codepoints=['0x52', '0x59', '0x41']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "AY",
+    "attacker_mint": null,
+    "description": "deletion: removed char at 0",
+    "expected_block_reason": "symbol 'AY' not in allowlist; lookalike of 'RAY'",
+    "visual_collision_hint": "legit='RAY' attack='AY' codepoints=['0x41', '0x59']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "RY",
+    "attacker_mint": null,
+    "description": "deletion: removed char at 1",
+    "expected_block_reason": "symbol 'RY' not in allowlist; lookalike of 'RAY'",
+    "visual_collision_hint": "legit='RAY' attack='RY' codepoints=['0x52', '0x59']"
+  },
+  {
+    "kind": "typo",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "RA",
+    "attacker_mint": null,
+    "description": "deletion: removed char at 2",
+    "expected_block_reason": "symbol 'RA' not in allowlist; lookalike of 'RAY'",
+    "visual_collision_hint": "legit='RAY' attack='RA' codepoints=['0x52', '0x41']"
+  },
+  {
+    "kind": "unicode",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "RАY",
+    "attacker_mint": null,
+    "description": "unicode lookalike: Latin 'A' → CYRILLIC 'А' (U+0410) at pos 1",
+    "expected_block_reason": "non-ASCII codepoint U+0410 in symbol — Cyrillic/Greek confusable",
+    "visual_collision_hint": "legit='RAY' attack='RАY' codepoints=['0x52', '0x410', '0x59']"
+  },
+  {
+    "kind": "unicode",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "RΑY",
+    "attacker_mint": null,
+    "description": "unicode lookalike: Latin 'A' → GREEK 'Α' (U+0391) at pos 1",
+    "expected_block_reason": "non-ASCII codepoint U+0391 in symbol — Cyrillic/Greek confusable",
+    "visual_collision_hint": "legit='RAY' attack='RΑY' codepoints=['0x52', '0x391', '0x59']"
+  },
+  {
+    "kind": "unicode",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "RAУ",
+    "attacker_mint": null,
+    "description": "unicode lookalike: Latin 'Y' → CYRILLIC 'У' (U+0423) at pos 2",
+    "expected_block_reason": "non-ASCII codepoint U+0423 in symbol — Cyrillic/Greek confusable",
+    "visual_collision_hint": "legit='RAY' attack='RAУ' codepoints=['0x52', '0x41', '0x423']"
+  },
+  {
+    "kind": "unicode",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "RAΥ",
+    "attacker_mint": null,
+    "description": "unicode lookalike: Latin 'Y' → GREEK 'Υ' (U+03A5) at pos 2",
+    "expected_block_reason": "non-ASCII codepoint U+03A5 in symbol — Cyrillic/Greek confusable",
+    "visual_collision_hint": "legit='RAY' attack='RAΥ' codepoints=['0x52', '0x41', '0x3a5']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "R​AY",
+    "attacker_mint": null,
+    "description": "injected U+200B ZERO WIDTH SPACE at position 1",
+    "expected_block_reason": "hidden codepoint U+200B ZERO WIDTH SPACE in symbol — symbol-equivalence fails string match",
+    "visual_collision_hint": "legit='RAY' attack='R​AY' codepoints=['0x52', '0x200b', '0x41', '0x59']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "​RAY",
+    "attacker_mint": null,
+    "description": "injected U+200B ZERO WIDTH SPACE as prefix",
+    "expected_block_reason": "hidden codepoint U+200B ZERO WIDTH SPACE — visible string matches but string match fails",
+    "visual_collision_hint": "legit='RAY' attack='​RAY' codepoints=['0x200b', '0x52', '0x41', '0x59']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "R‌AY",
+    "attacker_mint": null,
+    "description": "injected U+200C ZERO WIDTH NON-JOINER at position 1",
+    "expected_block_reason": "hidden codepoint U+200C ZERO WIDTH NON-JOINER in symbol — symbol-equivalence fails string match",
+    "visual_collision_hint": "legit='RAY' attack='R‌AY' codepoints=['0x52', '0x200c', '0x41', '0x59']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "‌RAY",
+    "attacker_mint": null,
+    "description": "injected U+200C ZERO WIDTH NON-JOINER as prefix",
+    "expected_block_reason": "hidden codepoint U+200C ZERO WIDTH NON-JOINER — visible string matches but string match fails",
+    "visual_collision_hint": "legit='RAY' attack='‌RAY' codepoints=['0x200c', '0x52', '0x41', '0x59']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "R‍AY",
+    "attacker_mint": null,
+    "description": "injected U+200D ZERO WIDTH JOINER at position 1",
+    "expected_block_reason": "hidden codepoint U+200D ZERO WIDTH JOINER in symbol — symbol-equivalence fails string match",
+    "visual_collision_hint": "legit='RAY' attack='R‍AY' codepoints=['0x52', '0x200d', '0x41', '0x59']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "‍RAY",
+    "attacker_mint": null,
+    "description": "injected U+200D ZERO WIDTH JOINER as prefix",
+    "expected_block_reason": "hidden codepoint U+200D ZERO WIDTH JOINER — visible string matches but string match fails",
+    "visual_collision_hint": "legit='RAY' attack='‍RAY' codepoints=['0x200d', '0x52', '0x41', '0x59']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "R﻿AY",
+    "attacker_mint": null,
+    "description": "injected U+FEFF ZERO WIDTH NO-BREAK SPACE (BOM) at position 1",
+    "expected_block_reason": "hidden codepoint U+FEFF ZERO WIDTH NO-BREAK SPACE (BOM) in symbol — symbol-equivalence fails string match",
+    "visual_collision_hint": "legit='RAY' attack='R﻿AY' codepoints=['0x52', '0xfeff', '0x41', '0x59']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "﻿RAY",
+    "attacker_mint": null,
+    "description": "injected U+FEFF ZERO WIDTH NO-BREAK SPACE (BOM) as prefix",
+    "expected_block_reason": "hidden codepoint U+FEFF ZERO WIDTH NO-BREAK SPACE (BOM) — visible string matches but string match fails",
+    "visual_collision_hint": "legit='RAY' attack='﻿RAY' codepoints=['0xfeff', '0x52', '0x41', '0x59']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "R⁠AY",
+    "attacker_mint": null,
+    "description": "injected U+2060 WORD JOINER at position 1",
+    "expected_block_reason": "hidden codepoint U+2060 WORD JOINER in symbol — symbol-equivalence fails string match",
+    "visual_collision_hint": "legit='RAY' attack='R⁠AY' codepoints=['0x52', '0x2060', '0x41', '0x59']"
+  },
+  {
+    "kind": "hidden_char",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "⁠RAY",
+    "attacker_mint": null,
+    "description": "injected U+2060 WORD JOINER as prefix",
+    "expected_block_reason": "hidden codepoint U+2060 WORD JOINER — visible string matches but string match fails",
+    "visual_collision_hint": "legit='RAY' attack='⁠RAY' codepoints=['0x2060', '0x52', '0x41', '0x59']"
+  },
+  {
+    "kind": "mint_sub",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "RAY",
+    "attacker_mint": "FakeNewMintForPYTH11111111111111111111XXXXXX",
+    "description": "symbol 'RAY' but mint 'FakeNewMintForPYTH11...' instead of legitimate '4k3Dyjzvzp8eMZWUXbBC...'",
+    "expected_block_reason": "mint 'FakeNewMintForPYTH11...' does NOT match canonical '4k3Dyjzvzp8eMZWUXbBC...' for symbol 'RAY'"
+  },
+  {
+    "kind": "mint_sub",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "RAY",
+    "attacker_mint": "ScamPYTHMintDeployedToday22222222XXXXXXXXXXX",
+    "description": "symbol 'RAY' but mint 'ScamPYTHMintDeployed...' instead of legitimate '4k3Dyjzvzp8eMZWUXbBC...'",
+    "expected_block_reason": "mint 'ScamPYTHMintDeployed...' does NOT match canonical '4k3Dyjzvzp8eMZWUXbBC...' for symbol 'RAY'"
+  },
+  {
+    "kind": "mint_sub",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "RAY",
+    "attacker_mint": "MaliciousRAYToken333333333333333333XXXXXXXXX",
+    "description": "symbol 'RAY' but mint 'MaliciousRAYToken333...' instead of legitimate '4k3Dyjzvzp8eMZWUXbBC...'",
+    "expected_block_reason": "mint 'MaliciousRAYToken333...' does NOT match canonical '4k3Dyjzvzp8eMZWUXbBC...' for symbol 'RAY'"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "FAKE-RAY-sell_disabled",
+    "attacker_mint": "DevnetHoneypot_sell_disabled_RAYXXXXXXXXXXXX",
+    "description": "contract honeypot pattern: sell_disabled",
+    "expected_block_reason": "contract pattern 'sell_disabled' detected: Buy succeeds but sell() reverts; classic rug holder-trap",
+    "visual_collision_hint": "legit='RAY' attack='FAKE-RAY-sell_disabled' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x52', '0x41', '0x59', '0x2d', '0x73', '0x65', '0x6c', '0x6c', '0x5f', '0x64', '0x69', '0x73', '0x61', '0x62', '0x6c', '0x65', '0x64']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "FAKE-RAY-buy_tax_100",
+    "attacker_mint": "DevnetHoneypot_buy_tax_100_RAYXXXXXXXXXXXXXX",
+    "description": "contract honeypot pattern: buy_tax_100",
+    "expected_block_reason": "contract pattern 'buy_tax_100' detected: 100% buy tax — input goes entirely to contract owner",
+    "visual_collision_hint": "legit='RAY' attack='FAKE-RAY-buy_tax_100' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x52', '0x41', '0x59', '0x2d', '0x62', '0x75', '0x79', '0x5f', '0x74', '0x61', '0x78', '0x5f', '0x31', '0x30', '0x30']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "FAKE-RAY-sell_tax_99",
+    "attacker_mint": "DevnetHoneypot_sell_tax_99_RAYXXXXXXXXXXXXXX",
+    "description": "contract honeypot pattern: sell_tax_99",
+    "expected_block_reason": "contract pattern 'sell_tax_99' detected: 99% sell tax — exiting takes 99% of value",
+    "visual_collision_hint": "legit='RAY' attack='FAKE-RAY-sell_tax_99' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x52', '0x41', '0x59', '0x2d', '0x73', '0x65', '0x6c', '0x6c', '0x5f', '0x74', '0x61', '0x78', '0x5f', '0x39', '0x39']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "FAKE-RAY-blacklist_owner",
+    "attacker_mint": "DevnetHoneypot_blacklist_owner_RAYXXXXXXXXXX",
+    "description": "contract honeypot pattern: blacklist_owner",
+    "expected_block_reason": "contract pattern 'blacklist_owner' detected: Owner has freeze() method that blacklists any address",
+    "visual_collision_hint": "legit='RAY' attack='FAKE-RAY-blacklist_owner' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x52', '0x41', '0x59', '0x2d', '0x62', '0x6c', '0x61', '0x63', '0x6b', '0x6c', '0x69', '0x73', '0x74', '0x5f', '0x6f', '0x77', '0x6e', '0x65', '0x72']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "FAKE-RAY-hidden_mint_authority",
+    "attacker_mint": "DevnetHoneypot_hidden_mint_authority_RAYXXXX",
+    "description": "contract honeypot pattern: hidden_mint_authority",
+    "expected_block_reason": "contract pattern 'hidden_mint_authority' detected: Owner retains mint_to authority — infinite dilution",
+    "visual_collision_hint": "legit='RAY' attack='FAKE-RAY-hidden_mint_authority' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x52', '0x41', '0x59', '0x2d', '0x68', '0x69', '0x64', '0x64', '0x65', '0x6e', '0x5f', '0x6d', '0x69', '0x6e', '0x74', '0x5f', '0x61', '0x75', '0x74', '0x68', '0x6f', '0x72', '0x69', '0x74', '0x79']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "FAKE-RAY-transfer_pause",
+    "attacker_mint": "DevnetHoneypot_transfer_pause_RAYXXXXXXXXXXX",
+    "description": "contract honeypot pattern: transfer_pause",
+    "expected_block_reason": "contract pattern 'transfer_pause' detected: Owner can pause all transfers, freezing positions",
+    "visual_collision_hint": "legit='RAY' attack='FAKE-RAY-transfer_pause' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x52', '0x41', '0x59', '0x2d', '0x74', '0x72', '0x61', '0x6e', '0x73', '0x66', '0x65', '0x72', '0x5f', '0x70', '0x61', '0x75', '0x73', '0x65']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "FAKE-RAY-liquidity_pull",
+    "attacker_mint": "DevnetHoneypot_liquidity_pull_RAYXXXXXXXXXXX",
+    "description": "contract honeypot pattern: liquidity_pull",
+    "expected_block_reason": "contract pattern 'liquidity_pull' detected: LP not locked; owner can drain liquidity at any time",
+    "visual_collision_hint": "legit='RAY' attack='FAKE-RAY-liquidity_pull' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x52', '0x41', '0x59', '0x2d', '0x6c', '0x69', '0x71', '0x75', '0x69', '0x64', '0x69', '0x74', '0x79', '0x5f', '0x70', '0x75', '0x6c', '0x6c']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "FAKE-RAY-renounce_lie",
+    "attacker_mint": "DevnetHoneypot_renounce_lie_RAYXXXXXXXXXXXXX",
+    "description": "contract honeypot pattern: renounce_lie",
+    "expected_block_reason": "contract pattern 'renounce_lie' detected: renounceOwnership() returned but proxy owner still has admin",
+    "visual_collision_hint": "legit='RAY' attack='FAKE-RAY-renounce_lie' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x52', '0x41', '0x59', '0x2d', '0x72', '0x65', '0x6e', '0x6f', '0x75', '0x6e', '0x63', '0x65', '0x5f', '0x6c', '0x69', '0x65']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "FAKE-RAY-hidden_fee_modifier",
+    "attacker_mint": "DevnetHoneypot_hidden_fee_modifier_RAYXXXXXX",
+    "description": "contract honeypot pattern: hidden_fee_modifier",
+    "expected_block_reason": "contract pattern 'hidden_fee_modifier' detected: Setter that increases tax post-launch (rug after volume)",
+    "visual_collision_hint": "legit='RAY' attack='FAKE-RAY-hidden_fee_modifier' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x52', '0x41', '0x59', '0x2d', '0x68', '0x69', '0x64', '0x64', '0x65', '0x6e', '0x5f', '0x66', '0x65', '0x65', '0x5f', '0x6d', '0x6f', '0x64', '0x69', '0x66', '0x69', '0x65', '0x72']"
+  },
+  {
+    "kind": "contract_pattern",
+    "legitimate_symbol": "RAY",
+    "legitimate_mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "attacker_symbol": "FAKE-RAY-blocklist_function",
+    "attacker_mint": "DevnetHoneypot_blocklist_function_RAYXXXXXXX",
+    "description": "contract honeypot pattern: blocklist_function",
+    "expected_block_reason": "contract pattern 'blocklist_function' detected: Bot/contract maintains tx-blocklist; tx may fail mid-execution",
+    "visual_collision_hint": "legit='RAY' attack='FAKE-RAY-blocklist_function' codepoints=['0x46', '0x41', '0x4b', '0x45', '0x2d', '0x52', '0x41', '0x59', '0x2d', '0x62', '0x6c', '0x6f', '0x63', '0x6b', '0x6c', '0x69', '0x73', '0x74', '0x5f', '0x66', '0x75', '0x6e', '0x63', '0x74', '0x69', '0x6f', '0x6e']"
+  }
+]
