@@ -27,6 +27,16 @@ export PAPER_TRADE=true                    # NEVER flip without explicit founder
 export X402_MODE=stub                      # NEVER flip without explicit founder go-ahead
 export EXPERIMENT_TAG=setup-c-2026-05-28   # propagated to artifact log for filtering
 
+# Sprint 16 halt (2026-05-28): two-specialist joint review (quant + strategist)
+# verdict — the 5m/12h scalp class is FALSIFIED across 25 trades. Stop opening
+# new positions; keep bot alive for telemetry-only mode while we build the
+# swing executor (Sprint 9 trend_adx_30 transplant, 4h cadence).
+#
+# OBSERVATION_MODE=1 makes open_position() early-return BEFORE swap_execute.
+# Voices, Oracle, dashboard, artifact log all keep firing — only the actual
+# swap call is skipped. Use for full-stack telemetry without capital risk.
+export OBSERVATION_MODE=1
+
 echo "================================================================"
 echo "Setup C launch — 2026-05-28"
 echo "  GECKO_ENTRY_REQUIRE_BREAKOUT=${GECKO_ENTRY_REQUIRE_BREAKOUT}"
