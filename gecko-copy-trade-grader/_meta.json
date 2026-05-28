@@ -1,0 +1,21 @@
+{
+  "name": "gecko-copy-trade-grader",
+  "version": "0.2.0",
+  "category": "due-diligence",
+  "surface": "copy-trading-marketplaces",
+  "primary_target": "OKX smartmoney",
+  "secondary_targets": ["bybit-copy-trade", "binance-copy-trade", "any-per-trade-export"],
+  "pricing": {
+    "model": "x402-per-invocation",
+    "amount_usdc": 0.05,
+    "x402_mode_default": "stub"
+  },
+  "deps": {
+    "mcp_required": ["okx-agent-trade-kit"],
+    "python_required": ["stdlib"]
+  },
+  "validated_against": "2026-05-28 live OKX top-50 leaderboard (30d + 90d periods)",
+  "wedge": "OKX marketplace ranks by raw cumulative PnL — that ranking IS the selection bias. Rigor catches 34% Grade D + 63% leaderboard rotation.",
+  "supersedes": [],
+  "see_also": ["gecko-grid-oracle", "gecko-yield-verdict"]
+}

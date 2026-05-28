@@ -92,6 +92,55 @@ class Citation(BaseModel):
     )
 
 
+class DissentEntry(BaseModel):
+    """Sprint 18 — a single voice's surviving dissent against the verdict.
+
+    The verdict envelope used to expose only ``dissent_count: int``. Callers
+    (the bot's gate, dashboards, downstream skills) could not tell WHICH
+    voice dissented or WHAT they said — only that someone did. This entry
+    surfaces both, mirroring the pro-tier ``surviving_dissent`` shape into
+    basic-tier so the wedge ("grounded dissent that survived debate") is
+    visible at the cheapest tier too.
+
+    Pattern: ``voice`` matches the persona name from REQUIRED_AGENTS;
+    ``verbatim`` is the dissenting voice's closing-line token in their own
+    words (the structured ``parsed_verdict`` value, never paraphrased);
+    ``on_topic`` is a 1-phrase summary of what the dissent concerns.
+
+    Empty list is the honest default when no voice opposed the verdict;
+    do not synthesize entries to fill the surface. The eval harness
+    treats `dissent: []` on a high-confidence verdict as a quality SIGNAL
+    (consensus is real), not a quality FAILURE.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    voice: str = Field(
+        ...,
+        description="Persona name (technical_analyst, sentiment_analyst, ...).",
+    )
+    stance: Literal["oppose", "abstain"] = Field(
+        ...,
+        description=(
+            "'oppose' = closing-line directional verdict against the coordinator's call. "
+            "'abstain' = the voice explicitly punted (mixed/stable with data-gap)."
+        ),
+    )
+    verbatim: str = Field(
+        ...,
+        max_length=300,
+        description=(
+            "The dissenting voice's closing-line token, verbatim — never paraphrased. "
+            "Trimmed at 300 chars to keep the envelope small but preserve evidence."
+        ),
+    )
+    on_topic: str = Field(
+        default="",
+        max_length=80,
+        description="1-phrase summary of what the dissent concerns (e.g. 'trend read', 'risk band').",
+    )
+
+
 class TradePanelVerdict(BaseModel):
     """Final aggregated verdict from the coordinator + per-turn audit trail."""
 
@@ -111,6 +160,16 @@ class TradePanelVerdict(BaseModel):
         description=(
             "Count of voices pointing the OTHER way from the coordinator's verdict. "
             "Computed from parsed_verdict on each non-coordinator turn."
+        ),
+    )
+    dissent: list[DissentEntry] = Field(
+        default_factory=list,
+        max_length=5,
+        description=(
+            "Sprint 18 — structured surviving dissent. Each entry names a voice + "
+            "their closing-line verbatim + what the dissent is about. "
+            "Empty when the verdict is unanimous (which is itself a real signal — "
+            "do not synthesize entries). Cap of 5 keeps the envelope bounded."
         ),
     )
     blocker_questions: list[str] = Field(

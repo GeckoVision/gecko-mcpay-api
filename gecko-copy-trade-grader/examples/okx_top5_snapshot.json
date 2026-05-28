@@ -1,0 +1,691 @@
+{
+  "snapshot_ts": "2026-05-28T00:35:00Z",
+  "snapshot_source": "okx-agent-trade-kit/smartmoney_get_traders_by_filter period=30 sortBy=pnlRatio",
+  "data": [
+    {
+      "asset": "160490.47",
+      "authorId": "872832339297382400",
+      "maxDrawdown": "-0.5295",
+      "nickName": "林子和他的朋友们",
+      "onboardDuration": 55,
+      "pnl": "174789.30",
+      "pnlRatio": "10.9235",
+      "portrait": "https://static.coinall.ltd/cdn/okex/users/headimages/20240113/787bd0f50b134b27b76c5c63314ef17d",
+      "rates": [
+        {
+          "statTime": "260428",
+          "value": "-1356.41"
+        },
+        {
+          "statTime": "260429",
+          "value": "-2446.73"
+        },
+        {
+          "statTime": "260430",
+          "value": "-4638.1"
+        },
+        {
+          "statTime": "260501",
+          "value": "-4638.1"
+        },
+        {
+          "statTime": "260502",
+          "value": "-4239.37"
+        },
+        {
+          "statTime": "260503",
+          "value": "2986.54"
+        },
+        {
+          "statTime": "260504",
+          "value": "7181.47"
+        },
+        {
+          "statTime": "260505",
+          "value": "18589.77"
+        },
+        {
+          "statTime": "260506",
+          "value": "29238.17"
+        },
+        {
+          "statTime": "260507",
+          "value": "29899.03"
+        },
+        {
+          "statTime": "260508",
+          "value": "42431.13"
+        },
+        {
+          "statTime": "260509",
+          "value": "42556.96"
+        },
+        {
+          "statTime": "260510",
+          "value": "42157.07"
+        },
+        {
+          "statTime": "260511",
+          "value": "37959.9"
+        },
+        {
+          "statTime": "260512",
+          "value": "28069.08"
+        },
+        {
+          "statTime": "260513",
+          "value": "25809.83"
+        },
+        {
+          "statTime": "260514",
+          "value": "34192.26"
+        },
+        {
+          "statTime": "260515",
+          "value": "60108.69"
+        },
+        {
+          "statTime": "260516",
+          "value": "58839.21"
+        },
+        {
+          "statTime": "260517",
+          "value": "58979.81"
+        },
+        {
+          "statTime": "260518",
+          "value": "57377.15"
+        },
+        {
+          "statTime": "260519",
+          "value": "57826.57"
+        },
+        {
+          "statTime": "260520",
+          "value": "68316.21"
+        },
+        {
+          "statTime": "260521",
+          "value": "82374.85"
+        },
+        {
+          "statTime": "260522",
+          "value": "127489.51"
+        },
+        {
+          "statTime": "260523",
+          "value": "120318.73"
+        },
+        {
+          "statTime": "260524",
+          "value": "137726.23"
+        },
+        {
+          "statTime": "260525",
+          "value": "169062.82"
+        },
+        {
+          "statTime": "260526",
+          "value": "199355.74"
+        },
+        {
+          "statTime": "260527",
+          "value": "195193.84"
+        },
+        {
+          "statTime": "260528",
+          "value": "174789.30"
+        }
+      ],
+      "winRate": "0.5270"
+    },
+    {
+      "asset": "221900.16",
+      "authorId": "872832435107868672",
+      "maxDrawdown": "-0.6467",
+      "nickName": "Meta_Man",
+      "onboardDuration": 97,
+      "pnl": "123730.22",
+      "pnlRatio": "1.0048",
+      "portrait": "https://static.coinall.ltd/cdn/okex/users/headimages/20240225/e655799ba4c54119a326294a63519cbd",
+      "rates": [
+        {
+          "statTime": "260428",
+          "value": "3001.56"
+        },
+        {
+          "statTime": "260429",
+          "value": "282.67"
+        },
+        {
+          "statTime": "260430",
+          "value": "-7615.56"
+        },
+        {
+          "statTime": "260501",
+          "value": "-29048.49"
+        },
+        {
+          "statTime": "260502",
+          "value": "-22938.89"
+        },
+        {
+          "statTime": "260503",
+          "value": "-23768.46"
+        },
+        {
+          "statTime": "260504",
+          "value": "-35312.15"
+        },
+        {
+          "statTime": "260505",
+          "value": "-59714.56"
+        },
+        {
+          "statTime": "260506",
+          "value": "-56419.1"
+        },
+        {
+          "statTime": "260507",
+          "value": "-14672.17"
+        },
+        {
+          "statTime": "260508",
+          "value": "-16789.01"
+        },
+        {
+          "statTime": "260509",
+          "value": "-27577.22"
+        },
+        {
+          "statTime": "260510",
+          "value": "-44003.74"
+        },
+        {
+          "statTime": "260511",
+          "value": "-46081.82"
+        },
+        {
+          "statTime": "260512",
+          "value": "-9976.63"
+        },
+        {
+          "statTime": "260513",
+          "value": "13842.53"
+        },
+        {
+          "statTime": "260514",
+          "value": "-33443.71"
+        },
+        {
+          "statTime": "260515",
+          "value": "15460.38"
+        },
+        {
+          "statTime": "260516",
+          "value": "40328.64"
+        },
+        {
+          "statTime": "260517",
+          "value": "39440.43"
+        },
+        {
+          "statTime": "260518",
+          "value": "80910.18"
+        },
+        {
+          "statTime": "260519",
+          "value": "92292.34"
+        },
+        {
+          "statTime": "260520",
+          "value": "74427.82"
+        },
+        {
+          "statTime": "260521",
+          "value": "60951.05"
+        },
+        {
+          "statTime": "260522",
+          "value": "69460.44"
+        },
+        {
+          "statTime": "260523",
+          "value": "126016.47"
+        },
+        {
+          "statTime": "260524",
+          "value": "126016.47"
+        },
+        {
+          "statTime": "260525",
+          "value": "126016.47"
+        },
+        {
+          "statTime": "260526",
+          "value": "126016.47"
+        },
+        {
+          "statTime": "260527",
+          "value": "126834"
+        },
+        {
+          "statTime": "260528",
+          "value": "123730.22"
+        }
+      ],
+      "winRate": "0.8919"
+    },
+    {
+      "asset": "349694.42",
+      "authorId": "954023867877117952",
+      "maxDrawdown": "-0.4482",
+      "nickName": "天王盖地虎M",
+      "onboardDuration": 1100,
+      "pnl": "103396.40",
+      "pnlRatio": "0.3972",
+      "portrait": "https://static.coinall.ltd/cdn/okex/users/headimages/20260323/70f90d538f774343a27f573bb5a5569a",
+      "rates": [
+        {
+          "statTime": "260428",
+          "value": "590.5"
+        },
+        {
+          "statTime": "260429",
+          "value": "2828.08"
+        },
+        {
+          "statTime": "260430",
+          "value": "5231.96"
+        },
+        {
+          "statTime": "260501",
+          "value": "127.03"
+        },
+        {
+          "statTime": "260502",
+          "value": "-1615.31"
+        },
+        {
+          "statTime": "260503",
+          "value": "-4216.04"
+        },
+        {
+          "statTime": "260504",
+          "value": "6757.39"
+        },
+        {
+          "statTime": "260505",
+          "value": "2993.47"
+        },
+        {
+          "statTime": "260506",
+          "value": "7435.11"
+        },
+        {
+          "statTime": "260507",
+          "value": "4532.38"
+        },
+        {
+          "statTime": "260508",
+          "value": "5865.42"
+        },
+        {
+          "statTime": "260509",
+          "value": "13882.82"
+        },
+        {
+          "statTime": "260510",
+          "value": "21768.24"
+        },
+        {
+          "statTime": "260511",
+          "value": "26164.71"
+        },
+        {
+          "statTime": "260512",
+          "value": "23190.24"
+        },
+        {
+          "statTime": "260513",
+          "value": "33579.27"
+        },
+        {
+          "statTime": "260514",
+          "value": "28876.86"
+        },
+        {
+          "statTime": "260515",
+          "value": "36818.87"
+        },
+        {
+          "statTime": "260516",
+          "value": "37294.42"
+        },
+        {
+          "statTime": "260517",
+          "value": "33736.42"
+        },
+        {
+          "statTime": "260518",
+          "value": "48979.07"
+        },
+        {
+          "statTime": "260519",
+          "value": "49993.33"
+        },
+        {
+          "statTime": "260520",
+          "value": "47876.02"
+        },
+        {
+          "statTime": "260521",
+          "value": "49947.94"
+        },
+        {
+          "statTime": "260522",
+          "value": "54340.59"
+        },
+        {
+          "statTime": "260523",
+          "value": "63790.7"
+        },
+        {
+          "statTime": "260524",
+          "value": "68136.06"
+        },
+        {
+          "statTime": "260525",
+          "value": "68336.25"
+        },
+        {
+          "statTime": "260526",
+          "value": "80658.77"
+        },
+        {
+          "statTime": "260527",
+          "value": "89324.71"
+        },
+        {
+          "statTime": "260528",
+          "value": "103396.40"
+        }
+      ],
+      "winRate": "0.7411"
+    },
+    {
+      "asset": "14380.89",
+      "authorId": "872838274375954432",
+      "maxDrawdown": "-0.2911",
+      "nickName": "好的呢哥哥",
+      "onboardDuration": 656,
+      "pnl": "69955.73",
+      "pnlRatio": "0.8851",
+      "portrait": "https://static.coinall.ltd/cdn/okex/users/headimages/predefined/0003.png",
+      "rates": [
+        {
+          "statTime": "260428",
+          "value": "2417.61"
+        },
+        {
+          "statTime": "260429",
+          "value": "1987.01"
+        },
+        {
+          "statTime": "260430",
+          "value": "5214.61"
+        },
+        {
+          "statTime": "260501",
+          "value": "7096.04"
+        },
+        {
+          "statTime": "260502",
+          "value": "7367.78"
+        },
+        {
+          "statTime": "260503",
+          "value": "7522.97"
+        },
+        {
+          "statTime": "260504",
+          "value": "15549.83"
+        },
+        {
+          "statTime": "260505",
+          "value": "16908.67"
+        },
+        {
+          "statTime": "260506",
+          "value": "20579.62"
+        },
+        {
+          "statTime": "260507",
+          "value": "23848.59"
+        },
+        {
+          "statTime": "260508",
+          "value": "23779.8"
+        },
+        {
+          "statTime": "260509",
+          "value": "23989.5"
+        },
+        {
+          "statTime": "260510",
+          "value": "24199.3"
+        },
+        {
+          "statTime": "260511",
+          "value": "26346.38"
+        },
+        {
+          "statTime": "260512",
+          "value": "28310.44"
+        },
+        {
+          "statTime": "260513",
+          "value": "37683.91"
+        },
+        {
+          "statTime": "260514",
+          "value": "38957.13"
+        },
+        {
+          "statTime": "260515",
+          "value": "40251.81"
+        },
+        {
+          "statTime": "260516",
+          "value": "40263.79"
+        },
+        {
+          "statTime": "260517",
+          "value": "39256.78"
+        },
+        {
+          "statTime": "260518",
+          "value": "47623.56"
+        },
+        {
+          "statTime": "260519",
+          "value": "49745.31"
+        },
+        {
+          "statTime": "260520",
+          "value": "52879.09"
+        },
+        {
+          "statTime": "260521",
+          "value": "54837.45"
+        },
+        {
+          "statTime": "260522",
+          "value": "55875.24"
+        },
+        {
+          "statTime": "260523",
+          "value": "56577.26"
+        },
+        {
+          "statTime": "260524",
+          "value": "57077.64"
+        },
+        {
+          "statTime": "260525",
+          "value": "62272.32"
+        },
+        {
+          "statTime": "260526",
+          "value": "66401.13"
+        },
+        {
+          "statTime": "260527",
+          "value": "69444.06"
+        },
+        {
+          "statTime": "260528",
+          "value": "69955.73"
+        }
+      ],
+      "winRate": "0.9643"
+    },
+    {
+      "asset": "39656.17",
+      "authorId": "872833029876953088",
+      "maxDrawdown": "-0.9998",
+      "nickName": "三年好日子",
+      "onboardDuration": 716,
+      "pnl": "62914.30",
+      "pnlRatio": "0.6400",
+      "portrait": "https://static.coinall.ltd/cdn/okex/users/headimages/predefined/0019.png",
+      "rates": [
+        {
+          "statTime": "260428",
+          "value": "-6457.41"
+        },
+        {
+          "statTime": "260429",
+          "value": "-12118.25"
+        },
+        {
+          "statTime": "260430",
+          "value": "-17615.24"
+        },
+        {
+          "statTime": "260501",
+          "value": "-35545.35"
+        },
+        {
+          "statTime": "260502",
+          "value": "-35836.42"
+        },
+        {
+          "statTime": "260503",
+          "value": "-49437.12"
+        },
+        {
+          "statTime": "260504",
+          "value": "-66481.6"
+        },
+        {
+          "statTime": "260505",
+          "value": "-78378.28"
+        },
+        {
+          "statTime": "260506",
+          "value": "-79649.36"
+        },
+        {
+          "statTime": "260507",
+          "value": "-50957.27"
+        },
+        {
+          "statTime": "260508",
+          "value": "-56199.82"
+        },
+        {
+          "statTime": "260509",
+          "value": "-67785.55"
+        },
+        {
+          "statTime": "260510",
+          "value": "-77577.01"
+        },
+        {
+          "statTime": "260511",
+          "value": "-79257.82"
+        },
+        {
+          "statTime": "260512",
+          "value": "-57448.59"
+        },
+        {
+          "statTime": "260513",
+          "value": "-44973"
+        },
+        {
+          "statTime": "260514",
+          "value": "-82468.04"
+        },
+        {
+          "statTime": "260515",
+          "value": "-59405.21"
+        },
+        {
+          "statTime": "260516",
+          "value": "-28055.91"
+        },
+        {
+          "statTime": "260517",
+          "value": "-35107.21"
+        },
+        {
+          "statTime": "260518",
+          "value": "36598.12"
+        },
+        {
+          "statTime": "260519",
+          "value": "60184.93"
+        },
+        {
+          "statTime": "260520",
+          "value": "36710.35"
+        },
+        {
+          "statTime": "260521",
+          "value": "26633.64"
+        },
+        {
+          "statTime": "260522",
+          "value": "30921.02"
+        },
+        {
+          "statTime": "260523",
+          "value": "71616.45"
+        },
+        {
+          "statTime": "260524",
+          "value": "67273.39"
+        },
+        {
+          "statTime": "260525",
+          "value": "50004.65"
+        },
+        {
+          "statTime": "260526",
+          "value": "46079.46"
+        },
+        {
+          "statTime": "260527",
+          "value": "33688.54"
+        },
+        {
+          "statTime": "260528",
+          "value": "62914.30"
+        }
+      ],
+      "winRate": "0.4807"
+    }
+  ]
+}

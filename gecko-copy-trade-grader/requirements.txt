@@ -1,0 +1,3 @@
+# gecko-copy-trade-grader runs on Python stdlib only.
+# Optional: httpx for if/when you build your own OKX pull instead of the MCP.
+# httpx>=0.27
