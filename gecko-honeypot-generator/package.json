@@ -1,0 +1,20 @@
+{
+  "name": "gecko-honeypot-generator",
+  "version": "0.1.0",
+  "description": "Adversarial-input corpus generator for crypto trading agents — typo, unicode lookalike, hidden char, mint substitution, and contract honeypot patterns. Built as Gecko's validation harness for adopting Bento Guard as our on-chain security guardrail; on our own bot exposed an 8% mint-substitution bypass that hardcoded allowlists alone don't catch.",
+  "author": "Gecko",
+  "license": "MIT",
+  "keywords": ["security", "adversarial-testing", "honeypot", "unicode-confusable", "mint-substitution", "agent-safety", "solana", "bento-guard", "validation-harness"],
+  "main": "SKILL.md",
+  "scripts": {
+    "generate": "python3 honeypot_generator.py"
+  },
+  "tags": ["security", "honeypot", "validation", "agent-safety", "solana"],
+  "triggers": [
+    "Generate adversarial inputs for my trading agent",
+    "Test my bot against honeypot tokens",
+    "Show me typo variants of PYTH",
+    "Build an adversarial corpus for security testing",
+    "Validate my pre-flight security check"
+  ]
+}

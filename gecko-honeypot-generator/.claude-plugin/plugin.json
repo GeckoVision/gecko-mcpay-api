@@ -1,0 +1,12 @@
+{
+  "name": "gecko-honeypot-generator",
+  "description": "Adversarial-input corpus generator for crypto trading agents. Generates typo, unicode lookalike, hidden char, mint substitution, and contract honeypot variants. Use as a pre-deploy security validation harness. Built as Gecko's test framework for adopting Bento Guard as our on-chain guardrail.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Gecko",
+    "github": "ernanibmurtinho"
+  },
+  "license": "MIT",
+  "keywords": ["security", "honeypot", "adversarial-testing", "agent-safety", "solana"],
+  "repository": "https://github.com/ernanibmurtinho/gecko-mcpay-api"
+}
