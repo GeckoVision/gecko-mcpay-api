@@ -1988,6 +1988,7 @@ async def run_trade_panel_with_retrieval(
     as_of_date: str | None = None,
     as_of: str | date | datetime | None = None,
     pool: str | None = None,
+    news_provider: Any | None = None,
 ) -> TradePanelVerdict:
     """Convenience wrapper — fetch corpus chunks, then run the 7-agent panel.
 
@@ -2054,6 +2055,34 @@ async def run_trade_panel_with_retrieval(
             chunks = list(chunks) + list(recon_chunks)
             recon_count = len(recon_chunks)
 
+    # Sprint 18 #1 (2026-05-28) — news_provider injection.
+    #
+    # Same pattern as the backtest reconstruction above: lazy import of
+    # the merge helper, in-memory chunk-list extension, no side effects on
+    # the persisted corpus. Default `news_provider=None` is a strict no-op
+    # — every existing caller is byte-identical to the pre-Sprint-18 path.
+    #
+    # When a NewsProvider IS passed (e.g. okx-agent-trade-kit news adapter),
+    # up to ~5 recent headlines per protocol are merged onto chunks with
+    # provider_kind="okx_news_live". The sentiment_analyst's persona prompt
+    # ALREADY says it reads "news headlines, X/Twitter chatter, Discord/
+    # governance forum posts" — wiring news here makes that input live
+    # rather than corpus-only. Per Sprint 18 design synthesis: this was a
+    # FREE win since `okx-news` MCP was already plumbed; nothing read it.
+    news_added = 0
+    if news_provider is not None:
+        from gecko_core.orchestration.trade_panel.news_provider import (
+            merge_news_chunks,
+        )
+        before_news = len(chunks)
+        chunks = await merge_news_chunks(
+            chunks,
+            provider=news_provider,
+            protocol=protocol,
+            as_of=as_of_norm,
+        )
+        news_added = len(chunks) - before_news
+
     # Issue #12 — panel kickoff log. Truthy chunks here but empty
     # `citations` on the response would point at hypothesis 3 (prompt-drop):
     # retrieval landed rows but the panel's _format_chunks / opening prompt
@@ -2062,12 +2091,13 @@ async def run_trade_panel_with_retrieval(
     chunk_ids = [c.get("id", "") for c in chunks]
     _log.info(
         "trade_panel.kickoff protocol=%s vertical=%s tier=%s "
-        "chunks_passed_to_panel=%d reconstructed=%d chunk_ids=%s",
+        "chunks_passed_to_panel=%d reconstructed=%d news_added=%d chunk_ids=%s",
         protocol.strip().lower(),
         vertical,
         tier,
         len(chunks),
         recon_count,
+        news_added,
         chunk_ids,
     )
 
