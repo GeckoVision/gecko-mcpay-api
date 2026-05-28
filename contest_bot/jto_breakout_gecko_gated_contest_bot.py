@@ -823,6 +823,54 @@ def _record_heartbeat() -> None:
         print(f"[heartbeat] state persist failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
+# Sprint 17 (2026-05-28) — honest-decomposition helper for /api/state.
+# Per Sprint 5 bot-honesty Fix 1: surface per-exit-reason, per-regime, and
+# per-symbol breakdowns so anyone (dashboard, audit, founder) can see WHICH
+# closes are dragging the mean. Pure function; no side effects.
+def _compute_honest_decomposition(closed_positions: list) -> dict:
+    """Aggregate closed positions by exit_reason, regime_1h, and symbol."""
+    from collections import defaultdict as _dd
+    by_reason: dict = _dd(list)
+    by_regime: dict = _dd(list)
+    by_symbol: dict = _dd(list)
+
+    for p in closed_positions:
+        pnl_pct = p.get("pnl_pct")
+        if not isinstance(pnl_pct, (int, float)):
+            continue
+        reason = p.get("exit_reason") or "unknown"
+        symbol = p.get("symbol") or "?"
+        regime = ((p.get("signal_data") or {}).get("regime_1h")) or "unknown"
+        by_reason[reason].append(pnl_pct)
+        by_regime[regime].append(pnl_pct)
+        by_symbol[symbol].append(pnl_pct)
+
+    def _summary(d: dict) -> dict:
+        out = {}
+        for k, vs in d.items():
+            n = len(vs)
+            mean = sum(vs) / n if n else 0
+            wins = sum(1 for v in vs if v >= 0.5)
+            losses = sum(1 for v in vs if v <= -0.5)
+            out[k] = {
+                "n": n,
+                "mean_pct": round(mean, 3),
+                "sum_pct": round(sum(vs), 3),
+                "wins": wins,
+                "losses": losses,
+                "best": round(max(vs), 3) if vs else 0,
+                "worst": round(min(vs), 3) if vs else 0,
+            }
+        return out
+
+    return {
+        "by_exit_reason": _summary(by_reason),
+        "by_regime_1h": _summary(by_regime),
+        "by_symbol": _summary(by_symbol),
+        "n_closed": len(closed_positions),
+    }
+
+
 DASHBOARD_HTML = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>My Strategy Dashboard</title><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#0a0e14;color:#ccd6f6;font-family:'SF Mono','Fira Code',monospace;font-size:13px;padding:16px}h2{color:#00e676;margin-bottom:10px;font-size:15px}.panel{background:#12171f;border:1px solid #252d3a;border-radius:8px;padding:14px;margin-bottom:12px}.row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #1a2030}.row:last-child{border-bottom:none}.label{color:#8892b0}.green{color:#00e676}.red{color:#ff5252}.yellow{color:#ffd740}.blue{color:#448aff}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}table{width:100%;border-collapse:collapse}th{color:#448aff;text-align:left;padding:6px 8px;border-bottom:1px solid #252d3a;font-weight:normal}td{padding:5px 8px;border-bottom:1px solid #1a2030}.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px}.badge-paper{background:#1a2a4a;color:#448aff}.badge-live{background:#2a1a1a;color:#ff5252}.feed-item{padding:3px 0;border-bottom:1px solid #1a2030;font-size:12px}.ts{color:#4a5568;margin-right:8px}.reading{font-size:11px;color:#8892b0;margin-top:2px;padding-left:8px;font-style:italic}</style></head><body><div class='panel'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><h2>&#x1F40B; My Strategy</h2><div><span id='mode-badge' class='badge'></span><span id='heartbeat' class='badge' style='margin-left:6px'>—</span><span id='state-badge' class='badge' style='margin-left:6px'>—</span></div></div><div class='grid2'><div><div class='row'><span class='label'>Entry</span><span id='entry-type'></span></div><div class='row'><span class='label'>Stop Loss</span><span class='red' id='sl'></span></div><div class='row'><span class='label'>Take Profit</span><span class='green' id='tp'></span></div><div class='row'><span class='label'>Poll</span><span id='poll'></span></div></div><div><div class='row'><span class='label'>Wallet</span><span class='blue' id='wallet'></span></div><div class='row'><span class='label'>Session PnL</span><span id='session-pnl'></span></div><div class='row'><span class='label'>Trades</span><span id='trades'></span></div><div class='row'><span class='label'>Win Rate</span><span id='winrate'></span></div></div></div></div><div class='panel'><h2>Open Positions (<span id='open-count'>0</span>)</h2><table><thead><tr><th>Symbol</th><th>Entry</th><th>Current</th><th>PnL</th><th>TP target</th><th>SL trigger</th><th>Time-stop</th><th>Since</th></tr></thead><tbody id='pos-body'></tbody></table></div><div class='panel'><h2>&#x1F5E3;&#xFE0F; Agent Voices &mdash; latest decisions <span id='risk-veto' style='float:right;font-size:11px;font-weight:normal;color:#8892b0'>—</span></h2><div id='voices'></div></div><div class='panel'><h2>&#x1F4CA; Indexes (ADX / RSI / MFI / CHOP / bbw)</h2><div id='indexes'></div></div><div class='panel'><h2>&#x1F52E; Gecko Oracle &mdash; fundamentals verdict (live, grounded)</h2><div id='oracle'></div></div><div class='panel'><h2>Signal Feed</h2><div id='feed'></div></div><script>async function refresh(){try{const r=await fetch('/api/state');const d=await r.json();const mb=document.getElementById('mode-badge');mb.textContent=d.mode==='paper'?'PAPER 📄':'LIVE 🔴';mb.className='badge badge-'+(d.mode==='paper'?'paper':'live');var hb=d.liveness||{};var hbEl=document.getElementById('heartbeat');if(hbEl){if(hb.still_alive_at){var ageSec=(Date.now()-new Date(hb.still_alive_at).getTime())/1000;var thr=hb.stale_threshold_sec||60;hbEl.textContent=ageSec<thr?('❤ '+Math.round(ageSec)+'s'):('⚠ STALE '+Math.round(ageSec)+'s');hbEl.style.color=ageSec<thr?'#00e676':'#ff5252';}else{hbEl.textContent='— never beat';hbEl.style.color='#ffd740';}}var sm=d.state_machine||{};var smEl=document.getElementById('state-badge');if(smEl){var st=sm.current_state||'?';var dw=sm.dwell_sec!=null?Math.round(sm.dwell_sec):0;var slo=sm.slo_sec;var over=slo!=null&&dw>slo;var alerts=sm.alerts_emitted||0;var dwLbl=dw<60?(dw+'s'):dw<3600?(Math.round(dw/60)+'m'):(Math.round(dw/3600)+'h');smEl.textContent=st+' '+dwLbl+(over?(' ⚠ SLO '+(alerts>0?('('+alerts+')'):'')):'');smEl.style.color=over?'#ff5252':(st==='running'?'#00e676':(st==='boot'?'#ffd740':'#ffd740'));}var rvr=d.risk_voice_veto_rate||{};var rvrEl=document.getElementById('risk-veto');if(rvrEl){if(rvr.rate!=null&&rvr.window_n>0){var pct=(rvr.rate*100).toFixed(1);rvrEl.textContent='risk_voice veto: '+rvr.vetoes+'/'+rvr.window_n+' ('+pct+'%)';rvrEl.style.color=rvr.rate<0.05?'#8892b0':rvr.rate<0.30?'#ffd740':'#ff5252';}else{rvrEl.textContent='risk_voice veto: no calls yet';rvrEl.style.color='#8892b0';}}document.getElementById('entry-type').textContent=d.entry_type||'';document.getElementById('sl').textContent='-'+d.sl_pct+'%';document.getElementById('tp').textContent='+'+d.tp_pct+'%';document.getElementById('poll').textContent=d.poll_sec+'s';document.getElementById('wallet').textContent=d.wallet||'—';const s=d.stats||{};const pnl=s.pnl_usd||0;const pe=document.getElementById('session-pnl');pe.textContent=(pnl>=0?'+':'')+'$'+pnl.toFixed(2);pe.className=pnl>=0?'green':'red';document.getElementById('trades').textContent=(s.daily_trades||0)+'/'+(s.daily_limit||0)+' today';const wr=(s.wins&&s.total_trades)?Math.round(s.wins/s.total_trades*100):0;document.getElementById('winrate').textContent=s.total_trades?(wr+'% ('+s.wins+'W/'+s.losses+'L)'):'—';const open=(d.positions||[]).filter(p=>p.status==='open');document.getElementById('open-count').textContent=open.length;document.getElementById('pos-body').innerHTML=open.map(p=>{const pct=p.pnl_pct||0;const cl=pct>=0?'green':'red';const since=(p.entry_ts||'').slice(11,19);const tpStr=(p.tp_price||0).toFixed(6);const slStr=(p.sl_price||0).toFixed(6);const tse=(p.time_stop_eta||'').slice(11,19);return '<tr><td>'+(p.symbol||p.token.slice(0,12))+'</td><td>'+(p.entry_price||0).toFixed(6)+'</td><td>'+(p.current_price||0).toFixed(6)+'</td><td class='+cl+'>'+(pct>=0?'+':'')+pct.toFixed(1)+'%</td><td class=green>'+tpStr+'</td><td class=red>'+slStr+'</td><td>'+tse+'</td><td>'+since+'</td></tr>';}).join('');const feed=document.getElementById('feed');feed.innerHTML=(d.signal_feed||[]).slice(-30).reverse().map(e=>{const cl=e.type==='buy'?'green':e.type==='sell'?'red':e.type==='filter'?'yellow':'';return '<div class=feed-item><span class=ts>'+(e.ts||'').slice(11,19)+'</span><span class='+cl+'>'+e.msg+'</span></div>';}).join('');const vc=function(v){return v==='bullish'?'green':v==='bearish'?'red':v==='abstain'?'blue':'yellow';};const vbox=document.getElementById('voices');vbox.innerHTML=(d.panel||[]).slice(0,6).map(function(p){const act=p.action==='act'?'green':'red';const reg=p.regime==='TREND'?'green':p.regime==='CHOP'?'red':'yellow';const voices=(p.voices||[]).map(function(o){const rtext=o.name==='chart_analyst'&&o.reasoning?'<div class=reading>'+o.reasoning+'</div>':'';return '<span style=margin-right:10px>'+o.name.replace('_voice','').replace('_analyst','')+': <span class='+vc(o.verdict)+'>'+o.verdict+'</span> '+(o.confidence!=null?o.confidence.toFixed(2):'')+'</span>'+rtext;}).join('');return '<div class=feed-item><span class=ts>'+(p.ts||'').slice(11,19)+'</span><b>'+p.instrument+'</b> regime <span class='+reg+'>'+p.regime+'</span> &rarr; <span class='+act+'>'+p.action+'</span> <span class=label>('+(p.rule||'')+')</span><br>&nbsp;&nbsp;'+voices+'</div>';}).join('')||'<div class=feed-item>no panel decisions yet</div>';var ixbox=document.getElementById('indexes');var adxCl=function(v){return v==null?'label':v>=25?'green':v<=18?'red':'yellow';};var rsiCl=function(v){return v==null?'label':v>70?'red':'green';};var mfiCl=function(v){return v==null?'label':v>=55?'green':'label';};var chopCl=function(v){return v==null?'label':v>61.8?'red':v<38.2?'green':'yellow';};var bbwCl=function(v){return v==null?'label':v>2.0?'green':v<1.0?'yellow':'label';};ixbox.innerHTML=(d.indexes||[]).map(function(ix){var adxv=ix.adx!=null?ix.adx.toFixed(1):(ix.bars_seen!=null&&ix.bars_min_adx!=null&&ix.bars_seen<ix.bars_min_adx?'warming '+ix.bars_seen+'/'+ix.bars_min_adx:'n/a');var rsiv=ix.rsi!=null?ix.rsi.toFixed(1):'n/a';var mfiv=ix.mfi!=null?ix.mfi.toFixed(1):'n/a';var chopv=ix.chop!=null?ix.chop.toFixed(1):'n/a';var bbwv=ix.bb_width!=null?ix.bb_width.toFixed(2)+'%':'n/a';var regCl=ix.regime==='TREND'?'green':ix.regime==='CHOP'?'red':'yellow';var stackCl=ix.ema_stack==='up'?'green':ix.ema_stack==='down'?'red':'yellow';return '<div class=feed-item><b>'+ix.instrument+'</b> <span class=label>$'+(ix.price!=null?ix.price.toFixed(5):'n/a')+'</span> regime <span class='+regCl+'>'+ix.regime+'</span> EMA <span class='+stackCl+'>'+ix.ema_stack+'</span><br>&nbsp;&nbsp;ADX <span class='+adxCl(ix.adx)+'>'+adxv+'</span> RSI <span class='+rsiCl(ix.rsi)+'>'+rsiv+'</span> MFI <span class='+mfiCl(ix.mfi)+'>'+mfiv+'</span> CHOP <span class='+chopCl(ix.chop)+'>'+chopv+'</span> bbw <span class='+bbwCl(ix.bb_width)+'>'+bbwv+'</span><br>&nbsp;&nbsp;<span class=green>bull: '+ix.bull_trigger+'</span><br>&nbsp;&nbsp;<span class=red>bear: '+ix.bear_trigger+'</span><br>&nbsp;&nbsp;1h <span class='+(ix.regime_1h==='TREND-UP'?'green':ix.regime_1h==='TREND-DOWN'?'red':'yellow')+'>'+( ix.regime_1h||'?')+'</span> flow <span class='+(ix.net_flow_verdict==='accumulation'?'green':ix.net_flow_verdict==='distribution'?'red':'label')+'>'+( ix.net_flow_verdict||'n/a')+'</span></div>';}).join('')||'<div class=feed-item>waiting for first poll...</div>';var oc2=function(v){return v==='act'?'green':v==='pass'?'red':'yellow';};var obox=document.getElementById('oracle');obox.innerHTML=(d.oracle||[]).slice(0,8).map(function(o){var kd=(o.key_drivers||[]).slice(0,1).join('');return '<div class=feed-item><b>'+o.instrument+'</b> <span class='+oc2(o.verdict)+'>'+o.verdict+'</span> '+(o.confidence!=null?o.confidence.toFixed(2):'')+' <span class=label>('+(o.citations||0)+' cites'+(o.grounded?'':', ungrounded — no gate')+')</span>'+(kd?'<br>&nbsp;&nbsp;<span class=label>'+kd+'</span>':'')+'</div>';}).join('')||'<div class=feed-item>no oracle verdicts yet</div>';}catch(err){console.error(err);}}setInterval(refresh,5000);refresh();</script></body></html>"
 
 
@@ -985,7 +1033,26 @@ class _DashHandler(BaseHTTPRequestHandler):
                     "pnl_usd": round(total_pnl, 2),
                     "daily_trades": daily_trades,
                     "daily_limit": MAX_DAILY_TRADES,
+                    # Sprint 17 (2026-05-28): expose expectancy directly so
+                    # any downstream tool (progress script, dashboard, audit)
+                    # can read it without re-aggregating positions[].
+                    "expectancy_pct": round(
+                        sum(p.get("pnl_pct", 0) for p in closed
+                            if isinstance(p.get("pnl_pct"), (int, float)))
+                        / max(len(closed), 1), 3
+                    ) if closed else 0.0,
+                    "expectancy_usd": round(
+                        sum(p.get("pnl_usd", 0) for p in closed
+                            if isinstance(p.get("pnl_usd"), (int, float)))
+                        / max(len(closed), 1), 3
+                    ) if closed else 0.0,
                 },
+                # Sprint 17 (2026-05-28): honest decomposition surface. Per
+                # Sprint 5 bot-honesty Fix 1 — per-exit-reason + per-regime +
+                # per-symbol breakdown so anyone (dashboard, audit, founder)
+                # can see WHICH closes are dragging the mean. Computed lazily
+                # here from the closed positions list — no separate counters.
+                "honest_decomposition": _compute_honest_decomposition(closed),
                 # S0-4: liveness heartbeat surface for the dashboard. The
                 # dashboard alarms when (now - still_alive_at) > 2*POLL_SEC.
                 "liveness": {
