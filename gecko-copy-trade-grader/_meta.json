@@ -1,6 +1,6 @@
 {
   "name": "gecko-copy-trade-grader",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "category": "due-diligence",
   "surface": "copy-trading-marketplaces",
   "primary_target": "OKX smartmoney",

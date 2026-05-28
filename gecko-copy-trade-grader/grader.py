@@ -266,8 +266,53 @@ def _daily_returns_from_cumulative(rates: list[dict]) -> list[float]:
     return deltas
 
 
-def grade_okx_trader_from_payload(trader: dict, n_peers: int = 50) -> dict:
-    """Grade an OKX trader from the smartmoney_get_traders_by_filter payload."""
+def _grade_window(daily_ret_pct: list[float], aum: float, rates_for_dd: list[dict]) -> str:
+    """v0.2 helper — compute just the grade letter from a single rate-series window."""
+    n = len(daily_ret_pct)
+    if n < 5:
+        return "?"
+    mean_d = st.mean(daily_ret_pct)
+    stdev_d = st.pstdev(daily_ret_pct) if n > 1 else 0.0
+    sharpe_d = mean_d / stdev_d if stdev_d > 0 else 0.0
+    sharpe_annualized = sharpe_d * math.sqrt(365)
+    peak = float(rates_for_dd[0]["value"]) / aum * 100
+    mdd_pct = 0.0
+    for r in rates_for_dd:
+        v = float(r["value"]) / aum * 100
+        peak = max(peak, v)
+        mdd_pct = max(mdd_pct, peak - v)
+    cat_rate = 100 * sum(1 for x in daily_ret_pct if x <= -3.0) / n
+    mid = n // 2
+    fh = st.mean(daily_ret_pct[:mid]) if mid > 0 else 0.0
+    sh = st.mean(daily_ret_pct[mid:]) if mid > 0 else 0.0
+    stab = sh / fh if abs(fh) > 0.01 else (1.0 if sh >= 0 else -1.0)
+    if sharpe_annualized >= 3.0 and mdd_pct <= 15 and cat_rate <= 5 and stab >= 0.3:
+        g = "A"
+    elif sharpe_annualized >= 1.5 and mdd_pct <= 30 and stab >= 0.0:
+        g = "B"
+    elif sharpe_annualized >= 0.5:
+        g = "C"
+    else:
+        g = "D"
+    if cat_rate > 15:
+        g = "D"
+    return g
+
+
+def grade_okx_trader_from_payload(trader: dict, n_peers: int = 50,
+                                  require_consecutive_a: bool = True) -> dict:
+    """Grade an OKX trader from the smartmoney_get_traders_by_filter payload.
+
+    v0.2 (2026-05-28): if `require_consecutive_a=True` (default) AND the
+    rates series is ≥ 60 days long, the trader must be Grade A in BOTH
+    the first half AND the second half of the series to keep an A grade.
+    Otherwise downgrade to B. This converts the failed walk-forward test
+    (only 15% of A/B traders persisted across 60d) into a built-in gate.
+
+    Rationale: a single 30d Sharpe ≥ 3 is regime-specific noise more often
+    than not; requiring stability across 2 consecutive sub-periods filters
+    the regime-luck cases.
+    """
     nickname = trader.get("nickName", "?")
     author_id = trader.get("authorId", "?")
     aum = float(trader.get("asset", 0))
@@ -337,6 +382,30 @@ def grade_okx_trader_from_payload(trader: dict, n_peers: int = 50) -> dict:
     if stability < -0.3:
         rationale.append(f"  → DEGRADING: stability {stability:+.2f}")
 
+    # v0.2 persistence gate: require A in BOTH halves of the rate series
+    persistence_status = "n/a (series < 60d)"
+    if require_consecutive_a and g == "A" and n >= 60:
+        # Split into 2 consecutive 30d sub-windows
+        sub_half = n // 2
+        early_returns = daily_ret_pct[:sub_half]
+        late_returns = daily_ret_pct[sub_half:]
+        early_rates = rates[:sub_half]
+        late_rates = rates[sub_half:]
+        # Rebase late_rates so DD is computed within the window
+        late_base = float(late_rates[0]["value"])
+        late_rates_rebased = [{"statTime": r["statTime"],
+                                "value": str(float(r["value"]) - late_base)}
+                               for r in late_rates]
+        early_grade = _grade_window(early_returns, aum, early_rates)
+        late_grade = _grade_window(late_returns, aum, late_rates_rebased)
+        persistence_status = f"early={early_grade}, late={late_grade}"
+        if not (early_grade == "A" and late_grade == "A"):
+            g = "B"  # downgrade
+            rationale.append(
+                f"  → v0.2 persistence-gate: needs A in BOTH halves; got "
+                f"early={early_grade}, late={late_grade} → downgrade to B"
+            )
+
     return {
         "nickname": nickname, "authorId": author_id, "aum": aum,
         "okx_pnl": okx_pnl, "okx_pnl_ratio": okx_pnl_ratio,
@@ -348,6 +417,7 @@ def grade_okx_trader_from_payload(trader: dict, n_peers: int = 50) -> dict:
         "true_max_dd_pct": mdd_pct, "calmar": calmar,
         "catastrophic_rate_pct": cat_rate,
         "first_half_mean": fh, "second_half_mean": sh, "stability_ratio": stability,
+        "persistence_status": persistence_status,
         "grade": g, "rationale": rationale,
     }
 

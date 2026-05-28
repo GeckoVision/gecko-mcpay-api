@@ -95,6 +95,44 @@ def test_grade_okx_trader_from_payload_sample():
     assert bad["grade"] == "D"
 
 
+def test_v02_persistence_gate_downgrades_period_specific_A_to_B():
+    """v0.2 gate: if a trader looks A on the full window but ONLY one half
+    of the rate series is A, downgrade to B.
+
+    Build a synthetic OKX-shape payload: 60 days where the FIRST 30 days
+    are flat (Sharpe ~ 0) and the LAST 30 days are stellar (Sharpe ~ 5).
+    v0.1 grades on the aggregate → could be A. v0.2 must downgrade to B.
+    """
+    # 60 days of rates, AUM = $10k
+    # Days 1-30: flat (zero PnL)
+    # Days 31-60: steady gain (each day +1% of AUM)
+    rates = []
+    base_ts = 1715000000_000
+    pnl = 0
+    for i in range(30):
+        rates.append({"statTime": str(20260000 + i), "value": str(pnl)})
+    for i in range(30, 60):
+        pnl += 100  # +$100/day on $10k AUM = +1%/day
+        rates.append({"statTime": str(20260000 + i), "value": str(pnl)})
+    trader = {
+        "nickName": "late_bloomer",
+        "authorId": "test-late",
+        "asset": "10000",
+        "pnl": str(pnl),
+        "pnlRatio": "0.30",
+        "winRate": "0.5",
+        "maxDrawdown": "-0.01",
+        "rates": rates,
+    }
+    g_v01 = grade_okx_trader_from_payload(trader, require_consecutive_a=False)
+    g_v02 = grade_okx_trader_from_payload(trader, require_consecutive_a=True)
+    # v0.1 should grade A (huge Sharpe on the aggregate)
+    assert g_v01["grade"] in ("A", "B"), f"v0.1 expected A/B, got {g_v01['grade']}"
+    # v0.2 should downgrade (because the EARLY half had no signal)
+    assert g_v02["grade"] == "B", f"v0.2 expected B (downgrade), got {g_v02['grade']}"
+    assert "persistence-gate" in " ".join(g_v02["rationale"]) or g_v02.get("persistence_status", "").startswith("early=")
+
+
 def test_cross_period_stability_runs_on_2_periods():
     """Smoke: 2 periods, 3 traders each (1 stable, 1 flip, 1 in one period only)."""
     p30 = [

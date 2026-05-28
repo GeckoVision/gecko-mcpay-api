@@ -1,6 +1,6 @@
 {
   "name": "gecko-copy-trade-grader",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Rigor-graded scorecard for any public crypto copy-trader or trading bot. Pulls OKX smartmoney leaderboards (or accepts manual per-trade input), computes Sharpe / max-DD / catastrophic-rate / stability / selection-deflated Sharpe, outputs A/B/C/D grade. Use before clicking 'Copy' on OKX — empirically only 11% of OKX top-50 leaderboard appearances are persistently skilled.",
   "author": "Gecko",
   "license": "MIT",

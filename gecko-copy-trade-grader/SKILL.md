@@ -1,7 +1,7 @@
 ---
 name: gecko-copy-trade-grader
-description: Rigor-graded scorecard for any public crypto copy-trader or trading bot. Pulls live OKX smartmoney leaderboards (or accepts manual per-trade input), reconstructs daily returns, computes Sharpe / Sortino / true max-DD / catastrophic-rate / stability ratio / selection-deflated Sharpe, and outputs an A/B/C/D Gecko Grade with explicit reasoning. Use it BEFORE copying any trader or bot, especially before clicking "Copy" on OKX's marketplace where the leaderboard rank is itself a selection bias. Empirically — only 11% of OKX top-50 leaderboard appearances represent persistently skilled traders. The other 89% is rotation × noise. This skill catches that.
-version: 0.1.0
+description: Rigor-graded scorecard for any public crypto copy-trader or trading bot. Pulls live OKX smartmoney leaderboards (or accepts manual per-trade input), reconstructs daily returns, computes Sharpe / Sortino / true max-DD / catastrophic-rate / stability ratio / selection-deflated Sharpe, and outputs an A/B/C/D Gecko Grade with explicit reasoning. Use it BEFORE copying any trader or bot, especially before clicking "Copy" on OKX's marketplace where the leaderboard rank is itself a selection bias. v0.2 adds a "persistence gate" — Grade A now requires the trader to be A in BOTH halves of their rate series, so periodic luck doesn't get called skill. On current OKX 90d top-50 data, **zero** traders earn A under this gate; the most-defensible picks are the 4 B-graded persistent ones (天王盖地虎M, 风箱, bb16888888, etc).
+version: 0.2.0
 author: Gecko
 tags: [copy-trading, okx, rigor, sharpe, drawdown, leaderboard, selection-bias, deflated-sharpe, walk-forward, paper-trade, due-diligence]
 dependencies: []
@@ -37,10 +37,12 @@ A user copying OKX top-N is **statistically 34% likely to copy a Grade-D (degrad
 
 | Grade | Rule | What to do |
 |---|---|---|
-| **A** | Sharpe ≥ 3 + max-DD ≤ 15% + catastrophic-rate ≤ 5% + stability ≥ 0.3 + stable across 30d AND 90d | **Real skill** — eligible for paper-A/B |
-| **B** | Sharpe ≥ 1.5 + max-DD ≤ 30% + stability ≥ 0 | Promising — needs more data |
+| **A** | Sharpe ≥ 3 + max-DD ≤ 15% + catastrophic-rate ≤ 5% + stability ≥ 0.3 — **AND v0.2: must be Grade A in BOTH halves of the rate series** | **Real persistent skill** — eligible for paper-A/B |
+| **B** | Sharpe ≥ 1.5 + max-DD ≤ 30% + stability ≥ 0, OR an A that failed the persistence gate | Promising — best practical pick (since 0 traders earn A on current OKX data) |
 | **C** | Marginal Sharpe (0.5-1.5) or small sample | Noise / lucky / not yet provable |
 | **D** | Sharpe < 0.5 OR catastrophic-rate > 25% OR stability < 0 OR profit-factor < 1.0 | **Gambling profile or degrading** — do NOT copy |
+
+**v0.2 honesty note**: The persistence gate is *strict*. On 90 days of live OKX top-50 leaderboard data, **0 traders** earn Grade A. All 4 v0.1 A-graded traders (天王盖地虎M, 风箱, bb16888888, mar***@gmail.com) downgrade to B because their 30d Sharpe wasn't ≥ 3 in BOTH halves of their 90d series. That doesn't make them bad — it makes them not-A. **B is the highest practical grade today.**
 
 ## What you get
 
@@ -99,19 +101,41 @@ python grade.py --trades trades.json
 
 ## Empirical proof — live OKX top-50 (2026-05-28)
 
-Pulled live data via `mcp__okx-agent-trade-kit__smartmoney_get_traders_by_filter`:
+Pulled live data via `mcp__okx-agent-trade-kit__smartmoney_get_traders_by_filter`.
 
-| Distribution | Count |
+### v0.1 distribution (no persistence gate)
+
+| Distribution on 90d | Count |
 |---|---|
-| Grade A (true skill) | 5 / 50 (10%) |
-| Grade B (promising) | 16 / 50 (32%) |
-| Grade C (noise) | 12 / 50 (24%) |
-| **Grade D** | **17 / 50 (34%)** |
+| Grade A | 4 / 50 (8%) |
+| Grade B | 13 / 50 (26%) |
+| Grade C | 12 / 50 (24%) |
+| Grade D | 21 / 50 (42%) |
+
+### v0.2 distribution (persistence gate active)
+
+| Distribution on 90d | Count |
+|---|---|
+| **Grade A** | **0 / 50 (0%)** |
+| Grade B | 17 / 50 (34%) |
+| Grade C | 12 / 50 (24%) |
+| Grade D | 21 / 50 (42%) |
 
 **Cross-period (30d vs 90d):**
 - Only 27/73 unique traders appear in BOTH periods (63% rotation)
 - Only 6 are stable A/B across both periods
 - **~11% of OKX leaderboard appearances are persistently skilled**
+
+### The 4 v0.1 A's that v0.2 downgrades to B
+
+| Trader | OKX 90d rank | Sharpe (90d) | early half | late half | v0.2 grade |
+|---|---|---|---|---|---|
+| 天王盖地虎M | #3 | +6.38 | B | A | B |
+| 风箱 | #14 | +3.84 | B | A | B |
+| bb16888888 | #19 | +3.37 | A | B | B |
+| mar***@gmail.com | #20 | +3.34 | B | C | B |
+
+All 4 are skilled — but none cleared the persistence bar. Picking ANY of them is a defensible B-grade move.
 
 **Most overrated by OKX:**
 - 三年好日子 → OKX #22, Gecko #45 (Δ+23) — catastrophic rate **65%**
