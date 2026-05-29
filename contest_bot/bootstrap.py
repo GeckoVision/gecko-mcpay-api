@@ -20,20 +20,23 @@ from local_panel import LocalPanel
 from voices.base import LocalVoice
 from voices.chart_analyst import ChartAnalystVoice
 from voices.coordinator_rules import coordinator
-from voices.memory_voice import MemoryVoice  # noqa: F401 — kept for v1 callers; v2 replaces in panel
+from voices.memory_voice import (
+    MemoryVoice,  # noqa: F401 — kept for v1 callers; v2 replaces in panel
+)
 from voices.memory_voice_v2 import MemoryVoiceV2
 from voices.regime_analyst import RegimeAnalystVoice
 from voices.risk_voice import RiskVoice
+from voices.strategist_voice import StrategistVoice
 
 
 def build_local_panel(memory: LocalMemory) -> LocalPanel:
-    """Construct + wire the three v0.1 voices into a LocalPanel.
+    """Construct + wire the local-panel voices into a LocalPanel.
 
     Raises :class:`llm_client.OpenRouterConfigError` if
     ``OPENROUTER_API_KEY`` is unset — caller (the bot's broad-except
     block) catches and degrades.
     """
-    # One shared client across all three voices — each voice's HTTP
+    # One shared client across all LLM-backed voices — each voice's HTTP
     # call uses the same connection pool. The OpenRouterClient is
     # cheap to construct but the httpx.Client inside is not, so we
     # only build one.
@@ -53,6 +56,14 @@ def build_local_panel(memory: LocalMemory) -> LocalPanel:
         # B3 (S40): deterministic chop/trend classifier — votes + logs now;
         # the coordinator wires it into the rule chain as a gate-modulator in B6.
         RegimeAnalystVoice(client=client),
+        # Sprint 20 #1 (2026-05-28): devil's advocate — pre-execution adversarial
+        # voice that challenges the chart_analyst's bullish thesis. Closes the
+        # architectural hole the founder flagged (executor was effectively
+        # rubber-stamping chart_analyst's signals). Observable-first: the voice
+        # surfaces its opinion in artifact log + dashboard + Sprint 20 Dissent:
+        # line; gating via coordinator_rules.py is a follow-up ticket (coord
+        # file has parallel WIP that lands first).
+        StrategistVoice(client=client),
     ]
     return LocalPanel(voices=voices, memory=memory, coordinator=coordinator)
 

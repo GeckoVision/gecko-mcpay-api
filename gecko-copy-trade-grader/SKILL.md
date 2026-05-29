@@ -54,6 +54,15 @@ For each trader graded:
 - **Return metrics**: total PnL, annualized %, Calmar (return/MDD)
 - **Stability ratio**: 2nd-half mean / 1st-half mean — detects degrading traders
 - **Cross-period stability** (if you supply 30d + 90d): does the grade hold?
+- **One-click Gecko Oracle handoff** *(Sprint 23, 2026-05-28)*: when any
+  trader grades A or B, the skill prints a copy-paste-ready
+  `mcp__gecko__gecko_trade_research` invocation with the trader's grade
+  + metric signature pre-baked into the question. The Oracle's 7-voice
+  debate panel reads it and surfaces a default-REJECT verdict + the
+  strongest bear case in the dissent. C/D-grade traders skip the handoff
+  (the grader's call is already the answer; don't burn $0.25/$0.75 on
+  pre-confirmed rejects). Settled on-chain via x402 — no signup, no
+  invoice, no committed fee.
 
 ## When to invoke
 

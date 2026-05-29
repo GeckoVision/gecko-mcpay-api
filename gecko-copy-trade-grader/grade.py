@@ -16,20 +16,21 @@ Two invocation modes:
 Outputs human-readable scorecard to stdout, plus JSON to
 analysis/data/copy_trade_grader/ if --save is set.
 """
+
 from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 from grader import (
-    grade_trades,
-    render_scorecard,
-    grade_okx_trader_from_payload,
-    render_okx_scorecard,
     cross_period_stability,
+    grade_okx_trader_from_payload,
+    grade_trades,
+    render_okx_scorecard,
+    render_scorecard,
 )
+from handoff import render_handoffs
 
 SKILL_DIR = Path(__file__).parent
 
@@ -41,7 +42,7 @@ def cmd_trades(args) -> int:
     if args.save:
         out_dir = SKILL_DIR / "out"
         out_dir.mkdir(exist_ok=True)
-        (out_dir / f"{args.trader_label.replace(' ','_')}.json").write_text(
+        (out_dir / f"{args.trader_label.replace(' ', '_')}.json").write_text(
             json.dumps(sc.__dict__, indent=2, default=str)
         )
     return 0
@@ -55,12 +56,16 @@ def cmd_okx_sample(args) -> int:
         return 1
     snapshot = json.loads(sample_path.read_text())
     traders = snapshot.get("data", [])
-    print(f"Grading {len(traders)} sample OKX traders (snapshot: {snapshot.get('snapshot_ts', 'n/a')})\n")
+    print(
+        f"Grading {len(traders)} sample OKX traders (snapshot: {snapshot.get('snapshot_ts', 'n/a')})\n"
+    )
     results = []
     for t in traders:
         r = grade_okx_trader_from_payload(t)
         results.append(r)
     print(render_okx_scorecard(results, okx_sort_key="okx_pnl_ratio"))
+    # Sprint 23 — one-click Oracle handoff for A/B-graded traders.
+    print(render_handoffs(results, period="30d"))
     return 0
 
 
@@ -75,7 +80,9 @@ def cmd_okx_leaderboard(args) -> int:
         print("Example workflow:")
         print("  1. Invoke mcp__okx-agent-trade-kit__smartmoney_get_traders_by_filter")
         print("  2. Save the JSON to a file")
-        print("  3. python grade.py --okx-leaderboard --period 30d --raw-json /path/to/raw_30d.json")
+        print(
+            "  3. python grade.py --okx-leaderboard --period 30d --raw-json /path/to/raw_30d.json"
+        )
         return 1
 
     graded_by_period = {}
@@ -96,6 +103,8 @@ def cmd_okx_leaderboard(args) -> int:
         for period, results in graded_by_period.items():
             print(f"\n=== Period: {period} ({len(results)} traders) ===\n")
             print(render_okx_scorecard(results, okx_sort_key="okx_pnl_ratio"))
+            # Sprint 23 — Oracle handoff for A/B-graders in THIS period.
+            print(render_handoffs(results, period=period))
     return 0
 
 
@@ -103,10 +112,16 @@ def main():
     p = argparse.ArgumentParser(description="gecko-copy-trade-grader")
     p.add_argument("--trades", help="path to per-trade JSON")
     p.add_argument("--trader-label", default="trader", help="label for scorecard header")
-    p.add_argument("--n-peers", type=int, default=100, help="leaderboard size for selection-bias deflation")
+    p.add_argument(
+        "--n-peers", type=int, default=100, help="leaderboard size for selection-bias deflation"
+    )
     p.add_argument("--okx-leaderboard", action="store_true", help="OKX leaderboard mode")
-    p.add_argument("--period", action="append", default=[], help="OKX period: 7d, 30d, or 90d (repeatable)")
-    p.add_argument("--raw-json", action="append", default=[], help="path to pre-fetched leaderboard JSON")
+    p.add_argument(
+        "--period", action="append", default=[], help="OKX period: 7d, 30d, or 90d (repeatable)"
+    )
+    p.add_argument(
+        "--raw-json", action="append", default=[], help="path to pre-fetched leaderboard JSON"
+    )
     p.add_argument("--author-id", help="single OKX authorId to grade")
     p.add_argument("--stability", action="store_true", help="run cross-period stability")
     p.add_argument("--sample", action="store_true", help="use bundled sample (no MCP)")
