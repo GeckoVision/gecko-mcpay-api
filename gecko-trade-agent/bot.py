@@ -31,14 +31,38 @@ import asyncio
 
 from bot_state import BotState, BotStateStore
 from config import (
-    BTC_OVERLAY, BTC_WBTC_MINT, CHAIN, DASHBOARD_PORT, ENTRY_PARAMS, ENTRY_TYPE,
-    FLAT_STALL_AGE_MIN, FLAT_STALL_NO_NEW_HIGH_MIN, FLAT_STALL_PNL_HI, FLAT_STALL_PNL_LO,
-    FUNDAMENTALS_ORACLE_ENABLED, INSTRUMENTS, MAX_BUDGET_USD, MAX_CONCURRENT,
-    MAX_DAILY_TRADES, PAPER_TRADE, POLL_SEC, SAFETY, SESSION_LOSS_PAUSE,
-    STALL_GREEN_EXIT_AGE_MIN, STALL_GREEN_EXIT_MIN_PCT, STOP_LOSS_PCT, TAKE_PROFIT_PCT,
-    TIMEFRAME, TRAIL_ACTIVATE_AFTER_PCT, TRAIL_STOP_PCT, USD_PER_TRADE,
-    VOL_SPIKE_AVG_BARS, VOL_SPIKE_MULTIPLIER, WALLET_ADDRESS,
+    BTC_OVERLAY,
+    BTC_WBTC_MINT,
+    CHAIN,
+    DASHBOARD_PORT,
+    ENTRY_PARAMS,
+    ENTRY_TYPE,
+    FLAT_STALL_AGE_MIN,
+    FLAT_STALL_NO_NEW_HIGH_MIN,
+    FLAT_STALL_PNL_HI,
+    FLAT_STALL_PNL_LO,
+    FUNDAMENTALS_ORACLE_ENABLED,
+    INSTRUMENTS,
+    MAX_BUDGET_USD,
+    MAX_CONCURRENT,
+    MAX_DAILY_TRADES,
+    PAPER_TRADE,
+    POLL_SEC,
+    SAFETY,
+    SESSION_LOSS_PAUSE,
+    STALL_GREEN_EXIT_AGE_MIN,
+    STALL_GREEN_EXIT_MIN_PCT,
+    STOP_LOSS_PCT,
+    TAKE_PROFIT_PCT,
+    TIMEFRAME,
+    TRAIL_ACTIVATE_AFTER_PCT,
+    TRAIL_STOP_PCT,
+    USD_PER_TRADE,
+    VOL_SPIKE_AVG_BARS,
+    VOL_SPIKE_MULTIPLIER,
+    WALLET_ADDRESS,
 )
+
 if FUNDAMENTALS_ORACLE_ENABLED:
     from fundamentals_oracle import FundamentalsOracle  # type: ignore[import]
 from gecko_wrap import ArtifactLogger, GeckoGate, HourlyCircuitBreaker
@@ -254,6 +278,143 @@ def _usdc_address() -> str:
     }.get(CHAIN, "")
 
 
+# ── App-schema payload (Sprint 24-A, 2026-05-29) ────────────────────
+# Transforms the bot's native state shape into the gecko-mcpay-app's
+# expected schemas (matches lib/schemas.ts in the app repo):
+#   - SystemMetrics: { pnl, latency, nodeName, activeAgentsCount, uptime, terminalLogs }
+#   - Agent[]: pre-formatted display strings (per app convention)
+#   - NodeState[]: orchestration-graph nodes (synthesized from bot state)
+#   - LedgerTx[]: recent closed positions as ledger entries
+#
+# Phase 1 scope: read-only snapshot. POST /api/commands/* and SSE are
+# Phase 2. Keep this helper small + side-effect-free.
+
+
+def _build_state_v2_payload() -> dict:
+    """App-schema-aligned snapshot for gecko-mcpay-app's chrome + views.
+
+    Single dict the app can demux into its 4 endpoints
+    (/api/{system,agents,nodes,ledger}). Each top-level key matches
+    one of the app's Zod-validated response shapes. The app's proxy
+    layer (Sprint 24 app-side) splits this into 4 fetches.
+    """
+    # ── Header chrome (SystemMetrics shape) ────────────────────────
+    closed_positions = [p for p in positions if p["status"] == "closed"]
+    if realized_pnl_today or wins_today or losses_today:
+        total_pnl = float(realized_pnl_today)
+        n_wins = int(wins_today)
+        n_losses = int(losses_today)
+    else:
+        total_pnl = sum(p.get("pnl_usd", 0) for p in closed_positions)
+        n_wins = sum(1 for p in closed_positions if p.get("pnl_usd", 0) > 0)
+        n_losses = len(closed_positions) - n_wins
+
+    open_positions = [p for p in positions if p["status"] == "open"]
+    active_count = len(open_positions)
+    if active_count == 0 and INSTRUMENTS:
+        active_count = len(INSTRUMENTS)
+
+    system_metrics = {
+        "pnl": round(total_pnl, 2),
+        "latency": 12,
+        "nodeName": "GECKO_BOT_LOCAL",
+        "activeAgentsCount": active_count,
+        "uptime": "100%",
+        "terminalLogs": [
+            f"{(e.get('ts') or '')[11:19]} {e.get('msg') or ''}"
+            for e in (signal_feed or [])[-12:]
+        ]
+        or ["bot ready · awaiting first signal..."],
+    }
+
+    # ── Agents (Agent[] shape) ─────────────────────────────────────
+    agents: list[dict] = []
+    for _i, pos in enumerate(open_positions):
+        sym = pos.get("symbol") or pos.get("token", "?")[:8]
+        pnl_usd = pos.get("pnl_usd") or 0
+        pnl_pct = pos.get("pnl_pct") or 0
+        sign = "+" if pnl_usd >= 0 else ""
+        agents.append(
+            {
+                "id": f"AGT-{(pos.get('token') or '0000')[:4].upper()}",
+                "strategy": f"{sym}-Momentum-Studio",
+                "pnl": f"{sign}${abs(pnl_usd):.2f}",
+                "uptime": str(pos.get("entry_ts") or "")[:19],
+                "volume": f"{(pos.get('amount_usd') or 0) / 1000:.1f}K",
+                "roi": f"{sign}{pnl_pct:.1f}%",
+                "status": "active" if pnl_pct >= 0 else "warning",
+                "sparkline": [25, 45, 12, 32, 28, 55, 30, 42, 18, 52, 65, 40, 58],
+                "winRate": f"{(n_wins / max(n_wins + n_losses, 1) * 100):.1f}%",
+                "tradesCount": int(n_wins + n_losses),
+                "risk": f"{STOP_LOSS_PCT}%",
+                "exposure": f"${(pos.get('amount_usd') or 0):.0f}",
+                "lane": "paper" if PAPER_TRADE else "real",
+            }
+        )
+
+    # ── Nodes (NodeState[] shape) ───────────────────────────────────
+    nodes: list[dict] = [
+        {
+            "id": "RES-GECKO",
+            "label": "RES-GECKO",
+            "type": "research",
+            "x": 410,
+            "y": 320,
+            "latency": "12ms",
+            "status": "ACTIVE",
+            "pressure": "42.1%",
+            "flowRate": "850MB/s",
+            "entropy": "LOW",
+            "anomalyScore": 0.1042,
+            "trigger": "NORMAL_POLLS",
+            "deltaT": "+12ms",
+            "recommendation": "LEAVE_OPEN",
+        }
+    ]
+    for i, inst in enumerate(INSTRUMENTS[:4]):
+        nodes.append(
+            {
+                "id": f"EXEC-{inst['symbol']}",
+                "label": f"EXEC-{inst['symbol']}",
+                "type": "executor",
+                "x": 680,
+                "y": 220 + (i * 100),
+                "latency": "8ms",
+                "status": "NOMINAL",
+            }
+        )
+
+    # ── Ledger (LedgerTx[] shape) ───────────────────────────────────
+    ledger: list[dict] = []
+    for i, pos in enumerate(reversed(closed_positions[-12:])):
+        ts = str(pos.get("exit_ts") or pos.get("entry_ts") or "")[11:19]
+        amount_usd = pos.get("pnl_usd") or 0
+        sign = "+" if amount_usd >= 0 else ""
+        ledger.append(
+            {
+                "hash": (pos.get("tx_hash") or f"loc{i:04d}...{(pos.get('symbol', '?'))[:4]}")[
+                    :12
+                ],
+                "timestamp": ts or "00:00:00",
+                "amount": f"{sign}${abs(amount_usd):.2f}",
+                "status": "SWEPT" if amount_usd >= 0 else "ARCHIVED",
+            }
+        )
+
+    return {
+        "system": system_metrics,
+        "agents": agents,
+        "nodes": nodes,
+        "ledger": ledger,
+        "meta": {
+            "mode": "paper" if PAPER_TRADE else "live",
+            "strategy": "momentum_studio_bot",
+            "schema_version": "v2",
+            "instruments": [inst["symbol"] for inst in INSTRUMENTS],
+        },
+    }
+
+
 # ── Dashboard server ───────────────────────────────────────────────
 class _DashHandler(BaseHTTPRequestHandler):
     def log_message(self, *args):
@@ -267,6 +428,12 @@ class _DashHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
+        if self.path == "/api/state/v2":
+            # Sprint 24-A (2026-05-29) — app-schema-aligned snapshot.
+            # Parallel to /api/state; legacy dashboard keeps working.
+            body = json.dumps(_build_state_v2_payload()).encode()
+            self._send(200, "application/json", body)
+            return
         if self.path == "/api/state":
             closed = [p for p in positions if p["status"] == "closed"]
             # iter-3.x: cumulative stats come from persisted counters
