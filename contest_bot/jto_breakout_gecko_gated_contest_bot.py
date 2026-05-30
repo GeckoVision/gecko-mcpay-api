@@ -1028,6 +1028,12 @@ def _build_state_v2_payload() -> dict:
             "recommendation": "LEAVE_OPEN",
         }
     ]
+    # Sprint 24-F (2026-05-29) — add TRAP + VAULT terminal nodes after
+    # the executor row so the orchestration graph's right-side dashed
+    # edges have a destination. Both are real bot components: the
+    # circuit-breaker fires on consec_losses; the USDC vault is where
+    # realized PnL settles. Without these, SVG paths from each EXEC-*
+    # trailed off into empty canvas (founder noticed 2026-05-29 22:35).
     for i, inst in enumerate(INSTRUMENTS[:4]):
         nodes.append(
             {
@@ -1040,6 +1046,42 @@ def _build_state_v2_payload() -> dict:
                 "status": "NOMINAL",
             }
         )
+    nodes.append(
+        {
+            "id": "TRAP-CIRCUIT",
+            "label": "TRAP-CIRCUIT",
+            "type": "trap",
+            "x": 900,
+            "y": 320,
+            "latency": "n/a",
+            "status": "NOMINAL",
+            "pressure": "0.0%",
+            "flowRate": "0B/s",
+            "entropy": "LOW",
+            "anomalyScore": 0.0042,
+            "trigger": "ARMED",
+            "deltaT": "0ms",
+            "recommendation": "MONITOR",
+        }
+    )
+    nodes.append(
+        {
+            "id": "VAULT-USDC",
+            "label": "VAULT-USDC",
+            "type": "terminal",
+            "x": 1120,
+            "y": 320,
+            "latency": "18ms",
+            "status": "IDLE",
+            "pressure": "2.0%",
+            "flowRate": "0B/s",
+            "entropy": "LOW",
+            "anomalyScore": 0.0011,
+            "trigger": "AWAIT_SETTLEMENT",
+            "deltaT": "0ms",
+            "recommendation": "AWAIT_SWEEP",
+        }
+    )
 
     ledger: list[dict] = []
     # Sprint 24-E: ledger also strategy-scoped — same narrative cohort
