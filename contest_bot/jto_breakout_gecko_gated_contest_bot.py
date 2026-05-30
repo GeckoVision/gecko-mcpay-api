@@ -941,6 +941,179 @@ def _usdc_address() -> str:
     }.get(CHAIN, "")
 
 
+# ── Sprint 24 — app-schema-aligned snapshot ────────────────────────
+# Mirrors gecko-trade-agent/bot.py:_build_state_v2_payload. Ported here
+# so gecko-mcpay-app's /api/* proxy (GECKO_BOT_URL mode) can demux a
+# single snapshot into its 4 Zod-validated endpoints
+# (/api/{system,agents,nodes,ledger}). Side-effect-free read-only.
+#
+# Sprint 24-E (2026-05-29): pnl scope = CURRENT STRATEGY ERA only.
+# Per founder framing — pnl shown in the app is "since this strategy
+# started." Prior strategy iterations (pre-Setup-C JTO/JUP era) bled
+# −$4.20 across configs we've already killed; counting them double-
+# penalizes the current bot for old decisions. Setup C cutover at
+# 2026-05-28 00:18 UTC is the cohort boundary. Legacy /api/state
+# still shows lifetime; only /api/state/v2 (app-facing) is filtered.
+# When the next strategy era starts, bump STRATEGY_START_TS.
+STRATEGY_START_TS = "2026-05-28T00:18:00+00:00"
+
+
+def _build_state_v2_payload() -> dict:
+    """App-schema-aligned snapshot for gecko-mcpay-app's chrome + views."""
+    closed_positions = [p for p in positions if p["status"] == "closed"]
+    # Sprint 24-E: filter to current-strategy cohort for the app's pnl.
+    strategy_closed = [
+        p for p in closed_positions if str(p.get("entry_ts") or "") >= STRATEGY_START_TS
+    ]
+    total_pnl = sum(p.get("pnl_usd", 0) for p in strategy_closed)
+    n_wins = sum(1 for p in strategy_closed if float(p.get("pnl_pct") or 0) >= 0.5)
+    n_losses = sum(1 for p in strategy_closed if float(p.get("pnl_pct") or 0) <= -0.5)
+
+    open_positions = [p for p in positions if p["status"] == "open"]
+    active_count = len(open_positions)
+    if active_count == 0 and INSTRUMENTS:
+        active_count = len(INSTRUMENTS)
+
+    system_metrics = {
+        "pnl": round(total_pnl, 2),
+        "latency": 12,
+        "nodeName": "GECKO_BOT_LOCAL",
+        "activeAgentsCount": active_count,
+        "uptime": "100%",
+        "terminalLogs": [
+            f"{(e.get('ts') or '')[11:19]} {e.get('msg') or ''}" for e in (signal_feed or [])[-12:]
+        ]
+        or ["bot ready · awaiting first signal..."],
+    }
+
+    agents: list[dict] = []
+    for _i, pos in enumerate(open_positions):
+        sym = pos.get("symbol") or pos.get("token", "?")[:8]
+        pnl_usd = pos.get("pnl_usd") or 0
+        pnl_pct = pos.get("pnl_pct") or 0
+        sign = "+" if pnl_usd >= 0 else ""
+        agents.append(
+            {
+                "id": f"AGT-{(pos.get('token') or '0000')[:4].upper()}",
+                "strategy": f"{sym}-Momentum-Studio",
+                "pnl": f"{sign}${abs(pnl_usd):.2f}",
+                "uptime": str(pos.get("entry_ts") or "")[:19],
+                "volume": f"{(pos.get('amount_usd') or 0) / 1000:.1f}K",
+                "roi": f"{sign}{pnl_pct:.1f}%",
+                "status": "active" if pnl_pct >= 0 else "warning",
+                "sparkline": [25, 45, 12, 32, 28, 55, 30, 42, 18, 52, 65, 40, 58],
+                "winRate": f"{(n_wins / max(n_wins + n_losses, 1) * 100):.1f}%",
+                "tradesCount": int(n_wins + n_losses),
+                "risk": f"{STOP_LOSS_PCT}%",
+                "exposure": f"${(pos.get('amount_usd') or 0):.0f}",
+                "lane": "paper" if PAPER_TRADE else "real",
+            }
+        )
+
+    nodes: list[dict] = [
+        {
+            "id": "RES-GECKO",
+            "label": "RES-GECKO",
+            "type": "research",
+            "x": 410,
+            "y": 320,
+            "latency": "12ms",
+            "status": "ACTIVE",
+            "pressure": "42.1%",
+            "flowRate": "850MB/s",
+            "entropy": "LOW",
+            "anomalyScore": 0.1042,
+            "trigger": "NORMAL_POLLS",
+            "deltaT": "+12ms",
+            "recommendation": "LEAVE_OPEN",
+        }
+    ]
+    # Sprint 24-F (2026-05-29) — add TRAP + VAULT terminal nodes after
+    # the executor row so the orchestration graph's right-side dashed
+    # edges have a destination. Both are real bot components: the
+    # circuit-breaker fires on consec_losses; the USDC vault is where
+    # realized PnL settles. Without these, SVG paths from each EXEC-*
+    # trailed off into empty canvas (founder noticed 2026-05-29 22:35).
+    for i, inst in enumerate(INSTRUMENTS[:4]):
+        nodes.append(
+            {
+                "id": f"EXEC-{inst['symbol']}",
+                "label": f"EXEC-{inst['symbol']}",
+                "type": "executor",
+                "x": 680,
+                "y": 220 + (i * 100),
+                "latency": "8ms",
+                "status": "NOMINAL",
+            }
+        )
+    nodes.append(
+        {
+            "id": "TRAP-CIRCUIT",
+            "label": "TRAP-CIRCUIT",
+            "type": "trap",
+            "x": 900,
+            "y": 320,
+            "latency": "n/a",
+            "status": "NOMINAL",
+            "pressure": "0.0%",
+            "flowRate": "0B/s",
+            "entropy": "LOW",
+            "anomalyScore": 0.0042,
+            "trigger": "ARMED",
+            "deltaT": "0ms",
+            "recommendation": "MONITOR",
+        }
+    )
+    nodes.append(
+        {
+            "id": "VAULT-USDC",
+            "label": "VAULT-USDC",
+            "type": "terminal",
+            "x": 1120,
+            "y": 320,
+            "latency": "18ms",
+            "status": "IDLE",
+            "pressure": "2.0%",
+            "flowRate": "0B/s",
+            "entropy": "LOW",
+            "anomalyScore": 0.0011,
+            "trigger": "AWAIT_SETTLEMENT",
+            "deltaT": "0ms",
+            "recommendation": "AWAIT_SWEEP",
+        }
+    )
+
+    ledger: list[dict] = []
+    # Sprint 24-E: ledger also strategy-scoped — same narrative cohort
+    # as the pnl number above. The chrome's ledger panel shows the
+    # current strategy's trade history, not lifetime.
+    for i, pos in enumerate(reversed(strategy_closed[-12:])):
+        ts = str(pos.get("exit_ts") or pos.get("entry_ts") or "")[11:19]
+        amount_usd = pos.get("pnl_usd") or 0
+        sign = "+" if amount_usd >= 0 else ""
+        ledger.append(
+            {
+                "hash": (pos.get("tx_hash") or f"loc{i:04d}...{(pos.get('symbol', '?'))[:4]}")[:12],
+                "timestamp": ts or "00:00:00",
+                "amount": f"{sign}${abs(amount_usd):.2f}",
+                "status": "SWEPT" if amount_usd >= 0 else "ARCHIVED",
+            }
+        )
+
+    return {
+        "system": system_metrics,
+        "agents": agents,
+        "nodes": nodes,
+        "ledger": ledger,
+        "meta": {
+            "mode": "paper" if PAPER_TRADE else "live",
+            "strategy": "jto_breakout_gecko_gated_contest",
+            "schema_version": "v2",
+            "instruments": [inst["symbol"] for inst in INSTRUMENTS],
+        },
+    }
+
+
 # ── Dashboard server ───────────────────────────────────────────────
 class _DashHandler(BaseHTTPRequestHandler):
     def log_message(self, *args):
@@ -954,6 +1127,12 @@ class _DashHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
+        if self.path == "/api/state/v2":
+            # Sprint 24-A (2026-05-29) — app-schema-aligned snapshot.
+            # Parallel to /api/state; legacy dashboard keeps working.
+            body = json.dumps(_build_state_v2_payload()).encode()
+            self._send(200, "application/json", body)
+            return
         if self.path == "/api/state":
             closed = [p for p in positions if p["status"] == "closed"]
             # iter-3.x: cumulative stats come from persisted counters
@@ -1936,6 +2115,44 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
                 for o in local_decision.voice_opinions
             ],
         }
+        # Sprint 24-C (2026-05-29) — per-voice attribution on the artifact
+        # event. Strategist review of 2026-05-29 surfaced that voice_count
+        # alone makes every fire entry look identical (e.g. 2B/1S/0N/1A),
+        # so strategist_voice agree/dissent is invisible from disk. Adding
+        # the full {name, verdict, confidence} list per voice unblocks the
+        # "is the panel calibrated" autopsy without changing any gate.
+        _voice_attribution = [
+            {
+                "name": o.voice_name,
+                "verdict": o.verdict,
+                "confidence": round(o.confidence, 3),
+            }
+            for o in local_decision.voice_opinions
+        ]
+        # Sprint 24-J (2026-05-30) — SHADOW indicator snapshot. Logged
+        # only, not enforced. After ≥7 days of data, mine via
+        # scripts/analysis/mfi_shadow_review.py to test the hypothesis
+        # "MFI<30 entries are worse than MFI≥30 entries." If signal
+        # supports it (n≥15/bucket, Mann-Whitney p<0.05, bucket mean
+        # pnl meaningfully lower), promote the gate. Zero behavior
+        # change today — pure observation.
+        _ix_snapshot = _LAST_INDEX.get(instrument, {}) or {}
+        _mfi_at_decision = _ix_snapshot.get("mfi")
+        _rsi_at_decision = _ix_snapshot.get("rsi")
+        _adx_at_decision = _ix_snapshot.get("adx")
+        _chop_at_decision = _ix_snapshot.get("chop")
+        _shadow_indicators = {
+            "mfi": _mfi_at_decision,
+            "rsi": _rsi_at_decision,
+            "adx": _adx_at_decision,
+            "chop": _chop_at_decision,
+        }
+        _shadow_gates = {
+            "mfi_below_30": _mfi_at_decision is not None and _mfi_at_decision < 30,
+            "mfi_below_20": _mfi_at_decision is not None and _mfi_at_decision < 20,
+            "rsi_above_70": _rsi_at_decision is not None and _rsi_at_decision > 70,
+            "adx_below_20": _adx_at_decision is not None and _adx_at_decision < 20,
+        }
         _LOGGER.log(
             "local_panel",
             {
@@ -1944,6 +2161,9 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
                 "reason": local_decision.reason,
                 "coordinator_rule_fired": local_decision.coordinator_rule_fired,
                 "voice_count": len(local_decision.voice_opinions),
+                "voices": _voice_attribution,
+                "indicators": _shadow_indicators,
+                "shadow_gates": _shadow_gates,
                 "total_elapsed_ms": local_decision.total_elapsed_ms,
                 "total_cost_usd": local_decision.total_cost_usd,
             },
@@ -2054,6 +2274,12 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
                 adaptive_tp_pct = max(0.5, min(3.0, 1.5 * (_atr_last / entry_price * 100.0)))
     except Exception:  # never let TP sizing break entry; fall back to fixed TP
         adaptive_tp_pct = float(TAKE_PROFIT_PCT)
+    # Sprint 24-J (2026-05-30) — entry-time indicator snapshot stamped
+    # on the position so post-close analysis can correlate entry-MFI/RSI/
+    # ADX/CHOP with realized pnl. Paired with the shadow_gates logging
+    # at decision time in the local_panel artifact event.
+    # _LAST_INDEX is keyed by bare symbol ("PYTH"), not "PYTH-USDC".
+    _entry_ix = _LAST_INDEX.get(symbol_str.split("-")[0], {}) or {}
     pos = {
         "token": token,
         "symbol": symbol_str,
@@ -2066,6 +2292,15 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
         "mode": "paper",
         "fundamentals_decision_id": fund_decision_id,
         "tp_pct": round(adaptive_tp_pct, 4),
+        "entry_indicators": {
+            "mfi": _entry_ix.get("mfi"),
+            "rsi": _entry_ix.get("rsi"),
+            "adx": _entry_ix.get("adx"),
+            "chop": _entry_ix.get("chop"),
+            "bb_width": _entry_ix.get("bb_width"),
+            "regime_5m": _entry_ix.get("regime"),
+            "regime_1h": _entry_ix.get("regime_1h"),
+        },
     }
 
     # ── Decision-record store (s43): record this act-decision ──────────
