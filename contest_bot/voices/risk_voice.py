@@ -298,8 +298,50 @@ def _compute_risk_band_deterministic(
             f"session_loss_pause:{consec_losses}/{session_pause}",
         )
 
-    # Healthy floor.
-    return "bullish", _HEALTHY_CONFIDENCE, "operational_floor_clean"
+    # Healthy floor — but scale confidence with HEADROOM so the voice
+    # reflects how clean "clean" actually is, instead of a flat constant.
+    # Pre-2026-05-30 this returned (bullish, 0.70, ...) every call. Live
+    # log showed 9660/9660 constant → no signal value beyond "no veto."
+    # The scaling below preserves the veto-floor contract (any veto still
+    # fires with high confidence above) and only varies the BENIGN-PATH
+    # output. The coordinator's hard-veto check (>=0.85 bearish) is
+    # untouched.
+    #
+    # Inputs we can read for free without bot changes:
+    #   - trade-cap headroom   (daily_trades / max_daily)
+    #   - budget headroom      (total_spent_usd / max_budget)
+    #   - concurrency headroom (open_pos / max_conc)
+    #
+    # Confidence band: 0.55 (near a cap) … 0.70 (fresh session).
+    # We anchor the no-pressure end at _HEALTHY_CONFIDENCE (0.70) so the
+    # existing healthy-floor contract (test_local_voices.py and the
+    # coordinator's veto-threshold math) stays compatible — we only
+    # ADD downside variance under pressure, never push above the floor.
+    trade_frac = (daily_trades / max_daily) if max_daily > 0 else 0.0
+    budget_frac = (total_spent / max_budget) if max_budget > 0 else 0.0
+    conc_frac = (open_pos / max_conc) if max_conc > 0 else 0.0
+    # The worst-headroom dimension drives the confidence (a half-full
+    # daily-trade window matters even if budget is pristine).
+    worst_pressure = max(trade_frac, budget_frac, conc_frac)
+    # Linear: 0.0 pressure → 0.70, 1.0 pressure → 0.55. Clipped.
+    conf = _HEALTHY_CONFIDENCE - 0.15 * worst_pressure
+    if conf < 0.55:
+        conf = 0.55
+    if conf > _HEALTHY_CONFIDENCE:
+        conf = _HEALTHY_CONFIDENCE
+    # When pressure is zero, emit the legacy reason string verbatim so
+    # tests asserting on the exact phrasing still pass; otherwise emit
+    # the headroom-detailed reason so the dashboard/log shows variance.
+    if worst_pressure <= 0.0:
+        reason = "operational_floor_clean"
+    else:
+        reason = (
+            f"operational_floor_clean: "
+            f"trades={daily_trades}/{max_daily}, "
+            f"spent=${total_spent:.2f}/${max_budget:.2f}, "
+            f"open={open_pos}/{max_conc}"
+        )
+    return "bullish", conf, reason
 
 
 def _build_user_prompt(

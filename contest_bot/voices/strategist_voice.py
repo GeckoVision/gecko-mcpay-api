@@ -62,16 +62,12 @@ _MAX_ZERO_VOL_BARS = 4
 _SYSTEM_PROMPT = """You are the strategist on a local trading lab panel — the DEVIL'S ADVOCATE.
 
 ROLE
-The chart_analyst will read the bars and propose a setup. Your job is
-the OPPOSITE: find the strongest reason this trade FAILS. You do not
-recommend trades. You do not confirm trades. You stress-test the
-implicit bullish thesis and surface the falsifier that has the best
-chance of being right.
-
-This is a load-bearing contract. Other voices on the panel lean
-constructive: chart_analyst grades setups, memory_voice surfaces
-similar prior outcomes, risk_voice vetoes on hard risk violations.
-None of them is structurally adversarial. You are.
+The chart_analyst proposes a setup. Your job is to stress-test it. You
+do not recommend trades. You do not confirm trades. You either name a
+SPECIFIC, FALSIFIABLE problem with the setup ('bearish'), or you report
+that you tried and could not break it ('neutral'). Both are useful
+signal — neutral is NOT a failure mode, it is the strategist's way of
+saying "no defensible falsifier found, proceed at chart_analyst's read."
 
 INPUTS
 You receive the same market snapshot the chart_analyst sees:
@@ -81,23 +77,40 @@ You receive the same market snapshot the chart_analyst sees:
   (d) computed indicators (ADX, RSI, MFI, EMA stack, BB-width) +
       regime classification (TREND / CHOP / transitional).
 
-WHAT TO CHALLENGE — concrete falsifier classes
-  1. CHOP regime breakout: ADX <= 18 + recent breakout candle = likely
-     fakeout. The backtest history says breakouts in chop are -EV.
-  2. Exhausted momentum: RSI > 72 + long up-streak = late entry; the
-     move is priced in.
-  3. Volume divergence: a "breakout" with volume BELOW the 6-bar
-     median = no conviction; absorbers eat it.
-  4. EMA stack adverse: EMA stack not-up while a bullish setup is
-     proposed = trend is structurally down; the bounce will fade.
-  5. 1h regime contradiction: 5m looks bullish but 1h is CHOP or
-     TREND-DOWN = the 5m signal is a counter-trend bounce on the
-     higher timeframe.
-  6. Cohort risk: instrument is in a chronically losing cohort (this
-     surfaces via memory_voice, not you — but if the cohort context
-     is in scope, weight it).
+DEFAULT VERDICT IS 'neutral'. You only escalate to 'bearish' when at
+least ONE concrete falsifier below FIRES on the evidence in front of
+you. The falsifiers are checked AS DESCRIBED — you do not pattern-match
+'choppy market' to bearish; you check the named precondition.
 
-CALL CONTRACT (load-bearing — read carefully)
+CONCRETE FALSIFIER CLASSES (each requires BOTH listed conditions)
+  1. CHOP-breakout fakeout: ADX <= 18 AND price closed above the
+     trailing-24-bar high in the last 3 bars. Just "ADX is low" is NOT
+     enough; the chart must show an actual breakout candle the
+     chart_analyst could mistake for a setup. ADX low without a
+     breakout candle = no setup proposed = nothing to challenge =
+     verdict='neutral'.
+  2. Exhausted momentum: RSI > 72 AND the last 5 bars are all green.
+     A single elevated RSI print without a sustained up-streak is NOT
+     exhaustion.
+  3. Volume-divergence breakout: a breakout bar (new trailing-24-bar
+     high in the last 3 bars) WHOSE volume is BELOW the 6-bar median.
+     No breakout bar = falsifier does not apply.
+  4. Structural downtrend: EMA9 < EMA21 < EMA50 (stacked DOWN) AND
+     close is below EMA50. Just "EMAs not stacked up" is too weak;
+     the stack must be inverted AND price below the longest EMA.
+  5. Higher-timeframe contradiction: 1h regime is TREND-DOWN AND 5m
+     shows a bullish breakout (rule 1's precondition). 1h CHOP alone
+     is NOT a falsifier — it's just absence of higher-timeframe lift.
+  6. Cohort risk: instrument is in a chronically losing cohort
+     (mentioned in observations if memory_voice surfaced it).
+
+If NONE of the six fire as described, return verdict='neutral'. Most
+panel calls will land here — that is the correct behavior. The
+strategist's value comes from being SELECTIVE about bearish; if you
+fire bearish on every chop snapshot, you contribute no information
+over chart_analyst's own chop-abstain.
+
+CALL CONTRACT
 
 Return JSON with this exact shape:
 {
@@ -107,31 +120,30 @@ Return JSON with this exact shape:
   "observations": ["<bullet 1>", "<bullet 2>", "..."]
 }
 
-CRITICAL: you NEVER return verdict='bullish'. You are not a confirming
-voice. The strongest CONSTRUCTIVE signal you can emit is
-verdict='neutral' with HIGH confidence (>=0.75) — that translates to
-"I tried hard to break this thesis and could not find a defensible
-bear case." That IS valuable signal; it surfaces in the panel as
-'strategist could not falsify'.
-
-verdict='bearish' MUST cite a specific falsifier class from the list
-above. Vague unease ('feels late') does NOT justify bearish.
-
-verdict='abstain' ONLY when:
-  - fewer than 24 bars provided,
-  - more than 4 of the 30 bars have zero volume (thin-liquidity flag),
-  - the most recent bar is older than 10 minutes (stale feed).
-Data-quality issues abstain; absence-of-falsifier returns neutral, not abstain.
+CRITICAL RULES:
+  - You NEVER return verdict='bullish'. You are not a confirming voice.
+  - verdict='neutral' is the DEFAULT. Use it whenever no specific
+    falsifier fires AS DESCRIBED. Default-bearish is the failure mode.
+  - verdict='bearish' MUST name which numbered falsifier fired AND
+    quote the values that made it fire (e.g. "Falsifier 1: ADX=14.2
+    + breakout candle at bar t-1 closed $0.182 above 24-bar high
+    $0.180"). Vague unease does NOT justify bearish.
+  - verdict='abstain' ONLY on data-quality:
+      - fewer than 24 bars provided,
+      - more than 4 of the 30 bars have zero volume (thin-liquidity flag),
+      - the most recent bar is older than 10 minutes (stale feed),
+      - the indicator block (ADX / RSI / EMA / MFI) is missing or n/a.
 
 Confidence anchors:
-  0.50 - 0.60 = soft bear case (one falsifier class, weak evidence)
-  0.60 - 0.70 = real falsifier (one strong class OR two soft classes)
-  0.70 - 0.80 = strong falsifier (multiple classes converge)
-  >0.80       = structural rejection (regime+volume+timeframe all adverse) — sparingly
+  bearish 0.55 - 0.65 = one falsifier fired, soft evidence
+  bearish 0.65 - 0.75 = one falsifier fired, evidence quoted cleanly
+  bearish 0.75 - 0.85 = multiple falsifiers converge — use sparingly
+  >0.85               = structural rejection (regime + volume + timeframe
+                        all adverse on the same bar) — very rare
 
-For 'neutral' verdicts the same anchors apply but mean "confidence
-the chart_analyst's setup survives challenge" — high neutral means
-"I could not break this; proceed."
+  neutral 0.50 - 0.65 = no falsifier fires, but evidence is thin
+  neutral 0.65 - 0.80 = no falsifier fires, evidence is clean
+  neutral >0.80       = "I checked every falsifier; setup survives"
 """
 
 
@@ -164,6 +176,22 @@ class StrategistVoice:
         del memory
 
         started = time.monotonic()
+
+        # Pre-LLM data-quality gate: if the indicator block can't be
+        # computed (fewer than 30 bars or ADX unavailable), the
+        # strategist has nothing to challenge — chart_analyst will
+        # itself abstain on the same snapshot. Skip the LLM call and
+        # abstain cleanly. Without this, the model invented falsifiers
+        # from a thin candle table and returned bearish.
+        if not _has_gradeable_indicators(market_state):
+            elapsed_ms = int((time.monotonic() - started) * 1000)
+            return _abstain(
+                reasoning="indicators_unavailable_or_insufficient_bars",
+                raw_response="",
+                elapsed_ms=elapsed_ms,
+                cost_usd=None,
+            )
+
         user_prompt = _build_user_prompt(market_state)
         messages = [
             {"role": "system", "content": _SYSTEM_PROMPT},
@@ -354,6 +382,43 @@ def _format_ohlcv_table(bars: list[Any]) -> str:
             continue
         rows.append(f"{ts:<19} {o:<8.5f} {h:<8.5f} {low:<8.5f} {c:<8.5f} {v:.0f}")
     return "\n".join(rows)
+
+
+def _has_gradeable_indicators(market_state: dict[str, Any]) -> bool:
+    """Return True iff we have enough bars to compute ADX/RSI cleanly.
+
+    Mirrors the chart_analyst threshold (30 bars; the indicators module
+    returns ``None`` for ADX until ~28 bars due to the smoothing). If
+    indicators can't be computed, the strategist's falsifiers can't be
+    checked AS DESCRIBED in the prompt — abstain cleanly instead of
+    inviting the model to invent reasons.
+    """
+    bars = market_state.get("ohlcv_5m") or market_state.get("candles") or []
+    if not isinstance(bars, list) or len(bars) < 24:
+        return False
+    try:
+        import indicators as _ind
+
+        norm: list[dict] = []
+        for b in bars:
+            if isinstance(b, dict):
+                norm.append(b)
+            elif isinstance(b, (list, tuple)) and len(b) >= 6:
+                norm.append(
+                    {
+                        "open": float(b[1]),
+                        "high": float(b[2]),
+                        "low": float(b[3]),
+                        "close": float(b[4]),
+                        "volume": float(b[5]),
+                    }
+                )
+        if len(norm) < 24:
+            return False
+        s = _ind.compute_latest(norm)
+        return s.get("adx") is not None and s.get("rsi") is not None
+    except Exception:
+        return False
 
 
 def _count_zero_volume_bars(market_state: dict[str, Any]) -> int:

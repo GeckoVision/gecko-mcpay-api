@@ -45,7 +45,12 @@ from voices.base import MemoryReader, VoiceOpinion
 # Thresholds mirror the backtest's regime segmentation (REGIME_ADX_CHOP/TREND).
 _ADX_TREND = 25.0  # adx >= this ⇒ meaningful trend (direction decides up/down)
 _ADX_CHOP = 18.0   # adx <= this ⇒ chop, momentum -EV regardless of direction
-_MIN_BARS = 30     # need enough candles for a meaningful ADX(14)
+# 2026-05-30: lowered 30→25. Bot's get_candles(token, TIMEFRAME, limit=30)
+# returns 29 bars in practice (current-bar exclusion). With _MIN_BARS=30 the
+# voice abstained 351/351 times in the recent 10h window. ADX(14) is stable
+# from ~22 bars onward; 25 keeps a small safety buffer while letting the
+# voice actually grade live snapshots. See diagnostic 2026-05-30.
+_MIN_BARS = 25     # need enough candles for a meaningful ADX(14)
 
 
 class RegimeAnalystVoice:
