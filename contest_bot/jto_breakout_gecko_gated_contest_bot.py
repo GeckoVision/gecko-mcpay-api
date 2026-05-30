@@ -946,17 +946,28 @@ def _usdc_address() -> str:
 # so gecko-mcpay-app's /api/* proxy (GECKO_BOT_URL mode) can demux a
 # single snapshot into its 4 Zod-validated endpoints
 # (/api/{system,agents,nodes,ledger}). Side-effect-free read-only.
+#
+# Sprint 24-E (2026-05-29): pnl scope = CURRENT STRATEGY ERA only.
+# Per founder framing — pnl shown in the app is "since this strategy
+# started." Prior strategy iterations (pre-Setup-C JTO/JUP era) bled
+# −$4.20 across configs we've already killed; counting them double-
+# penalizes the current bot for old decisions. Setup C cutover at
+# 2026-05-28 00:18 UTC is the cohort boundary. Legacy /api/state
+# still shows lifetime; only /api/state/v2 (app-facing) is filtered.
+# When the next strategy era starts, bump STRATEGY_START_TS.
+STRATEGY_START_TS = "2026-05-28T00:18:00+00:00"
+
+
 def _build_state_v2_payload() -> dict:
     """App-schema-aligned snapshot for gecko-mcpay-app's chrome + views."""
     closed_positions = [p for p in positions if p["status"] == "closed"]
-    if realized_pnl_today or wins_today or losses_today:
-        total_pnl = float(realized_pnl_today)
-        n_wins = int(wins_today)
-        n_losses = int(losses_today)
-    else:
-        total_pnl = sum(p.get("pnl_usd", 0) for p in closed_positions)
-        n_wins = sum(1 for p in closed_positions if p.get("pnl_usd", 0) > 0)
-        n_losses = len(closed_positions) - n_wins
+    # Sprint 24-E: filter to current-strategy cohort for the app's pnl.
+    strategy_closed = [
+        p for p in closed_positions if str(p.get("entry_ts") or "") >= STRATEGY_START_TS
+    ]
+    total_pnl = sum(p.get("pnl_usd", 0) for p in strategy_closed)
+    n_wins = sum(1 for p in strategy_closed if float(p.get("pnl_pct") or 0) >= 0.5)
+    n_losses = sum(1 for p in strategy_closed if float(p.get("pnl_pct") or 0) <= -0.5)
 
     open_positions = [p for p in positions if p["status"] == "open"]
     active_count = len(open_positions)
@@ -1031,7 +1042,10 @@ def _build_state_v2_payload() -> dict:
         )
 
     ledger: list[dict] = []
-    for i, pos in enumerate(reversed(closed_positions[-12:])):
+    # Sprint 24-E: ledger also strategy-scoped — same narrative cohort
+    # as the pnl number above. The chrome's ledger panel shows the
+    # current strategy's trade history, not lifetime.
+    for i, pos in enumerate(reversed(strategy_closed[-12:])):
         ts = str(pos.get("exit_ts") or pos.get("entry_ts") or "")[11:19]
         amount_usd = pos.get("pnl_usd") or 0
         sign = "+" if amount_usd >= 0 else ""
