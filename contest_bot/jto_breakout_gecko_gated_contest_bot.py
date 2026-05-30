@@ -2129,6 +2129,30 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
             }
             for o in local_decision.voice_opinions
         ]
+        # Sprint 24-J (2026-05-30) — SHADOW indicator snapshot. Logged
+        # only, not enforced. After ≥7 days of data, mine via
+        # scripts/analysis/mfi_shadow_review.py to test the hypothesis
+        # "MFI<30 entries are worse than MFI≥30 entries." If signal
+        # supports it (n≥15/bucket, Mann-Whitney p<0.05, bucket mean
+        # pnl meaningfully lower), promote the gate. Zero behavior
+        # change today — pure observation.
+        _ix_snapshot = _LAST_INDEX.get(instrument, {}) or {}
+        _mfi_at_decision = _ix_snapshot.get("mfi")
+        _rsi_at_decision = _ix_snapshot.get("rsi")
+        _adx_at_decision = _ix_snapshot.get("adx")
+        _chop_at_decision = _ix_snapshot.get("chop")
+        _shadow_indicators = {
+            "mfi": _mfi_at_decision,
+            "rsi": _rsi_at_decision,
+            "adx": _adx_at_decision,
+            "chop": _chop_at_decision,
+        }
+        _shadow_gates = {
+            "mfi_below_30": _mfi_at_decision is not None and _mfi_at_decision < 30,
+            "mfi_below_20": _mfi_at_decision is not None and _mfi_at_decision < 20,
+            "rsi_above_70": _rsi_at_decision is not None and _rsi_at_decision > 70,
+            "adx_below_20": _adx_at_decision is not None and _adx_at_decision < 20,
+        }
         _LOGGER.log(
             "local_panel",
             {
@@ -2138,6 +2162,8 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
                 "coordinator_rule_fired": local_decision.coordinator_rule_fired,
                 "voice_count": len(local_decision.voice_opinions),
                 "voices": _voice_attribution,
+                "indicators": _shadow_indicators,
+                "shadow_gates": _shadow_gates,
                 "total_elapsed_ms": local_decision.total_elapsed_ms,
                 "total_cost_usd": local_decision.total_cost_usd,
             },
@@ -2248,6 +2274,12 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
                 adaptive_tp_pct = max(0.5, min(3.0, 1.5 * (_atr_last / entry_price * 100.0)))
     except Exception:  # never let TP sizing break entry; fall back to fixed TP
         adaptive_tp_pct = float(TAKE_PROFIT_PCT)
+    # Sprint 24-J (2026-05-30) — entry-time indicator snapshot stamped
+    # on the position so post-close analysis can correlate entry-MFI/RSI/
+    # ADX/CHOP with realized pnl. Paired with the shadow_gates logging
+    # at decision time in the local_panel artifact event.
+    # _LAST_INDEX is keyed by bare symbol ("PYTH"), not "PYTH-USDC".
+    _entry_ix = _LAST_INDEX.get(symbol_str.split("-")[0], {}) or {}
     pos = {
         "token": token,
         "symbol": symbol_str,
@@ -2260,6 +2292,15 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
         "mode": "paper",
         "fundamentals_decision_id": fund_decision_id,
         "tp_pct": round(adaptive_tp_pct, 4),
+        "entry_indicators": {
+            "mfi": _entry_ix.get("mfi"),
+            "rsi": _entry_ix.get("rsi"),
+            "adx": _entry_ix.get("adx"),
+            "chop": _entry_ix.get("chop"),
+            "bb_width": _entry_ix.get("bb_width"),
+            "regime_5m": _entry_ix.get("regime"),
+            "regime_1h": _entry_ix.get("regime_1h"),
+        },
     }
 
     # ── Decision-record store (s43): record this act-decision ──────────
