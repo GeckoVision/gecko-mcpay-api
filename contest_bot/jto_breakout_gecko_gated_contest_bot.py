@@ -196,6 +196,11 @@ INSTRUMENTS: list[dict] = [
     {"symbol": "PYTH", "mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3", "chain": "solana"},
     {"symbol": "WIF", "mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", "chain": "solana"},
     {"symbol": "RAY", "mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", "chain": "solana"},
+    # Sprint 24-L (2026-05-30) — strategist recommendation: SOL is the regime
+    # carrier for PYTH/WIF/RAY (all alt-correlated to SOL). Deepest Solana DEX
+    # liquidity, no meme tail, no infra-rotation risk. Falsifier: N≥10 SOL acts
+    # in ≤10 days with sum_pct ≥ 0 and mean_pct > ~0.6% fee floor.
+    {"symbol": "SOL", "mint": "So11111111111111111111111111111111111111112", "chain": "solana"},
 ]
 
 ENTRY_PARAMS = {

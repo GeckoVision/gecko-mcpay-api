@@ -47,27 +47,32 @@ export PAPER_TRADE=true                    # NEVER flip without explicit founder
 export X402_MODE=stub                      # NEVER flip without explicit founder go-ahead
 export EXPERIMENT_TAG=setup-c-2026-05-28   # propagated to artifact log for filtering
 
-# Sprint 16 halt (2026-05-28): two-specialist joint review (quant + strategist)
-# verdict — the 5m/12h scalp class is FALSIFIED across 25 trades. Stop opening
-# new positions; keep bot alive for telemetry-only mode while we build the
-# swing executor (Sprint 9 trend_adx_30 transplant, 4h cadence).
+# 2026-05-28 founder override (03:30 UTC): "Restart and increase the trades
+# number - otherwise we will lost the window until 9PM".
 #
-# OBSERVATION_MODE=1 makes open_position() early-return BEFORE swap_execute.
-# Voices, Oracle, dashboard, artifact log all keep firing — only the actual
-# swap call is skipped. Use for full-stack telemetry without capital risk.
-export OBSERVATION_MODE=1
+# Restoring real-trading mode (OBSERVATION_MODE OFF) per founder's "lose the
+# window" framing. This OVERRIDES the Sprint 16 OBSERVATION_MODE plan and
+# the Sprint 17 verdict that the strategy class is falsified — founder's
+# explicit call. PAPER_TRADE=true still in force, so trades are paper-fills
+# against real-tape price, not real money. Sprint 17 -EV finding stands as
+# documentation; founder accepts the data-collection cost.
+#
+# To restore Sprint 17 OBSERVATION_MODE: uncomment the line below.
+# export OBSERVATION_MODE=1
 
-# 2026-05-28 founder request: raise caps so bot doesn't artificially stop
-# when it has more than 3 candidates ("keep 4 - just increase the number").
-# In OBSERVATION_MODE the bot still polls/decides/logs but never executes
-# swaps, so raising the limits increases VISIBILITY without capital risk.
-#
-# Daily cap:        3 → 10  (high enough to rarely block; not absurd)
-# Concurrent cap:   2 → 4   (founder's pick — handle all 3 symbols + headroom)
-# Loss pause:       2 → 5   (relax slightly; in OBSERVATION nothing is a real loss)
-export MAX_DAILY_TRADES=10
-export MAX_CONCURRENT=4
-export SESSION_LOSS_PAUSE=5
+# Raised caps for the window
+export MAX_DAILY_TRADES=20      # was 3, then 10; founder bumped to 20 for window
+export MAX_CONCURRENT=4         # founder's pick from earlier session
+export SESSION_LOSS_PAUSE=5     # slightly relaxed from default 2
+
+# Sprint 24-L (2026-05-30) — Variant E: drop the 1h-adverse modulator only.
+# Per quant analysis: post-voice-fix, the coordinator's 1h-adverse floor at 0.92
+# captures 100% of chart_analyst's hard-coded bullish-confidence-0.85 events,
+# producing 0 fires in 12h. Discipline check ✓ — 17 historical Setup C wins were
+# 100% TREND-UP or CHOP, never the unknown-1h-adverse case. Setting this to 0
+# reverts to legacy fail-open on unknown 1h regime, projected 123-185 fires/24h.
+# Treated as shadow-test: monitor first 20 fires for DSR ≥ 0.95 before declaring success.
+export GECKO_TREAT_UNKNOWN_1H_AS_ADVERSE=0
 
 echo "================================================================"
 echo "Setup C launch — 2026-05-28"
