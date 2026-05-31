@@ -211,7 +211,11 @@ def _parse_ts(ts_val: Any) -> datetime | None:
         return ts_val if ts_val.tzinfo else ts_val.replace(tzinfo=UTC)
     if isinstance(ts_val, str):
         try:
-            return datetime.fromisoformat(ts_val.replace("Z", "+00:00"))
+            parsed = datetime.fromisoformat(ts_val.replace("Z", "+00:00"))
+            # Many historical strings (e.g. bot_state.json entry_ts) lack
+            # tz suffix → fromisoformat returns naive. Coerce to UTC so
+            # downstream comparisons with tz-aware now() don't blow up.
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
         except Exception:
             return None
     return None
