@@ -215,11 +215,17 @@ INSTRUMENTS: list[dict] = [
     {"symbol": "PYTH", "mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3", "chain": "solana"},
     {"symbol": "WIF", "mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", "chain": "solana"},
     {"symbol": "RAY", "mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", "chain": "solana"},
-    # Sprint 24-L (2026-05-30) — strategist recommendation: SOL is the regime
-    # carrier for PYTH/WIF/RAY (all alt-correlated to SOL). Deepest Solana DEX
-    # liquidity, no meme tail, no infra-rotation risk. Falsifier: N≥10 SOL acts
-    # in ≤10 days with sum_pct ≥ 0 and mean_pct > ~0.6% fee floor.
-    {"symbol": "SOL", "mint": "So11111111111111111111111111111111111111112", "chain": "solana"},
+    # Sprint 24-L (2026-05-30) — SOL added as regime carrier; Sprint 24-L
+    # falsifier: N≥10 SOL acts in ≤10 days with sum_pct ≥ 0 and mean_pct
+    # > ~0.6% fee floor.
+    # Sprint 24-R (2026-05-31) — DROPPED. N=3 closes, all flat_stall_exit
+    # (zero TP, zero SL): +0.59%, -0.07%, -0.37%. Net +0.15% / mean +0.05%
+    # — 12× BELOW the fee-floor threshold the variant required. Mechanism:
+    # SOL volatility is structurally lower than PYTH/WIF; breakout-momentum
+    # needs vol to confirm direction; SOL signals → chop → stall-exit on
+    # near-zero PnL. Re-add only after a focused per-instrument backtest
+    # validates a SOL-specific config (longer hold, wider stop, slower stall).
+    # {"symbol": "SOL", "mint": "So11111111111111111111111111111111111111112", "chain": "solana"},
 ]
 
 ENTRY_PARAMS = {
