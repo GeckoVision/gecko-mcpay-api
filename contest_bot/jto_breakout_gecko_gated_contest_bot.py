@@ -298,7 +298,10 @@ def _init_decision_store() -> None:
         # when MONGODB_URI is missing or Atlas is unreachable — JSONL
         # remains the durable source of truth in that case.
         try:
-            from contest_bot.decision_store.behavior_sink import BehaviorSink
+            # Sibling import — bot runs from contest_bot/ dir (cf. line 38
+            # `from decision_store import DecisionDoc, ...`). Using the
+            # `contest_bot.` package path here would break the live launcher.
+            from decision_store.behavior_sink import BehaviorSink
 
             _BEHAVIOR_SINK = BehaviorSink.from_env()
             if _BEHAVIOR_SINK is not None:
