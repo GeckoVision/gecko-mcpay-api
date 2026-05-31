@@ -214,7 +214,11 @@ INSTRUMENTS: list[dict] = [
     #   shows the bot needs them for trade frequency.
     {"symbol": "PYTH", "mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3", "chain": "solana"},
     {"symbol": "WIF", "mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", "chain": "solana"},
-    {"symbol": "RAY", "mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", "chain": "solana"},
+    # Sprint 24-T (2026-05-31) — RAY DROPPED. Strategist + quant converge:
+    # N=1 close (-$0.22), no signal in ~3 days, fails the "is this symbol
+    # active enough to validate" bar. Mirrors SOL drop pattern. Re-add only
+    # after a focused backtest demonstrates RAY-specific edge.
+    # {"symbol": "RAY", "mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", "chain": "solana"},
     # Sprint 24-L (2026-05-30) — SOL added as regime carrier; Sprint 24-L
     # falsifier: N≥10 SOL acts in ≤10 days with sum_pct ≥ 0 and mean_pct
     # > ~0.6% fee floor.
@@ -246,11 +250,15 @@ ENTRY_PARAMS = {
 _SIM: SimulationRegistry | None = None
 _RUN_ID: str | None = None
 _RECORDER = None  # type: ignore[var-annotated]
+# Sprint 24-T (2026-05-31): fan-out sink to Mongo `bot_behaviors`. Never
+# blocks the trading loop — best-effort, async, swallows failures. Stays
+# None when MONGODB_URI is unset or `GECKO_BEHAVIOR_SINK=0` is exported.
+_BEHAVIOR_SINK = None  # type: ignore[var-annotated]
 
 
 def _init_decision_store() -> None:
     """Best-effort: arm the decision recorder. Never raises into import/startup."""
-    global _SIM, _RUN_ID, _RECORDER
+    global _SIM, _RUN_ID, _RECORDER, _BEHAVIOR_SINK
     if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("GECKO_DECISION_STORE_OFF"):
         return
     try:
@@ -286,9 +294,22 @@ def _init_decision_store() -> None:
         )
         _RECORDER = _SIM.recorder()
         print(f"[decision-store] run {_RUN_ID} armed ({len(INSTRUMENTS)} instruments)")
+        # Sprint 24-T: arm the Mongo behavior-sink. Returns None gracefully
+        # when MONGODB_URI is missing or Atlas is unreachable — JSONL
+        # remains the durable source of truth in that case.
+        try:
+            from contest_bot.decision_store.behavior_sink import BehaviorSink
+
+            _BEHAVIOR_SINK = BehaviorSink.from_env()
+            if _BEHAVIOR_SINK is not None:
+                print("[behavior-sink] armed (Mongo bot_behaviors)")
+        except Exception as _bx:
+            print(f"[behavior-sink] disabled: {type(_bx).__name__}: {_bx}")
+            _BEHAVIOR_SINK = None
     except Exception as exc:  # recorder must never block the bot
         print(f"[decision-store] disabled: {type(exc).__name__}: {exc}")
         _SIM, _RUN_ID, _RECORDER = None, None, None
+        _BEHAVIOR_SINK = None
 
 
 def build_decision_doc(
@@ -2385,18 +2406,25 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
                 if _LOCAL_PANEL is not None
                 else {"action": "act", "rule": "no_local_panel"}
             )
-            _did = _RECORDER.record(
-                build_decision_doc(
-                    _RUN_ID,
-                    instrument,
-                    snap,
-                    {"fired": True, "type": ENTRY_TYPE},
-                    _panel_voices,
-                    _oracle_dict,
-                    _coordinator,
-                )
+            _doc = build_decision_doc(
+                _RUN_ID,
+                instrument,
+                snap,
+                {"fired": True, "type": ENTRY_TYPE},
+                _panel_voices,
+                _oracle_dict,
+                _coordinator,
             )
+            _did = _RECORDER.record(_doc)
             pos["decision_id"] = _did  # carry the link to the outcome on close
+            # Sprint 24-T: fan out to Mongo bot_behaviors (act-path). Sink
+            # is async + best-effort; if it raises here it never reaches the
+            # outer except because BehaviorSink.record swallows internally.
+            if _BEHAVIOR_SINK is not None:
+                try:
+                    _BEHAVIOR_SINK.record(_doc.to_dict(), run_id=_RUN_ID)
+                except Exception as _sx:
+                    print(f"[behavior-sink] record skipped: {type(_sx).__name__}: {_sx}")
         except Exception as exc:  # recorder must never break the trading loop
             print(f"[decision-store] record skipped: {type(exc).__name__}: {exc}")
 
@@ -2512,18 +2540,26 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
             _peak_price = pos.get("peak_price")
             if _peak_price and ep:
                 peak_pct = round((_peak_price - ep) / ep * 100, 2)
-            _RECORDER.attach_outcome(
-                pos["decision_id"],
-                Outcome(
-                    pnl_pct=round(pnl_pct, 2),
-                    pnl_usd=round(pnl_usd, 2),
-                    exit_reason=reason,
-                    duration_min=duration_min,
-                    entry_price=ep,
-                    exit_price=current_price,
-                    peak_pct=peak_pct,
-                ),
+            _outcome = Outcome(
+                pnl_pct=round(pnl_pct, 2),
+                pnl_usd=round(pnl_usd, 2),
+                exit_reason=reason,
+                duration_min=duration_min,
+                entry_price=ep,
+                exit_price=current_price,
+                peak_pct=peak_pct,
             )
+            _RECORDER.attach_outcome(pos["decision_id"], _outcome)
+            # Sprint 24-T: mirror the outcome onto Mongo bot_behaviors so
+            # quant + strategist can query realized PnL without re-joining
+            # JSONL. patch_outcome is async + best-effort.
+            if _BEHAVIOR_SINK is not None:
+                try:
+                    _BEHAVIOR_SINK.patch_outcome(
+                        pos["decision_id"], _outcome.model_dump()
+                    )
+                except Exception as _sx:
+                    print(f"[behavior-sink] patch_outcome skipped: {type(_sx).__name__}: {_sx}")
         except Exception as exc:  # recorder must never break the close path
             print(f"[decision-store] attach_outcome skipped: {type(exc).__name__}: {exc}")
 
