@@ -142,8 +142,26 @@ STALL_GREEN_EXIT_MIN_PCT = 1.0  # s41 2026-05-22: 2.0 → 1.0 — book a +1% sta
 # downside drift). The no-new-high gate is the pause-protection: a real
 # consolidation about to break out makes a new high inside 30min.
 FLAT_STALL_AGE_MIN = 90  # position must be at least this old
-FLAT_STALL_PNL_LO = -0.5  # iter-3.9 2026-05-21: 0.3 → -0.5. Widened the band DOWN to catch the breakeven dead-zone (BOME peaked +0.58%, then flat-lined around 0% for 70min — momentum thesis dead but no rule caught it: above SL, below the +0.3% flat-stall floor). Now: a position that peaked weak and went flat-to-slightly-red gets exited as a failed thesis. Below -0.5% the SL owns it (directional losers handled separately).
-FLAT_STALL_PNL_HI = 2.0  # ... (below STALL_GREEN_EXIT_MIN_PCT)
+# Sprint 24-W (2026-05-31, founder-asked overnight) — asymmetric stall fix.
+# Diagnosed bleed: 10 closes 06:00→21:41 UTC summed to -$2.10 net. Breakdown:
+#   * 5 stall closes in [-0.45%, +0.05%] = -$0.72 (small "snipped winner +
+#     small bleeder" pattern the founder observed)
+#   * 1 PYTH SL at -3.07% / -$1.38 after 7h 37min hold (no stall protection
+#     below -0.5% → bot waited all the way to -3% SL)
+# Two-line rebalance to make the exit band ASYMMETRIC IN OUR FAVOR:
+#   * LO -0.5 → -1.5: stall fires up to -1.5% loss, caps single-trade bleed
+#     well before the -3% SL. Would have closed last night's PYTH disaster
+#     at -1.5% (-$0.68) instead of -3% (-$1.38) — saves ~$0.70 per disaster.
+#   * HI +2.0 → +0.5: stall stops snipping small winners in the [+0.5, +2.0]
+#     band — they ride to TP (+2%) or trail-stop. PRIOR HI was the same
+#     number as TP target, so any drift below +2% would stall instead of
+#     pushing for TP. Now positions above +0.5% are RUNNING territory.
+# Net effect on the realised distribution: smaller mean loss per bleeder,
+# more wins captured to full TP. Revert: this comment block + the prior
+# values. Falsifier: re-evaluate at N≥15 post-edit closes; if mean per
+# trade is worse than the prior -$2.10/9-close run, revert.
+FLAT_STALL_PNL_LO = -1.5  # was -0.5 — see Sprint 24-W note above
+FLAT_STALL_PNL_HI = 0.5   # was 2.0 — see Sprint 24-W note above
 FLAT_STALL_NO_NEW_HIGH_MIN = 30  # AND no new high in this many minutes
 
 # Sprint 24-Q (2026-05-31) — Fee-aware flat-stall exit (founder-flagged leak).
