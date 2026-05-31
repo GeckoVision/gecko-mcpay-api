@@ -86,6 +86,26 @@ class PrivyWallet(BaseModel):
     model_config = {"frozen": True}
 
 
+class PrivyPolicy(BaseModel):
+    """Read model for a Privy v2 policy response (S26-B).
+
+    Policies scope what an attached wallet can do — per-method allowlist,
+    per-recipient allowlist, per-token cap. Attaching a policy to a wallet
+    means the wallet's signing path enforces the rules *before* signing.
+
+    The policy spec itself is opaque to gecko-core: we accept whatever
+    rule-array shape Privy currently documents and pass it through. Callers
+    that need typed builders can compose on top.
+    """
+
+    policy_id: str
+    name: str | None = None
+    chain_type: str = "solana"
+    created_at: datetime | None = None
+
+    model_config = {"frozen": True}
+
+
 class PrivyClientError(RuntimeError):
     """Privy returned a non-2xx response. Body is preserved verbatim."""
 
@@ -178,6 +198,11 @@ class PrivyClient:
         resp = await self._client.get(url, headers=self._auth_headers())
         return self._handle(resp)
 
+    async def _patch(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+        url = f"{self._base_url}{path}"
+        resp = await self._client.patch(url, json=body, headers=self._auth_headers())
+        return self._handle(resp)
+
     @staticmethod
     def _handle(resp: httpx.Response) -> dict[str, Any]:
         if resp.status_code >= 400:
@@ -224,6 +249,69 @@ class PrivyClient:
     async def get_wallet(self, wallet_id: str) -> PrivyWallet:
         """Fetch an existing wallet by Privy id."""
         data = await self._get(f"/v1/wallets/{wallet_id}")
+        return _parse_wallet(data)
+
+    # -- Policies (S26-B) -----------------------------------------------
+    #
+    # Privy v2 policies scope what an attached wallet can do. The wire
+    # shape is `POST /v1/policies` with a `rules: [...]` array; attach via
+    # `PATCH /v1/wallets/{wallet_id}` with `policy_ids: [policy_id]`.
+    #
+    # gecko-core's wedge is "scoped permissions for trading agents" — a
+    # policy is the on-chain enforcement of the Permissions Center UI's
+    # granted/denied per-key grid. The mapping (PermissionKey → rules)
+    # lives in the caller, not here, so this client stays generic.
+
+    async def create_policy(
+        self,
+        *,
+        name: str,
+        rules: list[dict[str, Any]],
+        chain_type: str = "solana",
+    ) -> PrivyPolicy:
+        """Create a scoped policy.
+
+        `rules` is passed through to Privy verbatim — gecko-core does not
+        validate rule structure, because Privy occasionally adds new rule
+        kinds and we'd rather not bottleneck on a wrapper update. The caller
+        composes the rule shape from the PermissionKey grid.
+
+        Returns a frozen PrivyPolicy with the new policy_id.
+        """
+        if chain_type != "solana":
+            raise PrivyClientError(
+                f"create_policy: chain_type={chain_type!r} unsupported "
+                "(gecko-core is Solana-only per S2-05)."
+            )
+        body: dict[str, Any] = {
+            "name": name,
+            "chain_type": chain_type,
+            "rules": rules,
+        }
+        data = await self._post("/v1/policies", body)
+        return _parse_policy(data)
+
+    async def attach_policy_to_wallet(
+        self,
+        *,
+        wallet_id: str,
+        policy_ids: list[str],
+    ) -> PrivyWallet:
+        """Attach one or more policies to an existing wallet.
+
+        Privy's wallet-PATCH endpoint accepts the full desired policy set,
+        not a delta — so callers must pass the *complete* policy list they
+        want enforced. Empty list = remove all policies (rarely what you
+        want; refuse it here to avoid a footgun).
+        """
+        if not policy_ids:
+            raise PrivyClientError(
+                "attach_policy_to_wallet: refusing empty policy_ids list. "
+                "Pass the full desired set; use detach_all_policies() if you "
+                "really mean to remove all policy enforcement."
+            )
+        body: dict[str, Any] = {"policy_ids": policy_ids}
+        data = await self._patch(f"/v1/wallets/{wallet_id}", body)
         return _parse_wallet(data)
 
     async def get_wallet_balance(self, wallet_id: str) -> Decimal:
@@ -283,10 +371,54 @@ def _parse_wallet(data: dict[str, Any]) -> PrivyWallet:
     )
 
 
+def _parse_policy(data: dict[str, Any]) -> PrivyPolicy:
+    """Parse a Privy v2 policy response into a frozen PrivyPolicy.
+
+    Same lenient created_at handling as _parse_wallet — Privy returns
+    either ISO-8601 strings or epoch (s or ms). Anything unrecognized
+    becomes None rather than raising, since the policy is still usable
+    without a precise creation timestamp.
+    """
+    policy_id = data.get("id")
+    if not isinstance(policy_id, str):
+        raise PrivyClientError(
+            f"Privy policy response missing id: keys={sorted(data.keys())}"
+        )
+    name_raw = data.get("name")
+    name = name_raw if isinstance(name_raw, str) else None
+    chain_type = data.get("chain_type") or "solana"
+    if chain_type != "solana":
+        raise PrivyClientError(
+            f"Privy returned policy chain_type={chain_type!r}, expected 'solana'"
+        )
+    created_raw = data.get("created_at")
+    created_at: datetime | None = None
+    if isinstance(created_raw, str):
+        try:
+            created_at = datetime.fromisoformat(created_raw.replace("Z", "+00:00"))
+        except ValueError:
+            created_at = None
+    elif isinstance(created_raw, (int, float)):
+        ts = float(created_raw)
+        if ts > 1e12:
+            ts /= 1000.0
+        try:
+            created_at = datetime.fromtimestamp(ts)
+        except (OverflowError, OSError, ValueError):
+            created_at = None
+    return PrivyPolicy(
+        policy_id=policy_id,
+        name=name,
+        chain_type="solana",
+        created_at=created_at,
+    )
+
+
 __all__ = [
     "PrivyClient",
     "PrivyClientError",
     "PrivyNotConfiguredError",
+    "PrivyPolicy",
     "PrivyWallet",
     "is_privy_configured",
 ]

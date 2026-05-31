@@ -9,6 +9,7 @@ from gecko_core.wallets.privy import (
     PrivyClient,
     PrivyClientError,
     PrivyNotConfiguredError,
+    PrivyPolicy,
     PrivyWallet,
     is_privy_configured,
 )
@@ -17,6 +18,7 @@ __all__ = [
     "PrivyClient",
     "PrivyClientError",
     "PrivyNotConfiguredError",
+    "PrivyPolicy",
     "PrivyWallet",
     "is_privy_configured",
 ]
