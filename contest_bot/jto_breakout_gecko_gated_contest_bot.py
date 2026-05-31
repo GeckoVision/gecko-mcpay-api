@@ -378,6 +378,128 @@ def build_decision_doc(
     )
 
 
+# ── Sprint 24-U (2026-05-31) — Decline-path recorder helper ─────────
+#
+# Bot honesty fix 6b shipped the TESTS for decline-path decision recording
+# (contest_bot/tests/test_decision_store_decline_recording.py) but the
+# helper was never landed — those 6 tests have been SKIPPED ever since.
+# Without this, panel-decline and oracle-pass-decline branches
+# short-circuit at `open_position` without producing a DecisionDoc; only
+# the act-path reaches the recorder. The decision-vector substrate never
+# saw declines (~90% of polls), so quant/strategist autopsies had to read
+# JSONL instead of querying Mongo `bot_behaviors`.
+#
+# This helper closes the gap. Same JSONL + Mongo behavior as the act-path,
+# but `coordinator.action == "decline"` is hardcoded — the caller passes
+# the discriminating `rule` ("panel_decline", "oracle_pass", or the
+# panel's actual coordinator rule). NEVER raises into the trading loop —
+# the recorder discipline is non-negotiable.
+
+
+def _voices_for_record(local_decision) -> list[dict]:
+    """Convert LocalDecision.voice_opinions to the recorder's voice-dict shape.
+
+    Returns [] when no panel was wired (local_decision is None or has no
+    voice_opinions attribute). Same projection the act-path uses inline
+    at line ~2399.
+    """
+    if local_decision is None:
+        return []
+    opinions = getattr(local_decision, "voice_opinions", None) or []
+    return [
+        {
+            "name": o.voice_name,
+            "verdict": o.verdict,
+            "confidence": o.confidence,
+            "reasoning": (getattr(o, "reasoning", "") or "")[:300],
+        }
+        for o in opinions
+    ]
+
+
+def _oracle_for_record(fund_verdict) -> dict | None:
+    """Project the FundamentalsVerdict into the recorder's oracle-dict shape.
+
+    Returns None when fund_verdict is None — the recorder accepts an
+    absent oracle block (preload failed, ungrounded, no verdict cached).
+    Mirrors the act-path projection at line ~2412.
+    """
+    if fund_verdict is None:
+        return None
+    cites = fund_verdict.citations_count
+    return {
+        "verdict": fund_verdict.verdict,
+        "confidence": fund_verdict.confidence,
+        "citations": cites,
+        "grounded": cites >= ORACLE_GROUNDING_MIN_CITES,
+    }
+
+
+def _record_decline_decision(
+    *,
+    instrument: str,
+    symbol_str: str,
+    signal_data: dict,
+    market_state: dict,
+    ms_candles: list,
+    local_decision,
+    fund_verdict,
+    rule: str,
+) -> None:
+    """Record a panel- or oracle-level decline as a full DecisionDoc.
+
+    Fire-and-forget — NEVER raises. No-op when the recorder isn't armed
+    (PYTEST_CURRENT_TEST, init failure, GECKO_DECISION_STORE_OFF). The
+    helper takes positional context the caller already has (symbol_str,
+    signal_data, ms_candles) so the test fixture can drive it directly
+    without recreating the per-poll candidate machinery.
+    """
+    if _RECORDER is None or _RUN_ID is None:
+        return
+    try:
+        # Indicator snapshot — _LAST_INDEX is the same map the act-path
+        # builds its `snap` from. Use .get with empty-dict fallback so
+        # an instrument missing from the index (cold start, transient
+        # data outage) still produces a valid (mostly-None) row rather
+        # than a KeyError.
+        snap = dict(_LAST_INDEX.get(instrument) or {})
+        # Surface market_state extras into the snapshot so query-CLI can
+        # stratify on regime_1h / range_24h_pct without joining a second
+        # source. Don't overwrite indicator-derived values if both exist.
+        for k in ("regime_1h", "range_24h_pct"):
+            v = market_state.get(k) if isinstance(market_state, dict) else None
+            if v is not None:
+                snap.setdefault(k, v)
+        voices = _voices_for_record(local_decision)
+        oracle = _oracle_for_record(fund_verdict)
+        coordinator = {"action": "decline", "rule": rule}
+        doc = build_decision_doc(
+            _RUN_ID,
+            instrument,
+            snap,
+            signal_data,
+            voices,
+            oracle,
+            coordinator,
+        )
+        _RECORDER.record(doc)
+        # Fan out to Mongo bot_behaviors (Sprint 24-T sink). Best-effort —
+        # the act-path uses the same pattern at line ~2444.
+        if _BEHAVIOR_SINK is not None:
+            try:
+                _BEHAVIOR_SINK.record(doc.to_dict(), run_id=_RUN_ID)
+            except Exception as _sx:
+                print(
+                    f"[behavior-sink] decline record skipped: "
+                    f"{type(_sx).__name__}: {_sx}"
+                )
+    except Exception as exc:  # MUST NOT propagate into the trading loop
+        print(
+            f"[decision-store] decline record skipped: "
+            f"{type(exc).__name__}: {exc}"
+        )
+
+
 # Arm the recorder at import (skipped under pytest via the env guard inside).
 _init_decision_store()
 
@@ -2250,6 +2372,25 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
         )
         if local_decision.action != "act":
             _log("filter", f"[LOCAL] ✗ {local_decision.reason}")
+            # Sprint 24-U: record the panel decline so the decision store
+            # captures the ~90% of polls that never reach an entry. ms_candles
+            # isn't constructed yet at this point in open_position (it's built
+            # later for adaptive TP), so we pass [] — the recorder treats
+            # candle context as optional.
+            _record_decline_decision(
+                instrument=instrument,
+                symbol_str=symbol_str,
+                signal_data=signal_data,
+                market_state=market_state,
+                ms_candles=[],
+                local_decision=local_decision,
+                fund_verdict=None,
+                rule=(
+                    local_decision.coordinator_rule_fired
+                    or local_decision.reason
+                    or "panel_decline"
+                ),
+            )
             return
 
     # ── Gecko Oracle: cached PRD fundamentals verdict (s40-lab-#7, s41) ──
@@ -2327,6 +2468,20 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
                 "filter",
                 f"[ORACLE] ✗ {instrument}: GROUNDED pass "
                 f"({fund_verdict.citations_count} cites) — entry blocked",
+            )
+            # Sprint 24-U: oracle veto is its own coordinator rule.
+            # The local_decision was act-leaning (we wouldn't reach here
+            # otherwise) — record the disagreement so gating-delta queries
+            # can stratify "oracle vetoed an act-leaning panel" cases.
+            _record_decline_decision(
+                instrument=instrument,
+                symbol_str=symbol_str,
+                signal_data=signal_data,
+                market_state=market_state,
+                ms_candles=[],
+                local_decision=local_decision if _LOCAL_PANEL is not None else None,
+                fund_verdict=fund_verdict,
+                rule="oracle_pass",
             )
             return
     else:
