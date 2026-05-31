@@ -128,11 +128,18 @@ CRITICAL RULES:
     quote the values that made it fire (e.g. "Falsifier 1: ADX=14.2
     + breakout candle at bar t-1 closed $0.182 above 24-bar high
     $0.180"). Vague unease does NOT justify bearish.
-  - verdict='abstain' ONLY on data-quality:
+  - verdict='abstain' ONLY on data-quality. STRICT — abstain is the
+    LAST resort, not a soft default. When in doubt, return 'neutral'.
+    Abstain ONLY if ALL of the following are true:
       - fewer than 24 bars provided,
       - more than 4 of the 30 bars have zero volume (thin-liquidity flag),
       - the most recent bar is older than 10 minutes (stale feed),
-      - the indicator block (ADX / RSI / EMA / MFI) is missing or n/a.
+      - ADX is unavailable for the entire snapshot.
+    A SINGLE missing indicator (e.g. MFI is None but ADX/RSI/EMA are
+    populated) is NOT abstain — return neutral and quote what you have.
+    S24-S fix 2c: prior wording was being interpreted too liberally
+    (41% abstain observed vs 24% neutral, violating the default-neutral
+    contract).
 
 Confidence anchors:
   bearish 0.55 - 0.65 = one falsifier fired, soft evidence
@@ -385,13 +392,20 @@ def _format_ohlcv_table(bars: list[Any]) -> str:
 
 
 def _has_gradeable_indicators(market_state: dict[str, Any]) -> bool:
-    """Return True iff we have enough bars to compute ADX/RSI cleanly.
+    """Return True iff we have enough bars to compute ADX cleanly.
+
+    S24-S fix 2c (2026-05-31): relaxed to require ADX-only. Previously
+    required ADX AND RSI; the AND-gate combined with the prompt's
+    over-liberal "indicator block missing or n/a" abstain clause to
+    push the strategist to 41% abstain (vs the documented 24%-or-less
+    target). A single missing indicator (e.g. RSI computation fluke on
+    a thin bar) should NOT trigger abstain — let the LLM see what's
+    available and return neutral. Only complete-ADX-failure (the load-
+    bearing trend metric for the falsifier list) justifies skipping
+    the LLM call.
 
     Mirrors the chart_analyst threshold (30 bars; the indicators module
-    returns ``None`` for ADX until ~28 bars due to the smoothing). If
-    indicators can't be computed, the strategist's falsifiers can't be
-    checked AS DESCRIBED in the prompt — abstain cleanly instead of
-    inviting the model to invent reasons.
+    returns ``None`` for ADX until ~28 bars due to the smoothing).
     """
     bars = market_state.get("ohlcv_5m") or market_state.get("candles") or []
     if not isinstance(bars, list) or len(bars) < 24:
@@ -416,7 +430,8 @@ def _has_gradeable_indicators(market_state: dict[str, Any]) -> bool:
         if len(norm) < 24:
             return False
         s = _ind.compute_latest(norm)
-        return s.get("adx") is not None and s.get("rsi") is not None
+        # S24-S fix 2c — ADX-only (was ADX AND RSI). See docstring.
+        return s.get("adx") is not None
     except Exception:
         return False
 

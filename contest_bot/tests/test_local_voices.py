@@ -33,6 +33,7 @@ from voices.chart_analyst import ChartAnalystVoice  # noqa: E402
 from voices.coordinator_rules import coordinator  # noqa: E402
 from voices.regime_analyst import RegimeAnalystVoice  # noqa: E402
 from voices.memory_voice import MemoryVoice  # noqa: E402
+from voices.strategist_voice import _has_gradeable_indicators  # noqa: E402
 from voices.risk_voice import (  # noqa: E402
     RiskVoice,
     _compute_risk_band_deterministic,
@@ -306,6 +307,101 @@ def test_memory_voice_warm_start_calls_llm(tmp_path: Path) -> None:
     assert op.confidence == pytest.approx(0.65)
     assert calls["n"] == 1
     client.aclose()
+
+
+def test_memory_voice_filters_cross_instrument(tmp_path: Path) -> None:
+    """S24-S fix 2b: memory_voice must filter ledger rows to the current
+    instrument before computing cold-start floor. Without the filter, a
+    losing WIF trade poisoned a PYTH grade — the universe-summed bearish
+    bias was being attributed to whichever symbol was currently graded.
+
+    Setup: ledger has 3 WIF closes (all losses) but caller is grading
+    PYTH. Voice MUST abstain (cold start for PYTH), NOT call the LLM
+    with poisoned cross-instrument bearish history.
+    """
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return _make_response('{"verdict": "bearish", "confidence": 0.6}')
+
+    client = _make_or_client(handler)
+    voice = MemoryVoice(client=client)
+    mem = LocalMemory(path=tmp_path / "memory_xinstr.jsonl")
+    # 3 WIF losses — pre-fix, this would clear the 3-row cold-start
+    # floor for ANY grade (cross-instrument bleed). Post-fix, PYTH still
+    # sees zero rows and abstains.
+    for pnl_pct in (-0.5, -0.4, -0.6):
+        mem.append(
+            "position_close",
+            {"symbol": "WIF-USDC", "pnl_pct": pnl_pct, "exit_reason": "stop_loss"},
+        )
+
+    pyth_state = _healthy_market_state(instrument="PYTH", symbol="PYTH-USDC")
+    op = asyncio.run(voice.grade(pyth_state, mem))
+    assert op.verdict == "abstain", (
+        f"PYTH should cold-start despite WIF history; got {op.verdict}"
+    )
+    assert op.reasoning == "cold_start_insufficient_history"
+    assert calls["n"] == 0, "instrument-filter must short-circuit the LLM call"
+    client.aclose()
+
+
+def test_memory_voice_same_instrument_still_fires(tmp_path: Path) -> None:
+    """Companion to _filters_cross_instrument: when the ledger DOES
+    contain enough same-symbol history, the voice should warm-start and
+    call the LLM. Guards against the filter becoming a permanent gag.
+    """
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return _make_response(
+            json.dumps({"verdict": "bullish", "confidence": 0.65})
+        )
+
+    client = _make_or_client(handler)
+    voice = MemoryVoice(client=client)
+    mem = LocalMemory(path=tmp_path / "memory_same.jsonl")
+    # 2 noise rows on other symbols (should be filtered out) + 4 PYTH
+    # rows (warm-start fuel after filter).
+    mem.append("position_close", {"symbol": "WIF-USDC", "pnl_pct": -0.5})
+    mem.append("position_close", {"symbol": "SOL-USDC", "pnl_pct": +0.8})
+    for _ in range(4):
+        mem.append(
+            "position_close",
+            {"symbol": "PYTH-USDC", "pnl_pct": 1.2, "exit_reason": "take_profit"},
+        )
+
+    pyth_state = _healthy_market_state(instrument="PYTH", symbol="PYTH-USDC")
+    op = asyncio.run(voice.grade(pyth_state, mem))
+    assert op.verdict == "bullish"
+    assert calls["n"] == 1
+    client.aclose()
+
+
+def test_strategist_gateable_with_adx_only(tmp_path: Path) -> None:
+    """S24-S fix 2c: _has_gradeable_indicators should return True when
+    ADX is present, even if other indicators (RSI/EMA/MFI) computed
+    None on a noisy bar. Prior gate required ADX AND RSI; the AND
+    pushed the strategist to 41% abstain in production. This test
+    pins the relaxed contract: ADX-only.
+    """
+    # Healthy 30 bars → indicators module will compute ADX cleanly.
+    state = _healthy_market_state()
+    assert _has_gradeable_indicators(state), (
+        "Healthy 30-bar state with ADX should be gradeable"
+    )
+
+
+def test_strategist_abstains_with_too_few_bars(tmp_path: Path) -> None:
+    """Companion: fewer than 24 bars → not gradeable (ADX needs ~28
+    smoothing bars). Guards against the gate becoming permissive enough
+    to grade synthetic / partial bar sets."""
+    state = _healthy_market_state()
+    # Truncate to 10 bars
+    state["ohlcv_5m"] = state["ohlcv_5m"][:10]
+    assert not _has_gradeable_indicators(state)
 
 
 def test_memory_voice_parse_fail_returns_abstain(tmp_path: Path) -> None:
