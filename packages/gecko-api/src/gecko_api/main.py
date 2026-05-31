@@ -1170,6 +1170,14 @@ from gecko_api.routes.verdict import router as _verdict_router  # noqa: E402
 app.include_router(_verdict_router)
 
 
+# S26-C — Permissions Center backend. Returns the per-agent permission
+# grid the gecko-mcpay-app PermissionsView consumes. Mock fixture by
+# default; lights up against live Privy via `?include_wallets=true`.
+from gecko_api.routes.permissions import router as _permissions_router  # noqa: E402
+
+app.include_router(_permissions_router)
+
+
 # S20-B3 — single x402-gated dispatcher for the 12-skill manifest. Mounted
 # AFTER middleware so the route's own dispatcher (X402Dispatcher) is the
 # 402 gate, not the x402 PaymentMiddlewareASGI — the manifest skills are
