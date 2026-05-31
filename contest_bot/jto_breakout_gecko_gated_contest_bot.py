@@ -145,6 +145,25 @@ FLAT_STALL_AGE_MIN = 90  # position must be at least this old
 FLAT_STALL_PNL_LO = -0.5  # iter-3.9 2026-05-21: 0.3 → -0.5. Widened the band DOWN to catch the breakeven dead-zone (BOME peaked +0.58%, then flat-lined around 0% for 70min — momentum thesis dead but no rule caught it: above SL, below the +0.3% flat-stall floor). Now: a position that peaked weak and went flat-to-slightly-red gets exited as a failed thesis. Below -0.5% the SL owns it (directional losers handled separately).
 FLAT_STALL_PNL_HI = 2.0  # ... (below STALL_GREEN_EXIT_MIN_PCT)
 FLAT_STALL_NO_NEW_HIGH_MIN = 30  # AND no new high in this many minutes
+
+# Sprint 24-Q (2026-05-31) — Fee-aware flat-stall exit (founder-flagged leak).
+# Empirical: 17 historical flat_stall_exit closes split ~50/50 (9 negative + 8
+# positive), cumulative PnL near-zero in paper. After 0.5% live fees only 2/17
+# survive as winners — net ~$3.83 leak. Founder's call: stop dumping us in
+# both directions; exit only when pnl clears a fee floor OR drops past a
+# clear-loss floor; otherwise hold and let the position run to natural
+# TP / SL / trail.
+#
+# Env-gated, DEFAULT OFF. When OFF the legacy band (PNL_LO/HI) is used
+# unchanged. Flip to "1" to activate the asymmetric rule; both knobs are
+# tunable for shadow-test calibration.
+FLAT_STALL_FEE_AWARE = os.environ.get("GECKO_STALL_FEE_AWARE", "0").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+FLAT_STALL_MIN_EXIT_PCT = float(os.environ.get("GECKO_STALL_EXIT_MIN_PCT", "0.5"))
+FLAT_STALL_MAX_LOSS_PCT = float(os.environ.get("GECKO_STALL_EXIT_MAX_LOSS_PCT", "1.0"))
 TRAIL_STOP_PCT = 0.3  # Setup C experiment 2026-05-28: 0.5 → 0.3. Sprint 8 shadow harness showed tight_trail_03 fixes ~70% of give-back damage (-9.37% → -0.52% sum on 20 historical closes), win-rate 35%→55%. Revert to 0.5 if mean per-trade drops below pre-experiment baseline after N≥15 closes. PRIOR Sprint 7 2026-05-27 (autopsy finding): 1 → 0.5 — tighten trail-back per Sprint 6 Phase A 19-trade autopsy. trailing_stop mean -2.12% (one -6.28% disaster from polling-gap slippage) is 2x worse than stop_loss mean (-3.08% capped). Tightening give-back to 0.5% locks in gains closer to peak. PRIOR 2026-05-20 autonomous iter-2 (was 2 → 1 per quant analysis): tighter trail captures more of the peak. On meme-class vol (1-5%/h), 2% trail was getting swept on noise before TP; 1% trail locks in profits closer to peak.
 TRAIL_ACTIVATE_AFTER_PCT = 1  # s41 2026-05-22: 2 → 1 — protect gains from +1% (founder: capture small wins in chop, don't wait for 4%). PRIOR iter-3.1 E-LITE 2026-05-20: 5 → 2. Founder + analyst-pair call: in a 14h contest window with N=1-2 trades, the stall failure mode (position drifts +1-4% then dies, hits time-stop near $0 PnL) dominates the upside-clip risk. Trail at activate=+2% + give-back=1% converts modal stalls into +1-1.5% realized wins. Real momentum still rides — the trail tracks peak, never gives back >1%, so a +2%→+12% runner closes at ~+11%.
 TRAIL_MIN_PNL_PCT = -1.0  # Sprint 7 2026-05-27: NEW safety guard. trailing_stop must never produce a worse-than-near-break-even outcome. If pnl_pct <= TRAIL_MIN_PNL_PCT when the trailing condition would fire, the position falls through to the stop_loss check (correctly labeled, capped at -STOP_LOSS_PCT). Caps the disaster mode the autopsy surfaced: poll-gap slippage that takes pnl from +1% peak straight past 0% to -6% without firing in the right order. Combined with the eval-order swap (stop_loss BEFORE trailing in monitor_positions), trailing_stop labels are now bounded to pnl ∈ (-1%, +∞).
@@ -2769,11 +2788,18 @@ def monitor_positions() -> None:
         # stuck in the +0.3-2% band, and no new high in 30min (= momentum
         # spent, not consolidating). Locks the small green before it drifts
         # to a flat/negative 12h time-stop.
-        if (
-            age_min >= FLAT_STALL_AGE_MIN
-            and FLAT_STALL_PNL_LO <= pnl_pct <= FLAT_STALL_PNL_HI
-            and mins_since_high >= FLAT_STALL_NO_NEW_HIGH_MIN
-        ):
+        #
+        # Sprint 24-Q (2026-05-31) — fee-aware variant when env-gated:
+        # exit only if pnl clears the fee floor (default +0.5%) OR drops
+        # past the cut-loss floor (default -1.0%); else HOLD. Closes the
+        # "we sell tiny wins into fee-erosion" leak the founder flagged.
+        age_qualified = age_min >= FLAT_STALL_AGE_MIN
+        stalled = mins_since_high >= FLAT_STALL_NO_NEW_HIGH_MIN
+        if FLAT_STALL_FEE_AWARE:
+            in_exit_band = pnl_pct >= FLAT_STALL_MIN_EXIT_PCT or pnl_pct <= -FLAT_STALL_MAX_LOSS_PCT
+        else:
+            in_exit_band = FLAT_STALL_PNL_LO <= pnl_pct <= FLAT_STALL_PNL_HI
+        if age_qualified and in_exit_band and stalled:
             close_position(pos, "flat_stall_exit", current_price)
             continue
 
