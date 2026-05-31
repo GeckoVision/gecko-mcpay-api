@@ -142,9 +142,46 @@ STALL_GREEN_EXIT_MIN_PCT = 1.0  # s41 2026-05-22: 2.0 → 1.0 — book a +1% sta
 # downside drift). The no-new-high gate is the pause-protection: a real
 # consolidation about to break out makes a new high inside 30min.
 FLAT_STALL_AGE_MIN = 90  # position must be at least this old
-FLAT_STALL_PNL_LO = -0.5  # iter-3.9 2026-05-21: 0.3 → -0.5. Widened the band DOWN to catch the breakeven dead-zone (BOME peaked +0.58%, then flat-lined around 0% for 70min — momentum thesis dead but no rule caught it: above SL, below the +0.3% flat-stall floor). Now: a position that peaked weak and went flat-to-slightly-red gets exited as a failed thesis. Below -0.5% the SL owns it (directional losers handled separately).
-FLAT_STALL_PNL_HI = 2.0  # ... (below STALL_GREEN_EXIT_MIN_PCT)
+# Sprint 24-W (2026-05-31, founder-asked overnight) — asymmetric stall fix.
+# Diagnosed bleed: 10 closes 06:00→21:41 UTC summed to -$2.10 net. Breakdown:
+#   * 5 stall closes in [-0.45%, +0.05%] = -$0.72 (small "snipped winner +
+#     small bleeder" pattern the founder observed)
+#   * 1 PYTH SL at -3.07% / -$1.38 after 7h 37min hold (no stall protection
+#     below -0.5% → bot waited all the way to -3% SL)
+# Two-line rebalance to make the exit band ASYMMETRIC IN OUR FAVOR:
+#   * LO -0.5 → -1.5: stall fires up to -1.5% loss, caps single-trade bleed
+#     well before the -3% SL. Would have closed last night's PYTH disaster
+#     at -1.5% (-$0.68) instead of -3% (-$1.38) — saves ~$0.70 per disaster.
+#   * HI +2.0 → +0.5: stall stops snipping small winners in the [+0.5, +2.0]
+#     band — they ride to TP (+2%) or trail-stop. PRIOR HI was the same
+#     number as TP target, so any drift below +2% would stall instead of
+#     pushing for TP. Now positions above +0.5% are RUNNING territory.
+# Net effect on the realised distribution: smaller mean loss per bleeder,
+# more wins captured to full TP. Revert: this comment block + the prior
+# values. Falsifier: re-evaluate at N≥15 post-edit closes; if mean per
+# trade is worse than the prior -$2.10/9-close run, revert.
+FLAT_STALL_PNL_LO = -1.5  # was -0.5 — see Sprint 24-W note above
+FLAT_STALL_PNL_HI = 0.5   # was 2.0 — see Sprint 24-W note above
 FLAT_STALL_NO_NEW_HIGH_MIN = 30  # AND no new high in this many minutes
+
+# Sprint 24-Q (2026-05-31) — Fee-aware flat-stall exit (founder-flagged leak).
+# Empirical: 17 historical flat_stall_exit closes split ~50/50 (9 negative + 8
+# positive), cumulative PnL near-zero in paper. After 0.5% live fees only 2/17
+# survive as winners — net ~$3.83 leak. Founder's call: stop dumping us in
+# both directions; exit only when pnl clears a fee floor OR drops past a
+# clear-loss floor; otherwise hold and let the position run to natural
+# TP / SL / trail.
+#
+# Env-gated, DEFAULT OFF. When OFF the legacy band (PNL_LO/HI) is used
+# unchanged. Flip to "1" to activate the asymmetric rule; both knobs are
+# tunable for shadow-test calibration.
+FLAT_STALL_FEE_AWARE = os.environ.get("GECKO_STALL_FEE_AWARE", "0").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+FLAT_STALL_MIN_EXIT_PCT = float(os.environ.get("GECKO_STALL_EXIT_MIN_PCT", "0.5"))
+FLAT_STALL_MAX_LOSS_PCT = float(os.environ.get("GECKO_STALL_EXIT_MAX_LOSS_PCT", "1.0"))
 TRAIL_STOP_PCT = 0.3  # Setup C experiment 2026-05-28: 0.5 → 0.3. Sprint 8 shadow harness showed tight_trail_03 fixes ~70% of give-back damage (-9.37% → -0.52% sum on 20 historical closes), win-rate 35%→55%. Revert to 0.5 if mean per-trade drops below pre-experiment baseline after N≥15 closes. PRIOR Sprint 7 2026-05-27 (autopsy finding): 1 → 0.5 — tighten trail-back per Sprint 6 Phase A 19-trade autopsy. trailing_stop mean -2.12% (one -6.28% disaster from polling-gap slippage) is 2x worse than stop_loss mean (-3.08% capped). Tightening give-back to 0.5% locks in gains closer to peak. PRIOR 2026-05-20 autonomous iter-2 (was 2 → 1 per quant analysis): tighter trail captures more of the peak. On meme-class vol (1-5%/h), 2% trail was getting swept on noise before TP; 1% trail locks in profits closer to peak.
 TRAIL_ACTIVATE_AFTER_PCT = 1  # s41 2026-05-22: 2 → 1 — protect gains from +1% (founder: capture small wins in chop, don't wait for 4%). PRIOR iter-3.1 E-LITE 2026-05-20: 5 → 2. Founder + analyst-pair call: in a 14h contest window with N=1-2 trades, the stall failure mode (position drifts +1-4% then dies, hits time-stop near $0 PnL) dominates the upside-clip risk. Trail at activate=+2% + give-back=1% converts modal stalls into +1-1.5% realized wins. Real momentum still rides — the trail tracks peak, never gives back >1%, so a +2%→+12% runner closes at ~+11%.
 TRAIL_MIN_PNL_PCT = -1.0  # Sprint 7 2026-05-27: NEW safety guard. trailing_stop must never produce a worse-than-near-break-even outcome. If pnl_pct <= TRAIL_MIN_PNL_PCT when the trailing condition would fire, the position falls through to the stop_loss check (correctly labeled, capped at -STOP_LOSS_PCT). Caps the disaster mode the autopsy surfaced: poll-gap slippage that takes pnl from +1% peak straight past 0% to -6% without firing in the right order. Combined with the eval-order swap (stop_loss BEFORE trailing in monitor_positions), trailing_stop labels are now bounded to pnl ∈ (-1%, +∞).
@@ -195,12 +232,22 @@ INSTRUMENTS: list[dict] = [
     #   shows the bot needs them for trade frequency.
     {"symbol": "PYTH", "mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3", "chain": "solana"},
     {"symbol": "WIF", "mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", "chain": "solana"},
-    {"symbol": "RAY", "mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", "chain": "solana"},
-    # Sprint 24-L (2026-05-30) — strategist recommendation: SOL is the regime
-    # carrier for PYTH/WIF/RAY (all alt-correlated to SOL). Deepest Solana DEX
-    # liquidity, no meme tail, no infra-rotation risk. Falsifier: N≥10 SOL acts
-    # in ≤10 days with sum_pct ≥ 0 and mean_pct > ~0.6% fee floor.
-    {"symbol": "SOL", "mint": "So11111111111111111111111111111111111111112", "chain": "solana"},
+    # Sprint 24-T (2026-05-31) — RAY DROPPED. Strategist + quant converge:
+    # N=1 close (-$0.22), no signal in ~3 days, fails the "is this symbol
+    # active enough to validate" bar. Mirrors SOL drop pattern. Re-add only
+    # after a focused backtest demonstrates RAY-specific edge.
+    # {"symbol": "RAY", "mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", "chain": "solana"},
+    # Sprint 24-L (2026-05-30) — SOL added as regime carrier; Sprint 24-L
+    # falsifier: N≥10 SOL acts in ≤10 days with sum_pct ≥ 0 and mean_pct
+    # > ~0.6% fee floor.
+    # Sprint 24-R (2026-05-31) — DROPPED. N=3 closes, all flat_stall_exit
+    # (zero TP, zero SL): +0.59%, -0.07%, -0.37%. Net +0.15% / mean +0.05%
+    # — 12× BELOW the fee-floor threshold the variant required. Mechanism:
+    # SOL volatility is structurally lower than PYTH/WIF; breakout-momentum
+    # needs vol to confirm direction; SOL signals → chop → stall-exit on
+    # near-zero PnL. Re-add only after a focused per-instrument backtest
+    # validates a SOL-specific config (longer hold, wider stop, slower stall).
+    # {"symbol": "SOL", "mint": "So11111111111111111111111111111111111111112", "chain": "solana"},
 ]
 
 ENTRY_PARAMS = {
@@ -221,11 +268,15 @@ ENTRY_PARAMS = {
 _SIM: SimulationRegistry | None = None
 _RUN_ID: str | None = None
 _RECORDER = None  # type: ignore[var-annotated]
+# Sprint 24-T (2026-05-31): fan-out sink to Mongo `bot_behaviors`. Never
+# blocks the trading loop — best-effort, async, swallows failures. Stays
+# None when MONGODB_URI is unset or `GECKO_BEHAVIOR_SINK=0` is exported.
+_BEHAVIOR_SINK = None  # type: ignore[var-annotated]
 
 
 def _init_decision_store() -> None:
     """Best-effort: arm the decision recorder. Never raises into import/startup."""
-    global _SIM, _RUN_ID, _RECORDER
+    global _SIM, _RUN_ID, _RECORDER, _BEHAVIOR_SINK
     if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("GECKO_DECISION_STORE_OFF"):
         return
     try:
@@ -261,9 +312,25 @@ def _init_decision_store() -> None:
         )
         _RECORDER = _SIM.recorder()
         print(f"[decision-store] run {_RUN_ID} armed ({len(INSTRUMENTS)} instruments)")
+        # Sprint 24-T: arm the Mongo behavior-sink. Returns None gracefully
+        # when MONGODB_URI is missing or Atlas is unreachable — JSONL
+        # remains the durable source of truth in that case.
+        try:
+            # Sibling import — bot runs from contest_bot/ dir (cf. line 38
+            # `from decision_store import DecisionDoc, ...`). Using the
+            # `contest_bot.` package path here would break the live launcher.
+            from decision_store.behavior_sink import BehaviorSink
+
+            _BEHAVIOR_SINK = BehaviorSink.from_env()
+            if _BEHAVIOR_SINK is not None:
+                print("[behavior-sink] armed (Mongo bot_behaviors)")
+        except Exception as _bx:
+            print(f"[behavior-sink] disabled: {type(_bx).__name__}: {_bx}")
+            _BEHAVIOR_SINK = None
     except Exception as exc:  # recorder must never block the bot
         print(f"[decision-store] disabled: {type(exc).__name__}: {exc}")
         _SIM, _RUN_ID, _RECORDER = None, None, None
+        _BEHAVIOR_SINK = None
 
 
 def build_decision_doc(
@@ -309,6 +376,128 @@ def build_decision_doc(
         oracle=oracle,
         coordinator=coordinator,
     )
+
+
+# ── Sprint 24-U (2026-05-31) — Decline-path recorder helper ─────────
+#
+# Bot honesty fix 6b shipped the TESTS for decline-path decision recording
+# (contest_bot/tests/test_decision_store_decline_recording.py) but the
+# helper was never landed — those 6 tests have been SKIPPED ever since.
+# Without this, panel-decline and oracle-pass-decline branches
+# short-circuit at `open_position` without producing a DecisionDoc; only
+# the act-path reaches the recorder. The decision-vector substrate never
+# saw declines (~90% of polls), so quant/strategist autopsies had to read
+# JSONL instead of querying Mongo `bot_behaviors`.
+#
+# This helper closes the gap. Same JSONL + Mongo behavior as the act-path,
+# but `coordinator.action == "decline"` is hardcoded — the caller passes
+# the discriminating `rule` ("panel_decline", "oracle_pass", or the
+# panel's actual coordinator rule). NEVER raises into the trading loop —
+# the recorder discipline is non-negotiable.
+
+
+def _voices_for_record(local_decision) -> list[dict]:
+    """Convert LocalDecision.voice_opinions to the recorder's voice-dict shape.
+
+    Returns [] when no panel was wired (local_decision is None or has no
+    voice_opinions attribute). Same projection the act-path uses inline
+    at line ~2399.
+    """
+    if local_decision is None:
+        return []
+    opinions = getattr(local_decision, "voice_opinions", None) or []
+    return [
+        {
+            "name": o.voice_name,
+            "verdict": o.verdict,
+            "confidence": o.confidence,
+            "reasoning": (getattr(o, "reasoning", "") or "")[:300],
+        }
+        for o in opinions
+    ]
+
+
+def _oracle_for_record(fund_verdict) -> dict | None:
+    """Project the FundamentalsVerdict into the recorder's oracle-dict shape.
+
+    Returns None when fund_verdict is None — the recorder accepts an
+    absent oracle block (preload failed, ungrounded, no verdict cached).
+    Mirrors the act-path projection at line ~2412.
+    """
+    if fund_verdict is None:
+        return None
+    cites = fund_verdict.citations_count
+    return {
+        "verdict": fund_verdict.verdict,
+        "confidence": fund_verdict.confidence,
+        "citations": cites,
+        "grounded": cites >= ORACLE_GROUNDING_MIN_CITES,
+    }
+
+
+def _record_decline_decision(
+    *,
+    instrument: str,
+    symbol_str: str,
+    signal_data: dict,
+    market_state: dict,
+    ms_candles: list,
+    local_decision,
+    fund_verdict,
+    rule: str,
+) -> None:
+    """Record a panel- or oracle-level decline as a full DecisionDoc.
+
+    Fire-and-forget — NEVER raises. No-op when the recorder isn't armed
+    (PYTEST_CURRENT_TEST, init failure, GECKO_DECISION_STORE_OFF). The
+    helper takes positional context the caller already has (symbol_str,
+    signal_data, ms_candles) so the test fixture can drive it directly
+    without recreating the per-poll candidate machinery.
+    """
+    if _RECORDER is None or _RUN_ID is None:
+        return
+    try:
+        # Indicator snapshot — _LAST_INDEX is the same map the act-path
+        # builds its `snap` from. Use .get with empty-dict fallback so
+        # an instrument missing from the index (cold start, transient
+        # data outage) still produces a valid (mostly-None) row rather
+        # than a KeyError.
+        snap = dict(_LAST_INDEX.get(instrument) or {})
+        # Surface market_state extras into the snapshot so query-CLI can
+        # stratify on regime_1h / range_24h_pct without joining a second
+        # source. Don't overwrite indicator-derived values if both exist.
+        for k in ("regime_1h", "range_24h_pct"):
+            v = market_state.get(k) if isinstance(market_state, dict) else None
+            if v is not None:
+                snap.setdefault(k, v)
+        voices = _voices_for_record(local_decision)
+        oracle = _oracle_for_record(fund_verdict)
+        coordinator = {"action": "decline", "rule": rule}
+        doc = build_decision_doc(
+            _RUN_ID,
+            instrument,
+            snap,
+            signal_data,
+            voices,
+            oracle,
+            coordinator,
+        )
+        _RECORDER.record(doc)
+        # Fan out to Mongo bot_behaviors (Sprint 24-T sink). Best-effort —
+        # the act-path uses the same pattern at line ~2444.
+        if _BEHAVIOR_SINK is not None:
+            try:
+                _BEHAVIOR_SINK.record(doc.to_dict(), run_id=_RUN_ID)
+            except Exception as _sx:
+                print(
+                    f"[behavior-sink] decline record skipped: "
+                    f"{type(_sx).__name__}: {_sx}"
+                )
+    except Exception as exc:  # MUST NOT propagate into the trading loop
+        print(
+            f"[decision-store] decline record skipped: "
+            f"{type(exc).__name__}: {exc}"
+        )
 
 
 # Arm the recorder at import (skipped under pytest via the env guard inside).
@@ -2183,6 +2372,25 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
         )
         if local_decision.action != "act":
             _log("filter", f"[LOCAL] ✗ {local_decision.reason}")
+            # Sprint 24-U: record the panel decline so the decision store
+            # captures the ~90% of polls that never reach an entry. ms_candles
+            # isn't constructed yet at this point in open_position (it's built
+            # later for adaptive TP), so we pass [] — the recorder treats
+            # candle context as optional.
+            _record_decline_decision(
+                instrument=instrument,
+                symbol_str=symbol_str,
+                signal_data=signal_data,
+                market_state=market_state,
+                ms_candles=[],
+                local_decision=local_decision,
+                fund_verdict=None,
+                rule=(
+                    local_decision.coordinator_rule_fired
+                    or local_decision.reason
+                    or "panel_decline"
+                ),
+            )
             return
 
     # ── Gecko Oracle: cached PRD fundamentals verdict (s40-lab-#7, s41) ──
@@ -2260,6 +2468,20 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
                 "filter",
                 f"[ORACLE] ✗ {instrument}: GROUNDED pass "
                 f"({fund_verdict.citations_count} cites) — entry blocked",
+            )
+            # Sprint 24-U: oracle veto is its own coordinator rule.
+            # The local_decision was act-leaning (we wouldn't reach here
+            # otherwise) — record the disagreement so gating-delta queries
+            # can stratify "oracle vetoed an act-leaning panel" cases.
+            _record_decline_decision(
+                instrument=instrument,
+                symbol_str=symbol_str,
+                signal_data=signal_data,
+                market_state=market_state,
+                ms_candles=[],
+                local_decision=local_decision if _LOCAL_PANEL is not None else None,
+                fund_verdict=fund_verdict,
+                rule="oracle_pass",
             )
             return
     else:
@@ -2360,18 +2582,25 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
                 if _LOCAL_PANEL is not None
                 else {"action": "act", "rule": "no_local_panel"}
             )
-            _did = _RECORDER.record(
-                build_decision_doc(
-                    _RUN_ID,
-                    instrument,
-                    snap,
-                    {"fired": True, "type": ENTRY_TYPE},
-                    _panel_voices,
-                    _oracle_dict,
-                    _coordinator,
-                )
+            _doc = build_decision_doc(
+                _RUN_ID,
+                instrument,
+                snap,
+                {"fired": True, "type": ENTRY_TYPE},
+                _panel_voices,
+                _oracle_dict,
+                _coordinator,
             )
+            _did = _RECORDER.record(_doc)
             pos["decision_id"] = _did  # carry the link to the outcome on close
+            # Sprint 24-T: fan out to Mongo bot_behaviors (act-path). Sink
+            # is async + best-effort; if it raises here it never reaches the
+            # outer except because BehaviorSink.record swallows internally.
+            if _BEHAVIOR_SINK is not None:
+                try:
+                    _BEHAVIOR_SINK.record(_doc.to_dict(), run_id=_RUN_ID)
+                except Exception as _sx:
+                    print(f"[behavior-sink] record skipped: {type(_sx).__name__}: {_sx}")
         except Exception as exc:  # recorder must never break the trading loop
             print(f"[decision-store] record skipped: {type(exc).__name__}: {exc}")
 
@@ -2487,18 +2716,26 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
             _peak_price = pos.get("peak_price")
             if _peak_price and ep:
                 peak_pct = round((_peak_price - ep) / ep * 100, 2)
-            _RECORDER.attach_outcome(
-                pos["decision_id"],
-                Outcome(
-                    pnl_pct=round(pnl_pct, 2),
-                    pnl_usd=round(pnl_usd, 2),
-                    exit_reason=reason,
-                    duration_min=duration_min,
-                    entry_price=ep,
-                    exit_price=current_price,
-                    peak_pct=peak_pct,
-                ),
+            _outcome = Outcome(
+                pnl_pct=round(pnl_pct, 2),
+                pnl_usd=round(pnl_usd, 2),
+                exit_reason=reason,
+                duration_min=duration_min,
+                entry_price=ep,
+                exit_price=current_price,
+                peak_pct=peak_pct,
             )
+            _RECORDER.attach_outcome(pos["decision_id"], _outcome)
+            # Sprint 24-T: mirror the outcome onto Mongo bot_behaviors so
+            # quant + strategist can query realized PnL without re-joining
+            # JSONL. patch_outcome is async + best-effort.
+            if _BEHAVIOR_SINK is not None:
+                try:
+                    _BEHAVIOR_SINK.patch_outcome(
+                        pos["decision_id"], _outcome.model_dump()
+                    )
+                except Exception as _sx:
+                    print(f"[behavior-sink] patch_outcome skipped: {type(_sx).__name__}: {_sx}")
         except Exception as exc:  # recorder must never break the close path
             print(f"[decision-store] attach_outcome skipped: {type(exc).__name__}: {exc}")
 
@@ -2769,11 +3006,18 @@ def monitor_positions() -> None:
         # stuck in the +0.3-2% band, and no new high in 30min (= momentum
         # spent, not consolidating). Locks the small green before it drifts
         # to a flat/negative 12h time-stop.
-        if (
-            age_min >= FLAT_STALL_AGE_MIN
-            and FLAT_STALL_PNL_LO <= pnl_pct <= FLAT_STALL_PNL_HI
-            and mins_since_high >= FLAT_STALL_NO_NEW_HIGH_MIN
-        ):
+        #
+        # Sprint 24-Q (2026-05-31) — fee-aware variant when env-gated:
+        # exit only if pnl clears the fee floor (default +0.5%) OR drops
+        # past the cut-loss floor (default -1.0%); else HOLD. Closes the
+        # "we sell tiny wins into fee-erosion" leak the founder flagged.
+        age_qualified = age_min >= FLAT_STALL_AGE_MIN
+        stalled = mins_since_high >= FLAT_STALL_NO_NEW_HIGH_MIN
+        if FLAT_STALL_FEE_AWARE:
+            in_exit_band = pnl_pct >= FLAT_STALL_MIN_EXIT_PCT or pnl_pct <= -FLAT_STALL_MAX_LOSS_PCT
+        else:
+            in_exit_band = FLAT_STALL_PNL_LO <= pnl_pct <= FLAT_STALL_PNL_HI
+        if age_qualified and in_exit_band and stalled:
             close_position(pos, "flat_stall_exit", current_price)
             continue
 

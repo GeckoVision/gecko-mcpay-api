@@ -17,6 +17,7 @@ from gecko_core.wallets.privy import (
     PrivyClient,
     PrivyClientError,
     PrivyNotConfiguredError,
+    PrivyPolicy,
     PrivyWallet,
     is_privy_configured,
 )
@@ -187,3 +188,165 @@ async def test_get_wallet_balance_not_implemented() -> None:
     async with PrivyClient(app_id="cmapp", app_secret="sec") as client:
         with pytest.raises(NotImplementedError):
             await client.get_wallet_balance("wallet-abc")
+
+
+# ---------------------------------------------------------------------------
+# S26-B — Scoped policies (create_policy + attach_policy_to_wallet)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_policy_sends_rules_verbatim() -> None:
+    """Rules are passed through to Privy without local validation."""
+    async with respx.mock(base_url=PRIVY_BASE, assert_all_called=True) as router:
+        route = router.post("/v1/policies").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "id": "policy-abc",
+                    "name": "gecko-trade-agent-scope",
+                    "chain_type": "solana",
+                    "created_at": "2026-05-31T08:00:00Z",
+                },
+            )
+        )
+        rules = [
+            {"action": "signAndSendTransaction", "method": "allow"},
+            {
+                "action": "transfer",
+                "asset": "USDC",
+                "max_amount_per_session": 50.0,
+            },
+        ]
+        async with PrivyClient(app_id="cmapp", app_secret="sec") as client:
+            policy = await client.create_policy(
+                name="gecko-trade-agent-scope",
+                rules=rules,
+            )
+
+    assert isinstance(policy, PrivyPolicy)
+    assert policy.policy_id == "policy-abc"
+    assert policy.name == "gecko-trade-agent-scope"
+    assert policy.chain_type == "solana"
+
+    call = route.calls.last
+    import json as _json
+
+    body = _json.loads(call.request.read())
+    assert body == {
+        "name": "gecko-trade-agent-scope",
+        "chain_type": "solana",
+        "rules": rules,
+    }
+    assert call.request.headers["privy-app-id"] == "cmapp"
+
+
+@pytest.mark.asyncio
+async def test_create_policy_rejects_non_solana_chain() -> None:
+    """gecko-core is Solana-only per S2-05; create_policy enforces it."""
+    async with PrivyClient(app_id="cmapp", app_secret="sec") as client:
+        with pytest.raises(PrivyClientError, match="chain_type"):
+            await client.create_policy(
+                name="evm-scope",
+                rules=[{"action": "allow"}],
+                chain_type="ethereum",
+            )
+
+
+@pytest.mark.asyncio
+async def test_create_policy_propagates_4xx_verbatim() -> None:
+    """Privy validation errors (e.g. malformed rule) surface to the caller."""
+    async with respx.mock(base_url=PRIVY_BASE, assert_all_called=True) as router:
+        router.post("/v1/policies").mock(
+            return_value=httpx.Response(
+                400,
+                json={"error": "rule schema invalid"},
+            )
+        )
+        async with PrivyClient(app_id="cmapp", app_secret="sec") as client:
+            with pytest.raises(PrivyClientError) as excinfo:
+                await client.create_policy(name="bad", rules=[{}])
+
+    assert "400" in str(excinfo.value)
+    assert "rule schema invalid" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_attach_policy_patches_wallet_with_policy_ids() -> None:
+    """PATCH /v1/wallets/{wallet_id} with the FULL policy list (not delta)."""
+    async with respx.mock(base_url=PRIVY_BASE, assert_all_called=True) as router:
+        route = router.patch("/v1/wallets/wallet-abc").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "id": "wallet-abc",
+                    "address": "SoLaNa11111111111111111111111111111111111",
+                    "chain_type": "solana",
+                    "policy_ids": ["policy-1", "policy-2"],
+                },
+            )
+        )
+        async with PrivyClient(app_id="cmapp", app_secret="sec") as client:
+            wallet = await client.attach_policy_to_wallet(
+                wallet_id="wallet-abc",
+                policy_ids=["policy-1", "policy-2"],
+            )
+
+    assert isinstance(wallet, PrivyWallet)
+    assert wallet.wallet_id == "wallet-abc"
+
+    call = route.calls.last
+    import json as _json
+
+    body = _json.loads(call.request.read())
+    assert body == {"policy_ids": ["policy-1", "policy-2"]}
+    assert call.request.method == "PATCH"
+
+
+@pytest.mark.asyncio
+async def test_attach_policy_refuses_empty_list_footgun() -> None:
+    """Empty policy_ids would silently remove all enforcement — refuse."""
+    async with PrivyClient(app_id="cmapp", app_secret="sec") as client:
+        with pytest.raises(PrivyClientError, match="empty policy_ids"):
+            await client.attach_policy_to_wallet(
+                wallet_id="wallet-abc",
+                policy_ids=[],
+            )
+
+
+@pytest.mark.asyncio
+async def test_attach_policy_propagates_404_unknown_wallet() -> None:
+    """Privy 404 on unknown wallet_id surfaces verbatim."""
+    async with respx.mock(base_url=PRIVY_BASE, assert_all_called=True) as router:
+        router.patch("/v1/wallets/nope").mock(
+            return_value=httpx.Response(
+                404,
+                json={"error": "wallet not found"},
+            )
+        )
+        async with PrivyClient(app_id="cmapp", app_secret="sec") as client:
+            with pytest.raises(PrivyClientError) as excinfo:
+                await client.attach_policy_to_wallet(
+                    wallet_id="nope",
+                    policy_ids=["policy-1"],
+                )
+
+    assert "404" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_create_policy_handles_missing_optional_fields() -> None:
+    """name + created_at are optional in the response; parser tolerates absence."""
+    async with respx.mock(base_url=PRIVY_BASE, assert_all_called=True) as router:
+        router.post("/v1/policies").mock(
+            return_value=httpx.Response(
+                200,
+                json={"id": "policy-xyz", "chain_type": "solana"},
+            )
+        )
+        async with PrivyClient(app_id="cmapp", app_secret="sec") as client:
+            policy = await client.create_policy(name="x", rules=[])
+
+    assert policy.policy_id == "policy-xyz"
+    assert policy.name is None
+    assert policy.created_at is None
