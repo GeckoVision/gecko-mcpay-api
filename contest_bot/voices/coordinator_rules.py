@@ -51,7 +51,9 @@ LocalAction = Literal["act", "decline"]
 # symmetry across substrates. The memory 0.6 is set by the spec; risk
 # 0.8 is the hard-veto bar.
 _RISK_VETO_CONFIDENCE = 0.8
-_CHART_MIN_CONFIDENCE = float(os.environ.get("GECKO_CHART_MIN_CONF", "0.85"))  # env-overridable (2026-05-23 overnight tuning). Default 0.85: only cleanest momentum setups pass. Override via GECKO_CHART_MIN_CONF for paper experiments.
+_CHART_MIN_CONFIDENCE = float(
+    os.environ.get("GECKO_CHART_MIN_CONF", "0.85")
+)  # env-overridable (2026-05-23 overnight tuning). Default 0.85: only cleanest momentum setups pass. Override via GECKO_CHART_MIN_CONF for paper experiments.
 _MEMORY_CONTRADICT_CONFIDENCE = 0.6
 # B6 (S40) — 5m regime gate-modulator. The backtest proved breakout is -EV in
 # chop. So in a confirmed CHOP regime we RAISE the chart floor (only the
@@ -59,7 +61,9 @@ _MEMORY_CONTRADICT_CONFIDENCE = 0.6
 # floor. This is a MODULATOR, not a veto — it never bans a symbol, it makes
 # us selective in chop. (DRIFT in a trend trades at 0.85; DRIFT in chop must
 # clear 0.92 — selective, not "never".)
-_CHART_CHOP_FLOOR = float(os.environ.get("GECKO_CHART_CHOP_FLOOR", "0.92"))  # chart confidence required to act in a confirmed-chop regime (env-overridable)
+_CHART_CHOP_FLOOR = float(
+    os.environ.get("GECKO_CHART_CHOP_FLOOR", "0.92")
+)  # chart confidence required to act in a confirmed-chop regime (env-overridable)
 _REGIME_CHOP_CONFIDENCE = 0.6  # regime must be this confident it's chop to raise the bar
 
 # Wave-2b (S42) — multi-timeframe 1h regime modulator.
@@ -69,13 +73,91 @@ _REGIME_CHOP_CONFIDENCE = 0.6  # regime must be this confident it's chop to rais
 # scenario the strategist diagnosed. This is still a MODULATOR not a hard ban:
 # a very high-conviction 5m breakout (chart >= 0.92) can still fire in a
 # 1h chop/downtrend — we just require much stronger confirmation.
-_CHART_1H_ADVERSE_FLOOR = float(os.environ.get("GECKO_CHART_ADVERSE_FLOOR", "0.92"))  # chart confidence required when 1h is CHOP or TREND-DOWN (env-overridable)
+_CHART_1H_ADVERSE_FLOOR = float(
+    os.environ.get("GECKO_CHART_ADVERSE_FLOOR", "0.92")
+)  # chart confidence required when 1h is CHOP or TREND-DOWN (env-overridable)
 
 # 2026-05-23 overnight experiment: bypass the chart gate (Rules 2 + 3) to measure
 # the RAW breakout signal's EV in PAPER. When ON, a fired breakout enters subject
 # ONLY to risk-veto (Rule 1) + memory-contradict (Rule 4); the chart_analyst's
 # bullish-requirement + confidence floor are skipped. Default OFF — never ship on.
 _CHART_GATE_OFF = os.environ.get("GECKO_CHART_GATE_OFF", "").strip().lower() in ("1", "true", "yes")
+
+
+# Honesty-sprint Fix 5 (2026-05-27 backtest plan) — strict multi-TF defaults ON.
+# Set env to "0" to revert to legacy fail-open on unknown 1h + chart punch-through.
+def _treat_unknown_1h_as_adverse() -> bool:
+    return os.environ.get("GECKO_TREAT_UNKNOWN_1H_AS_ADVERSE", "1").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def _strict_multi_tf() -> bool:
+    return os.environ.get("GECKO_STRICT_MULTI_TF", "1").strip().lower() in ("1", "true", "yes")
+
+
+# Phase 3 hypothesis gates — default OFF; enable per backtest variant.
+def _chop_filter_enabled() -> bool:
+    return os.environ.get("GECKO_CHOP_FILTER", "0").strip().lower() in ("1", "true", "yes")
+
+
+def _chop_filter_max() -> float:
+    return float(os.environ.get("GECKO_CHOP_FILTER_MAX", "60"))
+
+
+def _mfi_floor_enabled() -> bool:
+    return os.environ.get("GECKO_MFI_FLOOR", "0").strip().lower() in ("1", "true", "yes")
+
+
+def _mfi_floor_min() -> float:
+    return float(os.environ.get("GECKO_MFI_FLOOR_MIN", "40"))
+
+
+def _mfi_floor_chart_conf() -> float:
+    return float(os.environ.get("GECKO_MFI_FLOOR_CHART_CONF", "0.92"))
+
+
+# ── Variant G (S24-O, 2026-05-30) — weighted_quorum coordinator mode ───
+#
+# Architectural background: the legacy coordinator is a sequential
+# decline-default chain anchored on chart_analyst as the SOLE positive
+# signal. Post-Variant E + F (96 events) chart_analyst is bullish only 21%
+# of the time and the 1h-adverse 0.92 floor is mathematically uncrossable
+# against chart's hard-coded 0.85 ceiling → 0 fires/96 events.
+#
+# Variant G replaces the chart-anchor chain with a weighted score across
+# all voices. Bullish +2, neutral +1, bearish -1, abstain 0. Act when the
+# score clears GECKO_QUORUM_ACT_SCORE (default +2). Hard-veto when ≥ N
+# voices are bearish (default 3) regardless of score. 1h-adverse becomes a
+# bonus on the threshold (raise by +1) instead of a hard cutoff.
+#
+# Gate is opt-in: GECKO_COORDINATOR_MODE defaults to "legacy". Production
+# behavior is unchanged until the founder explicitly flips the env.
+_VOICE_SCORE_WEIGHTS: dict[str, int] = {
+    "bullish": 2,
+    "neutral": 1,
+    "abstain": 0,
+    "bearish": -1,
+}
+
+
+def _coordinator_mode() -> str:
+    return os.environ.get("GECKO_COORDINATOR_MODE", "legacy").strip().lower()
+
+
+def _quorum_act_score() -> int:
+    return int(os.environ.get("GECKO_QUORUM_ACT_SCORE", "2"))
+
+
+def _quorum_veto_bearish_count() -> int:
+    return int(os.environ.get("GECKO_QUORUM_VETO_BEARISH", "3"))
+
+
+def _quorum_adverse_bonus() -> int:
+    return int(os.environ.get("GECKO_QUORUM_ADVERSE_BONUS", "1"))
+
 
 # Synthetic abstain we substitute when a named voice is missing from
 # the opinions list — keeps the rule chain branch-free.
@@ -94,10 +176,21 @@ _ABSTAIN_PLACEHOLDER = VoiceOpinion(
 def coordinator(
     opinions: list[VoiceOpinion],
     regime_1h: str | None = None,
+    *,
+    chop: float | None = None,
+    mfi: float | None = None,
 ) -> tuple[LocalAction, str | None]:
     """Decide ``act`` / ``decline`` from the voice opinions + optional 1h regime.
 
-    Pure Python, no prompt. See module docstring for the exact rule list.
+    Dispatches on ``GECKO_COORDINATOR_MODE``:
+
+    * ``"legacy"`` (default): the sequential decline-default chain anchored
+      on chart_analyst — see module docstring for the exact rule list.
+    * ``"weighted_quorum"``: Variant G — weighted score across all voices,
+      with bearish-count veto + 1h-adverse threshold bonus. Designed to
+      unblock structurally-2-voice events (see S24-O notes).
+
+    Production default is unchanged until the founder flips the env.
 
     Args:
         opinions:   Voice opinions from the local panel.
@@ -105,6 +198,20 @@ def coordinator(
                     Values: "TREND-UP" | "TREND-DOWN" | "CHOP" | None.
                     None means unknown — fail-open (don't raise the bar).
     """
+    mode = _coordinator_mode()
+    if mode == "weighted_quorum":
+        return _coordinator_weighted_quorum(opinions, regime_1h)
+    return _coordinator_legacy(opinions, regime_1h, chop=chop, mfi=mfi)
+
+
+def _coordinator_legacy(
+    opinions: list[VoiceOpinion],
+    regime_1h: str | None = None,
+    *,
+    chop: float | None = None,
+    mfi: float | None = None,
+) -> tuple[LocalAction, str | None]:
+    """Legacy sequential decline-default chain — see module docstring."""
     by_name = {o.voice_name: o for o in opinions}
     chart = by_name.get("chart_analyst")
     memory = by_name.get("memory_voice", _ABSTAIN_PLACEHOLDER)
@@ -130,7 +237,23 @@ def coordinator(
     # TREND-DOWN: the higher-TF tape is distributing — 5m longs face structural
     # headwind. CHOP: 1h context confirms 5m indecision is regime-wide.
     # Fail-open on None (unknown 1h state doesn't tighten the bar).
-    in_1h_adverse = regime_1h in ("TREND-DOWN", "CHOP")
+    in_1h_adverse = regime_1h in ("TREND-DOWN", "CHOP") or (
+        regime_1h is None and _treat_unknown_1h_as_adverse()
+    )
+
+    # Phase 3 — CHOP filter: high chop_index predicts chop-trap losers.
+    if _chop_filter_enabled() and chop is not None and chop > _chop_filter_max():
+        return ("decline", "chop_filter")
+
+    # Phase 3 — MFI floor: bullish chart + weak money flow needs extra conviction.
+    if (
+        _mfi_floor_enabled()
+        and chart.verdict == "bullish"
+        and mfi is not None
+        and mfi < _mfi_floor_min()
+        and chart.confidence < _mfi_floor_chart_conf()
+    ):
+        return ("decline", "mfi_floor")
 
     # Rule 3b (B6) — 5m regime-modulated floor (existing logic).
     # regime_analyst "bearish" covers both chop and downtrend on 5m.
@@ -151,6 +274,10 @@ def coordinator(
     if not _CHART_GATE_OFF and chart.confidence < floor:
         return ("decline", floor_reason)
 
+    # Fix 5 — hard block when BOTH timeframes are adverse (no punch-through).
+    if _strict_multi_tf() and in_1h_adverse and in_5m_chop:
+        return ("decline", "strict_multi_tf_adverse")
+
     # Rule 4 — memory must not contradict (realized-outcome based, B4).
     if memory.verdict == "bearish" and memory.confidence >= _MEMORY_CONTRADICT_CONFIDENCE:
         return ("decline", "memory_contradicts")
@@ -163,6 +290,62 @@ def coordinator(
     else:
         rule_label = "all_voices_aligned"
     return ("act", rule_label)
+
+
+def _coordinator_weighted_quorum(
+    opinions: list[VoiceOpinion],
+    regime_1h: str | None = None,
+) -> tuple[LocalAction, str | None]:
+    """Variant G — weighted score across all voices.
+
+    Rules:
+      0. Defensive: missing chart_analyst → decline (parity with legacy).
+      1. risk hard veto — unchanged (safety always wins).
+      2. NEW: hard-veto when ≥ ``GECKO_QUORUM_VETO_BEARISH`` voices are bearish
+         (default 3), regardless of score.
+      3. NEW: weighted score across all voices using ``_VOICE_SCORE_WEIGHTS``.
+         Act when ``score >= GECKO_QUORUM_ACT_SCORE`` (default +2).
+      4. 1h-adverse becomes a SCORE MODIFIER: raise the act threshold by
+         ``GECKO_QUORUM_ADVERSE_BONUS`` (default +1) instead of a hard floor.
+
+    The weighted score is computed across the FULL opinions list — every
+    voice contributes per ``_VOICE_SCORE_WEIGHTS``. Missing voices simply
+    don't contribute.
+    """
+    by_name = {o.voice_name: o for o in opinions}
+    chart = by_name.get("chart_analyst")
+    risk = by_name.get("risk_voice", _ABSTAIN_PLACEHOLDER)
+
+    # Defensive parity with legacy: chart absent → decline.
+    if chart is None:
+        return ("decline", "chart_voice_missing")
+
+    # Rule 1 — risk hard veto. ALWAYS first.
+    if risk.verdict == "bearish" and risk.confidence >= _RISK_VETO_CONFIDENCE:
+        return ("decline", "risk_veto")
+
+    # Rule 2 — bearish-count hard veto. If ≥ N voices say bearish, decline
+    # regardless of how strongly the other voices buy. Default N=3 of 5.
+    bearish_count = sum(1 for o in opinions if o.verdict == "bearish")
+    if bearish_count >= _quorum_veto_bearish_count():
+        return ("decline", "bearish_quorum_veto")
+
+    # Rule 3 — weighted score.
+    score = sum(_VOICE_SCORE_WEIGHTS.get(o.verdict, 0) for o in opinions)
+
+    # Rule 4 — 1h-adverse threshold bonus (replaces the hard 0.92 floor).
+    # Treat unknown 1h as adverse iff GECKO_TREAT_UNKNOWN_1H_AS_ADVERSE.
+    in_1h_adverse = regime_1h in ("TREND-DOWN", "CHOP") or (
+        regime_1h is None and _treat_unknown_1h_as_adverse()
+    )
+    threshold = _quorum_act_score()
+    if in_1h_adverse:
+        threshold += _quorum_adverse_bonus()
+
+    if score >= threshold:
+        rule_label = "weighted_quorum_adverse" if in_1h_adverse else "weighted_quorum"
+        return ("act", rule_label)
+    return ("decline", "weighted_quorum_below_threshold")
 
 
 __all__ = ["coordinator"]

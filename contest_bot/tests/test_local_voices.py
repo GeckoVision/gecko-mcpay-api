@@ -318,7 +318,9 @@ def test_memory_voice_parse_fail_returns_abstain(tmp_path: Path) -> None:
     # B4 fix: must use position_close rows to reach the LLM/parse path.
     # local_decision rows are ignored and would trigger cold-start instead.
     for _ in range(5):
-        mem.append("position_close", {"symbol": "JTO", "pnl_pct": 1.0, "exit_reason": "take_profit"})
+        mem.append(
+            "position_close", {"symbol": "JTO", "pnl_pct": 1.0, "exit_reason": "take_profit"}
+        )
 
     op = asyncio.run(voice.grade(_healthy_market_state(), mem))
     assert op.verdict == "abstain"
@@ -471,7 +473,7 @@ def test_coordinator_risk_veto_first() -> None:
         _opinion("memory_voice", "bullish", 0.8),
         _opinion("risk_voice", "bearish", 0.9),
     ]
-    action, reason = coordinator(opinions)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
     assert action == "decline"
     assert reason == "risk_veto"
 
@@ -483,7 +485,7 @@ def test_coordinator_risk_bearish_below_threshold_does_not_veto() -> None:
         _opinion("memory_voice", "neutral", 0.5),
         _opinion("risk_voice", "bearish", 0.5),  # below veto threshold
     ]
-    action, reason = coordinator(opinions)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
     # Should fall through Rule 1; chart is bullish above floor so it acts.
     assert action == "act"
     assert reason == "all_voices_aligned"
@@ -496,7 +498,7 @@ def test_coordinator_chart_not_bullish_declines() -> None:
         _opinion("memory_voice", "bullish", 0.8),
         _opinion("risk_voice", "bullish", 0.7),
     ]
-    action, reason = coordinator(opinions)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
     assert action == "decline"
     assert reason == "chart_below_threshold"
 
@@ -512,7 +514,7 @@ def test_coordinator_chart_confidence_below_threshold_declines() -> None:
         _opinion("memory_voice", "bullish", 0.8),
         _opinion("risk_voice", "bullish", 0.7),
     ]
-    action, reason = coordinator(opinions)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
     assert action == "decline"
     assert reason == "chart_below_threshold"
 
@@ -524,7 +526,7 @@ def test_coordinator_memory_contradicts_declines() -> None:
         _opinion("memory_voice", "bearish", 0.7),
         _opinion("risk_voice", "bullish", 0.7),
     ]
-    action, reason = coordinator(opinions)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
     assert action == "decline"
     assert reason == "memory_contradicts"
 
@@ -536,7 +538,7 @@ def test_coordinator_memory_bearish_below_threshold_passes() -> None:
         _opinion("memory_voice", "bearish", 0.5),
         _opinion("risk_voice", "bullish", 0.7),
     ]
-    action, reason = coordinator(opinions)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
     assert action == "act"
     assert reason == "all_voices_aligned"
 
@@ -548,7 +550,7 @@ def test_coordinator_memory_abstain_passes() -> None:
         _opinion("memory_voice", "abstain", 0.0),
         _opinion("risk_voice", "bullish", 0.7),
     ]
-    action, reason = coordinator(opinions)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
     assert action == "act"
     assert reason == "all_voices_aligned"
 
@@ -560,7 +562,7 @@ def test_coordinator_all_aligned_acts() -> None:
         _opinion("memory_voice", "neutral", 0.6),
         _opinion("risk_voice", "bullish", 0.7),
     ]
-    action, reason = coordinator(opinions)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
     assert action == "act"
     assert reason == "all_voices_aligned"
 
@@ -571,7 +573,7 @@ def test_coordinator_missing_chart_voice_declines() -> None:
         _opinion("memory_voice", "bullish", 0.9),
         _opinion("risk_voice", "bullish", 0.9),
     ]
-    action, reason = coordinator(opinions)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
     assert action == "decline"
     assert reason == "chart_voice_missing"
 
@@ -582,7 +584,7 @@ def test_coordinator_missing_memory_voice_falls_through() -> None:
         _opinion("chart_analyst", "bullish", 0.9),
         _opinion("risk_voice", "bullish", 0.7),
     ]
-    action, reason = coordinator(opinions)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
     assert action == "act"
     assert reason == "all_voices_aligned"
 
@@ -593,9 +595,185 @@ def test_coordinator_missing_risk_voice_does_not_veto() -> None:
         _opinion("chart_analyst", "bullish", 0.9),
         _opinion("memory_voice", "neutral", 0.5),
     ]
-    action, reason = coordinator(opinions)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
     assert action == "act"
     assert reason == "all_voices_aligned"
+
+
+# ── coordinator: weighted_quorum mode (Variant G, S24-O) ──────────────
+#
+# Six tests covering the major branches of the Variant G dispatch path.
+# Each test sets GECKO_COORDINATOR_MODE=weighted_quorum via monkeypatch
+# and restores legacy default on teardown (pytest monkeypatch handles
+# this automatically per-test).
+#
+# Empirical tuple validation per S24-O design doc:
+#   1B/2S/2N/0A: score = 2-2+2 = 2  → ACT (clears threshold 2)
+#   2B/2S/1N/0A: score = 4-2+1 = 3  → ACT
+#   2B/1S/2N/0A: score = 4-1+2 = 5  → ACT (strong)
+#   3B/1S/1N/0A: score = 6-1+1 = 6  → ACT (obvious)
+#   1B/3S/0N/1A: score = 2-3+0 = -1 → DECLINE (and 3 bearish triggers veto)
+#   1B/2S/0N/2A: score = 2-2+0 = 0  → DECLINE
+def test_coordinator_weighted_quorum_acts_on_mixed_bullish(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """1B/2S/2N/0A tuple (score 2) clears the default threshold under Variant G.
+
+    This is the structurally-2-voice case the legacy chain declines because
+    chart_analyst (the sole positive signal) is neutral. Variant G unblocks
+    it by counting neutral as +1 and clearing on aggregate.
+    """
+    monkeypatch.setenv("GECKO_COORDINATOR_MODE", "weighted_quorum")
+    monkeypatch.setenv("GECKO_TREAT_UNKNOWN_1H_AS_ADVERSE", "0")
+    opinions = [
+        _opinion("chart_analyst", "neutral", 0.5),  # +1
+        _opinion("strategist_voice", "bearish", 0.7),  # -1
+        _opinion("regime_analyst", "bearish", 0.6),  # -1
+        _opinion("risk_voice", "bullish", 0.7),  # +2
+        _opinion("memory_voice", "neutral", 0.4),  # +1
+    ]
+    # score = 1 - 1 - 1 + 2 + 1 = 2, threshold = 2 → act
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
+    assert action == "act"
+    assert reason == "weighted_quorum"
+
+
+def test_coordinator_weighted_quorum_declines_below_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """1B/2S/0N/2A tuple (score 0) declines — net signal not positive.
+
+    1 bullish + 2 bearish + 2 abstain = 2 - 2 + 0 = 0 < threshold 2.
+    """
+    monkeypatch.setenv("GECKO_COORDINATOR_MODE", "weighted_quorum")
+    monkeypatch.setenv("GECKO_TREAT_UNKNOWN_1H_AS_ADVERSE", "0")
+    opinions = [
+        _opinion("chart_analyst", "abstain", 0.0),  # 0
+        _opinion("strategist_voice", "bearish", 0.7),  # -1
+        _opinion("regime_analyst", "bearish", 0.6),  # -1
+        _opinion("risk_voice", "bullish", 0.7),  # +2
+        _opinion("memory_voice", "abstain", 0.0),  # 0
+    ]
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
+    assert action == "decline"
+    assert reason == "weighted_quorum_below_threshold"
+
+
+def test_coordinator_weighted_quorum_risk_veto_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Risk hard-veto must fire even when score is high under Variant G.
+
+    Safety always wins. A strongly-positive aggregate score (3 bullish
+    voices, score +6) must still decline when risk is bearish at ≥0.8.
+    """
+    monkeypatch.setenv("GECKO_COORDINATOR_MODE", "weighted_quorum")
+    opinions = [
+        _opinion("chart_analyst", "bullish", 0.9),
+        _opinion("strategist_voice", "bullish", 0.8),
+        _opinion("regime_analyst", "bullish", 0.7),
+        _opinion("risk_voice", "bearish", 0.9),  # risk veto
+        _opinion("memory_voice", "neutral", 0.5),
+    ]
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
+    assert action == "decline"
+    assert reason == "risk_veto"
+
+
+def test_coordinator_weighted_quorum_missing_chart_declines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Defensive: missing chart_analyst declines (parity with legacy)."""
+    monkeypatch.setenv("GECKO_COORDINATOR_MODE", "weighted_quorum")
+    opinions = [
+        _opinion("strategist_voice", "bullish", 0.9),
+        _opinion("regime_analyst", "bullish", 0.9),
+        _opinion("risk_voice", "bullish", 0.7),
+        _opinion("memory_voice", "bullish", 0.9),
+    ]
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
+    assert action == "decline"
+    assert reason == "chart_voice_missing"
+
+
+def test_coordinator_weighted_quorum_three_bearish_veto(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bearish-count veto fires when ≥3 voices are bearish, regardless of score.
+
+    Even if risk_voice is strongly bullish (+2) and chart is bullish (+2),
+    three bearish votes (score = 4 - 3 = 1) means the panel is structurally
+    dissenting. Decline.
+    """
+    monkeypatch.setenv("GECKO_COORDINATOR_MODE", "weighted_quorum")
+    opinions = [
+        _opinion("chart_analyst", "bullish", 0.9),  # +2
+        _opinion("strategist_voice", "bearish", 0.8),  # -1
+        _opinion("regime_analyst", "bearish", 0.7),  # -1
+        _opinion("memory_voice", "bearish", 0.7),  # -1
+        _opinion("risk_voice", "bullish", 0.7),  # +2
+    ]
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
+    assert action == "decline"
+    assert reason == "bearish_quorum_veto"
+
+
+def test_coordinator_weighted_quorum_1h_adverse_bonus(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """1h-adverse raises the act threshold by +1 instead of imposing a hard floor.
+
+    A 1B/2S/2N tuple scores 2. Under TREND-UP that clears threshold 2 (act).
+    Under 1h CHOP threshold becomes 3 → same tuple declines. A clean
+    2B/1S/2N tuple (score 5) acts even under 1h CHOP (clears 3) and surfaces
+    the adverse rule label.
+    """
+    monkeypatch.setenv("GECKO_COORDINATOR_MODE", "weighted_quorum")
+    # Borderline tuple: score 2, declines under CHOP because threshold is 3.
+    borderline = [
+        _opinion("chart_analyst", "neutral", 0.5),  # +1
+        _opinion("strategist_voice", "bearish", 0.7),  # -1
+        _opinion("regime_analyst", "bearish", 0.6),  # -1
+        _opinion("risk_voice", "bullish", 0.7),  # +2
+        _opinion("memory_voice", "neutral", 0.4),  # +1
+    ]
+    action, reason = coordinator(borderline, regime_1h="CHOP")
+    assert action == "decline"
+    assert reason == "weighted_quorum_below_threshold"
+
+    # Strong tuple: 2B/1S/2N → score 5, clears threshold 3 even in CHOP.
+    strong = [
+        _opinion("chart_analyst", "bullish", 0.9),  # +2
+        _opinion("strategist_voice", "bullish", 0.8),  # +2
+        _opinion("regime_analyst", "bearish", 0.7),  # -1
+        _opinion("risk_voice", "neutral", 0.6),  # +1
+        _opinion("memory_voice", "neutral", 0.5),  # +1
+    ]
+    action, reason = coordinator(strong, regime_1h="CHOP")
+    assert action == "act"
+    assert reason == "weighted_quorum_adverse"
+
+
+def test_coordinator_legacy_remains_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unset GECKO_COORDINATOR_MODE → legacy path runs.
+
+    Belt-and-suspenders: production must not flip to Variant G implicitly.
+    A 2N/2N/2N panel with bullish chart at 0.9 acts under legacy
+    (all_voices_aligned); under Variant G it would also act but with a
+    DIFFERENT reason ("weighted_quorum"). The reason string is the
+    discriminator.
+    """
+    monkeypatch.delenv("GECKO_COORDINATOR_MODE", raising=False)
+    opinions = [
+        _opinion("chart_analyst", "bullish", 0.9),
+        _opinion("memory_voice", "neutral", 0.6),
+        _opinion("risk_voice", "bullish", 0.7),
+    ]
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
+    assert action == "act"
+    assert reason == "all_voices_aligned"  # legacy label, NOT "weighted_quorum"
 
 
 # ── regime_analyst ───────────────────────────────────────────────────
@@ -610,9 +788,11 @@ def _uptrend_candles(n: int = 60, start: float = 1.0, step: float = 0.02) -> lis
     for i in range(n):
         open_ = price
         high = price + step * 1.5
-        low = price - step * 0.2   # shallow pullbacks — +DI dominates
+        low = price - step * 0.2  # shallow pullbacks — +DI dominates
         close = price + step * 1.2
-        candles.append({"open": open_, "high": high, "low": low, "close": close, "volume": 10_000.0})
+        candles.append(
+            {"open": open_, "high": high, "low": low, "close": close, "volume": 10_000.0}
+        )
         price = close
     return candles
 
@@ -625,10 +805,12 @@ def _downtrend_candles(n: int = 60, start: float = 3.0, step: float = 0.02) -> l
     price = start
     for i in range(n):
         open_ = price
-        high = price + step * 0.2   # shallow bounces — -DI dominates
+        high = price + step * 0.2  # shallow bounces — -DI dominates
         low = price - step * 1.5
         close = price - step * 1.2
-        candles.append({"open": open_, "high": high, "low": low, "close": close, "volume": 10_000.0})
+        candles.append(
+            {"open": open_, "high": high, "low": low, "close": close, "volume": 10_000.0}
+        )
         price = close
     return candles
 
@@ -646,7 +828,9 @@ def _chop_candles(n: int = 60, center: float = 2.0, half_range: float = 0.05) ->
         high = price + half_range * 0.3
         low = price - half_range * 0.3
         close = price + move
-        candles.append({"open": open_, "high": high, "low": low, "close": close, "volume": 10_000.0})
+        candles.append(
+            {"open": open_, "high": high, "low": low, "close": close, "volume": 10_000.0}
+        )
         price = close
         direction *= -1
     return candles
@@ -732,7 +916,7 @@ def test_coordinator_chop_raises_floor_declines() -> None:
         _opinion("risk_voice", "bullish", 0.7),
         _opinion("regime_analyst", "bearish", 0.7),  # confident chop
     ]
-    action, reason = coordinator(opinions)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
     assert action == "decline"
     assert reason == "chop_below_high_bar"
 
@@ -745,7 +929,7 @@ def test_coordinator_chop_high_conviction_acts() -> None:
         _opinion("risk_voice", "bullish", 0.7),
         _opinion("regime_analyst", "bearish", 0.7),  # confident chop
     ]
-    action, reason = coordinator(opinions)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
     assert action == "act"
     assert reason == "chop_high_conviction"
 
@@ -758,7 +942,7 @@ def test_coordinator_trend_uses_normal_floor_acts() -> None:
         _opinion("risk_voice", "bullish", 0.7),
         _opinion("regime_analyst", "bullish", 0.7),  # trend
     ]
-    action, reason = coordinator(opinions)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
     assert action == "act"
     assert reason == "all_voices_aligned"
 
@@ -776,7 +960,7 @@ def test_coordinator_downtrend_raises_floor_same_as_chop() -> None:
         _opinion("risk_voice", "bullish", 0.7),
         _opinion("regime_analyst", "bearish", 0.75),  # could be chop OR downtrend
     ]
-    action, reason = coordinator(opinions)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
     assert action == "decline"
     assert reason == "chop_below_high_bar"
 
@@ -793,7 +977,49 @@ def test_coordinator_unconfident_chop_uses_normal_floor() -> None:
         _opinion("risk_voice", "bullish", 0.7),
         _opinion("regime_analyst", "bearish", 0.4),  # not confident enough
     ]
-    action, reason = coordinator(opinions)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
+    assert action == "act"
+    assert reason == "all_voices_aligned"
+
+
+def test_strict_multi_tf_blocks_dual_adverse(monkeypatch: pytest.MonkeyPatch) -> None:
+    opinions = [
+        _opinion("chart_analyst", "bullish", 0.95),
+        _opinion("memory_voice", "neutral", 0.5),
+        _opinion("risk_voice", "bullish", 0.7),
+        _opinion("regime_analyst", "bearish", 0.7),
+    ]
+    action, reason = coordinator(opinions, regime_1h="CHOP")
+    assert action == "decline"
+    assert reason == "strict_multi_tf_adverse"
+
+    monkeypatch.setenv("GECKO_STRICT_MULTI_TF", "0")
+    action2, reason2 = coordinator(opinions, regime_1h="CHOP")
+    assert action2 == "act"
+    assert reason2 in ("chop_high_conviction", "1h_adverse_high_conviction")
+
+
+def test_unknown_1h_treated_adverse_by_default() -> None:
+    opinions = [
+        _opinion("chart_analyst", "bullish", 0.88),
+        _opinion("memory_voice", "neutral", 0.5),
+        _opinion("risk_voice", "bullish", 0.7),
+        _opinion("regime_analyst", "bullish", 0.7),
+    ]
+    action, reason = coordinator(opinions, regime_1h=None)
+    assert action == "decline"
+    assert reason == "1h_adverse_below_high_bar"
+
+
+def test_unknown_1h_legacy_fail_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GECKO_TREAT_UNKNOWN_1H_AS_ADVERSE", "0")
+    opinions = [
+        _opinion("chart_analyst", "bullish", 0.88),
+        _opinion("memory_voice", "neutral", 0.5),
+        _opinion("risk_voice", "bullish", 0.7),
+        _opinion("regime_analyst", "bullish", 0.7),
+    ]
+    action, reason = coordinator(opinions, regime_1h=None)
     assert action == "act"
     assert reason == "all_voices_aligned"
 
