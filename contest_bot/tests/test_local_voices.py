@@ -1429,3 +1429,72 @@ def test_s24v_report_close_never_raises_on_garbage() -> None:
     # Sanity: deque still works for valid input afterward.
     _cr.report_close(0.05, "flat_stall_exit")
     assert len(_cr._RECENT_CLOSES) >= 1
+
+
+# ───────────────────────────────────────────────────────────────────────
+# S24-X — Per-voice model env-resolution
+# ───────────────────────────────────────────────────────────────────────
+
+
+from voices.model_env import DEFAULT_MODEL, resolve_voice_model  # noqa: E402
+
+
+def test_s24x_resolve_falls_back_when_no_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No env set → fallback wins (historical DEFAULT_MODEL preserved)."""
+    monkeypatch.delenv("GECKO_CHART_ANALYST_MODEL", raising=False)
+    monkeypatch.delenv("GECKO_VOICE_MODEL", raising=False)
+    assert resolve_voice_model("chart_analyst") == DEFAULT_MODEL
+    assert DEFAULT_MODEL == "openai/gpt-4o-mini"
+
+
+def test_s24x_per_voice_env_wins(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Per-voice env beats panel-wide and beats fallback."""
+    monkeypatch.setenv("GECKO_CHART_ANALYST_MODEL", "anthropic/claude-haiku-4-5")
+    monkeypatch.setenv("GECKO_VOICE_MODEL", "deepseek/deepseek-chat")
+    assert resolve_voice_model("chart_analyst") == "anthropic/claude-haiku-4-5"
+
+
+def test_s24x_panel_wide_env_falls_through(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When only the panel-wide env is set, every voice inherits it."""
+    monkeypatch.delenv("GECKO_CHART_ANALYST_MODEL", raising=False)
+    monkeypatch.delenv("GECKO_MEMORY_VOICE_MODEL", raising=False)
+    monkeypatch.setenv("GECKO_VOICE_MODEL", "deepseek/deepseek-chat")
+    assert resolve_voice_model("chart_analyst") == "deepseek/deepseek-chat"
+    assert resolve_voice_model("memory_voice") == "deepseek/deepseek-chat"
+
+
+def test_s24x_empty_env_treated_as_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Empty-string env must NOT override (otherwise an unset var that
+    accidentally serialized as '' would silently clear the model)."""
+    monkeypatch.setenv("GECKO_CHART_ANALYST_MODEL", "   ")  # whitespace
+    monkeypatch.delenv("GECKO_VOICE_MODEL", raising=False)
+    assert resolve_voice_model("chart_analyst") == DEFAULT_MODEL
+
+
+def test_s24x_chart_analyst_constructor_uses_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ChartAnalystVoice constructor with model=None resolves via env."""
+    monkeypatch.setenv("GECKO_CHART_ANALYST_MODEL", "anthropic/claude-haiku-4-5")
+    from voices.chart_analyst import ChartAnalystVoice
+
+    voice = ChartAnalystVoice(client=_make_or_client(lambda r: _make_response("{}")))
+    assert voice._model == "anthropic/claude-haiku-4-5"
+
+
+def test_s24x_explicit_model_kwarg_still_wins(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Explicit model= kwarg beats env (test fixtures + advanced callers
+    must retain full control)."""
+    monkeypatch.setenv("GECKO_CHART_ANALYST_MODEL", "anthropic/claude-haiku-4-5")
+    from voices.chart_analyst import ChartAnalystVoice
+
+    voice = ChartAnalystVoice(
+        client=_make_or_client(lambda r: _make_response("{}")),
+        model="openai/gpt-4o-mini",  # explicit — env ignored
+    )
+    assert voice._model == "openai/gpt-4o-mini"
+
+
+def test_s24x_memory_voice_constructor_uses_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """memory_voice picks up GECKO_MEMORY_VOICE_MODEL."""
+    monkeypatch.setenv("GECKO_MEMORY_VOICE_MODEL", "deepseek/deepseek-chat")
+    voice = MemoryVoice(client=_make_or_client(lambda r: _make_response("{}")))
+    assert voice._model == "deepseek/deepseek-chat"

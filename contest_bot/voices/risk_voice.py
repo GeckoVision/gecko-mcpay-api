@@ -112,10 +112,13 @@ class RiskVoice:
     def __init__(
         self,
         client: OpenRouterClient,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
     ) -> None:
         self._client = client
-        self._model = model
+        # S24-X: env-resolve when caller didn't pass an explicit model.
+        from voices.model_env import resolve_voice_model
+
+        self._model = model or resolve_voice_model("risk_voice", DEFAULT_MODEL)
 
     async def grade(
         self,

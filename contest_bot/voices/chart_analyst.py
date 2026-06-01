@@ -161,13 +161,18 @@ class ChartAnalystVoice:
     def __init__(
         self,
         client: OpenRouterClient,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
         *,
         corpus_top_k: int = 5,
         corpus_enabled: bool = True,
     ) -> None:
         self._client = client
-        self._model = model
+        # S24-X: env-resolve when caller didn't pass an explicit model.
+        # Caller-supplied value (e.g. tests) wins; env overrides fall
+        # back to the historical DEFAULT_MODEL ("openai/gpt-4o-mini").
+        from voices.model_env import resolve_voice_model
+
+        self._model = model or resolve_voice_model("chart_analyst", DEFAULT_MODEL)
         self._corpus_top_k = corpus_top_k
         self._corpus_enabled = corpus_enabled
 
