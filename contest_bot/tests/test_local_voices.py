@@ -1498,3 +1498,215 @@ def test_s24x_memory_voice_constructor_uses_env(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setenv("GECKO_MEMORY_VOICE_MODEL", "deepseek/deepseek-chat")
     voice = MemoryVoice(client=_make_or_client(lambda r: _make_response("{}")))
     assert voice._model == "deepseek/deepseek-chat"
+
+
+# ───────────────────────────────────────────────────────────────────────
+# Sprint 28 — market_researcher voice tests
+# ───────────────────────────────────────────────────────────────────────
+
+
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+from voices.market_researcher import MarketResearcherVoice  # noqa: E402
+
+
+def _now() -> datetime:
+    """Fixed timestamp anchor — tests build news rows relative to this."""
+    return datetime(2026, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+
+def _row(
+    *,
+    symbol: str = "PYTH",
+    bias: float | None = 0.0,
+    age_hours: float = 1.0,
+    classified: bool = True,
+) -> dict:
+    """Synthesize a market_news row."""
+    published = (_now() - timedelta(hours=age_hours)).isoformat().replace("+00:00", "Z")
+    doc: dict = {
+        "tickers": [symbol.upper()],
+        "headline": f"{symbol} test headline",
+        "body": "test body",
+        "published_at": published,
+        "source": "test",
+    }
+    if classified:
+        doc["classification"] = {"bias_score": bias, "regime_impact": "neutral"}
+    return doc
+
+
+def _make_voice(rows_by_symbol: dict[str, list[dict]] | None = None,
+                window_hours: float = 6.0) -> MarketResearcherVoice:
+    """Inject a deterministic news_lookup callable."""
+    rows_by_symbol = rows_by_symbol or {}
+
+    def _lookup(symbol: str, *, since=None, limit: int = 200) -> list[dict]:
+        out = rows_by_symbol.get(symbol.upper(), [])
+        if since is None:
+            return out
+        # Filter on the since cutoff; tests rely on this for window tests.
+        return [
+            r for r in out
+            if datetime.fromisoformat(r["published_at"].replace("Z", "+00:00")) >= since
+        ]
+
+    return MarketResearcherVoice(
+        news_lookup=_lookup,
+        window_hours=window_hours,
+        half_life_hours=6.0,
+        now_fn=_now,
+    )
+
+
+def test_market_researcher_cold_start_zero_rows_abstains() -> None:
+    voice = _make_voice({"PYTH": []})
+    op = asyncio.run(voice.grade({"instrument": "PYTH"}, memory=None))
+    assert op.verdict == "abstain"
+    assert op.confidence == 0.0
+    assert op.reasoning == "no_news_in_window"
+
+
+def test_market_researcher_cold_start_under_floor_abstains() -> None:
+    voice = _make_voice({"PYTH": [_row(bias=0.4), _row(bias=0.3)]})
+    op = asyncio.run(voice.grade({"instrument": "PYTH"}, memory=None))
+    assert op.verdict == "abstain"
+    assert "cold_start_insufficient_news" in op.reasoning
+
+
+def test_market_researcher_bullish_majority_returns_bullish() -> None:
+    rows = [_row(bias=0.5, age_hours=0.5) for _ in range(4)]
+    voice = _make_voice({"PYTH": rows})
+    op = asyncio.run(voice.grade({"instrument": "PYTH"}, memory=None))
+    assert op.verdict == "bullish"
+    assert 0.6 < op.confidence < 0.9
+
+
+def test_market_researcher_bearish_majority_returns_bearish() -> None:
+    rows = [_row(bias=-0.6, age_hours=0.5) for _ in range(4)]
+    voice = _make_voice({"PYTH": rows})
+    op = asyncio.run(voice.grade({"instrument": "PYTH"}, memory=None))
+    assert op.verdict == "bearish"
+    assert 0.6 < op.confidence < 0.9
+
+
+def test_market_researcher_mixed_returns_neutral() -> None:
+    # Symmetric mix → agg_bias close to 0 → neutral
+    rows = [
+        _row(bias=0.3, age_hours=1.0),
+        _row(bias=-0.3, age_hours=1.0),
+        _row(bias=0.1, age_hours=1.0),
+    ]
+    voice = _make_voice({"PYTH": rows})
+    op = asyncio.run(voice.grade({"instrument": "PYTH"}, memory=None))
+    assert op.verdict == "neutral"
+
+
+def test_market_researcher_filters_to_symbol_no_bleed() -> None:
+    """JTO-tagged row must NEVER contribute to a PYTH grade. The
+    cross-instrument bleed bug that bit memory_voice (S24-S fix 2b)
+    cannot reappear here."""
+    voice = _make_voice({
+        "PYTH": [],  # PYTH has nothing
+        "JTO": [_row(symbol="JTO", bias=-0.9) for _ in range(5)],  # JTO is loud
+    })
+    op = asyncio.run(voice.grade({"instrument": "PYTH"}, memory=None))
+    # PYTH should abstain — JTO rows MUST NOT bleed in.
+    assert op.verdict == "abstain"
+    assert op.reasoning == "no_news_in_window"
+
+
+def test_market_researcher_recency_weighting() -> None:
+    """Two rows same bias, different ages: fresher row dominates the
+    weighted aggregate. Confidence should reflect the agg_bias."""
+    fresh_bullish_rows = [_row(bias=0.8, age_hours=0.5) for _ in range(3)]
+    stale_bullish_rows = [_row(bias=0.8, age_hours=5.5) for _ in range(3)]
+    voice_fresh = _make_voice({"PYTH": fresh_bullish_rows})
+    voice_stale = _make_voice({"PYTH": stale_bullish_rows})
+    op_fresh = asyncio.run(voice_fresh.grade({"instrument": "PYTH"}, memory=None))
+    op_stale = asyncio.run(voice_stale.grade({"instrument": "PYTH"}, memory=None))
+    # Both should be bullish; both should have the same agg_bias since
+    # all rows have the same bias_score. Tests that recency weighting
+    # doesn't crash, not that it changes the verdict.
+    assert op_fresh.verdict == "bullish"
+    assert op_stale.verdict == "bullish"
+
+
+def test_market_researcher_skips_unclassified_rows() -> None:
+    """Rows missing `classification` field don't count toward floor."""
+    rows = [
+        _row(bias=0.5, classified=False),
+        _row(bias=0.5, classified=False),
+        _row(bias=0.5, classified=False),
+    ]
+    voice = _make_voice({"PYTH": rows})
+    op = asyncio.run(voice.grade({"instrument": "PYTH"}, memory=None))
+    # All 3 are unclassified → 0 classified → abstain via cold-start.
+    assert op.verdict == "abstain"
+    assert "cold_start_insufficient_news" in op.reasoning
+
+
+def test_market_researcher_mongo_unavailable_abstains() -> None:
+    """When news_lookup raises, voice abstains cleanly."""
+    def _broken_lookup(*_args, **_kwargs):
+        raise RuntimeError("mongo down")
+
+    voice = MarketResearcherVoice(
+        news_lookup=_broken_lookup,
+        window_hours=6.0,
+        half_life_hours=6.0,
+        now_fn=_now,
+    )
+    op = asyncio.run(voice.grade({"instrument": "PYTH"}, memory=None))
+    assert op.verdict == "abstain"
+    assert "news_lookup_error" in op.reasoning
+
+
+def test_market_researcher_window_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """GECKO_MARKET_RESEARCHER_WINDOW_HOURS shrinks the lookback bound."""
+    monkeypatch.setenv("GECKO_MARKET_RESEARCHER_WINDOW_HOURS", "1.0")
+    # Rows 2h old — outside the 1h window
+    rows = [_row(bias=0.5, age_hours=2.0) for _ in range(5)]
+    # Lookup honors the since cutoff; voice should see 0 rows
+    voice = MarketResearcherVoice(
+        news_lookup=lambda s, since=None, limit=200: [
+            r for r in rows
+            if since is None or datetime.fromisoformat(
+                r["published_at"].replace("Z", "+00:00")
+            ) >= since
+        ],
+        # Force re-read from env by NOT passing window_hours
+        half_life_hours=6.0,
+        now_fn=_now,
+    )
+    op = asyncio.run(voice.grade({"instrument": "PYTH"}, memory=None))
+    assert op.verdict == "abstain"
+    assert op.reasoning == "no_news_in_window"
+
+
+def test_market_researcher_confidence_has_variance() -> None:
+    """≥5 unique confidence values across 10 synthetic snapshots —
+    anti-anchor-snap regression (S24-S template)."""
+    conf_values: set[float] = set()
+    # Vary n_rows (3-7) and bias (-0.8 to +0.8) to span the space
+    for n_rows in range(3, 8):
+        for bias in [-0.8, -0.4, 0.0, 0.3, 0.6]:
+            rows = [_row(bias=bias, age_hours=1.0) for _ in range(n_rows)]
+            voice = _make_voice({"PYTH": rows})
+            op = asyncio.run(voice.grade({"instrument": "PYTH"}, memory=None))
+            conf_values.add(round(op.confidence, 4))
+    # Hard requirement: ≥5 unique values
+    assert len(conf_values) >= 5, (
+        f"Confidence has only {len(conf_values)} unique values; "
+        f"anchor-snap regression risk."
+    )
+
+
+def test_market_researcher_unresolved_symbol_abstains() -> None:
+    """Empty instrument + missing symbol → abstain immediately, do NOT
+    fall back to universe-wide query."""
+    voice = _make_voice({"PYTH": [_row(bias=0.5) for _ in range(5)]})
+    # market_state has neither instrument nor symbol
+    op = asyncio.run(voice.grade({}, memory=None))
+    assert op.verdict == "abstain"
+    assert op.reasoning == "symbol_unresolved"

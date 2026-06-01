@@ -154,6 +154,16 @@ def _quorum_act_score() -> int:
 
 
 def _quorum_veto_bearish_count() -> int:
+    """Bearish-quorum veto threshold. Default 3 of N voices.
+
+    Sprint 28 (2026-06-01) coordinator-coupling note: when the
+    market_researcher voice is enabled (GECKO_MARKET_RESEARCHER_ENABLED=1)
+    the panel grows to 6 voices, which silently softens this bar from
+    3/5 = 60% to 3/6 = 50%. To preserve the historical bar when
+    enabling the 6th voice, ALSO set GECKO_QUORUM_VETO_BEARISH=4 in the
+    launcher (3/5 ≈ 4/6 ≈ 60-67%). Default kept at 3 so existing
+    deployments are unchanged.
+    """
     return int(os.environ.get("GECKO_QUORUM_VETO_BEARISH", "3"))
 
 
