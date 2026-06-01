@@ -1710,3 +1710,130 @@ def test_market_researcher_unresolved_symbol_abstains() -> None:
     op = asyncio.run(voice.grade({}, memory=None))
     assert op.verdict == "abstain"
     assert op.reasoning == "symbol_unresolved"
+
+
+# ───────────────────────────────────────────────────────────────────────
+# Sprint 29 — oracle_voice tests
+# ───────────────────────────────────────────────────────────────────────
+
+
+from voices.oracle_voice import OracleVoice  # noqa: E402
+
+
+def _snap(price: float, source: str = "pyth", spread_pct: float = 0.03) -> dict:
+    return {"source": source, "price": price, "spread_pct": spread_pct, "ts": "2026-06-01T05:00:00Z"}
+
+
+def _make_oracle_voice(snapshots_by_symbol: dict[str, dict[str, dict]] | None = None) -> OracleVoice:
+    """Inject deterministic snapshot lookup."""
+    snapshots_by_symbol = snapshots_by_symbol or {}
+
+    def _lookup(symbol: str) -> dict[str, dict]:
+        return snapshots_by_symbol.get(symbol.upper(), {})
+
+    return OracleVoice(
+        snapshot_lookup=_lookup,
+        bullish_threshold_bps=30.0,
+        decline_threshold_bps=50.0,
+        trend_threshold_bps=5.0,
+    )
+
+
+def test_oracle_voice_abstains_when_no_other_sources() -> None:
+    voice = _make_oracle_voice({"SOL": {}})
+    op = asyncio.run(voice.grade({"instrument": "SOL", "spot_price": 148.32}, memory=None))
+    assert op.verdict == "abstain"
+    assert "no_second_sources_online" in op.reasoning
+
+
+def test_oracle_voice_abstains_when_no_okx_price() -> None:
+    voice = _make_oracle_voice({"SOL": {"pyth": _snap(148.32)}})
+    op = asyncio.run(voice.grade({"instrument": "SOL"}, memory=None))
+    assert op.verdict == "abstain"
+    assert "okx_price_unavailable" in op.reasoning
+
+
+def test_oracle_voice_abstains_on_disagreement() -> None:
+    """OKX vs Pyth gap > 50bps → abstain (data quality compromised)."""
+    voice = _make_oracle_voice({
+        "SOL": {
+            "pyth": _snap(150.0),       # +1.13% vs OKX → 113 bps
+            "jupiter": _snap(148.45),
+        }
+    })
+    op = asyncio.run(voice.grade({"instrument": "SOL", "spot_price": 148.32}, memory=None))
+    assert op.verdict == "abstain"
+    assert "cross_source_disagreement" in op.reasoning
+
+
+def test_oracle_voice_neutral_on_tight_flat() -> None:
+    """All three within 30bps + no meaningful trend → neutral."""
+    voice = _make_oracle_voice({
+        "SOL": {
+            "pyth": _snap(148.32),    # exact match → 0 bps move
+            "jupiter": _snap(148.32),
+        }
+    })
+    op = asyncio.run(voice.grade({"instrument": "SOL", "spot_price": 148.32}, memory=None))
+    assert op.verdict == "neutral"
+    assert op.confidence > 0.45
+
+
+def test_oracle_voice_bullish_when_okx_above_pyth() -> None:
+    """OKX above Pyth by > trend_threshold + sources agree → bullish."""
+    voice = _make_oracle_voice({
+        "SOL": {
+            "pyth": _snap(148.30),     # OKX is 148.45, +10 bps move
+            "jupiter": _snap(148.42),
+        }
+    })
+    op = asyncio.run(voice.grade({"instrument": "SOL", "spot_price": 148.45}, memory=None))
+    assert op.verdict == "bullish"
+
+
+def test_oracle_voice_bearish_when_okx_below_pyth() -> None:
+    voice = _make_oracle_voice({
+        "SOL": {
+            "pyth": _snap(148.50),     # OKX is 148.30, -13 bps move
+            "jupiter": _snap(148.40),
+        }
+    })
+    op = asyncio.run(voice.grade({"instrument": "SOL", "spot_price": 148.30}, memory=None))
+    assert op.verdict == "bearish"
+
+
+def test_oracle_voice_unresolved_symbol_abstains() -> None:
+    voice = _make_oracle_voice({})
+    op = asyncio.run(voice.grade({}, memory=None))
+    assert op.verdict == "abstain"
+    assert op.reasoning == "symbol_unresolved"
+
+
+def test_oracle_voice_swallows_lookup_exceptions() -> None:
+    def _broken_lookup(*_a, **_kw):
+        raise RuntimeError("mongo down")
+
+    voice = OracleVoice(snapshot_lookup=_broken_lookup)
+    op = asyncio.run(voice.grade({"instrument": "SOL", "spot_price": 148.32}, memory=None))
+    assert op.verdict == "abstain"
+    assert "snapshot_lookup_error" in op.reasoning
+
+
+def test_oracle_voice_confidence_has_variance() -> None:
+    """≥5 unique confidence values across realistic input variation —
+    anti-anchor-snap regression (S24-S template applied to deterministic
+    voice; should be trivially satisfied)."""
+    conf_values: set[float] = set()
+    # Vary spread (0 to 25 bps) and source count
+    for pyth_price in [148.30, 148.35, 148.40, 148.45, 148.50]:
+        for jup_present in (True, False):
+            snaps: dict = {"pyth": _snap(pyth_price)}
+            if jup_present:
+                snaps["jupiter"] = _snap(pyth_price + 0.01)
+            voice = _make_oracle_voice({"SOL": snaps})
+            op = asyncio.run(voice.grade({"instrument": "SOL", "spot_price": 148.45}, memory=None))
+            conf_values.add(round(op.confidence, 4))
+    assert len(conf_values) >= 5, (
+        f"Confidence has only {len(conf_values)} unique values; "
+        f"anchor-snap regression risk."
+    )

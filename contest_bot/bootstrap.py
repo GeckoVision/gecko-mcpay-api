@@ -27,6 +27,7 @@ from voices.memory_voice import (
 )
 from voices.market_researcher import MarketResearcherVoice
 from voices.memory_voice_v2 import MemoryVoiceV2
+from voices.oracle_voice import OracleVoice
 from voices.regime_analyst import RegimeAnalystVoice
 from voices.risk_voice import RiskVoice
 from voices.strategist_voice import StrategistVoice
@@ -37,6 +38,17 @@ def _market_researcher_enabled() -> bool:
     entirely when off — no LLM cost, no Mongo poll, no panel impact.
     """
     return os.environ.get("GECKO_MARKET_RESEARCHER_ENABLED", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def _oracle_voice_enabled() -> bool:
+    """Sprint 29: 7th voice is env-gated default OFF. Skips construction
+    entirely when off — no Mongo poll, no panel cardinality change.
+    """
+    return os.environ.get("GECKO_ORACLE_VOICE_ENABLED", "0").strip().lower() in (
         "1",
         "true",
         "yes",
@@ -85,6 +97,14 @@ def build_local_panel(memory: LocalMemory) -> LocalPanel:
     # done at ingest time by scripts/data/classify_news_rows.py.
     if _market_researcher_enabled():
         voices.append(MarketResearcherVoice())
+    # Sprint 29 (2026-06-01): oracle_voice — 7th voice, env-gated default
+    # OFF. Reads cross-source price snapshots (Pyth + Jupiter from the
+    # oracle_snapshots Mongo collection) and grades cross-source agreement.
+    # Zero LLM calls; deterministic confidence. NOTE: when this voice is
+    # enabled, also set GECKO_QUORUM_VETO_BEARISH=5 to preserve the
+    # ~60% bearish-quorum bar at the higher panel cardinality (3/5≈4/6≈5/7).
+    if _oracle_voice_enabled():
+        voices.append(OracleVoice())
     return LocalPanel(voices=voices, memory=memory, coordinator=coordinator)
 
 
