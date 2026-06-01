@@ -40,6 +40,8 @@ See ``docs/strategy/lab-validated/2026-05-20-local-panel-voices-spec.md``
 from __future__ import annotations
 
 import os
+import time
+from collections import deque
 from typing import Literal
 
 from voices.base import VoiceOpinion
@@ -157,6 +159,143 @@ def _quorum_veto_bearish_count() -> int:
 
 def _quorum_adverse_bonus() -> int:
     return int(os.environ.get("GECKO_QUORUM_ADVERSE_BONUS", "1"))
+
+
+# ── S24-V (2026-05-31, founder-gated) — Quant tightening gates ─────────
+#
+# Two env-gated discipline gates from the 2026-05-31 quant verdict
+# (private/strategy/2026-05-31-quant-bot-situation.md). BOTH DEFAULT OFF.
+# Production behavior is identical to S24-O until the founder explicitly
+# flips the env vars in launch_setup_c.sh.
+#
+# Gate 1 — Non-risk bullish quorum.
+#   risk_voice fired bullish 139/139 polls on 2026-05-31 (constant
+#   yes-man). The current weighted_quorum effectively fires on 1B
+#   (risk_voice + anyone). This gate requires k≥N bullish from the
+#   OTHER voices (chart_analyst, memory_voice, regime_analyst,
+#   strategist_voice — strategist NEVER bullish by design, so the
+#   effective pool is 3). Default min = 2.
+#
+#   Env: GECKO_QUORUM_REQUIRE_NON_RISK_BULLISH=1 to enable
+#        GECKO_QUORUM_NON_RISK_BULLISH_MIN=2 (default min)
+#
+# Gate 2 — Flat-stall circuit breaker.
+#   When the last N closes are all flat_stall_exit with |mean| below a
+#   threshold, the bot is grinding in unproductive chop. Suspend new
+#   entries for SUSPEND_MIN minutes. Each new close re-evaluates.
+#
+#   Env: GECKO_CIRCUIT_BREAKER=1 to enable
+#        GECKO_CIRCUIT_BREAKER_LOOKBACK=5      (last N closes)
+#        GECKO_CIRCUIT_BREAKER_PNL_THRESHOLD=0.10  (|mean pnl_pct|)
+#        GECKO_CIRCUIT_BREAKER_SUSPEND_MIN=240     (suspension window)
+#
+# State for the circuit breaker is held module-level — a deque of recent
+# closes plus a suspension-until timestamp. Resets across bot restarts
+# (acceptable: the breaker's signal is "what is happening RIGHT NOW",
+# stale recent history would be misleading anyway).
+
+
+def _require_non_risk_bullish() -> bool:
+    return os.environ.get(
+        "GECKO_QUORUM_REQUIRE_NON_RISK_BULLISH", "0"
+    ).strip().lower() in ("1", "true", "yes")
+
+
+def _non_risk_bullish_min() -> int:
+    return int(os.environ.get("GECKO_QUORUM_NON_RISK_BULLISH_MIN", "2"))
+
+
+def _circuit_breaker_enabled() -> bool:
+    return os.environ.get("GECKO_CIRCUIT_BREAKER", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def _circuit_breaker_lookback() -> int:
+    return int(os.environ.get("GECKO_CIRCUIT_BREAKER_LOOKBACK", "5"))
+
+
+def _circuit_breaker_pnl_threshold() -> float:
+    return float(os.environ.get("GECKO_CIRCUIT_BREAKER_PNL_THRESHOLD", "0.10"))
+
+
+def _circuit_breaker_suspend_min() -> int:
+    return int(os.environ.get("GECKO_CIRCUIT_BREAKER_SUSPEND_MIN", "240"))
+
+
+# Mutable module-level state for the circuit breaker. Bounded deque
+# size matches the lookback window. `_suspend_until_monotonic` is a
+# monotonic-clock timestamp (seconds) — None when not suspended.
+_RECENT_CLOSES: deque[tuple[float, str]] = deque(maxlen=20)  # (pnl_pct, exit_reason)
+_SUSPEND_UNTIL_MONOTONIC: float | None = None
+
+
+def report_close(pnl_pct: float, exit_reason: str) -> None:
+    """Public API for the bot's close-position path to report a close.
+
+    Called regardless of whether the circuit breaker is enabled — the
+    deque is cheap, and we want history available the moment the env
+    flag flips ON without losing the prior window. Idempotent +
+    fire-and-forget; NEVER raises.
+    """
+    global _RECENT_CLOSES
+    try:
+        _RECENT_CLOSES.append((float(pnl_pct), str(exit_reason)))
+    except Exception:
+        return
+
+
+def _circuit_broken_now() -> tuple[bool, str | None]:
+    """Return (broken, reason). Sets/clears the suspension timestamp
+    as a side effect. Caller checks `broken` first, surfaces `reason`
+    in the coordinator's decline label for traceability.
+
+    Logic: when the last N closes (lookback) are ALL flat_stall_exit
+    AND |mean(pnl_pct)| < pnl_threshold, trigger a suspension for
+    suspend_min minutes. While suspended, return broken=True until
+    monotonic clock passes the deadline.
+    """
+    global _SUSPEND_UNTIL_MONOTONIC
+    if not _circuit_breaker_enabled():
+        return (False, None)
+
+    now = time.monotonic()
+    # Active suspension still in effect?
+    if _SUSPEND_UNTIL_MONOTONIC is not None and now < _SUSPEND_UNTIL_MONOTONIC:
+        remaining = int((_SUSPEND_UNTIL_MONOTONIC - now) / 60)
+        return (True, f"circuit_breaker_active:{remaining}min_remaining")
+
+    # Suspension expired — clear it so the next trigger can fire.
+    if _SUSPEND_UNTIL_MONOTONIC is not None and now >= _SUSPEND_UNTIL_MONOTONIC:
+        _SUSPEND_UNTIL_MONOTONIC = None
+
+    # Evaluate trigger condition on the last N closes.
+    lookback = _circuit_breaker_lookback()
+    if len(_RECENT_CLOSES) < lookback:
+        return (False, None)
+    window = list(_RECENT_CLOSES)[-lookback:]
+    if not all(reason == "flat_stall_exit" for _, reason in window):
+        return (False, None)
+    mean_pct = sum(pnl for pnl, _ in window) / lookback
+    if abs(mean_pct) >= _circuit_breaker_pnl_threshold():
+        return (False, None)
+
+    # Trigger: arm suspension and report.
+    _SUSPEND_UNTIL_MONOTONIC = now + (_circuit_breaker_suspend_min() * 60)
+    return (
+        True,
+        f"circuit_breaker_tripped:{lookback}x_flat_stall_mean_{mean_pct:+.3f}pct",
+    )
+
+
+def reset_circuit_breaker_state() -> None:
+    """Test-only: clear deque + suspension. Bot must NEVER call this in
+    the trading path — the state is the breaker's memory."""
+    global _SUSPEND_UNTIL_MONOTONIC
+    _RECENT_CLOSES.clear()
+    _SUSPEND_UNTIL_MONOTONIC = None
 
 
 # Synthetic abstain we substitute when a named voice is missing from
@@ -324,6 +463,33 @@ def _coordinator_weighted_quorum(
     if risk.verdict == "bearish" and risk.confidence >= _RISK_VETO_CONFIDENCE:
         return ("decline", "risk_veto")
 
+    # S24-V Gate 2 — Flat-stall circuit breaker (env-gated, default OFF).
+    # Suspends new entries when the last N closes are all flat_stall with
+    # |mean| below threshold. Checked BEFORE the bullish quorum gate so
+    # the bot stops trying in unproductive chop. See module docstring +
+    # _circuit_broken_now for the trigger logic.
+    broken, breaker_reason = _circuit_broken_now()
+    if broken:
+        return ("decline", breaker_reason or "circuit_breaker")
+
+    # S24-V Gate 1 — Non-risk bullish quorum (env-gated, default OFF).
+    # Discounts risk_voice's constant-bull from the act-quorum because
+    # risk_voice was 139/139 bullish on 2026-05-31 (quant verdict). Risk
+    # still gates via Rule 1 veto; this gate ensures the ACT decision
+    # has support from the other voices, not just risk's yes-man.
+    if _require_non_risk_bullish():
+        non_risk_bullish = sum(
+            1
+            for o in opinions
+            if o.voice_name != "risk_voice" and o.verdict == "bullish"
+        )
+        min_required = _non_risk_bullish_min()
+        if non_risk_bullish < min_required:
+            return (
+                "decline",
+                f"non_risk_bullish_below_min:{non_risk_bullish}_lt_{min_required}",
+            )
+
     # Rule 2 — bearish-count hard veto. If ≥ N voices say bearish, decline
     # regardless of how strongly the other voices buy. Default N=3 of 5.
     bearish_count = sum(1 for o in opinions if o.verdict == "bearish")
@@ -348,4 +514,10 @@ def _coordinator_weighted_quorum(
     return ("decline", "weighted_quorum_below_threshold")
 
 
-__all__ = ["coordinator"]
+__all__ = [
+    "coordinator",
+    # S24-V — exposed for the bot's close-path to feed the breaker, and
+    # for tests that need to reset module-level state.
+    "report_close",
+    "reset_circuit_breaker_state",
+]

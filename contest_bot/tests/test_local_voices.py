@@ -34,6 +34,7 @@ from voices.coordinator_rules import coordinator  # noqa: E402
 from voices.regime_analyst import RegimeAnalystVoice  # noqa: E402
 from voices.memory_voice import MemoryVoice  # noqa: E402
 from voices.strategist_voice import _has_gradeable_indicators  # noqa: E402
+from voices import coordinator_rules as _cr  # noqa: E402
 from voices.risk_voice import (  # noqa: E402
     RiskVoice,
     _compute_risk_band_deterministic,
@@ -1243,3 +1244,188 @@ def test_bootstrap_returns_panel_when_env_set(
     ]
     # Coordinator is the imported function.
     assert panel._coordinator is coordinator
+
+
+# ───────────────────────────────────────────────────────────────────────
+# S24-V — Quant tightening gates (env-gated, default OFF)
+# ───────────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=False)
+def _wq_env(monkeypatch: pytest.MonkeyPatch):
+    """Activate weighted_quorum coordinator for the S24-V tests. The S24-V
+    gates only live in the weighted_quorum branch; legacy coordinator is
+    intentionally untouched."""
+    monkeypatch.setenv("GECKO_COORDINATOR_MODE", "weighted_quorum")
+    yield
+
+
+def _wq_aligned_opinions(non_risk_bullish: int) -> list[VoiceOpinion]:
+    """Build a 5-voice opinion set with exactly `non_risk_bullish` bullish
+    voices among the non-risk voices. risk_voice is always bullish (the
+    constant-bull yes-man the S24-V Gate 1 is meant to discount)."""
+    # Pool of non-risk voices: chart_analyst, memory_voice,
+    # regime_analyst, strategist_voice. Fill `non_risk_bullish` with
+    # bullish, rest with neutral (so the bearish-count veto doesn't fire).
+    non_risk = ["chart_analyst", "memory_voice", "regime_analyst", "strategist_voice"]
+    ops = [_opinion("risk_voice", "bullish", 0.7)]
+    for i, name in enumerate(non_risk):
+        verdict = "bullish" if i < non_risk_bullish else "neutral"
+        ops.append(_opinion(name, verdict, 0.65))
+    return ops
+
+
+def test_s24v_non_risk_bullish_gate_off_by_default(
+    _wq_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Default behavior: 1 non-risk bullish + risk bullish → score 2+2+3=7
+    → act. Gate is OFF unless GECKO_QUORUM_REQUIRE_NON_RISK_BULLISH=1."""
+    monkeypatch.delenv("GECKO_QUORUM_REQUIRE_NON_RISK_BULLISH", raising=False)
+    # 1 non-risk bullish, others neutral, no bearish — should act.
+    opinions = _wq_aligned_opinions(non_risk_bullish=1)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
+    assert action == "act"
+
+
+def test_s24v_non_risk_bullish_gate_blocks_when_below_min(
+    _wq_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With gate ON: 1 non-risk bullish < min 2 → decline with the
+    discriminating reason label, even though weighted score would act."""
+    monkeypatch.setenv("GECKO_QUORUM_REQUIRE_NON_RISK_BULLISH", "1")
+    monkeypatch.setenv("GECKO_QUORUM_NON_RISK_BULLISH_MIN", "2")
+    opinions = _wq_aligned_opinions(non_risk_bullish=1)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
+    assert action == "decline"
+    assert reason is not None
+    assert reason.startswith("non_risk_bullish_below_min:")
+    assert "_lt_2" in reason
+
+
+def test_s24v_non_risk_bullish_gate_allows_when_met(
+    _wq_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With gate ON: 2 non-risk bullish ≥ min 2 → gate passes; the rest
+    of the quorum logic continues and lets it act."""
+    monkeypatch.setenv("GECKO_QUORUM_REQUIRE_NON_RISK_BULLISH", "1")
+    monkeypatch.setenv("GECKO_QUORUM_NON_RISK_BULLISH_MIN", "2")
+    opinions = _wq_aligned_opinions(non_risk_bullish=2)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
+    assert action == "act"
+
+
+def test_s24v_circuit_breaker_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reporting closes is always safe (deque keeps warm) but the
+    breaker itself doesn't fire without GECKO_CIRCUIT_BREAKER=1."""
+    _cr.reset_circuit_breaker_state()
+    monkeypatch.delenv("GECKO_CIRCUIT_BREAKER", raising=False)
+    for _ in range(5):
+        _cr.report_close(0.05, "flat_stall_exit")
+    broken, reason = _cr._circuit_broken_now()
+    assert broken is False
+    assert reason is None
+
+
+def test_s24v_circuit_breaker_trips_on_5x_flat_stall_near_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """5 flat_stall closes with mean |pnl_pct| < threshold trips the
+    breaker. Subsequent _circuit_broken_now calls report `active`."""
+    _cr.reset_circuit_breaker_state()
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER", "1")
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER_LOOKBACK", "5")
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER_PNL_THRESHOLD", "0.10")
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER_SUSPEND_MIN", "240")
+    for pnl in (0.05, -0.07, 0.02, -0.04, 0.03):  # mean ~ -0.002, |mean| < 0.10
+        _cr.report_close(pnl, "flat_stall_exit")
+    broken, reason = _cr._circuit_broken_now()
+    assert broken is True
+    assert reason is not None
+    assert reason.startswith("circuit_breaker_tripped:")
+    # Second call: still suspended, different reason format.
+    broken2, reason2 = _cr._circuit_broken_now()
+    assert broken2 is True
+    assert reason2 is not None
+    assert reason2.startswith("circuit_breaker_active:")
+
+
+def test_s24v_circuit_breaker_skips_when_mean_above_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """5 flat_stall closes but mean |pnl_pct| ≥ threshold → NOT tripped.
+    These are stall exits but the bot is actually losing money — that's
+    a different problem; the breaker only catches dead-zone grind."""
+    _cr.reset_circuit_breaker_state()
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER", "1")
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER_LOOKBACK", "5")
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER_PNL_THRESHOLD", "0.10")
+    for pnl in (-0.3, -0.4, -0.2, -0.3, -0.5):  # mean ~ -0.34, |mean| >> 0.10
+        _cr.report_close(pnl, "flat_stall_exit")
+    broken, _ = _cr._circuit_broken_now()
+    assert broken is False
+
+
+def test_s24v_circuit_breaker_skips_when_non_stall_in_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Even with the breaker enabled, a single non-flat-stall exit
+    (take_profit, stop_loss) in the lookback window breaks the all-stall
+    precondition → breaker does not trip."""
+    _cr.reset_circuit_breaker_state()
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER", "1")
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER_LOOKBACK", "5")
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER_PNL_THRESHOLD", "0.10")
+    _cr.report_close(0.05, "flat_stall_exit")
+    _cr.report_close(-0.04, "flat_stall_exit")
+    _cr.report_close(2.0, "take_profit")  # breaks the all-stall window
+    _cr.report_close(0.03, "flat_stall_exit")
+    _cr.report_close(-0.06, "flat_stall_exit")
+    broken, _ = _cr._circuit_broken_now()
+    assert broken is False
+
+
+def test_s24v_circuit_breaker_short_window_doesnt_fire(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fewer than lookback closes → breaker doesn't have enough data."""
+    _cr.reset_circuit_breaker_state()
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER", "1")
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER_LOOKBACK", "5")
+    for _ in range(3):  # < 5 lookback
+        _cr.report_close(0.02, "flat_stall_exit")
+    broken, _ = _cr._circuit_broken_now()
+    assert broken is False
+
+
+def test_s24v_circuit_breaker_blocks_coordinator_when_tripped(
+    _wq_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When breaker is tripped, weighted_quorum coordinator declines
+    even on a clean act-quorum. This is the load-bearing wire — the
+    coordinator must short-circuit on the breaker."""
+    _cr.reset_circuit_breaker_state()
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER", "1")
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER_LOOKBACK", "5")
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER_PNL_THRESHOLD", "0.10")
+    for pnl in (0.05, -0.07, 0.02, -0.04, 0.03):
+        _cr.report_close(pnl, "flat_stall_exit")
+    # Otherwise-act-eligible quorum.
+    opinions = _wq_aligned_opinions(non_risk_bullish=3)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
+    assert action == "decline"
+    assert reason is not None
+    assert reason.startswith("circuit_breaker_")  # tripped or active
+    _cr.reset_circuit_breaker_state()
+
+
+def test_s24v_report_close_never_raises_on_garbage() -> None:
+    """report_close MUST swallow type errors / nonsense inputs — the
+    bot's close path can't tolerate a coordinator helper raising."""
+    _cr.reset_circuit_breaker_state()
+    # All of these should silently no-op rather than raise.
+    _cr.report_close("not a float", "flat_stall_exit")  # type: ignore[arg-type]
+    _cr.report_close(None, "flat_stall_exit")  # type: ignore[arg-type]
+    _cr.report_close(0.05, None)  # type: ignore[arg-type]
+    # Sanity: deque still works for valid input afterward.
+    _cr.report_close(0.05, "flat_stall_exit")
+    assert len(_cr._RECENT_CLOSES) >= 1

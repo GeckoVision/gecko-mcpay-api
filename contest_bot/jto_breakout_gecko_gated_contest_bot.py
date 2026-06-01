@@ -2739,6 +2739,17 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
         except Exception as exc:  # recorder must never break the close path
             print(f"[decision-store] attach_outcome skipped: {type(exc).__name__}: {exc}")
 
+    # Sprint 24-V: feed the circuit-breaker's rolling close-window.
+    # ALWAYS reports — the breaker itself is env-gated (default OFF),
+    # but the deque is kept warm so flipping the env at runtime takes
+    # immediate effect. Best-effort; the report path NEVER raises.
+    try:
+        from voices.coordinator_rules import report_close as _report_close
+
+        _report_close(round(pnl_pct, 4), reason)
+    except Exception as _crx:
+        print(f"[circuit-breaker] report skipped: {type(_crx).__name__}: {_crx}")
+
     consec_losses = consec_losses + 1 if pnl_pct < 0 else 0
     # iter-3.x 2026-05-20: accumulate into persisted counters so the
     # dashboard PnL tile survives a bot reboot.
