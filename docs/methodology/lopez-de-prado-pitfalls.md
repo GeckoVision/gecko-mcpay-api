@@ -169,3 +169,23 @@ DSR threshold: ≥0.95 to claim a strategy is real. PBO < 0.2 = informative sele
 - `scripts/calibration/carry_universe_validation.py` — full gauntlet example
 - `private/strategy/2026-05-26-carry-universe-precommit-interpretation.md` — pre-commit verdict discipline (Op-1)
 - `feedback_dogfood_loop` memory — pattern of validated nulls before any greenlight
+
+## Reference implementations
+
+**Open-source companion repo** (community, MIT-licensed):
+[fernandodelacalle/adv-financial-ml-marcos-exercises](https://github.com/fernandodelacalle/adv-financial-ml-marcos-exercises)
+
+Notebooks mapping directly to the pitfalls above:
+
+| Notebook | LdP chapter topic | Maps to pitfall |
+|---|---|---|
+| `ch2.ipynb` | Financial Data Structures (tick / volume / dollar bars) | **#3** Inefficient sampling |
+| `ch3.ipynb` | Labeling (triple-barrier, meta-labeling) | **#4** Wrong labeling |
+| `ch4.ipynb` | Sample Weights (uniqueness, sequential bootstrap) | **#5** Non-IID weighting |
+| `ch5.ipynb` | Fractional Differentiation (FFD) | **#2** Integer differentiation |
+| `ch7.ipynb` | Cross-Validation in Finance (purged k-fold, CPCV) | **#6** Leaky CV |
+| `ch6, ch8, ch9` | Ensemble methods, feature importance, hyperparameter tuning | adjacent rigor topics |
+
+**When to reach for these:** before Sprint 28+ ships any learned model on the decision-vector substrate, clone the repo + walk `ch2.ipynb`, `ch3.ipynb`, `ch4.ipynb`, `ch5.ipynb` to crib the patterns. `mlfinlab` (used in the quant-backtest-rigor skill) already wraps most of these; the notebooks show the WHY behind the API.
+
+**Do NOT vendor or fork.** The repo is a public reference — link out, don't ingest. If we want to package any specific helper into Gecko, write a thin wrapper in `scripts/calibration/` that uses `mlfinlab` and cites the notebook.
