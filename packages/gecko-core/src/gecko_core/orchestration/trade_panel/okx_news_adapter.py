@@ -127,8 +127,9 @@ class OKXNewsProvider:
         if not articles:
             return []
 
-        # Convert to chunks
+        # Convert to chunks + fan-out to NewsSink (Sprint 28 S28-WIRE)
         chunks: list[dict[str, Any]] = []
+        _sink = self._news_sink_lazy()
         for a in articles[:max_results]:
             headline = (a.get("title") or a.get("headline") or "").strip()
             body = (a.get("summary") or a.get("body") or a.get("description") or "").strip()
@@ -145,7 +146,56 @@ class OKXNewsProvider:
                     protocol=proto,
                 )
             )
+            # Sprint 28 (2026-06-01): persist to Mongo `market_news` for
+            # the market_researcher voice (S28-AI-1) to read. Fire-and-
+            # forget — sink swallows internally; outer try is belt-and-
+            # suspenders so an ingest hiccup never breaks chunk
+            # generation for the panel.
+            #
+            # ARCHITECTURE CAVEAT: this imports from contest_bot (a
+            # downstream sibling). It's a CODE SMELL flagged for
+            # staff-engineer per docs/methodology/market-news-collection.md
+            # §7 — the clean fix is to promote NewsSink into gecko-core.
+            # Shipping the pragmatic wire today; refactor when a second
+            # provider adapter (CryptoPanic / Fed RSS) lands.
+            if _sink is not None:
+                try:
+                    source_id = a.get("id") or a.get("article_id") or url or headline
+                    tickers = (
+                        [str(t).upper() for t in a.get("tickers")]
+                        if isinstance(a.get("tickers"), list)
+                        else ([proto.upper()] if proto else [])
+                    )
+                    _sink.record(
+                        {
+                            "source": "okx-news",
+                            "source_id": str(source_id),
+                            "url": url,
+                            "headline": headline,
+                            "body": body,
+                            "published_at": published,
+                            "tickers": tickers,
+                        }
+                    )
+                except Exception as _wx:  # pragma: no cover
+                    _log.warning("okx_news.sink_record_failed err=%s", _wx)
         return chunks
+
+    def _news_sink_lazy(self) -> Any:
+        """Lazy-construct NewsSink on first call. Cached per adapter
+        instance. Returns None when MONGODB_URI is unset OR the sibling
+        import fails (e.g. gecko-core consumed outside the monorepo)."""
+        if hasattr(self, "_sink_cached"):
+            return self._sink_cached
+        try:
+            # Sibling-package import. See ARCHITECTURE CAVEAT above.
+            from contest_bot.decision_store.news_sink import NewsSink  # type: ignore[import-not-found]
+
+            self._sink_cached = NewsSink.from_env()
+        except Exception as exc:
+            _log.info("okx_news.sink_unavailable err=%s", exc)
+            self._sink_cached = None
+        return self._sink_cached
 
 
 def _normalize_articles(resp: dict[str, Any] | list[Any]) -> list[dict[str, Any]]:
