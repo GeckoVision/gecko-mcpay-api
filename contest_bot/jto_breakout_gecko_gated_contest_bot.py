@@ -128,6 +128,16 @@ BREAKOUT_MAGNITUDE_MIN_PCT = float(os.environ.get("GECKO_BREAKOUT_MAGNITUDE_MIN_
 USD_PER_TRADE = int(
     os.environ.get("USD_PER_TRADE", "45")
 )  # runtime-overridable for "run and adjust": e.g. USD_PER_TRADE=25 for a smaller first live session. Default 45 (contest-proven). With MAX_CONCURRENT=2: 45×2=$90 deployed of ~$100 wallet — leaves little headroom, so start smaller on the first oracle-gated live run.
+
+# Sprint 25 (2026-05-31) — STARTING wallet budget for the paper-sink
+# idle-USDC estimate. The real wallet balance is fetched live at startup
+# (~$100.19 currently) but isn't stored as a constant we can reference at
+# close time. The Kamino paper-sink needs to estimate "how much USDC is
+# idle right now" without an RPC call per close, so we use:
+#   idle ≈ STARTING_USDC_PAPER + realized_pnl_today - total_spent_usd
+# Default 100.0 matches today's paper wallet; override via env if the
+# paper budget changes. Used ONLY by the Kamino paper-sink wire below.
+STARTING_USDC_PAPER = float(os.environ.get("GECKO_STARTING_USDC_PAPER", "100.0"))
 STOP_LOSS_PCT = 3
 TAKE_PROFIT_PCT = 2  # s41 2026-05-22: 4 → 2. Quant symbol study: universe oscillates ~2%, rarely +4% (only WIF reached it); +4% TP was structurally unreachable. Founder: "take 1-2%, not 4%". TODO: validate TP2 EV via calibration harness. PRIOR iter-3.5: 8 → 4. Founder observation + live peaks confirm: these memes oscillate ~2% naturally; +8% requires a 4x-of-normal move that almost never happens in chop. PYTH peak was +1.53% (just 0.47% short of trail activation) before drifting back. With trail-activate-at-2% catching pokes and TP-at-4% catching real momentum, 3 × +2-4% trades outperforms 1 × +8% miracle.
 STALL_GREEN_EXIT_AGE_MIN = 60  # iter-3.5 live 2026-05-20: stall-exit overlay (founder rule). If a position is open ≥60min AND pnl ≥STALL_GREEN_EXIT_MIN_PCT, force-close at market. Catches the "drifted +2-3% then died" failure mode that neither trail (no peak retracement) nor TP (never hit 4%) catches.
@@ -2739,6 +2749,17 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
         except Exception as exc:  # recorder must never break the close path
             print(f"[decision-store] attach_outcome skipped: {type(exc).__name__}: {exc}")
 
+    # Sprint 24-V: feed the circuit-breaker's rolling close-window.
+    # ALWAYS reports — the breaker itself is env-gated (default OFF),
+    # but the deque is kept warm so flipping the env at runtime takes
+    # immediate effect. Best-effort; the report path NEVER raises.
+    try:
+        from voices.coordinator_rules import report_close as _report_close
+
+        _report_close(round(pnl_pct, 4), reason)
+    except Exception as _crx:
+        print(f"[circuit-breaker] report skipped: {type(_crx).__name__}: {_crx}")
+
     consec_losses = consec_losses + 1 if pnl_pct < 0 else 0
     # iter-3.x 2026-05-20: accumulate into persisted counters so the
     # dashboard PnL tile survives a bot reboot.
@@ -2772,6 +2793,30 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
         decision_id=pos.get("gate_decision_id"),
     )
     _persist_state()
+
+    # Sprint 25 (tasks #117, #141): Kamino paper-sink. Best-effort
+    # auto-deposit of idle USDC into the simulated Kamino main-market
+    # USDC reserve. Default OFF — flip via GECKO_KAMINO_PAPER_SINK=1.
+    # NEVER raises into the trading loop; sink swallows its own
+    # exceptions, and this outer try is belt-and-suspenders.
+    # Skips silently if decision_id is missing (per defi-engineer's
+    # safer-than-synthesize guidance — synthesizing breaks
+    # idempotency on same-second retries).
+    try:
+        _did = pos.get("decision_id") or pos.get("gate_decision_id")
+        if _did:
+            from kamino.paper_sink import get_default_sink as _kamino_sink
+
+            _idle_usdc = max(
+                0.0,
+                STARTING_USDC_PAPER + realized_pnl_today - total_spent_usd,
+            )
+            _kamino_sink().on_position_close(
+                idle_usdc=_idle_usdc,
+                decision_id=_did,
+            )
+    except Exception as _ksx:
+        print(f"[kamino-paper-sink] skipped: {type(_ksx).__name__}: {_ksx}")
 
 
 # ── Per-poll telemetry (iter-3.8, 2026-05-21) ──────────────────────

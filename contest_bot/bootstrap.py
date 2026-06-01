@@ -18,15 +18,29 @@ from llm_client import OpenRouterClient
 from local_memory import LocalMemory
 from local_panel import LocalPanel
 from voices.base import LocalVoice
+import os
+
 from voices.chart_analyst import ChartAnalystVoice
 from voices.coordinator_rules import coordinator
 from voices.memory_voice import (
     MemoryVoice,  # noqa: F401 — kept for v1 callers; v2 replaces in panel
 )
+from voices.market_researcher import MarketResearcherVoice
 from voices.memory_voice_v2 import MemoryVoiceV2
 from voices.regime_analyst import RegimeAnalystVoice
 from voices.risk_voice import RiskVoice
 from voices.strategist_voice import StrategistVoice
+
+
+def _market_researcher_enabled() -> bool:
+    """Sprint 28: voice is env-gated default OFF. Skips construction
+    entirely when off — no LLM cost, no Mongo poll, no panel impact.
+    """
+    return os.environ.get("GECKO_MARKET_RESEARCHER_ENABLED", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 def build_local_panel(memory: LocalMemory) -> LocalPanel:
@@ -65,6 +79,12 @@ def build_local_panel(memory: LocalMemory) -> LocalPanel:
         # file has parallel WIP that lands first).
         StrategistVoice(client=client),
     ]
+    # Sprint 28 (2026-06-01): market_researcher voice — env-gated,
+    # default OFF. Reads market_news Mongo collection (DATA-2). Zero
+    # LLM cost on the grade path; the LLM sentiment classification is
+    # done at ingest time by scripts/data/classify_news_rows.py.
+    if _market_researcher_enabled():
+        voices.append(MarketResearcherVoice())
     return LocalPanel(voices=voices, memory=memory, coordinator=coordinator)
 
 

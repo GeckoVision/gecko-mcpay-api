@@ -33,6 +33,8 @@ from voices.chart_analyst import ChartAnalystVoice  # noqa: E402
 from voices.coordinator_rules import coordinator  # noqa: E402
 from voices.regime_analyst import RegimeAnalystVoice  # noqa: E402
 from voices.memory_voice import MemoryVoice  # noqa: E402
+from voices.strategist_voice import _has_gradeable_indicators  # noqa: E402
+from voices import coordinator_rules as _cr  # noqa: E402
 from voices.risk_voice import (  # noqa: E402
     RiskVoice,
     _compute_risk_band_deterministic,
@@ -306,6 +308,101 @@ def test_memory_voice_warm_start_calls_llm(tmp_path: Path) -> None:
     assert op.confidence == pytest.approx(0.65)
     assert calls["n"] == 1
     client.aclose()
+
+
+def test_memory_voice_filters_cross_instrument(tmp_path: Path) -> None:
+    """S24-S fix 2b: memory_voice must filter ledger rows to the current
+    instrument before computing cold-start floor. Without the filter, a
+    losing WIF trade poisoned a PYTH grade — the universe-summed bearish
+    bias was being attributed to whichever symbol was currently graded.
+
+    Setup: ledger has 3 WIF closes (all losses) but caller is grading
+    PYTH. Voice MUST abstain (cold start for PYTH), NOT call the LLM
+    with poisoned cross-instrument bearish history.
+    """
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return _make_response('{"verdict": "bearish", "confidence": 0.6}')
+
+    client = _make_or_client(handler)
+    voice = MemoryVoice(client=client)
+    mem = LocalMemory(path=tmp_path / "memory_xinstr.jsonl")
+    # 3 WIF losses — pre-fix, this would clear the 3-row cold-start
+    # floor for ANY grade (cross-instrument bleed). Post-fix, PYTH still
+    # sees zero rows and abstains.
+    for pnl_pct in (-0.5, -0.4, -0.6):
+        mem.append(
+            "position_close",
+            {"symbol": "WIF-USDC", "pnl_pct": pnl_pct, "exit_reason": "stop_loss"},
+        )
+
+    pyth_state = _healthy_market_state(instrument="PYTH", symbol="PYTH-USDC")
+    op = asyncio.run(voice.grade(pyth_state, mem))
+    assert op.verdict == "abstain", (
+        f"PYTH should cold-start despite WIF history; got {op.verdict}"
+    )
+    assert op.reasoning == "cold_start_insufficient_history"
+    assert calls["n"] == 0, "instrument-filter must short-circuit the LLM call"
+    client.aclose()
+
+
+def test_memory_voice_same_instrument_still_fires(tmp_path: Path) -> None:
+    """Companion to _filters_cross_instrument: when the ledger DOES
+    contain enough same-symbol history, the voice should warm-start and
+    call the LLM. Guards against the filter becoming a permanent gag.
+    """
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return _make_response(
+            json.dumps({"verdict": "bullish", "confidence": 0.65})
+        )
+
+    client = _make_or_client(handler)
+    voice = MemoryVoice(client=client)
+    mem = LocalMemory(path=tmp_path / "memory_same.jsonl")
+    # 2 noise rows on other symbols (should be filtered out) + 4 PYTH
+    # rows (warm-start fuel after filter).
+    mem.append("position_close", {"symbol": "WIF-USDC", "pnl_pct": -0.5})
+    mem.append("position_close", {"symbol": "SOL-USDC", "pnl_pct": +0.8})
+    for _ in range(4):
+        mem.append(
+            "position_close",
+            {"symbol": "PYTH-USDC", "pnl_pct": 1.2, "exit_reason": "take_profit"},
+        )
+
+    pyth_state = _healthy_market_state(instrument="PYTH", symbol="PYTH-USDC")
+    op = asyncio.run(voice.grade(pyth_state, mem))
+    assert op.verdict == "bullish"
+    assert calls["n"] == 1
+    client.aclose()
+
+
+def test_strategist_gateable_with_adx_only(tmp_path: Path) -> None:
+    """S24-S fix 2c: _has_gradeable_indicators should return True when
+    ADX is present, even if other indicators (RSI/EMA/MFI) computed
+    None on a noisy bar. Prior gate required ADX AND RSI; the AND
+    pushed the strategist to 41% abstain in production. This test
+    pins the relaxed contract: ADX-only.
+    """
+    # Healthy 30 bars → indicators module will compute ADX cleanly.
+    state = _healthy_market_state()
+    assert _has_gradeable_indicators(state), (
+        "Healthy 30-bar state with ADX should be gradeable"
+    )
+
+
+def test_strategist_abstains_with_too_few_bars(tmp_path: Path) -> None:
+    """Companion: fewer than 24 bars → not gradeable (ADX needs ~28
+    smoothing bars). Guards against the gate becoming permissive enough
+    to grade synthetic / partial bar sets."""
+    state = _healthy_market_state()
+    # Truncate to 10 bars
+    state["ohlcv_5m"] = state["ohlcv_5m"][:10]
+    assert not _has_gradeable_indicators(state)
 
 
 def test_memory_voice_parse_fail_returns_abstain(tmp_path: Path) -> None:
@@ -1147,3 +1244,469 @@ def test_bootstrap_returns_panel_when_env_set(
     ]
     # Coordinator is the imported function.
     assert panel._coordinator is coordinator
+
+
+# ───────────────────────────────────────────────────────────────────────
+# S24-V — Quant tightening gates (env-gated, default OFF)
+# ───────────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=False)
+def _wq_env(monkeypatch: pytest.MonkeyPatch):
+    """Activate weighted_quorum coordinator for the S24-V tests. The S24-V
+    gates only live in the weighted_quorum branch; legacy coordinator is
+    intentionally untouched."""
+    monkeypatch.setenv("GECKO_COORDINATOR_MODE", "weighted_quorum")
+    yield
+
+
+def _wq_aligned_opinions(non_risk_bullish: int) -> list[VoiceOpinion]:
+    """Build a 5-voice opinion set with exactly `non_risk_bullish` bullish
+    voices among the non-risk voices. risk_voice is always bullish (the
+    constant-bull yes-man the S24-V Gate 1 is meant to discount)."""
+    # Pool of non-risk voices: chart_analyst, memory_voice,
+    # regime_analyst, strategist_voice. Fill `non_risk_bullish` with
+    # bullish, rest with neutral (so the bearish-count veto doesn't fire).
+    non_risk = ["chart_analyst", "memory_voice", "regime_analyst", "strategist_voice"]
+    ops = [_opinion("risk_voice", "bullish", 0.7)]
+    for i, name in enumerate(non_risk):
+        verdict = "bullish" if i < non_risk_bullish else "neutral"
+        ops.append(_opinion(name, verdict, 0.65))
+    return ops
+
+
+def test_s24v_non_risk_bullish_gate_off_by_default(
+    _wq_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Default behavior: 1 non-risk bullish + risk bullish → score 2+2+3=7
+    → act. Gate is OFF unless GECKO_QUORUM_REQUIRE_NON_RISK_BULLISH=1."""
+    monkeypatch.delenv("GECKO_QUORUM_REQUIRE_NON_RISK_BULLISH", raising=False)
+    # 1 non-risk bullish, others neutral, no bearish — should act.
+    opinions = _wq_aligned_opinions(non_risk_bullish=1)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
+    assert action == "act"
+
+
+def test_s24v_non_risk_bullish_gate_blocks_when_below_min(
+    _wq_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With gate ON: 1 non-risk bullish < min 2 → decline with the
+    discriminating reason label, even though weighted score would act."""
+    monkeypatch.setenv("GECKO_QUORUM_REQUIRE_NON_RISK_BULLISH", "1")
+    monkeypatch.setenv("GECKO_QUORUM_NON_RISK_BULLISH_MIN", "2")
+    opinions = _wq_aligned_opinions(non_risk_bullish=1)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
+    assert action == "decline"
+    assert reason is not None
+    assert reason.startswith("non_risk_bullish_below_min:")
+    assert "_lt_2" in reason
+
+
+def test_s24v_non_risk_bullish_gate_allows_when_met(
+    _wq_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With gate ON: 2 non-risk bullish ≥ min 2 → gate passes; the rest
+    of the quorum logic continues and lets it act."""
+    monkeypatch.setenv("GECKO_QUORUM_REQUIRE_NON_RISK_BULLISH", "1")
+    monkeypatch.setenv("GECKO_QUORUM_NON_RISK_BULLISH_MIN", "2")
+    opinions = _wq_aligned_opinions(non_risk_bullish=2)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
+    assert action == "act"
+
+
+def test_s24v_circuit_breaker_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reporting closes is always safe (deque keeps warm) but the
+    breaker itself doesn't fire without GECKO_CIRCUIT_BREAKER=1."""
+    _cr.reset_circuit_breaker_state()
+    monkeypatch.delenv("GECKO_CIRCUIT_BREAKER", raising=False)
+    for _ in range(5):
+        _cr.report_close(0.05, "flat_stall_exit")
+    broken, reason = _cr._circuit_broken_now()
+    assert broken is False
+    assert reason is None
+
+
+def test_s24v_circuit_breaker_trips_on_5x_flat_stall_near_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """5 flat_stall closes with mean |pnl_pct| < threshold trips the
+    breaker. Subsequent _circuit_broken_now calls report `active`."""
+    _cr.reset_circuit_breaker_state()
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER", "1")
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER_LOOKBACK", "5")
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER_PNL_THRESHOLD", "0.10")
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER_SUSPEND_MIN", "240")
+    for pnl in (0.05, -0.07, 0.02, -0.04, 0.03):  # mean ~ -0.002, |mean| < 0.10
+        _cr.report_close(pnl, "flat_stall_exit")
+    broken, reason = _cr._circuit_broken_now()
+    assert broken is True
+    assert reason is not None
+    assert reason.startswith("circuit_breaker_tripped:")
+    # Second call: still suspended, different reason format.
+    broken2, reason2 = _cr._circuit_broken_now()
+    assert broken2 is True
+    assert reason2 is not None
+    assert reason2.startswith("circuit_breaker_active:")
+
+
+def test_s24v_circuit_breaker_skips_when_mean_above_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """5 flat_stall closes but mean |pnl_pct| ≥ threshold → NOT tripped.
+    These are stall exits but the bot is actually losing money — that's
+    a different problem; the breaker only catches dead-zone grind."""
+    _cr.reset_circuit_breaker_state()
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER", "1")
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER_LOOKBACK", "5")
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER_PNL_THRESHOLD", "0.10")
+    for pnl in (-0.3, -0.4, -0.2, -0.3, -0.5):  # mean ~ -0.34, |mean| >> 0.10
+        _cr.report_close(pnl, "flat_stall_exit")
+    broken, _ = _cr._circuit_broken_now()
+    assert broken is False
+
+
+def test_s24v_circuit_breaker_skips_when_non_stall_in_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Even with the breaker enabled, a single non-flat-stall exit
+    (take_profit, stop_loss) in the lookback window breaks the all-stall
+    precondition → breaker does not trip."""
+    _cr.reset_circuit_breaker_state()
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER", "1")
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER_LOOKBACK", "5")
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER_PNL_THRESHOLD", "0.10")
+    _cr.report_close(0.05, "flat_stall_exit")
+    _cr.report_close(-0.04, "flat_stall_exit")
+    _cr.report_close(2.0, "take_profit")  # breaks the all-stall window
+    _cr.report_close(0.03, "flat_stall_exit")
+    _cr.report_close(-0.06, "flat_stall_exit")
+    broken, _ = _cr._circuit_broken_now()
+    assert broken is False
+
+
+def test_s24v_circuit_breaker_short_window_doesnt_fire(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fewer than lookback closes → breaker doesn't have enough data."""
+    _cr.reset_circuit_breaker_state()
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER", "1")
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER_LOOKBACK", "5")
+    for _ in range(3):  # < 5 lookback
+        _cr.report_close(0.02, "flat_stall_exit")
+    broken, _ = _cr._circuit_broken_now()
+    assert broken is False
+
+
+def test_s24v_circuit_breaker_blocks_coordinator_when_tripped(
+    _wq_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When breaker is tripped, weighted_quorum coordinator declines
+    even on a clean act-quorum. This is the load-bearing wire — the
+    coordinator must short-circuit on the breaker."""
+    _cr.reset_circuit_breaker_state()
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER", "1")
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER_LOOKBACK", "5")
+    monkeypatch.setenv("GECKO_CIRCUIT_BREAKER_PNL_THRESHOLD", "0.10")
+    for pnl in (0.05, -0.07, 0.02, -0.04, 0.03):
+        _cr.report_close(pnl, "flat_stall_exit")
+    # Otherwise-act-eligible quorum.
+    opinions = _wq_aligned_opinions(non_risk_bullish=3)
+    action, reason = coordinator(opinions, regime_1h="TREND-UP")
+    assert action == "decline"
+    assert reason is not None
+    assert reason.startswith("circuit_breaker_")  # tripped or active
+    _cr.reset_circuit_breaker_state()
+
+
+def test_s24v_report_close_never_raises_on_garbage() -> None:
+    """report_close MUST swallow type errors / nonsense inputs — the
+    bot's close path can't tolerate a coordinator helper raising."""
+    _cr.reset_circuit_breaker_state()
+    # All of these should silently no-op rather than raise.
+    _cr.report_close("not a float", "flat_stall_exit")  # type: ignore[arg-type]
+    _cr.report_close(None, "flat_stall_exit")  # type: ignore[arg-type]
+    _cr.report_close(0.05, None)  # type: ignore[arg-type]
+    # Sanity: deque still works for valid input afterward.
+    _cr.report_close(0.05, "flat_stall_exit")
+    assert len(_cr._RECENT_CLOSES) >= 1
+
+
+# ───────────────────────────────────────────────────────────────────────
+# S24-X — Per-voice model env-resolution
+# ───────────────────────────────────────────────────────────────────────
+
+
+from voices.model_env import DEFAULT_MODEL, resolve_voice_model  # noqa: E402
+
+
+def test_s24x_resolve_falls_back_when_no_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No env set → fallback wins (historical DEFAULT_MODEL preserved)."""
+    monkeypatch.delenv("GECKO_CHART_ANALYST_MODEL", raising=False)
+    monkeypatch.delenv("GECKO_VOICE_MODEL", raising=False)
+    assert resolve_voice_model("chart_analyst") == DEFAULT_MODEL
+    assert DEFAULT_MODEL == "openai/gpt-4o-mini"
+
+
+def test_s24x_per_voice_env_wins(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Per-voice env beats panel-wide and beats fallback."""
+    monkeypatch.setenv("GECKO_CHART_ANALYST_MODEL", "anthropic/claude-haiku-4-5")
+    monkeypatch.setenv("GECKO_VOICE_MODEL", "deepseek/deepseek-chat")
+    assert resolve_voice_model("chart_analyst") == "anthropic/claude-haiku-4-5"
+
+
+def test_s24x_panel_wide_env_falls_through(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When only the panel-wide env is set, every voice inherits it."""
+    monkeypatch.delenv("GECKO_CHART_ANALYST_MODEL", raising=False)
+    monkeypatch.delenv("GECKO_MEMORY_VOICE_MODEL", raising=False)
+    monkeypatch.setenv("GECKO_VOICE_MODEL", "deepseek/deepseek-chat")
+    assert resolve_voice_model("chart_analyst") == "deepseek/deepseek-chat"
+    assert resolve_voice_model("memory_voice") == "deepseek/deepseek-chat"
+
+
+def test_s24x_empty_env_treated_as_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Empty-string env must NOT override (otherwise an unset var that
+    accidentally serialized as '' would silently clear the model)."""
+    monkeypatch.setenv("GECKO_CHART_ANALYST_MODEL", "   ")  # whitespace
+    monkeypatch.delenv("GECKO_VOICE_MODEL", raising=False)
+    assert resolve_voice_model("chart_analyst") == DEFAULT_MODEL
+
+
+def test_s24x_chart_analyst_constructor_uses_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ChartAnalystVoice constructor with model=None resolves via env."""
+    monkeypatch.setenv("GECKO_CHART_ANALYST_MODEL", "anthropic/claude-haiku-4-5")
+    from voices.chart_analyst import ChartAnalystVoice
+
+    voice = ChartAnalystVoice(client=_make_or_client(lambda r: _make_response("{}")))
+    assert voice._model == "anthropic/claude-haiku-4-5"
+
+
+def test_s24x_explicit_model_kwarg_still_wins(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Explicit model= kwarg beats env (test fixtures + advanced callers
+    must retain full control)."""
+    monkeypatch.setenv("GECKO_CHART_ANALYST_MODEL", "anthropic/claude-haiku-4-5")
+    from voices.chart_analyst import ChartAnalystVoice
+
+    voice = ChartAnalystVoice(
+        client=_make_or_client(lambda r: _make_response("{}")),
+        model="openai/gpt-4o-mini",  # explicit — env ignored
+    )
+    assert voice._model == "openai/gpt-4o-mini"
+
+
+def test_s24x_memory_voice_constructor_uses_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """memory_voice picks up GECKO_MEMORY_VOICE_MODEL."""
+    monkeypatch.setenv("GECKO_MEMORY_VOICE_MODEL", "deepseek/deepseek-chat")
+    voice = MemoryVoice(client=_make_or_client(lambda r: _make_response("{}")))
+    assert voice._model == "deepseek/deepseek-chat"
+
+
+# ───────────────────────────────────────────────────────────────────────
+# Sprint 28 — market_researcher voice tests
+# ───────────────────────────────────────────────────────────────────────
+
+
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+from voices.market_researcher import MarketResearcherVoice  # noqa: E402
+
+
+def _now() -> datetime:
+    """Fixed timestamp anchor — tests build news rows relative to this."""
+    return datetime(2026, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+
+def _row(
+    *,
+    symbol: str = "PYTH",
+    bias: float | None = 0.0,
+    age_hours: float = 1.0,
+    classified: bool = True,
+) -> dict:
+    """Synthesize a market_news row."""
+    published = (_now() - timedelta(hours=age_hours)).isoformat().replace("+00:00", "Z")
+    doc: dict = {
+        "tickers": [symbol.upper()],
+        "headline": f"{symbol} test headline",
+        "body": "test body",
+        "published_at": published,
+        "source": "test",
+    }
+    if classified:
+        doc["classification"] = {"bias_score": bias, "regime_impact": "neutral"}
+    return doc
+
+
+def _make_voice(rows_by_symbol: dict[str, list[dict]] | None = None,
+                window_hours: float = 6.0) -> MarketResearcherVoice:
+    """Inject a deterministic news_lookup callable."""
+    rows_by_symbol = rows_by_symbol or {}
+
+    def _lookup(symbol: str, *, since=None, limit: int = 200) -> list[dict]:
+        out = rows_by_symbol.get(symbol.upper(), [])
+        if since is None:
+            return out
+        # Filter on the since cutoff; tests rely on this for window tests.
+        return [
+            r for r in out
+            if datetime.fromisoformat(r["published_at"].replace("Z", "+00:00")) >= since
+        ]
+
+    return MarketResearcherVoice(
+        news_lookup=_lookup,
+        window_hours=window_hours,
+        half_life_hours=6.0,
+        now_fn=_now,
+    )
+
+
+def test_market_researcher_cold_start_zero_rows_abstains() -> None:
+    voice = _make_voice({"PYTH": []})
+    op = asyncio.run(voice.grade({"instrument": "PYTH"}, memory=None))
+    assert op.verdict == "abstain"
+    assert op.confidence == 0.0
+    assert op.reasoning == "no_news_in_window"
+
+
+def test_market_researcher_cold_start_under_floor_abstains() -> None:
+    voice = _make_voice({"PYTH": [_row(bias=0.4), _row(bias=0.3)]})
+    op = asyncio.run(voice.grade({"instrument": "PYTH"}, memory=None))
+    assert op.verdict == "abstain"
+    assert "cold_start_insufficient_news" in op.reasoning
+
+
+def test_market_researcher_bullish_majority_returns_bullish() -> None:
+    rows = [_row(bias=0.5, age_hours=0.5) for _ in range(4)]
+    voice = _make_voice({"PYTH": rows})
+    op = asyncio.run(voice.grade({"instrument": "PYTH"}, memory=None))
+    assert op.verdict == "bullish"
+    assert 0.6 < op.confidence < 0.9
+
+
+def test_market_researcher_bearish_majority_returns_bearish() -> None:
+    rows = [_row(bias=-0.6, age_hours=0.5) for _ in range(4)]
+    voice = _make_voice({"PYTH": rows})
+    op = asyncio.run(voice.grade({"instrument": "PYTH"}, memory=None))
+    assert op.verdict == "bearish"
+    assert 0.6 < op.confidence < 0.9
+
+
+def test_market_researcher_mixed_returns_neutral() -> None:
+    # Symmetric mix → agg_bias close to 0 → neutral
+    rows = [
+        _row(bias=0.3, age_hours=1.0),
+        _row(bias=-0.3, age_hours=1.0),
+        _row(bias=0.1, age_hours=1.0),
+    ]
+    voice = _make_voice({"PYTH": rows})
+    op = asyncio.run(voice.grade({"instrument": "PYTH"}, memory=None))
+    assert op.verdict == "neutral"
+
+
+def test_market_researcher_filters_to_symbol_no_bleed() -> None:
+    """JTO-tagged row must NEVER contribute to a PYTH grade. The
+    cross-instrument bleed bug that bit memory_voice (S24-S fix 2b)
+    cannot reappear here."""
+    voice = _make_voice({
+        "PYTH": [],  # PYTH has nothing
+        "JTO": [_row(symbol="JTO", bias=-0.9) for _ in range(5)],  # JTO is loud
+    })
+    op = asyncio.run(voice.grade({"instrument": "PYTH"}, memory=None))
+    # PYTH should abstain — JTO rows MUST NOT bleed in.
+    assert op.verdict == "abstain"
+    assert op.reasoning == "no_news_in_window"
+
+
+def test_market_researcher_recency_weighting() -> None:
+    """Two rows same bias, different ages: fresher row dominates the
+    weighted aggregate. Confidence should reflect the agg_bias."""
+    fresh_bullish_rows = [_row(bias=0.8, age_hours=0.5) for _ in range(3)]
+    stale_bullish_rows = [_row(bias=0.8, age_hours=5.5) for _ in range(3)]
+    voice_fresh = _make_voice({"PYTH": fresh_bullish_rows})
+    voice_stale = _make_voice({"PYTH": stale_bullish_rows})
+    op_fresh = asyncio.run(voice_fresh.grade({"instrument": "PYTH"}, memory=None))
+    op_stale = asyncio.run(voice_stale.grade({"instrument": "PYTH"}, memory=None))
+    # Both should be bullish; both should have the same agg_bias since
+    # all rows have the same bias_score. Tests that recency weighting
+    # doesn't crash, not that it changes the verdict.
+    assert op_fresh.verdict == "bullish"
+    assert op_stale.verdict == "bullish"
+
+
+def test_market_researcher_skips_unclassified_rows() -> None:
+    """Rows missing `classification` field don't count toward floor."""
+    rows = [
+        _row(bias=0.5, classified=False),
+        _row(bias=0.5, classified=False),
+        _row(bias=0.5, classified=False),
+    ]
+    voice = _make_voice({"PYTH": rows})
+    op = asyncio.run(voice.grade({"instrument": "PYTH"}, memory=None))
+    # All 3 are unclassified → 0 classified → abstain via cold-start.
+    assert op.verdict == "abstain"
+    assert "cold_start_insufficient_news" in op.reasoning
+
+
+def test_market_researcher_mongo_unavailable_abstains() -> None:
+    """When news_lookup raises, voice abstains cleanly."""
+    def _broken_lookup(*_args, **_kwargs):
+        raise RuntimeError("mongo down")
+
+    voice = MarketResearcherVoice(
+        news_lookup=_broken_lookup,
+        window_hours=6.0,
+        half_life_hours=6.0,
+        now_fn=_now,
+    )
+    op = asyncio.run(voice.grade({"instrument": "PYTH"}, memory=None))
+    assert op.verdict == "abstain"
+    assert "news_lookup_error" in op.reasoning
+
+
+def test_market_researcher_window_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """GECKO_MARKET_RESEARCHER_WINDOW_HOURS shrinks the lookback bound."""
+    monkeypatch.setenv("GECKO_MARKET_RESEARCHER_WINDOW_HOURS", "1.0")
+    # Rows 2h old — outside the 1h window
+    rows = [_row(bias=0.5, age_hours=2.0) for _ in range(5)]
+    # Lookup honors the since cutoff; voice should see 0 rows
+    voice = MarketResearcherVoice(
+        news_lookup=lambda s, since=None, limit=200: [
+            r for r in rows
+            if since is None or datetime.fromisoformat(
+                r["published_at"].replace("Z", "+00:00")
+            ) >= since
+        ],
+        # Force re-read from env by NOT passing window_hours
+        half_life_hours=6.0,
+        now_fn=_now,
+    )
+    op = asyncio.run(voice.grade({"instrument": "PYTH"}, memory=None))
+    assert op.verdict == "abstain"
+    assert op.reasoning == "no_news_in_window"
+
+
+def test_market_researcher_confidence_has_variance() -> None:
+    """≥5 unique confidence values across 10 synthetic snapshots —
+    anti-anchor-snap regression (S24-S template)."""
+    conf_values: set[float] = set()
+    # Vary n_rows (3-7) and bias (-0.8 to +0.8) to span the space
+    for n_rows in range(3, 8):
+        for bias in [-0.8, -0.4, 0.0, 0.3, 0.6]:
+            rows = [_row(bias=bias, age_hours=1.0) for _ in range(n_rows)]
+            voice = _make_voice({"PYTH": rows})
+            op = asyncio.run(voice.grade({"instrument": "PYTH"}, memory=None))
+            conf_values.add(round(op.confidence, 4))
+    # Hard requirement: ≥5 unique values
+    assert len(conf_values) >= 5, (
+        f"Confidence has only {len(conf_values)} unique values; "
+        f"anchor-snap regression risk."
+    )
+
+
+def test_market_researcher_unresolved_symbol_abstains() -> None:
+    """Empty instrument + missing symbol → abstain immediately, do NOT
+    fall back to universe-wide query."""
+    voice = _make_voice({"PYTH": [_row(bias=0.5) for _ in range(5)]})
+    # market_state has neither instrument nor symbol
+    op = asyncio.run(voice.grade({}, memory=None))
+    assert op.verdict == "abstain"
+    assert op.reasoning == "symbol_unresolved"

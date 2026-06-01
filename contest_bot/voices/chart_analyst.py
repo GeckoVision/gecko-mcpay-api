@@ -72,17 +72,26 @@ WHAT TO GRADE
   5. Range posture: is the asset in tight chop (<2% 24h range), normal
      drift (2-8%), or active trend (>8%).
 
-ABSTAIN PROTOCOL (load-bearing)
+ABSTAIN PROTOCOL (load-bearing — DATA-QUALITY ONLY)
 Return verdict='abstain' when ANY of the following holds:
   - fewer than 24 bars provided,
   - more than 4 of the 30 bars have zero volume (thin-liquidity flag),
   - the most recent bar is older than 10 minutes (stale feed),
-  - the 24h range is below 1% (range-bound chop - no setup to grade),
-  - weekend low-vol window (Sat 06:00 - Sun 22:00 UTC) AND 24h volume
-    USD < $1M (cross-instrument equivalent of the PRD weekend penalty).
+  - the 24h range is below 0.4% (true dead-tape, not just quiet chop).
+WEEKEND DOWNWEIGHT (not abstain): when the snapshot is in the weekend
+low-vol window (Sat 06:00 - Sun 22:00 UTC) AND 24h volume USD < $1M,
+CAP your confidence at 0.75 regardless of the setup quality — quiet
+weekends produce real but lower-conviction reads. Return neutral or
+bullish as the setup actually warrants; do NOT abstain on weekend alone.
 Return verdict='neutral' when bars are healthy but the setup is mid -
 trend is flat OR breakout has no volume confirmation. 'neutral' is NOT
 an abstain; the coordinator treats it as a real call.
+S24-S fix 2a (2026-05-31): range floor 1.0% → 0.4%; weekend abstain
+replaced with confidence cap. Prior version had 83% abstain rate on
+weekend / quiet-hour polls because the 1.0% range floor + weekend
+abstain together silenced the voice during the overnight window when
+the bot polls most. Load-bearing thin-liquidity zero-vol defense at
+the response-parsing layer stays unchanged.
 
 MOMENTUM ACCELERATION (positive-criterion lens - does NOT override abstain)
 A specific, observable setup class. When a setup fires this pattern, the
@@ -152,13 +161,18 @@ class ChartAnalystVoice:
     def __init__(
         self,
         client: OpenRouterClient,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
         *,
         corpus_top_k: int = 5,
         corpus_enabled: bool = True,
     ) -> None:
         self._client = client
-        self._model = model
+        # S24-X: env-resolve when caller didn't pass an explicit model.
+        # Caller-supplied value (e.g. tests) wins; env overrides fall
+        # back to the historical DEFAULT_MODEL ("openai/gpt-4o-mini").
+        from voices.model_env import resolve_voice_model
+
+        self._model = model or resolve_voice_model("chart_analyst", DEFAULT_MODEL)
         self._corpus_top_k = corpus_top_k
         self._corpus_enabled = corpus_enabled
 

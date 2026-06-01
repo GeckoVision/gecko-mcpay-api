@@ -102,10 +102,13 @@ class MemoryVoice:
     def __init__(
         self,
         client: OpenRouterClient,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
     ) -> None:
         self._client = client
-        self._model = model
+        # S24-X: env-resolve when caller didn't pass an explicit model.
+        from voices.model_env import resolve_voice_model
+
+        self._model = model or resolve_voice_model("memory_voice", DEFAULT_MODEL)
 
     async def grade(
         self,
@@ -132,8 +135,34 @@ class MemoryVoice:
                 cost_usd=None,
             )
 
+        # S24-S fix 2b (2026-05-31) — filter ledger to ONLY THIS instrument.
+        # The prior implementation read every position_close in the universe,
+        # so a losing JTO trade would poison a PYTH grade — the voice was
+        # bearish-attributing universe-level PnL to whatever symbol was
+        # currently being graded. The S40-B4 fix above (decisions vs
+        # outcomes) didn't catch the cross-instrument bleed because B4 was
+        # about event-kind, not symbol-scope.
+        #
+        # Effect: memory_voice will abstain more often (each instrument has
+        # to accumulate its own cold-start floor of closes) but when it
+        # fires, the verdict is grounded in same-symbol history. Today's
+        # observed 77% bearish was largely poisoned by WIF losses; expected
+        # post-fix distribution ~80% abstain / ~10% bullish / ~10% bearish.
+        instrument = (
+            (market_state.get("instrument") or "").strip()
+            or (market_state.get("symbol", "") or "").split("-")[0]
+        ).upper()
+        if instrument:
+            rows = [
+                r
+                for r in rows
+                if (r.get("payload") or {}).get("symbol", "").split("-")[0].upper()
+                == instrument
+            ]
+
         # Hard cold-start floor — abstain WITHOUT calling the LLM. Per
-        # spec §3.2: "Three is the minimum for a pattern call."
+        # spec §3.2: "Three is the minimum for a pattern call." Now
+        # operates on instrument-scoped rows per the filter above.
         if len(rows) < _COLD_START_MIN_ROWS:
             elapsed_ms = int((time.monotonic() - started) * 1000)
             return VoiceOpinion(
