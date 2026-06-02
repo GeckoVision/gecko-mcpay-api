@@ -151,6 +151,35 @@ STALL_GREEN_EXIT_MIN_PCT = 1.0  # s41 2026-05-22: 2.0 → 1.0 — book a +1% sta
 # (E[forward return | flat-stall] ≈ 0, so locking the small green removes
 # downside drift). The no-new-high gate is the pause-protection: a real
 # consolidation about to break out makes a new high inside 30min.
+# ── Sprint 30-B (2026-06-01, founder-gated) — alternative stall trigger
+#
+# Per the 3-agent autopsy at private/strategy/2026-06-01-flat-stall-*.md:
+# the existing "no new high for 30min within band" trigger CUTS WHILE
+# STILL ABOVE ENTRY (the worst possible flat-cut behavior). 8 of 27
+# stall closes were positive PnL — winners cut by the stall.
+#
+# Alternative mode: only fire stall after PnL has been BELOW ENTRY for
+# N consecutive minutes (default 45). Kills the cut-while-green path;
+# keeps the LO=-1.5% kill-switch + age-90min guard. Env-gated; default
+# is the legacy "no_new_high" mode so production behavior is unchanged.
+#
+# Mode env: GECKO_STALL_TRIGGER_MODE ∈ {no_new_high, below_entry}
+# Threshold: GECKO_STALL_BELOW_ENTRY_MIN (default 45)
+STALL_TRIGGER_MODE = os.environ.get("GECKO_STALL_TRIGGER_MODE", "no_new_high").strip().lower()
+STALL_BELOW_ENTRY_MIN = float(os.environ.get("GECKO_STALL_BELOW_ENTRY_MIN", "45"))
+
+# ── Sprint 30-C (2026-06-01) — MFI overbought entry shadow gate
+#
+# Per the AI-ML autopsy: 9 of 17 joined stall closes entered with
+# MFI >= 70 → 1/9 wins, -$2.52 (74% of stall bleed). MFI<70 entries
+# → 4/8 wins, -$0.91. Shadow-log "would have blocked" events for 7d;
+# founder reviews and flips to hard gate when convinced.
+#
+# Default mode: SHADOW (log only, no behavior change).
+# Hard gate flip: GECKO_MFI_HARD_GATE=1 to actually block entries.
+MFI_SHADOW_THRESHOLD = float(os.environ.get("GECKO_MFI_SHADOW_THRESHOLD", "70"))
+MFI_HARD_GATE = os.environ.get("GECKO_MFI_HARD_GATE", "0").strip().lower() in ("1", "true", "yes")
+
 FLAT_STALL_AGE_MIN = 90  # position must be at least this old
 # Sprint 24-W (2026-05-31, founder-asked overnight) — asymmetric stall fix.
 # Diagnosed bleed: 10 closes 06:00→21:41 UTC summed to -$2.10 net. Breakdown:
@@ -2168,6 +2197,34 @@ def poll_instruments() -> None:
                 _log("filter", f"[{sym}] ✗ coordinator (deterministic): {dc_reason}")
                 _log_eval_telemetry(sym, action="decline", decline_reason=dc_reason)
                 continue
+        # Sprint 30-C: MFI overbought gate. ai-ml's 2026-06-01 flat_stall
+        # autopsy: MFI≥70 entries = 74% of stall bleed (9 overbought →
+        # 1/9 wins, -$2.52 net). Shadow-log every candidate's MFI; if
+        # GECKO_MFI_HARD_GATE=1 (default OFF), decline overbought entries.
+        _mfi_now = (_LAST_INDEX.get(sym, {}) or {}).get("mfi")
+        if _mfi_now is not None and _mfi_now >= MFI_SHADOW_THRESHOLD:
+            _LOGGER.log(
+                "mfi_shadow_gate_trigger",
+                {
+                    "instrument": sym,
+                    "mfi_at_entry": _mfi_now,
+                    "threshold": MFI_SHADOW_THRESHOLD,
+                    "hard_gate_enabled": MFI_HARD_GATE,
+                    "would_block": MFI_HARD_GATE,
+                    "primitive": primitive,
+                    "regime_1h": regime_1h,
+                },
+            )
+            if MFI_HARD_GATE:
+                _log(
+                    "filter",
+                    f"[{sym}] ✗ mfi_overbought_hard_gate "
+                    f"(mfi={_mfi_now:.1f} >= {MFI_SHADOW_THRESHOLD:.0f})",
+                )
+                _log_eval_telemetry(
+                    sym, action="decline", decline_reason="mfi_overbought_hard_gate"
+                )
+                continue
         open_position(token, symbol, signal_data)
 
 
@@ -2356,6 +2413,13 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
             "mfi_below_20": _mfi_at_decision is not None and _mfi_at_decision < 20,
             "rsi_above_70": _rsi_at_decision is not None and _rsi_at_decision > 70,
             "adx_below_20": _adx_at_decision is not None and _adx_at_decision < 20,
+            # Sprint 30-C: ai-ml's flat_stall autopsy — MFI≥70 entries win 1/9
+            # vs <70 entries win 4/8. Mirror at the panel-decision boundary;
+            # also gate-checked at candidate-fire (act-path) under hard mode.
+            "mfi_overbought": (
+                _mfi_at_decision is not None
+                and _mfi_at_decision >= MFI_SHADOW_THRESHOLD
+            ),
         }
         _LOGGER.log(
             "local_panel",
@@ -2780,6 +2844,10 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
 
     # ── Gecko wrap: feed realized PnL into the breaker + ledger ─────
     _BREAKER.record_pnl_delta(float(pnl_usd))
+    # Sprint 30-A: emit peak metadata so downstream analysis can compute
+    # gave-back-from-peak. Pre-S30 closes will have None for these fields.
+    _peak_pnl_pct = pos.get("peak_pnl_pct")
+    _peak_pnl_ts = pos.get("peak_pnl_ts")
     _LOGGER.log(
         "position_close",
         {
@@ -2789,6 +2857,8 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
             "pnl_pct": round(pnl_pct, 2),
             "pnl_usd": round(pnl_usd, 2),
             "exit_tx": exit_tx,
+            "peak_pnl_pct": (round(_peak_pnl_pct, 4) if _peak_pnl_pct is not None else None),
+            "peak_pnl_ts": _peak_pnl_ts,
         },
         decision_id=pos.get("gate_decision_id"),
     )
@@ -2988,6 +3058,30 @@ def monitor_positions() -> None:
         peak_pct = (pos["peak_price"] - ep) / ep * 100 if ep else 0.0
         mins_since_high = _mins_since(pos["last_new_high_ts"])
 
+        # Sprint 30-A (2026-06-01) — persist peak_pnl_pct + peak_ts on the
+        # position so close events can emit them. Per quant + ai-ml: the
+        # current state drops peak metadata on close, which blocks every
+        # downstream stall-tuning experiment (can't compute gave-back).
+        # Always-on; zero behavior impact.
+        if pnl_pct > pos.get("peak_pnl_pct", float("-inf")):
+            pos["peak_pnl_pct"] = pnl_pct
+            pos["peak_pnl_ts"] = now_iso
+
+        # Sprint 30-B (2026-06-01, env-gated) — track time-below-entry for
+        # the alternative stall trigger. Reset to None whenever PnL recovers
+        # to >= 0; set to now whenever PnL first dips below 0. The new
+        # stall mode reads (now - below_entry_since) and fires only when
+        # the position has been red for N consecutive minutes — kills the
+        # cut-while-green pathology of the legacy "no_new_high" mode.
+        if pnl_pct < 0:
+            if not pos.get("below_entry_since"):
+                pos["below_entry_since"] = now_iso
+        else:
+            # PnL recovered to >= 0; clear the streak so future dips need
+            # a fresh N-minute window to trigger.
+            if pos.get("below_entry_since"):
+                pos["below_entry_since"] = None
+
         # Telemetry — one row per position per poll (data foundation for v2).
         _log_telemetry(
             {
@@ -3057,7 +3151,18 @@ def monitor_positions() -> None:
         # past the cut-loss floor (default -1.0%); else HOLD. Closes the
         # "we sell tiny wins into fee-erosion" leak the founder flagged.
         age_qualified = age_min >= FLAT_STALL_AGE_MIN
-        stalled = mins_since_high >= FLAT_STALL_NO_NEW_HIGH_MIN
+        # Sprint 30-B: stall trigger mode switch. Default 'no_new_high'
+        # preserves legacy behavior; 'below_entry' eliminates cut-while-
+        # green by requiring sustained negative PnL.
+        if STALL_TRIGGER_MODE == "below_entry":
+            _below_since = pos.get("below_entry_since")
+            if _below_since:
+                _mins_below = _mins_since(_below_since)
+                stalled = _mins_below >= STALL_BELOW_ENTRY_MIN
+            else:
+                stalled = False
+        else:
+            stalled = mins_since_high >= FLAT_STALL_NO_NEW_HIGH_MIN
         if FLAT_STALL_FEE_AWARE:
             in_exit_band = pnl_pct >= FLAT_STALL_MIN_EXIT_PCT or pnl_pct <= -FLAT_STALL_MAX_LOSS_PCT
         else:

@@ -62,7 +62,7 @@ export EXPERIMENT_TAG=setup-c-2026-05-28   # propagated to artifact log for filt
 
 # Raised caps for the window
 export MAX_DAILY_TRADES=20      # was 3, then 10; founder bumped to 20 for window
-export MAX_CONCURRENT=4         # founder's pick from earlier session
+export MAX_CONCURRENT=2         # 2026-05-31 founder: 4 → 2, "enough volume"
 export SESSION_LOSS_PAUSE=5     # slightly relaxed from default 2
 
 # Sprint 24-L (2026-05-30) — Variant E: drop the 1h-adverse modulator only.
@@ -73,6 +73,70 @@ export SESSION_LOSS_PAUSE=5     # slightly relaxed from default 2
 # reverts to legacy fail-open on unknown 1h regime, projected 123-185 fires/24h.
 # Treated as shadow-test: monitor first 20 fires for DSR ≥ 0.95 before declaring success.
 export GECKO_TREAT_UNKNOWN_1H_AS_ADVERSE=0
+
+# Sprint 24-M (2026-05-30) — Variant F: lower chart_analyst confidence floor.
+# Post-Variant-E, 100% of 40 panel events declined via chart_below_threshold.
+# The hard-coded 0.85 floor on chart_analyst.confidence captures the only
+# "positive signal" voice the panel has — even bullish-leaning tuples can't
+# fire. Lower to 0.75 as a single 0.10-step relaxation. Composes with E.
+# Projected fires/day: 30-50 (between E's 0 and Variant-B's 240-318).
+# Shadow-test: 20 fires + DSR ≥ 0.95 before promote.
+export GECKO_CHART_MIN_CONF=0.75
+
+# Sprint 24-O (2026-05-30) — Variant G: weighted_quorum coordinator mode.
+# Founder explicit authorization 22:55 UTC. Post-Variant-E+F still 0 fires
+# in 96 panel events because the LEGACY coordinator requires chart_analyst
+# to be bullish (Rule 2 hard cut), and chart_analyst was 79% neutral/abstain
+# today. Variant G replaces the sequential decline-chain with a weighted
+# vote: bullish=+2, neutral=+1, bearish=-1, abstain=0; act if score ≥ 2;
+# hard veto if ≥3 bearish votes; 1h-adverse adds +1 to act threshold.
+# Risk_veto + chart_voice_missing safety paths preserved verbatim.
+# Projection: ~30-40 fires/day on today's voice distribution.
+# Shadow-test discipline: monitor first 20 fires for DSR ≥ 0.95 before
+# treating as permanent. Set to "legacy" to revert.
+export GECKO_COORDINATOR_MODE=weighted_quorum
+
+# Sprint 24-X (2026-05-31) — Model A/B on chart_analyst only.
+# Founder picked deepseek/deepseek-v4-flash from OpenRouter (verified
+# live): $0.098/$0.197 per 1M tok, ~3x CHEAPER than gpt-4o-mini's
+# $0.15/$0.60 baseline. Only the chart_analyst voice is swapped so the
+# experiment isolates one variable. Other 3 voices stay on gpt-4o-mini
+# (env unset → resolves to DEFAULT_MODEL).
+# Falsifier (per ai-ml-engineer design doc §4): within first 50 polls
+# chart_analyst should produce ≥5 unique confidence values AND ≥2
+# distinct non-abstain verdicts. If unique_conf ≤ 3 OR bullish-rate
+# 5x-explodes uncontrollably, revert by commenting out the line below
+# and restarting.
+export GECKO_CHART_ANALYST_MODEL=deepseek/deepseek-v4-flash
+
+# Sprint 25 (2026-06-01) — Kamino paper-sink enabled.
+# Best-effort auto-deposit of idle USDC into the SIMULATED Kamino main
+# USDC vault when idle balance clears the threshold. Paper mode only —
+# no real on-chain transactions; APY accrued via closed-form math
+# against the live Kamino published APY (~4.22% as of 2026-05-31).
+# Falsifier per S25-C ship-gate: if net APY < 2.0% sustained 7d on
+# N≥30 deposits, revert (comment this out + restart).
+# Watch: tail ~/.gecko/kamino_paper_ledger.jsonl + terminal for
+# [PAPER] KAMINO {DEPOSIT|ACCRUE|WITHDRAW|SKIP|STALE|ERROR} events.
+export GECKO_KAMINO_PAPER_SINK=1
+
+# Sprint 30 (2026-06-01) — flat_stall_exit refinement, all default OFF
+# (shadow-log only). 3-agent autopsy (quant + strategist + ai-ml) verdict:
+# stall is correctly catching real losers (-0.366% mean, p=0.002, N=27)
+# but the +0.5% upper-band ceiling snips ~50% of would-be take_profit moves.
+# Three falsifiers stacked, each gated:
+#   A — peak_pnl_pct / peak_pnl_ts on position_close (ALWAYS on; pure data)
+#   B — GECKO_STALL_TRIGGER_MODE=below_entry switches the trigger from
+#       "no new high for 30min" to "price below entry for 45min". Default
+#       "no_new_high" (current behavior). Flip to "below_entry" after
+#       Founder reads the autopsy doc.
+#   C — GECKO_MFI_HARD_GATE=1 declines candidate entries with MFI ≥ 70
+#       (74% of stall bleed per ai-ml). Default OFF → shadow-log only.
+# Falsifier review at N≥15 closes post-flip per Sprint 30 plan.
+export GECKO_STALL_TRIGGER_MODE=no_new_high
+export GECKO_STALL_BELOW_ENTRY_MIN=45
+export GECKO_MFI_SHADOW_THRESHOLD=70
+export GECKO_MFI_HARD_GATE=0
 
 echo "================================================================"
 echo "Setup C launch — 2026-05-28"
