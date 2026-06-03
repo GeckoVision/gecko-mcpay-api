@@ -104,6 +104,42 @@ def test_pbo_needs_two_variants():
     assert math.isnan(ofr.pbo([[1.0], [2.0]], n_partitions=2).pbo)
 
 
+# ── worst_in_worst_out PBO (avoidance): low for a real loser, high for noise ──
+def test_avoidance_pbo_low_when_one_variant_genuinely_worst():
+    # variant 0 has a real NEGATIVE edge; the exclusion rule should keep flagging it
+    rng = random.Random(3)
+    V = 6
+    mat = []
+    for _ in range(40):
+        mat.append([-0.4 + rng.gauss(0, 0.5)] + [rng.gauss(0, 0.5) for _ in range(V - 1)])
+    assert ofr.worst_in_worst_out_pbo(mat, n_partitions=8).pbo < 0.30
+
+
+def test_avoidance_pbo_elevated_for_noise_on_average():
+    pbos = []
+    for s in range(12):
+        rng = random.Random(700 + s)
+        mat = [[rng.gauss(0, 1.0) for _ in range(6)] for _ in range(40)]
+        pbos.append(ofr.worst_in_worst_out_pbo(mat, n_partitions=8).pbo)
+    assert st.mean(pbos) >= 0.30
+
+
+def test_avoidance_pbo_mirror_of_pbo_on_sign_flip():
+    # flipping every return turns the IS-best into the IS-worst, so the avoidance
+    # PBO of the flipped matrix must equal the standard PBO of the original.
+    rng = random.Random(17)
+    V = 6
+    mat = [[rng.gauss(0.1, 0.7) for _ in range(V)] for _ in range(40)]
+    flipped = [[-x for x in row] for row in mat]
+    std = ofr.pbo(mat, n_partitions=8).pbo
+    avoid = ofr.worst_in_worst_out_pbo(flipped, n_partitions=8).pbo
+    assert abs(std - avoid) < 1e-9
+
+
+def test_avoidance_pbo_needs_two_variants():
+    assert math.isnan(ofr.worst_in_worst_out_pbo([[1.0], [2.0]], n_partitions=2).pbo)
+
+
 # ── DSR: deflates for honest trial count ─────────────────────────────
 def test_dsr_in_unit_interval():
     rng = random.Random(11)

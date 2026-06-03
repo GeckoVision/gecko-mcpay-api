@@ -61,6 +61,7 @@ VENUE_IDS: dict[str, dict[str, Any]] = {
     "binance_perp": {"id": "binanceusdm", "options": {"defaultType": "future"}},
     "binance_spot": {"id": "binance", "options": {"defaultType": "spot"}},
     "okx_perp": {"id": "okx", "options": {"defaultType": "swap"}},
+    "okx_spot": {"id": "okx", "options": {"defaultType": "spot"}},
     "bybit_perp": {"id": "bybit", "options": {"defaultType": "swap"}},
     "hyperliquid": {"id": "hyperliquid", "options": {}},
 }

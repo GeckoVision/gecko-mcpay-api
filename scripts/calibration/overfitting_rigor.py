@@ -368,6 +368,85 @@ def pbo(
     )
 
 
+def worst_in_worst_out_pbo(
+    perf_matrix: list[list[float]],
+    n_partitions: int = 10,
+) -> PBOResult:
+    """PBO for AVOIDANCE / EXCLUSION strategies — the mirror of ``pbo``.
+
+    Standard PBO asks "I selected the IS-BEST variant; does it stay best OOS?"
+    That is the right question when the edge is *selection* (pick the winner).
+    Gecko's wedge is the opposite: the Oracle's job is to say NO — to *exclude*
+    the loser. The honest test there is "I flagged the IS-WORST variant for
+    avoidance; does it stay a loser OOS?" If the IS-worst keeps underperforming
+    OOS, the exclusion rule carries signal. If the IS-worst bounces to the OOS
+    top half, the avoidance was overfit to noise — we'd have wrongly shunned a
+    fine strategy.
+
+    Identical CSCV machinery as ``pbo`` with two changes:
+      - pick n_worst = argmin(IS Sharpe) instead of argmax;
+      - count overfitting when n_worst lands in the OOS TOP half (logit > 0),
+        i.e. the avoided variant turned out good out-of-sample.
+
+    Same thresholds: PBO < 0.2 informative · 0.2–0.5 borderline · >=0.5 the
+    exclusion process is no better than shunning a variant at random.
+    """
+    T = len(perf_matrix)
+    if T == 0:
+        return PBOResult(float("nan"), 0, 0, float("nan"), note="empty matrix")
+    V = len(perf_matrix[0])
+    if V < 2:
+        return PBOResult(float("nan"), 0, V, float("nan"), note="need >=2 variants for PBO")
+    S = min(n_partitions, T)
+    if S % 2 == 1:
+        S -= 1
+    if S < 2:
+        return PBOResult(
+            float("nan"), 0, V, float("nan"), note=f"too few periods ({T}) to partition"
+        )
+    bounds = [round(T * i / S) for i in range(S + 1)]
+    blocks = [list(range(bounds[i], bounds[i + 1])) for i in range(S)]
+    blocks = [b for b in blocks if b]
+    S = len(blocks)
+    if S < 2:
+        return PBOResult(float("nan"), 0, V, float("nan"), note="degenerate blocks")
+
+    def variant_sharpe(rows: list[int]) -> list[float]:
+        out = []
+        for v in range(V):
+            series = [perf_matrix[r][v] for r in rows]
+            out.append(sharpe_ratio(series))
+        return out
+
+    logits: list[float] = []
+    half = S // 2
+    for is_blocks in combinations(range(S), half):
+        is_set = set(is_blocks)
+        is_rows = [r for bi in is_set for r in blocks[bi]]
+        oos_rows = [r for bi in range(S) if bi not in is_set for r in blocks[bi]]
+        if len(is_rows) < 2 or len(oos_rows) < 2:
+            continue
+        is_sr = variant_sharpe(is_rows)
+        oos_sr = variant_sharpe(oos_rows)
+        n_worst = min(range(V), key=lambda v: is_sr[v])  # IS-worst variant (the one we'd avoid)
+        order = sorted(range(V), key=lambda v: oos_sr[v])
+        oos_rank = order.index(n_worst) + 1  # 1=worst .. V=best
+        omega = oos_rank / (V + 1)
+        omega = min(max(omega, 1e-6), 1 - 1e-6)
+        logits.append(math.log(omega / (1 - omega)))
+    if not logits:
+        return PBOResult(float("nan"), 0, V, float("nan"), note="no valid IS/OOS combination")
+    # overfit avoidance: the IS-worst landed in the OOS TOP half (logit > 0)
+    pbo_val = sum(1 for x in logits if x > 0) / len(logits)
+    return PBOResult(
+        pbo=pbo_val,
+        n_combinations=len(logits),
+        n_variants=V,
+        median_logit=st.median(logits),
+        note="avoidance (worst-in/worst-out)",
+    )
+
+
 # ── Deflated Sharpe Ratio ───────────────────────────────────────────
 def expected_max_sharpe(variant_sharpes: list[float], n_trials: int | None = None) -> float:
     """E[max Sharpe] of N independent trials under the null (true SR=0), given the
@@ -654,6 +733,35 @@ def self_test() -> bool:
     check(
         "T3b mean noise PBO >> edge PBO (>=0.30 and > edge case)",
         mean_noise_pbo >= 0.30 and mean_noise_pbo > pbo_edge.pbo,
+    )
+
+    # T3' — worst_in_worst_out PBO (avoidance): one variant is a genuine PERSISTENT
+    # LOSER (true negative drift), the rest are noise. The exclusion process should
+    # keep flagging it → low avoidance-PBO. Build variant 0 with a real negative edge.
+    mat_loser = []
+    for _t in range(T_periods):
+        row = [-0.4 + rng.gauss(0, 0.5)]  # the persistent loser we want to avoid
+        row += [rng.gauss(0, 0.5) for _ in range(V - 1)]
+        mat_loser.append(row)
+    wpbo_loser = worst_in_worst_out_pbo(mat_loser, n_partitions=8)
+    print(
+        f"      avoidance-PBO(one real loser): {wpbo_loser.pbo:.2f} over "
+        f"{wpbo_loser.n_combinations} combos"
+    )
+    check(
+        "T3'a avoidance-PBO low when one variant is a true persistent loser", wpbo_loser.pbo < 0.30
+    )
+    # all-noise: shunning the IS-worst is a coin-flip OOS → avoidance-PBO materially higher
+    noise_wpbos = []
+    for s in range(12):
+        rng_s = random.Random(2000 + s)
+        mat_n = [[rng_s.gauss(0, 1.0) for _ in range(V)] for _ in range(T_periods)]
+        noise_wpbos.append(worst_in_worst_out_pbo(mat_n, n_partitions=8).pbo)
+    mean_noise_wpbo = st.mean(noise_wpbos)
+    print(f"      avoidance-PBO(all noise): mean over 12 seeds = {mean_noise_wpbo:.2f}")
+    check(
+        "T3'b mean noise avoidance-PBO >> loser case",
+        mean_noise_wpbo >= 0.30 and mean_noise_wpbo > wpbo_loser.pbo,
     )
 
     # T4 — DSR: deflation lowers a single-trial-looking Sharpe when many tried.

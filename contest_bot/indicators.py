@@ -272,6 +272,46 @@ def chop(
     return out
 
 
+def churn_ratio(closes: list[float], n: int = 24, cap: float = 50.0) -> float | None:
+    """Path-inefficiency over the last n closes: Σ|Δclose| / |net Δ|.
+
+    A clean directional move has churn ≈ 1 (path ≈ displacement). Bot churn /
+    wash-like oscillation travels far but nets little → churn ≫ 1 (e.g. SOL
+    overnight 2026-06-03: net 6.3% over a 55% path = 8.8×; XRP 19.7×). This is
+    the "is this real movement or noise?" signal — the input to the
+    oracle-says-no-to-noise gate.
+
+    Returns None if < n+1 closes. When net ≈ 0 (pure round-tripping, maximal
+    churn) returns `cap` rather than +inf so callers can threshold cleanly.
+    """
+    if len(closes) < n + 1:
+        return None
+    w = closes[-(n + 1) :]
+    path = sum(abs(w[i] - w[i - 1]) for i in range(1, len(w)))
+    net = abs(w[-1] - w[0])
+    if path <= 0:
+        return None  # perfectly flat window — undefined, not churn
+    if net <= 1e-12:
+        return cap
+    return min(path / net, cap)
+
+
+def reversal_rate(closes: list[float], n: int = 24) -> float | None:
+    """Fraction of bar-to-bar direction flips over the last n closes, in [0, 1].
+
+    ~0.5 = a coin-flip every bar (no directional conviction = oscillation/noise);
+    low = a persistent one-way move. Pairs with churn_ratio: high churn + ~0.5
+    reversals = the bot-churn regime. Flat (zero-move) bars are ignored."""
+    if len(closes) < n + 1:
+        return None
+    w = closes[-(n + 1) :]
+    dirs = [1 if w[i] > w[i - 1] else (-1 if w[i] < w[i - 1] else 0) for i in range(1, len(w))]
+    nz = [d for d in dirs if d != 0]
+    if len(nz) < 2:
+        return None
+    return sum(1 for i in range(1, len(nz)) if nz[i] != nz[i - 1]) / (len(nz) - 1)
+
+
 def compute_latest(candles: list[dict]) -> dict:
     """Per-poll snapshot of the latest indicator values from a candle list
     (ascending, dicts with open/high/low/close/volume). Returns a dict the
@@ -306,12 +346,16 @@ def compute_latest(candles: list[dict]) -> dict:
         "ema9": _last(ema(closes, 9)),
         "ema21": _last(ema(closes, 21)),
         "ema50": _last(ema(closes, 50)),
+        "ema200": _last(ema(closes, 200)),  # Strategy B "no downtrend" gate (S31)
         "atr": _last(atr(highs, lows, closes, 14)),
         "bb_lower": bl_v,
         "bb_mid": bm_v,
         "bb_upper": bu_v,
         "bb_width": bb_width,
         "chop": _last(chop(highs, lows, closes, 14)),
+        # S33 churn/noise detector — "is this real movement or bot churn?"
+        "churn_ratio": churn_ratio(closes, 24),
+        "reversal_rate": reversal_rate(closes, 24),
     }
 
 
@@ -387,17 +431,17 @@ def chop_distance(chop_value: float | None, chop_threshold: float = 61.8) -> flo
 
 
 __all__ = [
-    "ema",
-    "rsi",
     "adx",
+    "adx_distance",
     "adx_full",
-    "mfi",
+    "adx_slope",
     "atr",
     "bb",
     "chop",
+    "chop_distance",
     "compute_latest",
     "compute_regime_1h",
-    "adx_slope",
-    "adx_distance",
-    "chop_distance",
+    "ema",
+    "mfi",
+    "rsi",
 ]
