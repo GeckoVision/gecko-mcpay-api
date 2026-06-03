@@ -600,7 +600,26 @@ if GECKO_VENUE == "okx_spot":
 # (b) drives the exit constants below.
 from strategies import load_strategy as _load_strategy  # noqa: E402
 
-_STRATEGY = _load_strategy(GECKO_STRATEGY)
+# Sprint 32 (Phase 2): hosted agent. When GECKO_AGENT_ID is set, run the DEPLOYED
+# StrategySpec from the registry (custom gate thresholds the user authored), not
+# just the env defaults. Best-effort: any registry/Mongo hiccup falls back to the
+# env strategy so a hosted boot never hard-fails on a lookup. Inert when unset.
+_GECKO_AGENT_ID = os.environ.get("GECKO_AGENT_ID", "").strip()
+_DEPLOYED_SPEC = None
+if _GECKO_AGENT_ID:
+    try:
+        from agent_store import AgentRegistry
+        from strategies.spec import StrategySpec
+
+        _ad = AgentRegistry().get(_GECKO_AGENT_ID)
+        if _ad and _ad.get("spec"):
+            _DEPLOYED_SPEC = StrategySpec.from_dict(_ad["spec"])
+    except Exception:  # best-effort; fall back to env strategy
+        _DEPLOYED_SPEC = None
+
+_STRATEGY = _load_strategy(
+    _DEPLOYED_SPEC.strategy_id if _DEPLOYED_SPEC else GECKO_STRATEGY, _DEPLOYED_SPEC
+)
 
 # Sprint 31: for the new strategies (each runs in its OWN process), overwrite the
 # module-level exit constants from the strategy's exit_policy(). Collision-free
@@ -674,7 +693,16 @@ def _spot_from_price_response(resp: object) -> float:
 # hatch: if bot_state.json is missing on startup but today's artifact
 # log exists, rebuild positions/daily_trades/total_spent_usd from the
 # immutable JSONL ledger. See bot_state.py for the correlation rules.
-_STATE_STORE = BotStateStore()
+# Sprint 32 (Phase 2): a hosted agent persists BotState to Mongo (keyed by
+# agent_id) instead of local JSON, so the app dashboard reads it from the DB.
+# Drop-in via the same load()/save() seam; falls back to the file store when
+# Mongo is unavailable. Inert unless GECKO_AGENT_ID + GECKO_STATE_BACKEND=mongo.
+if _GECKO_AGENT_ID and os.environ.get("GECKO_STATE_BACKEND", "").strip().lower() == "mongo":
+    from agent_store import MongoBotStateStore
+
+    _STATE_STORE: BotStateStore = MongoBotStateStore(_GECKO_AGENT_ID)
+else:
+    _STATE_STORE = BotStateStore()
 # --rebuild-state CLI flag forces artifact replay even if bot_state.json
 # exists. argparse runs later in main(), so check sys.argv directly here.
 _REBUILD_STATE = "--rebuild-state" in sys.argv
