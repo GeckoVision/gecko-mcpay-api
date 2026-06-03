@@ -47,6 +47,14 @@ export PAPER_TRADE=true                    # NEVER flip without explicit founder
 export X402_MODE=stub                      # NEVER flip without explicit founder go-ahead
 export EXPERIMENT_TAG=setup-c-2026-05-28   # propagated to artifact log for filtering
 
+# 2026-06-03 S31: move the memecoin bot to port 8267 so it runs IN PARALLEL with
+# the two new majors strategy processes (trend_breakout=8265, mean_reversion=8266
+# via launch_strategy.sh). The S30-FLIP MFI hard-gate falsifier (#167) keeps
+# accruing N>=15 here. State stays in contest_bot/bot_state.json (GECKO_STATE_DIR
+# unset → legacy path), so no orphaning. All GECKO_STRATEGY/UNIVERSE/VENUE stay
+# unset → legacy memecoin behavior is byte-identical.
+export DASHBOARD_PORT=8267
+
 # 2026-05-28 founder override (03:30 UTC): "Restart and increase the trades
 # number - otherwise we will lost the window until 9PM".
 #
@@ -136,7 +144,11 @@ export GECKO_KAMINO_PAPER_SINK=1
 export GECKO_STALL_TRIGGER_MODE=no_new_high
 export GECKO_STALL_BELOW_ENTRY_MIN=45
 export GECKO_MFI_SHADOW_THRESHOLD=70
-export GECKO_MFI_HARD_GATE=0
+# 2026-06-01 S30-FLIP: shadow → enforcement. ai-ml's autopsy: MFI≥70 entries
+# = 74% of stall bleed (9 overbought → 1/9 wins, -$2.52). Falsifier:
+# review at N≥15 closes post-flip; revert (back to 0) if mean PnL post ≤
+# pre − 1σ. Takes effect on NEXT restart (after current open positions close).
+export GECKO_MFI_HARD_GATE=1
 
 echo "================================================================"
 echo "Setup C launch — 2026-05-28"

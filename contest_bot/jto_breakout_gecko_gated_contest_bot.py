@@ -289,6 +289,28 @@ INSTRUMENTS: list[dict] = [
     # {"symbol": "SOL", "mint": "So11111111111111111111111111111111111111112", "chain": "solana"},
 ]
 
+# ── Sprint 31: multi-strategy / multi-venue env overrides ──────────
+# When GECKO_UNIVERSE is set, this process runs as ONE of several parallel
+# strategy processes (see strategies/ + launch_strategy.sh). With ALL of
+# GECKO_STRATEGY / GECKO_UNIVERSE / GECKO_VENUE unset, every line below is a
+# no-op and the legacy memecoin path is preserved BIT-FOR-BIT. Must run before
+# _init_decision_store() (line ~543), which reads INSTRUMENTS.
+GECKO_STRATEGY = os.environ.get("GECKO_STRATEGY", "jto_breakout").strip()
+GECKO_UNIVERSE = os.environ.get("GECKO_UNIVERSE", "").strip()
+GECKO_VENUE = os.environ.get("GECKO_VENUE", "onchainos").strip().lower()
+if GECKO_UNIVERSE:
+    _syms = [s.strip().upper() for s in GECKO_UNIVERSE.split(",") if s.strip()]
+    if GECKO_VENUE == "okx_spot":
+        # majors have no Solana mint — reuse the `mint` slot to carry the ccxt
+        # market symbol ("BTC/USDT") so evaluate_breakout/volume_spike pass it
+        # straight through to the OKX candle provider unchanged.
+        INSTRUMENTS = [
+            {"symbol": s, "mint": f"{s}/USDT", "chain": "okx_spot"} for s in _syms
+        ]
+    else:
+        # same venue, custom subset of the hardcoded universe
+        INSTRUMENTS = [i for i in INSTRUMENTS if i["symbol"].upper() in set(_syms)]
+
 ENTRY_PARAMS = {
     "direction": "up",
     "lookback_bars": 24,
@@ -333,7 +355,7 @@ def _init_decision_store() -> None:
         _RUN_ID = _SIM.start(
             SimulationDoc(
                 run_id="",
-                strategy_id="jto_breakout",
+                strategy_id=GECKO_STRATEGY,
                 agent_group=os.environ.get("AGENT_GROUP", "default"),
                 symbol_universe=[i["symbol"] for i in INSTRUMENTS],
                 universe_label=os.environ.get("UNIVERSE_LABEL", "no-tax-majors"),
@@ -555,10 +577,53 @@ VOL_SPIKE_AVG_BARS = 24
 BTC_OVERLAY = None  # iter-3.3 live 2026-05-20: green_candle disabled. Binary-cruel on -0.05% red bars during chop; blocked ~9 min of contest time on statistical noise. Voices remain the real gate — chart_analyst @ 0.85 floor + risk_voice + memory_voice already decline cleanly when setups aren't right (observed 6 WIF declines in 4 min just before this flip). Coarse BTC belt was preventing voices from even voting. Trade-off accepted: if BTC crashes >3%, no coarse-stop — but risk_voice + memory_voice would see the tape and turn bearish anyway. founder call.
 BTC_WBTC_MINT = "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh"
 
-SAFETY = {"honeypot_check": True, "phishing_exclude": True}
+# Sprint 31: Solana honeypot/phishing scans don't apply to OKX-spot majors —
+# disable on that venue so passes_safety() returns (True, []) (it already
+# short-circuits when SAFETY is falsy) instead of calling oc.get_safety_tags.
+SAFETY = {} if GECKO_VENUE == "okx_spot" else {"honeypot_check": True, "phishing_exclude": True}
 
 # ── OnchainOS client ───────────────────────────────────────────────
 oc = OnchainOS(chain=CHAIN)
+# Sprint 31: on the okx_spot venue, swap the candle/price feed to a ccxt-OKX
+# public-data provider (NO api keys → no order-routing surface; PAPER-safe by
+# construction). Duck-types get_candles/get_price_info, so the whole
+# poll/monitor lifecycle (via _get_oc) transparently reads OKX 5m candles.
+if GECKO_VENUE == "okx_spot":
+    from strategies.okx_feed import OkxSpotCandleProvider
+
+    oc = OkxSpotCandleProvider()
+
+# Sprint 31: load the active strategy's rules (shared with the backtest —
+# Pattern-C kill). For the legacy `jto_breakout` path this object is INERT:
+# poll_instruments keeps its existing gate chain and does NOT override exits.
+# For trend_breakout / mean_reversion it (a) gates entries via should_enter and
+# (b) drives the exit constants below.
+from strategies import load_strategy as _load_strategy  # noqa: E402
+
+_STRATEGY = _load_strategy(GECKO_STRATEGY)
+
+# Sprint 31: for the new strategies (each runs in its OWN process), overwrite the
+# module-level exit constants from the strategy's exit_policy(). Collision-free
+# (separate processes). LEGACY jto_breakout is explicitly excluded → its exit
+# globals (and env-gated stall logic) are untouched. NOTE: the monolith has no
+# native revert-to-mean exit; mean_reversion's live exit is approximated by
+# TP/SL/trail-disabled here (the BACKTEST uses true revert-to-mean — that is the
+# verdict authority; live-paper only validates plumbing). Follow-up: native
+# revert-to-mean exit in monitor_positions.
+if GECKO_STRATEGY != "jto_breakout":
+    _POL = _STRATEGY.exit_policy()
+    TAKE_PROFIT_PCT = _POL.tp_pct
+    STOP_LOSS_PCT = _POL.sl_pct
+    if _POL.use_trailing:
+        TRAIL_STOP_PCT = _POL.trail_give_pct
+        TRAIL_ACTIVATE_AFTER_PCT = _POL.trail_activate_pct
+        TRAIL_MIN_PNL_PCT = -_POL.trail_floor_pct
+        STALL_GREEN_EXIT_AGE_MIN = _POL.stall_green_age_min or STALL_GREEN_EXIT_AGE_MIN
+        STALL_GREEN_EXIT_MIN_PCT = _POL.stall_green_min_pct
+    else:
+        # mean-reversion: disable trailing + stall-green (snap-back trade)
+        TRAIL_ACTIVATE_AFTER_PCT = 999.0
+
 WALLET_ADDRESS = ""
 
 
@@ -1542,6 +1607,13 @@ def _start_dashboard() -> None:
 # ── Preflight ──────────────────────────────────────────────────────
 def preflight() -> bool:
     global WALLET_ADDRESS
+    # Sprint 31: the OKX-spot paper path has no OnchainOS wallet (public candle
+    # feed only, no order routing). Skip the wallet/login/balance preflight —
+    # there is nothing to sign and nothing to fund. PAPER_TRADE is enforced
+    # everywhere downstream.
+    if GECKO_VENUE == "okx_spot":
+        print(f"✅  Preflight: okx_spot PAPER feed (no wallet) — universe {GECKO_UNIVERSE}")
+        return True
     status = oc.wallet_status()
     logged_in = status.get("loggedIn") or status.get("data", {}).get("loggedIn")
     if not logged_in:
@@ -2016,6 +2088,38 @@ def poll_instruments() -> None:
         # Low-freq: refreshes every _1H_REGIME_REFRESH_POLLS polls (~6 min).
         # Fail-open on network error (returns "CHOP" — conservative default).
         regime_1h = _get_regime_1h(inst)
+
+        # ── Sprint 31: new-strategy early gate (trend_breakout / mean_reversion)
+        # These strategies define their OWN entry rules (shared with the backtest
+        # = Pattern-C kill) and must BYPASS the breakout-centric legacy pipeline
+        # (mean_reversion enters on dips, which evaluate_breakout would never pass).
+        # Legacy jto_breakout falls straight through to evaluate_breakout unchanged.
+        if GECKO_STRATEGY != "jto_breakout":
+            _token = inst["mint"]
+            _oc = _get_oc()
+            _cndls = _oc.get_candles(_token, TIMEFRAME, limit=210)
+            _feat = _indicators.compute_latest(_cndls) if _cndls else {}
+            _feat["close"] = _feat.get("price")
+            _lb = int(_STRATEGY.spec.entry_gates.get("donchian_lookback", 48))
+            if _cndls and len(_cndls) > _lb and _feat.get("close"):
+                _ph = max(c["high"] for c in _cndls[-_lb - 1 : -1])
+                _feat["breakout_pct"] = ((_feat["close"] - _ph) / _ph * 100) if _ph else 0.0
+                _feat["donchian_break"] = bool(_ph and _feat["close"] > _ph)
+            try:
+                _feat["btc_regime_1h"] = _get_regime_1h({"symbol": "BTC", "mint": BTC_WBTC_MINT})
+            except Exception:  # fail-open to CHOP (conservative for the meanrev overlay)
+                _feat["btc_regime_1h"] = "CHOP"
+            _LAST_INDEX[sym] = {**_feat, "regime_1h": regime_1h}  # keep dashboard fresh
+            _sig = _STRATEGY.should_enter(_feat)
+            if _sig is None:
+                _log_eval_telemetry(sym, action="decline", decline_reason="strategy_gate")
+                continue
+            open_position(
+                _token,
+                sym,
+                {"primitive": GECKO_STRATEGY, "reason": _sig.reason, "features": _sig.features},
+            )
+            continue
 
         bo_cand = evaluate_breakout(inst)
         # Patch regime_1h into the index snapshot AFTER evaluate_breakout creates it.
