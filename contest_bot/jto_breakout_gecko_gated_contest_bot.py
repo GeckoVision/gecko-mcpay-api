@@ -591,7 +591,10 @@ oc = OnchainOS(chain=CHAIN)
 if GECKO_VENUE == "okx_spot":
     from strategies.okx_feed import OkxSpotCandleProvider
 
-    oc = OkxSpotCandleProvider()
+    # Sprint 33 (Phase 3): when the orchestrator sets GECKO_FEED_URL, read candles
+    # from the ONE shared-feed service (cache) instead of hitting OKX per agent.
+    # Unset → direct ccxt (current behavior). Falls back to direct on service error.
+    oc = OkxSpotCandleProvider(feed_url=os.environ.get("GECKO_FEED_URL"))
 
 # Sprint 31: load the active strategy's rules (shared with the backtest —
 # Pattern-C kill). For the legacy `jto_breakout` path this object is INERT:

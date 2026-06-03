@@ -31,13 +31,15 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 import backtest_strategy as bt  # noqa: E402
+from agent_orchestrator import MAX_AGENTS_PER_USER, AgentOrchestrator  # noqa: E402
 from agent_store import AgentRegistry, AgentStateStore  # noqa: E402
 
-app = FastAPI(title="Gecko Agent Control Plane", version="0.2.0")
+app = FastAPI(title="Gecko Agent Control Plane", version="0.3.0")
 
 _ALLOWED = {"trend_breakout", "mean_reversion"}
 _registry = AgentRegistry()
 _state = AgentStateStore()
+_orch = AgentOrchestrator(registry=_registry)
 
 
 class BacktestRequest(BaseModel):
@@ -85,12 +87,32 @@ def deploy(req: DeployRequest) -> dict:
     sid = req.spec.get("strategy_id")
     if sid not in _ALLOWED:
         raise HTTPException(422, f"spec.strategy_id {sid!r} not in {sorted(_ALLOWED)}")
+    # multi-tenant guard: cap deployed agents per user
+    if len(_registry.list_agents(req.user_id)) >= MAX_AGENTS_PER_USER:
+        raise HTTPException(429, f"user at agent cap ({MAX_AGENTS_PER_USER})")
     try:
         agent_id = _registry.deploy(req.spec, user_id=req.user_id, verdict=req.verdict)
     except ValueError as e:  # REJECT verdict
         raise HTTPException(409, str(e)) from e
     return {"agent_id": agent_id, "status": "deployed",
             "launch": f"bash launch_agent.sh {agent_id}"}
+
+
+@app.post("/agents/{agent_id}/start")
+def start_agent(agent_id: str) -> dict:
+    try:
+        return _orch.start(agent_id)
+    except KeyError as e:
+        raise HTTPException(404, str(e)) from e
+    except PermissionError as e:  # per-user cap
+        raise HTTPException(429, str(e)) from e
+    except RuntimeError as e:  # no free port
+        raise HTTPException(503, str(e)) from e
+
+
+@app.get("/orchestrator")
+def orchestrator_status() -> dict:
+    return {"running": _orch.list_running(), "max_per_user": MAX_AGENTS_PER_USER}
 
 
 @app.get("/agents")
@@ -108,6 +130,7 @@ def get_agent(agent_id: str) -> dict:
 
 @app.post("/agents/{agent_id}/stop")
 def stop_agent(agent_id: str) -> dict:
-    if not _registry.set_status(agent_id, "stopped"):
+    if not _registry.get(agent_id):
         raise HTTPException(404, f"no agent {agent_id!r}")
-    return {"agent_id": agent_id, "status": "stopped"}
+    killed = _orch.stop(agent_id)  # kills the running process (if any) + status→stopped
+    return {"agent_id": agent_id, "status": "stopped", "process_killed": killed}

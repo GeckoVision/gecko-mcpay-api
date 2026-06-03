@@ -45,19 +45,44 @@ _BAR = {
 
 
 class OkxSpotCandleProvider:
-    def __init__(self, *, max_retries: int = 3) -> None:
+    def __init__(self, *, max_retries: int = 3, feed_url: str | None = None) -> None:
         # public-data only: no apiKey/secret → cannot trade by construction
         self._x = ccxt.okx({"enableRateLimit": True})
         self._max_retries = max_retries
+        # Phase 3: when a shared-feed URL is given (orchestrator sets GECKO_FEED_URL),
+        # read candles/price from that ONE cache service instead of hitting OKX per
+        # agent. Falls back to direct ccxt on any service error. NB: the feed service
+        # itself constructs this provider WITHOUT feed_url (→ direct), so no loop.
+        self._feed_url = (feed_url or "").rstrip("/") or None
 
     def _sym(self, token: str) -> str:
         s = _MINT_ALIAS.get(token, token)
         return s if "/" in s else f"{s}/USDT"
 
+    def _from_feed_candles(self, sym: str, bar: str, limit: int, drop_forming: bool):
+        import httpx
+
+        r = httpx.get(
+            f"{self._feed_url}/candles",
+            params={"symbol": sym, "bar": bar, "limit": int(limit)},
+            timeout=8.0,
+        )
+        r.raise_for_status()
+        rows = r.json().get("candles") or []
+        # the feed already dropped the forming bar; honor an explicit keep request
+        if not drop_forming and rows:
+            rows[-1]["confirm"] = rows[-1].get("confirm", 1)
+        return rows
+
     def get_candles(
         self, token: str, bar: str = "1H", limit: int = 100, drop_forming: bool = True
     ) -> list[dict[str, Any]]:
         sym = self._sym(token)
+        if self._feed_url:
+            try:
+                return self._from_feed_candles(sym, bar, limit, drop_forming)
+            except Exception:  # service down → fall back to direct ccxt below
+                pass
         tf = _BAR.get(bar, bar)
         raw: list[list[float]] = []
         for attempt in range(self._max_retries):

@@ -18,17 +18,35 @@ if str(_CB) not in sys.path:
 import agent_store as ast_  # noqa: E402
 
 
+class _FakeSpawner:
+    def __init__(self):
+        self._alive = {}
+
+    def spawn(self, cmd, cwd=None):
+        h = object()
+        self._alive[id(h)] = True
+        return h
+
+    def is_alive(self, h):
+        return self._alive.get(id(h), False)
+
+    def kill(self, h):
+        self._alive[id(h)] = False
+
+
 @pytest.fixture(autouse=True)
 def _isolate(monkeypatch):
-    # hermetic: never touch a real Mongo even if MONGODB_URI is in the env.
+    # hermetic: never touch a real Mongo (or spawn real processes) even with .env set.
     monkeypatch.delenv("MONGODB_URI", raising=False)
     monkeypatch.delenv("MONGO_URI", raising=False)
     ast_._MEM_AGENTS.clear()
     ast_._MEM_STATE.clear()
     import agent_api
+    from agent_orchestrator import AgentOrchestrator
 
     agent_api._registry = ast_.AgentRegistry(collection=None)  # in-memory
     agent_api._state = ast_.AgentStateStore(collection=None)
+    agent_api._orch = AgentOrchestrator(registry=agent_api._registry, spawner=_FakeSpawner())
     yield
     ast_._MEM_AGENTS.clear()
     ast_._MEM_STATE.clear()
@@ -99,3 +117,36 @@ def test_get_agent_shows_state_mirror():
 def test_healthz():
     r = _client().get("/healthz")
     assert r.status_code == 200 and "n_agents" in r.json()
+
+
+def test_start_then_orchestrator_status():
+    c = _client()
+    aid = c.post("/agents", json={"spec": _spec()}).json()["agent_id"]
+    s = c.post(f"/agents/{aid}/start")
+    assert s.status_code == 200 and s.json()["status"] == "running"
+    running = c.get("/orchestrator").json()["running"]
+    assert any(r["agent_id"] == aid for r in running)
+
+
+def test_start_unknown_404():
+    assert _client().post("/agents/nope/start").status_code == 404
+
+
+def test_stop_kills_running_process():
+    c = _client()
+    aid = c.post("/agents", json={"spec": _spec()}).json()["agent_id"]
+    c.post(f"/agents/{aid}/start")
+    s = c.post(f"/agents/{aid}/stop")
+    assert s.status_code == 200 and s.json()["process_killed"] is True
+    assert c.get("/orchestrator").json()["running"] == []
+
+
+def test_deploy_per_user_cap(monkeypatch):
+    import agent_api
+
+    monkeypatch.setattr(agent_api, "MAX_AGENTS_PER_USER", 2)
+    c = _client()
+    c.post("/agents", json={"spec": _spec(), "user_id": "capped"})
+    c.post("/agents", json={"spec": _spec(), "user_id": "capped"})
+    r = c.post("/agents", json={"spec": _spec(), "user_id": "capped"})
+    assert r.status_code == 429
