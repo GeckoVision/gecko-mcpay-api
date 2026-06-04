@@ -99,6 +99,14 @@ PAPER_TRADE = os.environ.get("PAPER_TRADE", "true").strip().lower() not in ("fal
 # voice telemetry, Oracle gating-delta) flowing without arming the strategy.
 # Default off. Flip via `OBSERVATION_MODE=1 python3 jto_breakout_*.py`.
 OBSERVATION_MODE = os.environ.get("OBSERVATION_MODE", "0").strip().lower() in ("1", "true", "yes")
+# S40 market-temperature gate (default OFF → legacy behavior byte-identical).
+# When on, a RISK_OFF market-temp snapshot (macro news/sentiment, BTC-anchored)
+# suppresses all long entries for the tick — a falling-knife belt above the BTC
+# overlay. Fail-open: missing/stale/unreadable snapshot never blocks trading.
+# Snapshot written by refresh_market_temp.py; read via market_temp.load_snapshot().
+GECKO_MARKET_TEMP_GATE = os.environ.get("GECKO_MARKET_TEMP_GATE", "0").strip().lower() in ("1", "true", "yes")
+GECKO_MARKET_TEMP_FLOOR = float(os.environ.get("GECKO_MARKET_TEMP_FLOOR", "-0.25"))  # temp ≤ floor = risk_off
+GECKO_MARKET_TEMP_MAX_AGE_S = float(os.environ.get("GECKO_MARKET_TEMP_MAX_AGE_S", "21600"))  # 6h; older = stale→fail-open
 CHAIN = "solana"
 POLL_SEC = 30
 TIMEFRAME = "5m"
@@ -1789,6 +1797,33 @@ def _median(vals: list[float]) -> float:
     return float((s[mid - 1] + s[mid]) / 2.0)
 
 
+def market_temp_passes() -> tuple[bool, str]:
+    """S40 macro risk-off belt. Returns (ok, reason).
+
+    Reads the latest market-temperature snapshot (BTC-anchored news/sentiment).
+    Blocks all long entries this tick when the read is RISK_OFF (temp ≤ floor).
+    Fail-open in every uncertain case — a missing, stale, or unreadable snapshot
+    must NEVER silently freeze trading (same discipline as the BTC overlay):
+      • gate disabled                  → pass
+      • no/unreadable/neutral-default  → pass
+      • snapshot older than MAX_AGE_S  → pass (stale data isn't a risk signal)
+      • temp > floor                   → pass
+      • temp ≤ floor (risk_off)        → BLOCK
+    """
+    if not GECKO_MARKET_TEMP_GATE:
+        return True, "market_temp_gate_disabled"
+    try:
+        import market_temp as _mt
+
+        return _mt.risk_off_gate(
+            _mt.load_snapshot(),
+            floor=GECKO_MARKET_TEMP_FLOOR,
+            max_age_s=GECKO_MARKET_TEMP_MAX_AGE_S,
+        )
+    except Exception as exc:  # never let a snapshot read halt the bot
+        return True, f"market_temp_unavailable_fail_open:{type(exc).__name__}"
+
+
 def btc_overlay_passes() -> tuple[bool, str]:
     """Poll-level BTC market filter. Returns (ok, reason).
 
@@ -2103,6 +2138,17 @@ def poll_instruments() -> None:
         _log(
             "filter",
             f"[BTC] ✗ {btc_reason} — skipping all instruments this tick",
+        )
+        return
+
+    # S40 macro risk-off belt (env-gated, fail-open) — runs once per tick like
+    # the BTC overlay. A RISK_OFF news/sentiment read halts long entries so the
+    # bot doesn't buy into a falling-knife macro tape (Iran-conflict / recession).
+    mt_ok, mt_reason = market_temp_passes()
+    if not mt_ok:
+        _log(
+            "filter",
+            f"[MKT] ✗ {mt_reason} — risk-off, skipping all instruments this tick",
         )
         return
 
