@@ -69,6 +69,16 @@ def healthz() -> dict:
     return {"ok": True, "data_coins": coins, "n_agents": len(_registry.list_agents())}
 
 
+@app.get("/market-temp")
+def market_temp() -> dict:
+    """The current market-temperature read (risk-on/off) the app shows + bots
+    consume. Served from the cached snapshot a refresh worker writes; neutral/
+    stale if none yet. See refresh_market_temp.py."""
+    import market_temp as mt
+
+    return mt.load_snapshot()
+
+
 @app.post("/backtest")
 def backtest(req: BacktestRequest) -> dict:
     if req.strategy_id not in _ALLOWED:
