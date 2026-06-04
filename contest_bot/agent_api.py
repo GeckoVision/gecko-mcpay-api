@@ -79,6 +79,35 @@ def market_temp() -> dict:
     return mt.load_snapshot()
 
 
+@app.get("/vault")
+def vault(profile: str = "conservative", demo_profit: float = 0.0) -> dict:
+    """The profit-vault state the app tile reads: per-profile allocation, each lot's
+    net APY + liquidation buffer, and the live yield-safety monitor verdict per lot.
+    The monitor's downside input is the SAME market-temp read that gates trades
+    (the unification). Honest-empty until the agent allocates real profit; pass
+    ?demo_profit=100&profile=moderate to preview the shape. Paper only."""
+    import market_temp as mt
+    from kamino import vault_gate as vg
+    from kamino import vault_orchestrator as vo
+    from kamino.monitor import hurdle_for
+
+    snap = mt.load_snapshot()
+    dd = vo.predicted_drawdown_from_market_temp(snap)
+    hurdle = hurdle_for(profile)
+    orch = vo.VaultOrchestrator(
+        profile=profile,
+        policy=vg.VaultPolicy(max_allocation_usd=1_000_000.0, hurdle=hurdle),
+        hurdle=hurdle,
+    )
+    allocation = orch.allocate_profit(demo_profit, predicted_drawdown_pct=dd) if demo_profit > 0 else None
+    return {
+        "snapshot": orch.snapshot(),
+        "verdicts": orch.monitor_tick(predicted_drawdown_pct=dd),
+        "allocation": allocation,
+        "market_temp": {"label": snap.get("label"), "predicted_drawdown": dd, "stale": snap.get("stale", False)},
+    }
+
+
 @app.post("/backtest")
 def backtest(req: BacktestRequest) -> dict:
     if req.strategy_id not in _ALLOWED:
