@@ -173,6 +173,43 @@ def save_snapshot(mt: MarketTemp, path: str | None = None) -> str:
     return p
 
 
+def risk_off_gate(
+    snap: dict,
+    floor: float = -0.25,
+    max_age_s: float = 21600.0,
+    now: datetime | None = None,
+) -> tuple[bool, str]:
+    """Pure risk-off decision over a snapshot dict → (ok, reason).
+
+    ``ok=False`` means BLOCK long entries (the tape is RISK_OFF). Fail-open in
+    every uncertain case so a consumer (the bot gate) never silently freezes on
+    bad/missing data:
+      • stale-default snapshot (cold start)        → pass
+      • snapshot older than ``max_age_s``          → pass (not a live read)
+      • unparseable temp / timestamp               → pass
+      • temp > floor                               → pass
+      • temp ≤ floor                               → BLOCK
+    The caller owns the env-gate (whether to consult this at all)."""
+    if not snap or snap.get("stale"):
+        return True, "market_temp_no_snapshot_fail_open"
+    ts = snap.get("updated_at")
+    if ts:
+        try:
+            ref = now or datetime.now(UTC)
+            age = (ref - datetime.fromisoformat(ts)).total_seconds()
+            if age > max_age_s:
+                return True, f"market_temp_stale_{int(age)}s_fail_open"
+        except (ValueError, TypeError):
+            pass  # unparseable ts → treat as fresh, fail-open
+    try:
+        temp = float(snap.get("temp", 0.0))
+    except (ValueError, TypeError):
+        return True, "market_temp_unparseable_fail_open"
+    if temp <= floor:
+        return False, f"market_temp {temp:+.2f} {snap.get('label', 'risk_off')} (≤ {floor:+.2f})"
+    return True, f"market_temp {temp:+.2f} ok"
+
+
 def load_snapshot(path: str | None = None) -> dict:
     """Return the latest market-temp snapshot, or a neutral/stale default if no
     worker has written one yet (so callers never crash on a cold start)."""

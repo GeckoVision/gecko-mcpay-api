@@ -9,7 +9,14 @@ _CB = Path(__file__).resolve().parents[1]
 if str(_CB) not in sys.path:
     sys.path.insert(0, str(_CB))
 
-from market_temp import CoinTemp, compute_market_temp, from_okx_sentiment  # noqa: E402
+from datetime import UTC, datetime, timedelta  # noqa: E402
+
+from market_temp import (  # noqa: E402
+    CoinTemp,
+    compute_market_temp,
+    from_okx_sentiment,
+    risk_off_gate,
+)
 
 
 def test_parse_okx_sentiment_shape():
@@ -84,13 +91,50 @@ def test_load_snapshot_neutral_when_absent(tmp_path):
     assert snap["label"] == "neutral" and snap["stale"] is True
 
 
+def _snap(temp, label="x", age_s=0.0, **extra):
+    ts = (datetime.now(UTC) - timedelta(seconds=age_s)).isoformat()
+    return {"temp": temp, "label": label, "updated_at": ts, **extra}
+
+
+def test_gate_blocks_when_risk_off():
+    ok, reason = risk_off_gate(_snap(-0.57, "risk_off"), floor=-0.25)
+    assert ok is False and "risk_off" in reason
+
+
+def test_gate_passes_when_above_floor():
+    ok, reason = risk_off_gate(_snap(-0.10, "cool"), floor=-0.25)
+    assert ok is True and "ok" in reason
+
+
+def test_gate_failopen_on_stale_default_snapshot():
+    # load_snapshot's cold-start default carries stale=True
+    ok, reason = risk_off_gate({"temp": 0.0, "label": "neutral", "stale": True})
+    assert ok is True and "no_snapshot" in reason
+
+
+def test_gate_failopen_when_snapshot_too_old():
+    # temp is risk_off, but the snapshot is older than max_age → fail-open, don't block on dead data
+    ok, reason = risk_off_gate(_snap(-0.57, "risk_off", age_s=99999), floor=-0.25, max_age_s=21600)
+    assert ok is True and "stale" in reason
+
+
+def test_gate_failopen_on_unparseable_temp():
+    ok, reason = risk_off_gate({"temp": "nope", "updated_at": datetime.now(UTC).isoformat()})
+    assert ok is True and "unparseable" in reason
+
+
+def test_gate_boundary_exactly_at_floor_blocks():
+    # temp == floor → blocked (≤, the falling-knife belt is inclusive)
+    ok, _ = risk_off_gate(_snap(-0.25, "risk_off"), floor=-0.25)
+    assert ok is False
+
+
 def test_api_market_temp_endpoint(monkeypatch, tmp_path):
     monkeypatch.delenv("MONGODB_URI", raising=False)
     monkeypatch.delenv("MONGO_URI", raising=False)
     monkeypatch.setenv("GECKO_STATE_DIR", str(tmp_path))  # isolate snapshot path
-    from fastapi.testclient import TestClient
-
     import agent_api
+    from fastapi.testclient import TestClient
 
     r = TestClient(agent_api.app).get("/market-temp")
     assert r.status_code == 200 and "label" in r.json()
