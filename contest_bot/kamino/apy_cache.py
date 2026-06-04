@@ -127,6 +127,30 @@ class KaminoAPYCache:
         raise ValueError(f"USDC reserve {self.reserve} not found in {len(body)} reserves")
 
 
+def fetch_reserve_rates(
+    reserve: str, market: str = KAMINO_MAIN_MARKET, api_base: str = KAMINO_API_BASE
+) -> tuple[float, float]:
+    """Fetch (supply_apy, borrow_apy) for a reserve — the two legs of a Multiply
+    spread. Raises on failure (the SIMULATOR wants to know; the bot's cached path
+    above stays fail-soft). Used by the profit-vault simulator's --live mode.
+    """
+    url = api_base + _RESERVES_ENDPOINT.format(market=market)
+    with httpx.Client(timeout=_HTTP_TIMEOUT_SEC) as client:
+        resp = client.get(url)
+        resp.raise_for_status()
+        body = resp.json()
+    if not isinstance(body, list):
+        raise ValueError(f"Kamino reserves endpoint returned non-list: {type(body)}")
+    for row in body:
+        if row.get("reserve") == reserve:
+            supply = row.get("supplyApy")
+            borrow = row.get("borrowApy")
+            if supply is None or borrow is None:
+                raise ValueError(f"reserve {reserve} missing supplyApy/borrowApy")
+            return float(supply), float(borrow)
+    raise ValueError(f"reserve {reserve} not found in {len(body)} reserves")
+
+
 def _parse_optional_float(raw: str | None) -> float | None:
     if raw is None or raw.strip() == "":
         return None
