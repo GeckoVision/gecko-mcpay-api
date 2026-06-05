@@ -2878,6 +2878,21 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
         if not usdc:
             _log("error", f"[ERROR] USDC address not mapped for {CHAIN}")
             return
+        # TODO(web3 #3 / e2e Phase 2): route this real-money buy through the safety
+        # gate + JupiterSwapExecutionAdapter instead of the direct custodial
+        # swap_execute. The adapter is BUILT + double-gated in trade_safety.py
+        # (JupiterSwapExecutionAdapter) with a quote-level price-impact guard, but is
+        # deliberately NOT wired here yet — wiring is the real-money flip and is
+        # founder-gated. Target shape (per-agent, jupiter venue opted-in):
+        #   from trade_safety import (Order, SafetyContext, dispatch,
+        #       jupiter_swap_policy, JupiterSwapExecutionAdapter, with_global_kill)
+        #   policy = with_global_kill(jupiter_swap_policy(...), is_global_kill())
+        #   adapter = JupiterSwapExecutionAdapter(WALLET_ADDRESS, policy,
+        #                 output_mint=token, dry_run=not ARMED)
+        #   res = dispatch(Order(symbol, "jupiter", USD_PER_TRADE), policy,
+        #                  SafetyContext(strategy_verdict=verdict), adapter, entry_price)
+        #   # then call adapter.place_order(..., confirm=True) only when armed.
+        # The OKX custodial swap_execute below stays as the mainnet-proven v0 fallback.
         result = oc.swap_execute(usdc, token, str(USD_PER_TRADE), WALLET_ADDRESS)
         if not result.ok:
             _log("error", f"[ERROR] Swap failed: {result.error}")

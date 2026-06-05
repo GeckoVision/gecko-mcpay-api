@@ -1,0 +1,17 @@
+{
+  "comment": "Editor/typecheck only. Runtime uses Node >=22 native type-stripping (no emit). Keep TS free of enums-with-values / namespaces / param-properties so type-stripping works without a compile step. Mirrors ../kamino/ts-sidecar/tsconfig.json.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "types": ["node"],
+    "verbatimModuleSyntax": false
+  },
+  "include": ["*.ts"]
+}

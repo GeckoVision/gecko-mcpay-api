@@ -32,7 +32,12 @@ if _HERE not in sys.path:
 
 import backtest_strategy as bt  # noqa: E402
 from agent_orchestrator import MAX_AGENTS_PER_USER, AgentOrchestrator  # noqa: E402
-from agent_store import AgentRegistry, AgentStateStore  # noqa: E402
+from agent_store import (  # noqa: E402
+    AgentRegistry,
+    AgentStateStore,
+    is_global_kill,
+    set_global_kill,
+)
 
 app = FastAPI(title="Gecko Agent Control Plane", version="0.3.0")
 
@@ -173,3 +178,30 @@ def stop_agent(agent_id: str) -> dict:
         raise HTTPException(404, f"no agent {agent_id!r}")
     killed = _orch.stop(agent_id)  # kills the running process (if any) + status→stopped
     return {"agent_id": agent_id, "status": "stopped", "process_killed": killed}
+
+
+@app.post("/agents/{agent_id}/kill")
+def kill_agent(agent_id: str, engaged: bool = True) -> dict:
+    """SOFT kill-switch (web3 #4): engage `policy.kill_switch` so the safety gate
+    denies EVERY new order for this agent — WITHOUT killing the running process (it
+    keeps managing/closing existing positions, just opens nothing new). Pass
+    ?engaged=false to disarm. For a hard process stop, use /stop."""
+    if not _registry.get(agent_id):
+        raise HTTPException(404, f"no agent {agent_id!r}")
+    _registry.set_kill(agent_id, engaged)
+    return {"agent_id": agent_id, "kill_switch": engaged}
+
+
+@app.post("/kill")
+def global_kill(engaged: bool = True) -> dict:
+    """GLOBAL kill-switch — the operator-wide panic button. Engages the safety gate
+    for EVERY agent at once (each agent's dispatch checks this flag in addition to
+    its per-agent flag). Pass ?engaged=false to disarm."""
+    set_global_kill(engaged)
+    return {"scope": "global", "kill_switch": engaged}
+
+
+@app.get("/kill")
+def global_kill_status() -> dict:
+    """Read the global kill-switch state (for the operator dashboard)."""
+    return {"scope": "global", "kill_switch": is_global_kill()}
