@@ -50,9 +50,12 @@ from api_models import (  # noqa: E402
     KillAgentResponse,
     MarketTempResponse,
     OrchestratorResponse,
+    ReceiptsResponse,
     StartAgentResponse,
     StopAgentResponse,
     VaultResponse,
+    WalletBalanceResponse,
+    WalletResponse,
 )
 
 app = FastAPI(title="Gecko Agent Control Plane", version="0.4.0")
@@ -243,6 +246,237 @@ def stop_agent(agent_id: str) -> dict:
         raise HTTPException(404, f"no agent {agent_id!r}")
     killed = _orch.stop(agent_id)  # kills the running process (if any) + status→stopped
     return {"agent_id": agent_id, "status": "stopped", "process_killed": killed}
+
+
+# ── Wallet + payment surface (web3 — READ-only, never moves money) ─────────
+#
+# Hard invariant: a private key / mnemonic / seed MUST NEVER cross the wire,
+# even in an error branch. `_PRIVKEYISH` names any field that could carry secret
+# material; `_redact()` strips them recursively before anything is returned.
+_PRIVKEYISH = frozenset(
+    {
+        "privatekey",
+        "private_key",
+        "privkey",
+        "secret",
+        "secretkey",
+        "secret_key",
+        "mnemonic",
+        "seed",
+        "seedphrase",
+        "seed_phrase",
+        "keypair",
+        "secretkeyhex",
+        "phrase",
+        "passphrase",
+    }
+)
+
+
+def _redact(obj: object) -> object:
+    """Recursively drop any private-key-like field. Defense in depth: every
+    wallet endpoint runs its return value through this before responding."""
+    if isinstance(obj, dict):
+        return {
+            k: _redact(v)
+            for k, v in obj.items()
+            if str(k).replace("-", "").replace("_", "").lower() not in _PRIVKEYISH
+        }
+    if isinstance(obj, list):
+        return [_redact(v) for v in obj]
+    return obj
+
+
+def _x402_mode() -> str:
+    """Current x402 posture; defaults to stub (CLAUDE.md: pass X402_MODE through
+    every payment-touching path; default stub if unset)."""
+    return os.environ.get("X402_MODE", "stub")
+
+
+def _resolve_signer() -> tuple[str | None, str, str]:
+    """Best-effort resolve (signer_pubkey, custody, status). PUBLIC key only.
+
+    Order: explicit env pubkey → OKX TEE via onchainos → Privy embedded env →
+    none. Every branch is wrapped so a missing CLI / cold backend never crashes
+    the endpoint; we return honest-empty instead."""
+    # 1. Explicit public-key env (operator-set, no subprocess needed).
+    for env_key in ("GECKO_SIGNER_PUBKEY", "GECKO_WALLET_PUBKEY", "SIGNER_PUBKEY"):
+        val = os.environ.get(env_key, "").strip()
+        if val:
+            return val, "okx_tee", "ok"
+
+    # 2. OKX TEE via onchainos CLI (best-effort, timeout-bounded inside wrapper).
+    try:
+        from onchainos import OnchainOS
+
+        oc = OnchainOS(chain="solana")
+        addr = oc.get_wallet_address()
+        if addr:
+            return str(addr), "okx_tee", "ok"
+        # CLI reachable but no address → likely logged out.
+        status = oc.wallet_status()
+        if isinstance(status, dict) and "error" not in status:
+            return None, "okx_tee", "logged_out"
+    except Exception:  # CLI missing / import error / parse error — degrade quietly
+        pass
+
+    # 3. Privy embedded wallet (S26) — public address env only, never a key.
+    for env_key in ("PRIVY_WALLET_ADDRESS", "GECKO_PRIVY_ADDRESS"):
+        val = os.environ.get(env_key, "").strip()
+        if val:
+            return val, "privy_embedded", "ok"
+
+    return None, "none", "unconfigured"
+
+
+@app.get("/wallet", response_model=WalletResponse)
+def wallet() -> dict:
+    """Signer identity + custody backend for the App's wallet surface.
+
+    Returns the PUBLIC signer pubkey ONLY (resolved best-effort from env or the
+    onchainos CLI), which custody backend is configured (okx_tee | privy_embedded
+    | none), a status, and the current x402 mode. NEVER returns a private key or
+    mnemonic — the response is run through `_redact()` regardless. Honest-empty
+    on a cold/unconfigured backend; never 500."""
+    try:
+        pubkey, custody, status = _resolve_signer()
+    except Exception:  # belt-and-suspenders — endpoint must never crash
+        pubkey, custody, status = None, "none", "error"
+    out = {
+        "signer_pubkey": pubkey,
+        "custody": custody,
+        "status": status,
+        "x402_mode": _x402_mode(),
+    }
+    if pubkey is None:
+        out["note"] = "no signer configured; the App renders before custody is wired"
+    return _redact(out)
+
+
+# Canonical Solana mints for the funding tile (public constants, not secrets).
+_SOL_MINT = "So11111111111111111111111111111111111111112"
+_USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+
+
+@app.get("/wallet/balance", response_model=WalletBalanceResponse)
+def wallet_balance() -> dict:
+    """Best-effort SOL + USDC for the signer (via onchainos). Honest-empty +
+    `stale: true` when no balance source is reachable. Never blocks/crashes —
+    a missing CLI or cold backend returns the empty shape, not a 500."""
+    try:
+        pubkey, custody, _status = _resolve_signer()
+    except Exception:
+        pubkey, custody = None, "none"
+
+    if custody != "okx_tee" or pubkey is None:
+        return _redact(
+            {
+                "pubkey": pubkey,
+                "balances": [],
+                "stale": True,
+                "note": "no balance source wired for this custody backend",
+            }
+        )
+
+    try:
+        from onchainos import OnchainOS
+
+        oc = OnchainOS(chain="solana")
+        sol = oc.get_token_balance(_SOL_MINT)
+        usdc = oc.get_token_balance(_USDC_MINT)
+    except Exception:  # CLI missing / timeout / parse error — degrade to stale
+        return _redact(
+            {
+                "pubkey": pubkey,
+                "balances": [],
+                "stale": True,
+                "note": "balance source unavailable",
+            }
+        )
+
+    balances = [
+        {"token": "SOL", "amount": float(sol or 0.0)},
+        {"token": "USDC", "amount": float(usdc or 0.0)},
+    ]
+    return _redact({"pubkey": pubkey, "balances": balances, "stale": False})
+
+
+def _scan_receipts(limit: int) -> tuple[list[dict], bool]:
+    """Best-effort: read paid-oracle-call records from the append-only artifact
+    JSONL ledger (gecko_wrap.ArtifactLogger). Each `gate_call`/`gate_allow` row
+    is one x402 stub-paid oracle invocation. Returns (receipts, stale).
+
+    No dedicated on-chain receipt store exists on the control plane (the money
+    path's `sessions.x402_tx_signature` lives in the gecko-api/Supabase backend,
+    a different surface). So receipts are synthesized from the local ledger;
+    honest-empty when no ledger files exist."""
+    import glob
+    import json as _json
+
+    mode = _x402_mode()
+    state_dir = os.environ.get("GECKO_STATE_DIR") or _HERE
+    paths = sorted(glob.glob(os.path.join(state_dir, "artifact_*.jsonl")), reverse=True)
+    if not paths:
+        return [], False  # honest-empty, not stale — there simply are no calls yet
+
+    receipts: list[dict] = []
+    degraded = False
+    for path in paths:
+        if len(receipts) >= limit:
+            break
+        try:
+            with open(path, encoding="utf-8") as f:
+                lines = f.readlines()
+        except OSError:
+            degraded = True
+            continue
+        # newest-first within a file
+        for line in reversed(lines):
+            if len(receipts) >= limit:
+                break
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = _json.loads(line)
+            except (ValueError, _json.JSONDecodeError):
+                degraded = True
+                continue
+            if row.get("kind") not in ("gate_call", "gate_allow"):
+                continue
+            payload = row.get("payload") or {}
+            did = row.get("decision_id")
+            receipts.append(
+                {
+                    "mode": mode,
+                    "idea_hash": payload.get("idea_hash") or did,
+                    "tier": payload.get("tier", "basic"),
+                    "amount_usd": payload.get("amount_usd"),
+                    # stub mode: synthesize a stub- sig from the decision id so it
+                    # can NEVER be mistaken for an on-chain artifact.
+                    "tx_sig": (f"stub-{did}" if mode == "stub" and did else payload.get("tx_sig")),
+                    "ts": row.get("ts"),
+                }
+            )
+    return receipts, degraded
+
+
+@app.get("/receipts", response_model=ReceiptsResponse)
+def receipts(limit: int = 50) -> dict:
+    """Paid x402 oracle-call history for the App's payment surface. Reads the
+    local artifact ledger best-effort; honest-empty `[]` on a cold backend (no
+    receipt store wired). In stub mode tx sigs carry a `stub-` prefix and `mode`
+    surfaces the posture so the App labels free stub calls honestly. Never 500."""
+    limit = max(1, min(int(limit or 50), 500))
+    try:
+        rows, degraded = _scan_receipts(limit)
+    except Exception:  # any unexpected error → honest-empty + stale, never crash
+        rows, degraded = [], True
+    out: dict = {"receipts": rows, "n": len(rows), "mode": _x402_mode()}
+    if degraded:
+        out["stale"] = True
+        out["note"] = "receipt ledger partially unreadable; results may be incomplete"
+    return _redact(out)
 
 
 @app.post("/agents/{agent_id}/kill", response_model=KillAgentResponse)
