@@ -39,6 +39,21 @@ from agent_store import (  # noqa: E402
     is_global_kill,
     set_global_kill,
 )
+from api_models import (  # noqa: E402
+    AgentDetailResponse,
+    AgentListResponse,
+    ArenaBoardResponse,
+    BacktestResponse,
+    DeployResponse,
+    GlobalKillResponse,
+    HealthzResponse,
+    KillAgentResponse,
+    MarketTempResponse,
+    OrchestratorResponse,
+    StartAgentResponse,
+    StopAgentResponse,
+    VaultResponse,
+)
 
 app = FastAPI(title="Gecko Agent Control Plane", version="0.4.0")
 
@@ -82,7 +97,7 @@ class DeployRequest(BaseModel):
     verdict: str | None = Field(None, description="the §5 verdict; deploy refused if 'REJECT'")
 
 
-@app.get("/healthz")
+@app.get("/healthz", response_model=HealthzResponse)
 def healthz() -> dict:
     cov = os.path.join(bt.DATA_DIR, "coverage.json")
     coins: list[str] = []
@@ -94,7 +109,7 @@ def healthz() -> dict:
     return {"ok": True, "data_coins": coins, "n_agents": len(_registry.list_agents())}
 
 
-@app.get("/market-temp")
+@app.get("/market-temp", response_model=MarketTempResponse)
 def market_temp() -> dict:
     """The current market-temperature read (risk-on/off) the app shows + bots
     consume. Served from the cached snapshot a refresh worker writes; neutral/
@@ -104,7 +119,7 @@ def market_temp() -> dict:
     return mt.load_snapshot()
 
 
-@app.get("/vault")
+@app.get("/vault", response_model=VaultResponse)
 def vault(profile: str = "conservative", demo_profit: float = 0.0) -> dict:
     """The profit-vault state the app tile reads: per-profile allocation, each lot's
     net APY + liquidation buffer, and the live yield-safety monitor verdict per lot.
@@ -133,7 +148,7 @@ def vault(profile: str = "conservative", demo_profit: float = 0.0) -> dict:
     }
 
 
-@app.get("/arena/board")
+@app.get("/arena/board", response_model=ArenaBoardResponse)
 def arena_board(live: bool = False) -> dict:
     """based.bid Battle Arena — verified-safe SURVIVAL board. Server-side BUCKETED
     (band + coarse risk bucket only; raw drawdown/return NEVER cross the wire, per the
@@ -163,7 +178,7 @@ def arena_board(live: bool = False) -> dict:
     return {"board": board, "kpi": "survival (bucketed) — not raw PnL", "n": len(board), "live": True}
 
 
-@app.post("/backtest")
+@app.post("/backtest", response_model=BacktestResponse)
 def backtest(req: BacktestRequest) -> dict:
     if req.strategy_id not in _ALLOWED:
         raise HTTPException(422, f"unknown strategy_id {req.strategy_id!r}")
@@ -176,7 +191,7 @@ def backtest(req: BacktestRequest) -> dict:
         raise HTTPException(503, str(e)) from e
 
 
-@app.post("/agents")
+@app.post("/agents", response_model=DeployResponse)
 def deploy(req: DeployRequest) -> dict:
     sid = req.spec.get("strategy_id")
     if sid not in _ALLOWED:
@@ -192,7 +207,7 @@ def deploy(req: DeployRequest) -> dict:
             "launch": f"bash launch_agent.sh {agent_id}"}
 
 
-@app.post("/agents/{agent_id}/start")
+@app.post("/agents/{agent_id}/start", response_model=StartAgentResponse)
 def start_agent(agent_id: str) -> dict:
     try:
         return _orch.start(agent_id)
@@ -204,17 +219,17 @@ def start_agent(agent_id: str) -> dict:
         raise HTTPException(503, str(e)) from e
 
 
-@app.get("/orchestrator")
+@app.get("/orchestrator", response_model=OrchestratorResponse)
 def orchestrator_status() -> dict:
     return {"running": _orch.list_running(), "max_per_user": MAX_AGENTS_PER_USER}
 
 
-@app.get("/agents")
+@app.get("/agents", response_model=AgentListResponse)
 def list_agents(user_id: str | None = None) -> dict:
     return {"agents": _registry.list_agents(user_id)}
 
 
-@app.get("/agents/{agent_id}")
+@app.get("/agents/{agent_id}", response_model=AgentDetailResponse)
 def get_agent(agent_id: str) -> dict:
     doc = _registry.get(agent_id)
     if not doc:
@@ -222,7 +237,7 @@ def get_agent(agent_id: str) -> dict:
     return {"agent": doc, "state": _state.get_state(agent_id)}
 
 
-@app.post("/agents/{agent_id}/stop")
+@app.post("/agents/{agent_id}/stop", response_model=StopAgentResponse)
 def stop_agent(agent_id: str) -> dict:
     if not _registry.get(agent_id):
         raise HTTPException(404, f"no agent {agent_id!r}")
@@ -230,7 +245,7 @@ def stop_agent(agent_id: str) -> dict:
     return {"agent_id": agent_id, "status": "stopped", "process_killed": killed}
 
 
-@app.post("/agents/{agent_id}/kill")
+@app.post("/agents/{agent_id}/kill", response_model=KillAgentResponse)
 def kill_agent(agent_id: str, engaged: bool = True) -> dict:
     """SOFT kill-switch (web3 #4): engage `policy.kill_switch` so the safety gate
     denies EVERY new order for this agent — WITHOUT killing the running process (it
@@ -242,7 +257,7 @@ def kill_agent(agent_id: str, engaged: bool = True) -> dict:
     return {"agent_id": agent_id, "kill_switch": engaged}
 
 
-@app.post("/kill")
+@app.post("/kill", response_model=GlobalKillResponse)
 def global_kill(engaged: bool = True) -> dict:
     """GLOBAL kill-switch — the operator-wide panic button. Engages the safety gate
     for EVERY agent at once (each agent's dispatch checks this flag in addition to
@@ -251,7 +266,7 @@ def global_kill(engaged: bool = True) -> dict:
     return {"scope": "global", "kill_switch": engaged}
 
 
-@app.get("/kill")
+@app.get("/kill", response_model=GlobalKillResponse)
 def global_kill_status() -> dict:
     """Read the global kill-switch state (for the operator dashboard)."""
     return {"scope": "global", "kill_switch": is_global_kill()}
