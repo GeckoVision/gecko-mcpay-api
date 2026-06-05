@@ -1,0 +1,8 @@
+# Per-machine install state — this sidecar has ZERO runtime deps (uses native
+# fetch on Node >=22), so node_modules is normally absent. Ignored anyway to match
+# the kamino/ts-sidecar posture and tolerate dev-only @types/node installs.
+node_modules/
+
+# Build/debug scratch
+*.log
+dist/

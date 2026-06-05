@@ -1,0 +1,14 @@
+{
+  "name": "gecko-swap-ts-sidecar",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Thin TS sidecar: builds an UNSIGNED Solana swap tx via the Jupiter swap API (quote + swap). NEVER signs, NEVER holds a key, NO secrets. Python signs+submits through the delegated OKX-TEE path. Mirrors the Kamino ts-sidecar.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build-swap": "node build_swap_tx.ts"
+  },
+  "license": "ISC"
+}

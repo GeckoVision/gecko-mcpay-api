@@ -110,6 +110,55 @@ class AgentRegistry:
             return True
         return False
 
+    # ── Kill-switch (web3 #4) ────────────────────────────────────────
+    # The kill-switch sets `policy.kill_switch` on the agent doc. The running
+    # monolith reads this flag (alongside the global flag below) and TradeSafety's
+    # `check_order` denies every order while it is engaged — the operator/fintech
+    # hard stop. This is a SOFT stop (no new orders); `stop` kills the process.
+    def set_kill(self, agent_id: str, engaged: bool) -> bool:
+        patch = {"policy.kill_switch": engaged, "updated_at": _now()}
+        if self._col is not None:
+            return self._col.update_one({"agent_id": agent_id}, {"$set": patch}).matched_count > 0
+        if agent_id in _MEM_AGENTS:
+            pol = _MEM_AGENTS[agent_id].setdefault("policy", {})
+            pol["kill_switch"] = engaged
+            _MEM_AGENTS[agent_id]["updated_at"] = _now()
+            return True
+        return False
+
+    def is_killed(self, agent_id: str) -> bool:
+        doc = self.get(agent_id)
+        if not doc:
+            return False
+        return bool((doc.get("policy") or {}).get("kill_switch", False))
+
+
+# Global kill-switch — a process/operator-wide hard stop that engages EVERY agent's
+# safety gate at once (the "flip everything off" panic button). Stored separately
+# from per-agent flags. Persisted to Mongo when available so a restart honors it.
+_GLOBAL_KILL_DOC_ID = "__global_kill__"
+
+
+def set_global_kill(engaged: bool) -> bool:
+    col = _collection("control")
+    if col is not None:
+        col.replace_one(
+            {"_id": _GLOBAL_KILL_DOC_ID},
+            {"_id": _GLOBAL_KILL_DOC_ID, "kill_switch": engaged, "updated_at": _now()},
+            upsert=True,
+        )
+        return True
+    _MEM_STATE[_GLOBAL_KILL_DOC_ID] = {"kill_switch": engaged, "updated_at": _now()}
+    return True
+
+
+def is_global_kill() -> bool:
+    col = _collection("control")
+    if col is not None:
+        doc = col.find_one({"_id": _GLOBAL_KILL_DOC_ID})
+        return bool(doc and doc.get("kill_switch", False))
+    return bool(_MEM_STATE.get(_GLOBAL_KILL_DOC_ID, {}).get("kill_switch", False))
+
 
 # ── Agent state mirror (what the dashboard reads) ────────────────────
 class AgentStateStore:
