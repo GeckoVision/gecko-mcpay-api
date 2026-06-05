@@ -108,6 +108,50 @@ def with_global_kill(policy: TradeSafetyPolicy, global_kill: bool) -> TradeSafet
     return replace(policy, kill_switch=True)
 
 
+def basedbid_policy(
+    *,
+    max_notional_usd: float = 25.0,
+    max_daily_loss_usd: float = 10.0,
+    allowed_symbols: tuple[str, ...] = (),
+    require_verified_strategy: bool = True,
+    extra_venues: tuple[str, ...] = (),
+) -> TradeSafetyPolicy:
+    """Per-agent policy helper that ENABLES the based.bid (arena) venue.
+
+    `"basedbid"` is deliberately NOT in `TradeSafetyPolicy.allowed_venues` by
+    default — an arena LBP/Flash buy is real-money + thin-liquidity exposed, so
+    opting in is explicit and per-agent. Defaults mirror the conservative Jupiter
+    posture (small notional, tight loss cap)."""
+    return TradeSafetyPolicy(
+        max_notional_usd=max_notional_usd,
+        max_daily_loss_usd=max_daily_loss_usd,
+        allowed_venues=("basedbid", *extra_venues),
+        allowed_symbols=allowed_symbols,
+        require_verified_strategy=require_verified_strategy,
+    )
+
+
+def kamino_policy(
+    *,
+    max_notional_usd: float = 100.0,
+    max_daily_loss_usd: float = 25.0,
+    allowed_symbols: tuple[str, ...] = (),
+    require_verified_strategy: bool = True,
+    extra_venues: tuple[str, ...] = (),
+) -> TradeSafetyPolicy:
+    """Per-agent policy helper that ENABLES the Kamino (vault deposit/withdraw) venue.
+
+    `"kamino"` is deliberately NOT in `TradeSafetyPolicy.allowed_venues` by default
+    — a lending deposit moves real USDC, so opting in is explicit and per-agent."""
+    return TradeSafetyPolicy(
+        max_notional_usd=max_notional_usd,
+        max_daily_loss_usd=max_daily_loss_usd,
+        allowed_venues=("kamino", *extra_venues),
+        allowed_symbols=allowed_symbols,
+        require_verified_strategy=require_verified_strategy,
+    )
+
+
 def jupiter_swap_policy(
     *,
     max_notional_usd: float = 25.0,

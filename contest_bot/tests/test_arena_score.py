@@ -68,7 +68,29 @@ def test_api_arena_board_endpoint(monkeypatch, tmp_path):
     import arena_score
     from fastapi.testclient import TestClient
     monkeypatch.setattr(arena_score, "build_board", lambda *a, **k: [{"name": "X", "band": "surviving", "risk_bucket": "contained", "bars": 100}])
-    r = TestClient(agent_api.app).get("/arena/board")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["board"][0]["band"] == "surviving" and "survival" in body["kpi"]
+    client = TestClient(agent_api.app)
+
+    # cold cache → honest-empty + stale (no worker has run yet)
+    cold = client.get("/arena/board").json()
+    assert cold["board"] == [] and cold.get("stale") is True
+
+    # ?live=1 forces a fresh build AND warms the cache
+    live = client.get("/arena/board?live=1").json()
+    assert live["board"][0]["band"] == "surviving" and "survival" in live["kpi"]
+
+    # subsequent cached read now serves the warmed snapshot (no rebuild)
+    warm = client.get("/arena/board").json()
+    assert warm["board"][0]["band"] == "surviving" and warm.get("stale") is None
+
+
+def test_board_snapshot_roundtrip(tmp_path):
+    p = str(tmp_path / "arena_board.json")
+    rows = [{"name": "X", "band": "surviving", "risk_bucket": "contained", "bars": 100}]
+    asc.save_board_snapshot(rows, p)
+    snap = asc.load_board_snapshot(p)
+    assert snap["board"] == rows and snap["n"] == 1 and "updated_at" in snap
+
+
+def test_board_snapshot_honest_empty_cold(tmp_path):
+    snap = asc.load_board_snapshot(str(tmp_path / "missing.json"))
+    assert snap["board"] == [] and snap["stale"] is True

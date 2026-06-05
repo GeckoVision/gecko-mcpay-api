@@ -24,12 +24,32 @@ import subprocess
 from dataclasses import dataclass
 from decimal import Decimal
 
+from trade_safety import (
+    Order,
+    SafetyContext,
+    TradeSafetyPolicy,
+    check_order,
+    kamino_policy,
+    with_global_kill,
+)
+
 from kamino.apy_cache import KAMINO_MAIN_MARKET, KAMINO_USDC_RESERVE
 from kamino.devnet_harness import KAMINO_KLEND_DEVNET, build_unsigned_kamino_tx
 
 # Mainnet klend program (the eventual real path; KAMINO_*_DEVNET in devnet_harness
 # is the same program id string — klend is deployed under one id on both clusters).
 KLEND_PROGRAM = KAMINO_KLEND_DEVNET  # "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
+
+
+def _resolve_global_kill() -> bool:
+    """Read the operator-wide kill flag from the control plane. Lazy import keeps
+    this module light; if the store is unavailable we FAIL CLOSED (treat as killed)."""
+    try:
+        from agent_store import is_global_kill
+
+        return bool(is_global_kill())
+    except Exception:
+        return True
 
 
 def _b64_to_b58(b64: str) -> str:
@@ -68,6 +88,11 @@ class KaminoLiveExecutor:
         cluster: str = "mainnet",
         rpc_url: str | None = None,
         onchainos_bin: str = "onchainos",
+        # safety-gate wiring — injectable per-agent caps; default is a deny-default
+        # policy that ALWAYS honors the global kill-switch even when nothing is wired.
+        policy: TradeSafetyPolicy | None = None,
+        safety_ctx: SafetyContext | None = None,
+        global_kill_fn=None,
     ) -> None:
         self.owner = owner_pubkey
         self.dry_run = dry_run
@@ -76,6 +101,11 @@ class KaminoLiveExecutor:
         self.cluster = cluster
         self.rpc_url = rpc_url
         self._cli = onchainos_bin
+        # default policy enables the kamino venue but keeps require_verified_strategy
+        # (deny-default): a caller must pass a DEPLOY verdict via safety_ctx to proceed.
+        self.policy = policy if policy is not None else kamino_policy()
+        self.safety_ctx = safety_ctx if safety_ctx is not None else SafetyContext()
+        self._global_kill_fn = global_kill_fn or _resolve_global_kill
 
     def deposit(self, amount_usd: float, *, confirm: bool = False) -> ExecOutcome:
         return self._run("deposit", amount_usd, confirm=confirm)
@@ -95,7 +125,19 @@ class KaminoLiveExecutor:
         nix = env.get("numInstructions")
         b58 = _b64_to_b58(env["unsignedTxBase64"])
 
-        # 2. the double gate — submit ONLY when explicitly armed AND confirmed
+        # 2. SAFETY GATE (deny-default) — global kill → check_order. This is the gate
+        #    the app's /kill + per-agent notional/daily-loss caps ride on. A deposit
+        #    moves USDC, so notional == amount_usd. Mirrors the Jupiter check_order path.
+        order = Order(symbol="USDC", venue="kamino", notional_usd=float(amount_usd), side=action)
+        policy = with_global_kill(self.policy, self._global_kill_fn())
+        verdict = check_order(order, policy, self.safety_ctx)
+        if not verdict.allow:
+            return ExecOutcome(
+                False, False, action, amount_usd,
+                "safety-gate denied: " + "; ".join(verdict.reasons),
+            )
+
+        # 3. the double gate — submit ONLY when explicitly armed AND confirmed
         will_submit = (not self.dry_run) and confirm
         if not will_submit:
             why = "dry_run" if self.dry_run else "confirm=False"
@@ -104,7 +146,7 @@ class KaminoLiveExecutor:
                 f"built+ready (NOT submitted: {why}); {nix}-ix tx", num_instructions=nix,
             )
 
-        # 3. live submit via OKX TEE (broadcasts directly under policy limit)
+        # 4. live submit via OKX TEE (broadcasts directly under policy limit)
         proc = subprocess.run(
             [self._cli, "wallet", "contract-call", "--chain", "solana",
              "--to", KLEND_PROGRAM, "--unsigned-tx", b58],

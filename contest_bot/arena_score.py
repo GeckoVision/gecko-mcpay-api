@@ -9,7 +9,10 @@ leaderboards). Reused by both the CLI demo and the `/arena/board` API endpoint.
 
 from __future__ import annotations
 
+import json
 import math
+import os
+from datetime import UTC, datetime
 from typing import Any
 
 # Hand-picked graduated Solana tokens (stand-ins; real based.bid mints swap in via the
@@ -96,3 +99,33 @@ def build_board(
     scored = [s for name, mint in toks.items() if (s := score_token(provider, name, mint, bar=bar, limit=limit))]
     scored.sort(key=lambda s: (_BAND_ORDER.get(s["band"], 9), s["max_dd"]))
     return [public_entry(s) for s in scored] if public else scored
+
+
+# ── snapshot I/O (a worker writes; the API reads) ────────────────────────────
+# Building the board hits the GeckoTerminal feed (~2 calls/token, throttled) → too
+# slow to compute inside an HTTP request. Same split as market_temp: refresh_arena_
+# board.py writes the snapshot; GET /arena/board serves it (fast, honest-empty cold).
+def snapshot_path() -> str:
+    base = os.environ.get("GECKO_STATE_DIR") or os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base, "arena_board.json")
+
+
+def save_board_snapshot(board: list[dict], path: str | None = None) -> str:
+    p = path or snapshot_path()
+    os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
+    payload = {"board": board, "n": len(board), "updated_at": datetime.now(UTC).isoformat()}
+    with open(p, "w") as f:
+        json.dump(payload, f)
+    return p
+
+
+def load_board_snapshot(path: str | None = None) -> dict:
+    """Latest board snapshot, or an honest-empty stale default if no worker has run."""
+    p = path or snapshot_path()
+    if not os.path.exists(p):
+        return {"board": [], "n": 0, "stale": True, "note": "no arena-board snapshot yet"}
+    try:
+        with open(p) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {"board": [], "n": 0, "stale": True, "note": "unreadable snapshot"}
