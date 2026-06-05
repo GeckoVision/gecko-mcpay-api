@@ -24,6 +24,7 @@ import os
 import sys
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -34,7 +35,26 @@ import backtest_strategy as bt  # noqa: E402
 from agent_orchestrator import MAX_AGENTS_PER_USER, AgentOrchestrator  # noqa: E402
 from agent_store import AgentRegistry, AgentStateStore  # noqa: E402
 
-app = FastAPI(title="Gecko Agent Control Plane", version="0.3.0")
+app = FastAPI(title="Gecko Agent Control Plane", version="0.4.0")
+
+# Phase 0: the hosted app (app.geckovision.tech) calls this LOCAL control plane
+# (GECKO_AGENT_CONTROL_URL=http://localhost:8271) — without CORS the browser blocks
+# every request. Origins come from GECKO_APP_ORIGINS (comma-sep); default covers the
+# prod app + common local dev ports. FastAPI already serves /openapi.json for codegen.
+_DEFAULT_ORIGINS = (
+    "https://app.geckovision.tech,https://geckovision.tech,"
+    "http://localhost:3000,http://localhost:3001"
+)
+_ALLOWED_ORIGINS = [
+    o.strip() for o in os.environ.get("GECKO_APP_ORIGINS", _DEFAULT_ORIGINS).split(",") if o.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 _ALLOWED = {"trend_breakout", "mean_reversion"}
 _registry = AgentRegistry()
@@ -106,6 +126,26 @@ def vault(profile: str = "conservative", demo_profit: float = 0.0) -> dict:
         "allocation": allocation,
         "market_temp": {"label": snap.get("label"), "predicted_drawdown": dd, "stale": snap.get("stale", False)},
     }
+
+
+@app.get("/arena/board")
+def arena_board() -> dict:
+    """based.bid Battle Arena — verified-safe SURVIVAL board. Server-side BUCKETED
+    (band + coarse risk bucket only; raw drawdown/return NEVER cross the wire, per the
+    no-public-raw-floats rule). Read-only; survival is the KPI, not PnL. Tokens from
+    GECKO_ARENA_TOKENS (NAME:mint,…) or the hand-picked graduated default."""
+    import arena_score as asc
+    from strategies.basedbid_feed import BasedBidCandleProvider
+
+    toks = None
+    raw = os.environ.get("GECKO_ARENA_TOKENS", "").strip()
+    if raw:
+        toks = {p.split(":")[0]: p.split(":")[1] for p in raw.split(",") if ":" in p}
+    try:
+        board = asc.build_board(BasedBidCandleProvider(), toks, public=True)
+    except Exception as e:  # never 500 the board; honest-empty on data error
+        return {"board": [], "error": f"{type(e).__name__}", "note": "feed unavailable"}
+    return {"board": board, "kpi": "survival (bucketed) — not raw PnL", "n": len(board)}
 
 
 @app.post("/backtest")
