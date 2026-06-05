@@ -25,7 +25,15 @@ import subprocess
 from dataclasses import dataclass
 
 import httpx
-from trade_safety import _b64_to_b58  # reuse the proven base64→base58
+from trade_safety import (  # reuse the proven base64→base58 + the safety gate
+    Order,
+    SafetyContext,
+    TradeSafetyPolicy,
+    _b64_to_b58,
+    basedbid_policy,
+    check_order,
+    with_global_kill,
+)
 
 SDK_SANDBOX = "https://cdn.based.bid/api"
 SDK_PROD = "https://static.based.bid/api"
@@ -33,6 +41,23 @@ DEVNET_CHAIN = 5011
 MAINNET_CHAIN = 501
 ZERO_REFERRER = "11111111111111111111111111111111"  # also the System Program (inert --to)
 _HTTP_TIMEOUT = 15.0
+
+# Conservative SOL→USD reference used ONLY to convert an arena `amount_sol` into the
+# USD-equivalent notional the safety gate caps on. Deliberately HIGH (fail-closed):
+# overstating the USD value can only make the notional cap bite SOONER, never later.
+_DEFAULT_SOL_PRICE_USD = 250.0
+
+
+def _resolve_global_kill() -> bool:
+    """Read the operator-wide kill flag from the control plane. Lazy import keeps
+    this module light + avoids a hard dep on agent_store at import time; if the
+    store is unavailable we FAIL CLOSED (treat as killed)."""
+    try:
+        from agent_store import is_global_kill
+
+        return bool(is_global_kill())
+    except Exception:
+        return True
 
 
 @dataclass
@@ -62,6 +87,13 @@ class BasedBidExecutionAdapter:
         api_key: str | None = None,
         onchainos_bin: str = "onchainos",
         http_client: httpx.Client | None = None,
+        # safety-gate wiring (the kill-switch + notional/daily-loss caps). Injectable
+        # so the orchestrator passes per-agent caps; defaults to a deny-default policy
+        # that ALWAYS honors the global kill-switch even when nothing is wired.
+        policy: TradeSafetyPolicy | None = None,
+        safety_ctx: SafetyContext | None = None,
+        sol_price_usd: float = _DEFAULT_SOL_PRICE_USD,
+        global_kill_fn=None,
     ) -> None:
         self.owner = owner_pubkey
         self.dry_run = dry_run
@@ -71,6 +103,12 @@ class BasedBidExecutionAdapter:
         self.api_key = api_key
         self._cli = onchainos_bin
         self._client = http_client
+        # default policy enables the basedbid venue but keeps require_verified_strategy
+        # (deny-default): a caller must pass a DEPLOY verdict via safety_ctx to proceed.
+        self.policy = policy if policy is not None else basedbid_policy()
+        self.safety_ctx = safety_ctx if safety_ctx is not None else SafetyContext()
+        self.sol_price_usd = sol_price_usd
+        self._global_kill_fn = global_kill_fn or _resolve_global_kill
 
     @property
     def _api(self) -> str:
@@ -115,13 +153,27 @@ class BasedBidExecutionAdapter:
         if not tx_b64:
             return BasedBidOutcome(False, False, action, mint, amount_sol, f"no transaction in based.bid response: {env}")
 
-        # 2. double gate — submit ONLY when armed AND confirmed
+        # 2. SAFETY GATE (deny-default) — global kill → check_order. This is the
+        #    gate the app's /kill + per-agent notional/daily-loss caps ride on.
+        #    Mirrors JupiterSwapExecutionAdapter going through check_order/dispatch.
+        side = "buy" if action == "lbp-buy" else "sell"
+        notional_usd = float(amount_sol) * float(self.sol_price_usd)
+        order = Order(symbol=mint, venue=self.venue, notional_usd=notional_usd, side=side)
+        policy = with_global_kill(self.policy, self._global_kill_fn())
+        verdict = check_order(order, policy, self.safety_ctx)
+        if not verdict.allow:
+            return BasedBidOutcome(
+                False, False, action, mint, amount_sol,
+                "safety-gate denied: " + "; ".join(verdict.reasons),
+            )
+
+        # 3. double gate — submit ONLY when armed AND confirmed
         if self.dry_run or not confirm:
             why = "dry_run" if self.dry_run else "confirm=False"
             return BasedBidOutcome(True, False, action, mint, amount_sol,
                                    f"built+ready (NOT submitted: {why}); sandbox={self.sandbox}")
 
-        # 3. OKX TEE sign + broadcast (the unsigned based.bid tx already carries blockhash)
+        # 4. OKX TEE sign + broadcast (the unsigned based.bid tx already carries blockhash)
         b58 = _b64_to_b58(tx_b64)
         proc = subprocess.run(
             [self._cli, "wallet", "contract-call", "--chain", "solana",
