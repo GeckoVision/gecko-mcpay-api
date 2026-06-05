@@ -41,37 +41,71 @@ class BasedBidCandleProvider:
     def __init__(
         self, *, network: str = "solana", max_retries: int = 3,
         base_url: str = _GT_BASE, http_client: httpx.Client | None = None,
+        min_interval: float = 2.2,
     ) -> None:
         self.network = network
         self._max_retries = max_retries
         self._base = base_url.rstrip("/")
         self._client = http_client  # injectable for tests
         self._pool_cache: dict[str, str | None] = {}  # token mint → top pool addr (or None)
+        # GeckoTerminal free tier ≈ 30 req/min → throttle to stay under it. A live
+        # board scores N tokens × 2 calls (pool + ohlcv); without this it trips 429
+        # and the board comes back half-empty + flaky run-to-run.
+        self._min_interval = min_interval
+        self._last_req = 0.0
 
     # ── HTTP ───────────────────────────────────────────────────────────────
+    def _throttle(self) -> None:
+        if self._client is not None:  # injected client (tests) → no real network, no wait
+            return
+        wait = self._min_interval - (time.time() - self._last_req)
+        if wait > 0:
+            time.sleep(wait)
+        self._last_req = time.time()
+
     def _get(self, path: str) -> dict[str, Any]:
         url = f"{self._base}{path}"
         headers = {"Accept": "application/json", "User-Agent": "gecko-arena/0.1"}
         if self._client is not None:
             return self._client.get(url, headers=headers, timeout=_HTTP_TIMEOUT).json()
-        with httpx.Client(timeout=_HTTP_TIMEOUT) as c:
-            r = c.get(url, headers=headers)
-            r.raise_for_status()
-            return r.json()
+        # 429-aware: throttle ahead of each call, back off harder on rate-limit.
+        last_exc: Exception | None = None
+        for attempt in range(self._max_retries):
+            self._throttle()
+            try:
+                with httpx.Client(timeout=_HTTP_TIMEOUT) as c:
+                    r = c.get(url, headers=headers)
+                    if r.status_code == 429:
+                        time.sleep(self._min_interval * (attempt + 2))  # widen the window
+                        last_exc = httpx.HTTPStatusError("429", request=r.request, response=r)
+                        continue
+                    r.raise_for_status()
+                    return r.json()
+            except httpx.HTTPStatusError as exc:
+                last_exc = exc
+                if exc.response is not None and exc.response.status_code != 429:
+                    raise
+                time.sleep(self._min_interval * (attempt + 1))
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("unreachable")
 
     def _resolve_pool(self, token: str) -> str | None:
-        """Top (highest-liquidity) DEX pool for a token mint, or None (pre-graduation)."""
+        """Top (highest-liquidity) DEX pool for a token mint, or None (pre-graduation).
+
+        Cache ONLY a definitive answer: a successful lookup (real pool, or a confirmed
+        empty list = genuinely pre-graduation). A lookup that *errors* (e.g. a 429) is
+        NOT cached — otherwise one rate-limited call poisons the cache and the token is
+        treated as "no pool" for the life of the provider, half-emptying the board."""
         if token in self._pool_cache:
             return self._pool_cache[token]
-        pool: str | None = None
         try:
             body = self._get(f"/networks/{self.network}/tokens/{token}/pools")
-            data = body.get("data") or []
-            if data:
-                pool = data[0].get("attributes", {}).get("address")
         except Exception:
-            pool = None
-        self._pool_cache[token] = pool
+            return None  # transient — do NOT cache, let the next call retry
+        data = body.get("data") or []
+        pool = data[0].get("attributes", {}).get("address") if data else None
+        self._pool_cache[token] = pool  # definitive (real pool or confirmed empty)
         return pool
 
     # ── public interface (matches OkxSpotCandleProvider) ─────────────────────

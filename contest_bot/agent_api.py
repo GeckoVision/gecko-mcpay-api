@@ -134,12 +134,21 @@ def vault(profile: str = "conservative", demo_profit: float = 0.0) -> dict:
 
 
 @app.get("/arena/board")
-def arena_board() -> dict:
+def arena_board(live: bool = False) -> dict:
     """based.bid Battle Arena — verified-safe SURVIVAL board. Server-side BUCKETED
     (band + coarse risk bucket only; raw drawdown/return NEVER cross the wire, per the
-    no-public-raw-floats rule). Read-only; survival is the KPI, not PnL. Tokens from
-    GECKO_ARENA_TOKENS (NAME:mint,…) or the hand-picked graduated default."""
+    no-public-raw-floats rule). Read-only; survival is the KPI, not PnL.
+
+    Serves the cached snapshot a refresh worker writes (refresh_arena_board.py) — the
+    live build hits the throttled feed (~90s for 5 tokens), too slow per-request.
+    Honest-empty + stale on a cold start. Pass ?live=1 to force a fresh build (slow;
+    tokens from GECKO_ARENA_TOKENS NAME:mint,… or the hand-picked graduated default)."""
     import arena_score as asc
+
+    if not live:
+        snap = asc.load_board_snapshot()
+        return {"kpi": "survival (bucketed) — not raw PnL", **snap}
+
     from strategies.basedbid_feed import BasedBidCandleProvider
 
     toks = None
@@ -150,7 +159,8 @@ def arena_board() -> dict:
         board = asc.build_board(BasedBidCandleProvider(), toks, public=True)
     except Exception as e:  # never 500 the board; honest-empty on data error
         return {"board": [], "error": f"{type(e).__name__}", "note": "feed unavailable"}
-    return {"board": board, "kpi": "survival (bucketed) — not raw PnL", "n": len(board)}
+    asc.save_board_snapshot(board)  # warm the cache for subsequent cheap reads
+    return {"board": board, "kpi": "survival (bucketed) — not raw PnL", "n": len(board), "live": True}
 
 
 @app.post("/backtest")
