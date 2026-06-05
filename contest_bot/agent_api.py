@@ -128,6 +128,26 @@ def vault(profile: str = "conservative", demo_profit: float = 0.0) -> dict:
     }
 
 
+@app.get("/arena/board")
+def arena_board() -> dict:
+    """based.bid Battle Arena — verified-safe SURVIVAL board. Server-side BUCKETED
+    (band + coarse risk bucket only; raw drawdown/return NEVER cross the wire, per the
+    no-public-raw-floats rule). Read-only; survival is the KPI, not PnL. Tokens from
+    GECKO_ARENA_TOKENS (NAME:mint,…) or the hand-picked graduated default."""
+    import arena_score as asc
+    from strategies.basedbid_feed import BasedBidCandleProvider
+
+    toks = None
+    raw = os.environ.get("GECKO_ARENA_TOKENS", "").strip()
+    if raw:
+        toks = {p.split(":")[0]: p.split(":")[1] for p in raw.split(",") if ":" in p}
+    try:
+        board = asc.build_board(BasedBidCandleProvider(), toks, public=True)
+    except Exception as e:  # never 500 the board; honest-empty on data error
+        return {"board": [], "error": f"{type(e).__name__}", "note": "feed unavailable"}
+    return {"board": board, "kpi": "survival (bucketed) — not raw PnL", "n": len(board)}
+
+
 @app.post("/backtest")
 def backtest(req: BacktestRequest) -> dict:
     if req.strategy_id not in _ALLOWED:
