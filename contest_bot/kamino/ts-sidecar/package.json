@@ -1,0 +1,28 @@
+{
+  "name": "gecko-kamino-ts-sidecar",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Thin TS sidecar: builds UNSIGNED Kamino klend deposit/withdraw txs via @kamino-finance/klend-sdk. Cluster-parameterized (devnet|mainnet). NEVER signs — Python signs+submits.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build-tx": "node build_tx.ts",
+    "verify-devnet": "node verify_devnet.ts"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "@kamino-finance/klend-sdk": "8.0.2",
+    "@solana/kit": "^2.3.0",
+    "bn.js": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.3"
+  },
+  "overridesComment": "klend-sdk 8.0.2 declares farms-sdk ^3.2.24 but deep-requires .../@codegen/farms/programId, renamed to /programs in 3.2.25+. Pin 3.2.24 so the transitive require resolves. Remove when klend-sdk ships a fixed range.",
+  "overrides": {
+    "@kamino-finance/farms-sdk": "3.2.24"
+  }
+}

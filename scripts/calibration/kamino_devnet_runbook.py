@@ -43,6 +43,61 @@ from kamino.devnet_harness import (  # noqa: E402
 )
 
 
+def _run_kamino(args, keypair, principal: Decimal) -> int:
+    """Real Kamino klend deposit via the TS sidecar: build (sidecar) -> sign
+    (harness keypair) -> optionally submit. Surfaces build/submit errors verbatim.
+    """
+    from kamino.devnet_harness import KaminoDevnetVaultAdapter, SidecarError
+
+    rpc = args.rpc
+    if args.cluster == "mainnet" and rpc == DEVNET_RPC:
+        rpc = "https://api.mainnet-beta.solana.com"
+
+    print("── Kamino REAL klend deposit (TS-sidecar) ────────────────────────")
+    print(f"  cluster      : {args.cluster} ({rpc})")
+    print("  adapter      : kamino (klend TS-sidecar build -> Python sign)")
+    print(f"  pubkey       : {keypair.pubkey()}  (gitignored, secret never printed)")
+    print(f"  principal    : ${principal} USDC (logical)")
+    print(f"  submit       : {args.submit}")
+    if args.cluster == "mainnet" and args.submit:
+        print("  REFUSING mainnet submit from the runbook — founder-gated.")
+        return 2
+    print()
+
+    adapter = KaminoDevnetVaultAdapter(
+        rpc_url=rpc,
+        cluster=args.cluster,
+        market=args.market,
+        reserve=args.reserve,
+        submit=args.submit,
+    )
+    try:
+        print("  [1/2] building unsigned tx via sidecar + signing locally…")
+        sig = adapter.deposit(keypair, principal)
+    except SidecarError as exc:  # verbatim per CLAUDE.md
+        print(f"        FAILED (verbatim): {exc}")
+        if args.cluster == "devnet":
+            print(
+                "        -> devnet USDC reserve has no working oracle "
+                "(verify_devnet.ts). Use --cluster mainnet for the real build path."
+            )
+        return 2
+
+    b = adapter.last_build or {}
+    print("  [2/2] build + sign verified:")
+    print(f"        program id : {b.get('programId')}")
+    print(f"        action     : {b.get('action')}")
+    print(f"        num ix     : {b.get('numInstructions')}")
+    print(f"        ix labels  : {b.get('ixLabels')}")
+    print(f"        amount base: {b.get('amountBaseUnits')}")
+    print(f"        result     : {sig}")
+    if not args.submit:
+        print("        (build+sign only — not submitted; pass --submit to send)")
+    print()
+    print("  done. (no mainnet submit; founder-gated)")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Kamino profit-vault devnet harness (S43)")
     ap.add_argument("--adapter", choices=["mock", "kamino"], default="mock")
@@ -77,6 +132,22 @@ def main() -> int:
         action="store_true",
         help="skip RPC/airdrop/deposit; run the monitor only (offline falsifier)",
     )
+    # ── Kamino-adapter (real klend TS-sidecar) flags ──────────────────────
+    ap.add_argument(
+        "--cluster",
+        choices=["devnet", "mainnet"],
+        default="devnet",
+        help="cluster for --adapter kamino (devnet has no usable USDC oracle; "
+        "mainnet is the real path, build+sign only unless --submit)",
+    )
+    ap.add_argument("--market", default=None, help="klend lending market pubkey (kamino adapter)")
+    ap.add_argument("--reserve", default=None, help="klend USDC reserve pubkey (kamino adapter)")
+    ap.add_argument(
+        "--submit",
+        action="store_true",
+        help="actually SEND the signed tx (default: build+sign only). NEVER use "
+        "with --cluster mainnet without explicit founder go-ahead.",
+    )
     args = ap.parse_args()
 
     kp_path = Path(args.keypair) if args.keypair else default_keypair_path()
@@ -84,6 +155,10 @@ def main() -> int:
     hurdle = hurdle_from_profile(args.profile)
     principal = Decimal(str(args.principal))
     accrue_seconds = args.accrue_days * 24 * 3600
+
+    # ── Real Kamino adapter (klend TS-sidecar): build -> sign -> submit ───
+    if args.adapter == "kamino":
+        return _run_kamino(args, keypair, principal)
 
     print("── Kamino profit-vault DEVNET harness (S43) ──────────────────────")
     print(f"  cluster      : devnet ({args.rpc})")

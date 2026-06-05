@@ -2186,7 +2186,16 @@ def poll_instruments() -> None:
                 _feat["btc_regime_1h"] = _get_regime_1h({"symbol": "BTC", "mint": BTC_WBTC_MINT})
             except Exception:  # fail-open to CHOP (conservative for the meanrev overlay)
                 _feat["btc_regime_1h"] = "CHOP"
-            _LAST_INDEX[sym] = {**_feat, "regime_1h": regime_1h}  # keep dashboard fresh
+            # Dashboard display: reuse the full index snapshot (instrument/regime/ema_stack/
+            # bull_trigger/bear_trigger + all indicators) so the Indexes panel doesn't render
+            # `undefined`. The strategy itself gates on `_feat`, not this; this is display-only.
+            # bull/bear triggers are indicator-derived (legacy-flavored) — fine for the canary.
+            if _cndls:
+                _snap = _compute_index_snapshot(sym, _cndls)
+                _snap["regime_1h"] = regime_1h
+                _LAST_INDEX[sym] = _snap
+            else:
+                _LAST_INDEX[sym] = {**_feat, "regime_1h": regime_1h}  # fallback: partial is better than nothing
             _sig = _STRATEGY.should_enter(_feat)
             if _sig is None:
                 _log_eval_telemetry(sym, action="decline", decline_reason="strategy_gate")

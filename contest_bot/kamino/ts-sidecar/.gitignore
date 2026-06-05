@@ -1,0 +1,7 @@
+# Per-machine install state — reproducible via `npm ci` from package-lock.json.
+# Same posture as the repo's other npm/skill installs (NOT source we maintain).
+node_modules/
+
+# Build/debug scratch
+*.log
+dist/

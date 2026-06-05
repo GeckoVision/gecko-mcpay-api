@@ -43,8 +43,10 @@ Run it via the runbook script:  scripts/calibration/kamino_devnet_runbook.py
 
 from __future__ import annotations
 
+import base64
 import json
 import os
+import subprocess
 import time
 from dataclasses import dataclass
 from decimal import Decimal
@@ -68,6 +70,17 @@ KAMINO_KLEND_DEVNET = "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
 KAMINO_KVAULT_DEVNET = "devkRngFnfp4gBc5a3LsadgbQKdPo8MSZ4prFiNSVmY"
 # Devnet USDC mint (from the founder's gecko-vault init-devnet.ts).
 DEVNET_USDC_MINT = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+
+# Mainnet main-market + USDC reserve (from apy_cache.py) — the eventual real
+# path. Kept here so the Kamino adapter is cluster-parameterized; mainnet build
+# is read-only here (build+sign only, NEVER submitted without founder go-ahead).
+KAMINO_MAIN_MARKET = "7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF"
+KAMINO_USDC_RESERVE = "D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59"
+
+# TS sidecar that builds UNSIGNED Kamino txs (KTX REST is mainnet-only; devnet/
+# cluster-parameterized tx construction must use the klend TS SDK).
+TS_SIDECAR_DIR = Path(__file__).resolve().parent / "ts-sidecar"
+TS_SIDECAR_BUILD = TS_SIDECAR_DIR / "build_tx.ts"
 
 
 # ── Position model: the bridge from on-chain state → S42 LeverageStrategy ──
@@ -214,39 +227,192 @@ class MockVaultAdapter:
         )
 
 
-# ── Kamino devnet adapter: documented stub (NOT wired this cut) ───────────
-class KaminoDevnetVaultAdapter:
-    """Real Kamino klend/kvault on DEVNET. Kamino IS deployed on devnet (verified):
-    klend program KLend2g3… executable with live markets/reserves; kvault devnet
-    program devkRngFnfp4… executable. The blocker is tx CONSTRUCTION, not the
-    program: the public KTX REST (api.kamino.finance) serves mainnet markets only,
-    so a devnet deposit ix must be built with the klend TS SDK (@kamino-finance/
-    klend-sdk) against a devnet RPC. That is a TS sidecar, deferred past this
-    Python-first first cut.
+# ── Kamino TS-sidecar bridge ──────────────────────────────────────────────
+# (S43's KaminoDevnetVaultAdapter STUB is now REAL — it builds an unsigned klend
+# tx via the TS sidecar (@kamino-finance/klend-sdk) and signs/submits in Python.
+# KTX REST is mainnet-only, so cluster-parameterized tx construction must use the
+# klend TS SDK. See contest_bot/kamino/ts-sidecar/.)
+class SidecarError(RuntimeError):
+    """The TS sidecar failed. Carries the sidecar's verbatim error envelope so
+    failures propagate unrephrased (CLAUDE.md: surface failures verbatim)."""
 
-    This class exists to PIN the seam: when we wire real Kamino devnet, it
-    implements `VaultAdapter` here and the runbook flips to it via --adapter kamino.
+
+def build_unsigned_kamino_tx(
+    *,
+    cluster: str,
+    action: str,
+    market: str,
+    reserve: str,
+    amount_usd: Decimal,
+    owner_pubkey: str,
+    rpc_url: str | None = None,
+    decimals: int = 6,
+    node_bin: str = "node",
+    timeout_s: float = 180.0,
+) -> dict[str, Any]:
+    """Shell out to the TS sidecar (`node build_tx.ts`) to build an UNSIGNED
+    Kamino klend deposit/withdraw tx. Returns the parsed JSON envelope, which
+    includes `unsignedTxBase64`, `programId`, `numInstructions`, `ixLabels`.
+
+    The sidecar NEVER signs and NEVER holds a key. Python (the caller) signs +
+    submits. The sidecar's request payload is sent on stdin as JSON.
+    """
+    if not TS_SIDECAR_BUILD.exists():
+        raise SidecarError(
+            f"TS sidecar not found at {TS_SIDECAR_BUILD}. "
+            f"Run `npm install` in {TS_SIDECAR_DIR} first."
+        )
+    payload: dict[str, Any] = {
+        "cluster": cluster,
+        "action": action,
+        "market": market,
+        "reserve": reserve,
+        "amountUsd": str(amount_usd),
+        "ownerPubkey": owner_pubkey,
+        "decimals": decimals,
+    }
+    if rpc_url:
+        payload["rpcUrl"] = rpc_url
+    proc = subprocess.run(
+        [node_bin, str(TS_SIDECAR_BUILD)],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        cwd=str(TS_SIDECAR_DIR),
+        timeout=timeout_s,
+    )
+    out = proc.stdout.strip()
+    # The sidecar emits exactly one JSON line on stdout (ok or error envelope).
+    # A non-zero exit with a JSON error line is the expected failure shape —
+    # surface its message verbatim.
+    parsed: dict[str, Any] | None = None
+    if out:
+        try:
+            parsed = json.loads(out.splitlines()[-1])
+        except json.JSONDecodeError:
+            parsed = None
+    if parsed is not None and parsed.get("ok") is False:
+        raise SidecarError(f"{parsed.get('error', 'Error')}: {parsed.get('message', out)}")
+    if proc.returncode != 0 or parsed is None:
+        raise SidecarError(
+            f"sidecar exited {proc.returncode}; stdout={out!r} stderr={proc.stderr.strip()!r}"
+        )
+    return parsed
+
+
+# ── Kamino devnet adapter: REAL (klend TS-SDK sidecar + Python sign/submit) ─
+class KaminoDevnetVaultAdapter:
+    """Real Kamino klend lend deposit/withdraw, cluster-parameterized.
+
+    Flow (per S43 design): the TS sidecar (@kamino-finance/klend-sdk) builds an
+    UNSIGNED klend deposit tx -> this adapter signs it with the harness keypair
+    (devnet) -> submits to the cluster RPC. Mainnet later swaps the local-keypair
+    sign for a delegated OKX-TEE/Privy backend (custody flip; founder-gated).
+
+    KNOWN devnet limitation (verified 2026-06-04 via `verify_devnet.ts`): the
+    devnet USDC reserve has NO working oracle (klend-sdk: "Could not find oracle
+    for USDC"; devnet Pyth accounts fail to decode). So a real devnet deposit
+    BUILD fails at market-load / refresh_reserve. The same builder works against
+    mainnet (oracle present) — that is the real path, founder-gated for submit.
+    This adapter therefore proves BUILD+SIGN; on-chain SUBMIT is devnet-blocked
+    by the missing oracle and mainnet-blocked by the founder gate.
+
+    `submit=False` (default) builds+signs only and never sends — safe anywhere.
+    `submit=True` sends to the configured cluster RPC.
     """
 
     venue = "kamino-devnet"
 
-    def __init__(self, rpc_url: str = DEVNET_RPC) -> None:
+    def __init__(
+        self,
+        rpc_url: str = DEVNET_RPC,
+        *,
+        cluster: str = "devnet",
+        market: str | None = None,
+        reserve: str | None = None,
+        submit: bool = False,
+        node_bin: str = "node",
+    ) -> None:
         self._rpc_url = rpc_url
+        self._cluster = cluster
+        if cluster == "mainnet":
+            self._market = market or KAMINO_MAIN_MARKET
+            self._reserve = reserve or KAMINO_USDC_RESERVE
+        else:
+            # No verified usable devnet USDC market/reserve (no oracle); caller
+            # must pass one explicitly to even attempt a devnet build.
+            self._market = market or ""
+            self._reserve = reserve or ""
+        self._submit = submit
+        self._node_bin = node_bin
+        self._last_build: dict[str, Any] | None = None
 
-    def deposit(self, owner: Keypair, amount_usd: Decimal) -> str:  # pragma: no cover
-        raise NotImplementedError(
-            "Kamino devnet deposit needs a klend TS-SDK tx builder (KTX REST is "
-            "mainnet-only). Use MockVaultAdapter for the first devnet cut. "
-            "Wire path: TS sidecar builds unsigned devnet tx -> sign with this "
-            "harness keypair (devnet) / delegated backend (live) -> submit."
+    @property
+    def last_build(self) -> dict[str, Any] | None:
+        """The most recent sidecar build envelope (programId, ixLabels, etc.)."""
+        return self._last_build
+
+    def deposit(self, owner: Keypair, amount_usd: Decimal) -> str:
+        """Build (sidecar) -> sign (harness keypair) -> optionally submit.
+
+        Returns the tx signature when submitted, else a `built+signed:<sig>`
+        marker derived from the signed (un-submitted) tx. Build or submit errors
+        are surfaced verbatim (never faked-success) per CLAUDE.md.
+        """
+        if not self._market or not self._reserve:
+            raise SidecarError(
+                "no Kamino market/reserve configured for cluster "
+                f"{self._cluster!r}. Devnet has no verified usable USDC reserve "
+                "(no oracle, per verify_devnet.ts) — pass market/reserve to "
+                "force, or use cluster=mainnet (founder-gated for submit)."
+            )
+        build = build_unsigned_kamino_tx(
+            cluster=self._cluster,
+            action="deposit",
+            market=self._market,
+            reserve=self._reserve,
+            amount_usd=amount_usd,
+            owner_pubkey=str(owner.pubkey()),
+            rpc_url=self._rpc_url,
+            node_bin=self._node_bin,
         )
+        self._last_build = build
+        return self._sign_and_maybe_submit(owner, build["unsignedTxBase64"])
 
-    def read_position(  # pragma: no cover
+    def _sign_and_maybe_submit(self, owner: Keypair, unsigned_tx_b64: str) -> str:
+        """Deserialize the unsigned versioned tx, sign with the harness keypair,
+        and (if submit=True) send to the cluster RPC. Submit errors (e.g. an
+        unfunded wallet) are surfaced verbatim, never swallowed.
+        """
+        from solders.transaction import VersionedTransaction
+
+        raw = base64.b64decode(unsigned_tx_b64)
+        unsigned = VersionedTransaction.from_bytes(raw)
+        # The sidecar left the signature slot empty (noopSigner). Re-sign the
+        # message with the owner keypair (sole signer / fee payer).
+        signed = VersionedTransaction(unsigned.message, [owner])
+
+        if not self._submit:
+            return f"built+signed:{signed.signatures[0]}"
+
+        from solana.rpc.api import Client
+        from solana.rpc.commitment import Confirmed
+
+        client = Client(self._rpc_url)
+        sig = client.send_transaction(signed).value  # surfaces RPC errors verbatim
+        client.confirm_transaction(sig, commitment=Confirmed)
+        return str(sig)
+
+    def read_position(
         self, owner: Pubkey, principal_usd: Decimal, elapsed_seconds: float
     ) -> VaultPosition:
+        """Real Kamino obligation read (decode obligation account +
+        refreshedStats) is the documented follow-on to the deposit
+        build+sign+submit path. Gated on a usable on-chain position (devnet
+        oracle blocker / mainnet founder gate)."""
         raise NotImplementedError(
-            "Read the real obligation/share account via RPC + Kamino refreshedStats. "
-            "Deferred with deposit()."
+            "real Kamino obligation read is the follow-on to deposit; gated on a "
+            "usable on-chain position (devnet oracle blocker / mainnet founder gate)."
         )
 
 
