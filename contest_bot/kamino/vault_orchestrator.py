@@ -82,10 +82,22 @@ class VaultOrchestrator:
     policy: vg.VaultPolicy = field(default_factory=vg.VaultPolicy)
     hurdle: Hurdle = field(default_factory=lambda: FIAT_CDB_BR)
     lots: list[VaultLot] = field(default_factory=list)
+    # Phase 1 (A6): optional LIVE executor (KaminoLiveExecutor-shaped: .deposit/.withdraw
+    # → ExecOutcome). None = paper only (default, unchanged behavior). When set, ONLY the
+    # validated conservative plain-lend leg is routed to it (leveraged tiers stay paper —
+    # Multiply isn't live). `live_confirm` is the SECOND arm: even with an executor, nothing
+    # submits unless live_confirm=True AND the executor itself is dry_run=False. Triple-gated.
+    executor: object | None = None
+    live_confirm: bool = False
 
     @property
     def allocation_usd(self) -> float:
         return sum(lot.principal_usd for lot in self.lots)
+
+    @staticmethod
+    def _is_conservative_lend(template: LeverageStrategy) -> bool:
+        """Only the validated plain-lend leg may touch real money."""
+        return template.yield_source == "stable_spread" and template.leverage == 1.0
 
     # ── allocation ─────────────────────────────────────────────────────────
     def allocate_profit(
@@ -111,7 +123,11 @@ class VaultOrchestrator:
                     denied.append({"source": template.yield_source, "amount": amt, "reasons": v.reasons})
                     continue
                 self._add_to_lot(template, amt)
-                deposited.append({"source": template.yield_source, "amount": amt, "monitor": v.monitor_action})
+                rec = {"source": template.yield_source, "amount": amt, "monitor": v.monitor_action}
+                live = self._maybe_live(template, "deposit", amt)
+                if live is not None:
+                    rec["live"] = live
+                deposited.append(rec)
             return {"deposited": deposited, "denied": denied, "allocation_usd": self.allocation_usd}
         except Exception as exc:  # never break the bot loop
             logger.warning("vault allocate_profit swallow: %s", exc)
@@ -123,6 +139,23 @@ class VaultOrchestrator:
                 lot.principal_usd = round(lot.principal_usd + amt, 4)
                 return
         self.lots.append(VaultLot(source=template.yield_source, principal_usd=amt, strategy=template))
+
+    def _maybe_live(self, template: LeverageStrategy, action: str, amt: float) -> dict | None:
+        """Route a deposit/withdraw to the LIVE executor — ONLY for the conservative
+        plain-lend leg, ONLY if an executor is attached. Best-effort (never raises into
+        the loop). The executor's own double gate (dry_run + confirm) is the real-money
+        rail; we pass confirm=self.live_confirm (default False → builds, never submits)."""
+        if self.executor is None or not self._is_conservative_lend(template):
+            return None
+        try:
+            fn = self.executor.deposit if action == "deposit" else self.executor.withdraw
+            out = fn(amt, confirm=self.live_confirm)
+            return {"submitted": getattr(out, "submitted", False),
+                    "tx_hash": getattr(out, "tx_hash", None),
+                    "detail": getattr(out, "detail", "")}
+        except Exception as exc:  # never break allocation/monitor on an executor error
+            logger.warning("vault live %s swallow: %s", action, exc)
+            return {"submitted": False, "tx_hash": None, "detail": f"error: {type(exc).__name__}"}
 
     # ── monitor cadence ──────────────────────────────────────────────────────
     def monitor_tick(self, *, predicted_drawdown_pct: float | None = None) -> list[dict]:
@@ -151,8 +184,12 @@ class VaultOrchestrator:
                 continue
             action = v.get("action")
             if action == EXIT:
+                live = self._maybe_live(lot.strategy, "withdraw", lot.principal_usd)  # real exit (conservative)
                 self.lots.remove(lot)
-                changed.append({"source": v["source"], "did": "exited", "freed_usd": lot.principal_usd})
+                rec = {"source": v["source"], "did": "exited", "freed_usd": lot.principal_usd}
+                if live is not None:
+                    rec["live"] = live
+                changed.append(rec)
             elif action == ROTATE and v.get("suggested_leverage"):
                 lot.strategy = lot.strategy.with_leverage(v["suggested_leverage"])
                 changed.append({"source": v["source"], "did": f"rotated→{v['suggested_leverage']:.1f}x"})
