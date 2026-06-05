@@ -293,3 +293,66 @@ class GlobalKillResponse(BaseModel):
     model_config = _CFG
     scope: str = "global"
     kill_switch: bool
+
+
+# ── /wallet ───────────────────────────────────────────────────────────────
+class WalletResponse(BaseModel):
+    """Signer identity + custody backend for the App's wallet surface.
+
+    `signer_pubkey` is the PUBLIC key ONLY — resolved best-effort from env or
+    the `onchainos` CLI; never a private key / mnemonic (the #1 invariant).
+    Cold/unconfigured backend → `{signer_pubkey: null, custody: "none",
+    status: "unconfigured", x402_mode}` (honest-empty, never 500)."""
+
+    model_config = _CFG
+    signer_pubkey: str | None = None
+    custody: str = "none"  # okx_tee | privy_embedded | none
+    status: str = "unconfigured"  # ok | logged_out | unconfigured | error
+    x402_mode: str = "stub"
+    # variant-only (Optional → cold branch validates)
+    note: str | None = None
+
+
+# ── /wallet/balance ───────────────────────────────────────────────────────
+class WalletBalance(BaseModel):
+    model_config = _CFG
+    token: str
+    amount: float
+
+
+class WalletBalanceResponse(BaseModel):
+    """Best-effort SOL + USDC for the signer. Honest-empty + `stale: true`
+    when no balance source is reachable; never blocks/crashes the endpoint."""
+
+    model_config = _CFG
+    pubkey: str | None = None
+    balances: list[WalletBalance] = []
+    stale: bool = True
+    note: str | None = None
+
+
+# ── /receipts ─────────────────────────────────────────────────────────────
+class PaymentReceipt(BaseModel):
+    """One x402-paid oracle call. In stub mode `tx_sig` carries a `stub-`
+    prefix so a stub sig can never pass for an on-chain artifact; `mode`
+    surfaces the X402 posture so the App labels it honestly."""
+
+    model_config = _CFG
+    mode: str  # stub | live | frames
+    idea_hash: str | None = None
+    tier: str | None = None
+    amount_usd: float | None = None
+    tx_sig: str | None = None
+    ts: str | None = None
+
+
+class ReceiptsResponse(BaseModel):
+    """Paid-call history. Honest-empty `[]` on a cold/unconfigured backend
+    (no receipt store wired); `stale` flags a best-effort/degraded read."""
+
+    model_config = _CFG
+    receipts: list[PaymentReceipt] = []
+    n: int = 0
+    mode: str = "stub"
+    stale: bool | None = None
+    note: str | None = None
