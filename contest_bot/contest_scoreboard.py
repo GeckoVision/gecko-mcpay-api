@@ -38,10 +38,13 @@ def _score(path: str) -> dict | None:
     except (OSError, json.JSONDecodeError):
         return None
     pos = d.get("positions", []) or []
-    closed = [p for p in pos if p.get("exit_ts") or p.get("status") in ("closed", "exited")]
-    openp = [p for p in pos if p not in closed]
-    pnl = round(sum(float(p.get("pnl_usd") or 0.0) for p in closed), 4)
-    wins = sum(1 for p in closed if float(p.get("pnl_usd") or 0.0) > 0)
+    openp = [p for p in pos if not (p.get("exit_ts") or p.get("status") in ("closed", "exited"))]
+    # SESSION PnL (the contest metric) — realized this session, NOT the all-time
+    # ledger sum (which mixes pre-reset history and misreports a winning session).
+    pnl = round(float(d.get("realized_pnl_today") or 0.0), 4)
+    wins = int(d.get("wins_today") or 0)
+    losses = int(d.get("losses_today") or 0)
+    trades = wins + losses
     # liveness
     saved = d.get("saved_at")
     age_min = None
@@ -51,9 +54,9 @@ def _score(path: str) -> dict | None:
     return {
         "pnl_usd": pnl,
         "pnl_pct": round(100 * pnl / START_USD, 2),
-        "trades": len(closed),
+        "trades": trades,
         "open": len(openp),
-        "win_rate": round(100 * wins / len(closed), 1) if closed else None,
+        "win_rate": round(100 * wins / trades, 1) if trades else None,
         "poll": d.get("poll_count"),
         "age_min": age_min,  # minutes since last state write (freshness)
         "alive": (age_min is not None and age_min < 10),
