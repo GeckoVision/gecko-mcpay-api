@@ -123,7 +123,12 @@ def market_temp() -> dict:
 
 
 @app.get("/vault", response_model=VaultResponse)
-def vault(profile: str = "conservative", demo_profit: float = 0.0) -> dict:
+def vault(
+    profile: str = "conservative",
+    demo_profit: float = 0.0,
+    target_principal_usd: float = 1000.0,
+    target_gain_usd: float = 100.0,
+) -> dict:
     """The profit-vault state the app tile reads: per-profile allocation, each lot's
     net APY + liquidation buffer, and the live yield-safety monitor verdict per lot.
     The monitor's downside input is the SAME market-temp read that gates trades
@@ -133,6 +138,15 @@ def vault(profile: str = "conservative", demo_profit: float = 0.0) -> dict:
     from kamino import vault_gate as vg
     from kamino import vault_orchestrator as vo
     from kamino.monitor import hurdle_for
+
+    # Validate ?profile against the known baskets — fail LOUD (422) instead of the
+    # old silent fallback to conservative (defi.md must-build: the app must know it
+    # asked for something that doesn't exist, not get a different basket back).
+    if profile not in vo.PROFILE_BASKETS:
+        raise HTTPException(
+            422,
+            f"unknown profile {profile!r}; allowed: {sorted(vo.PROFILE_BASKETS)}",
+        )
 
     snap = mt.load_snapshot()
     dd = vo.predicted_drawdown_from_market_temp(snap)
@@ -144,7 +158,9 @@ def vault(profile: str = "conservative", demo_profit: float = 0.0) -> dict:
     )
     allocation = orch.allocate_profit(demo_profit, predicted_drawdown_pct=dd) if demo_profit > 0 else None
     return {
-        "snapshot": orch.snapshot(),
+        "snapshot": orch.snapshot(
+            target_principal_usd=target_principal_usd, target_gain_usd=target_gain_usd
+        ),
         "verdicts": orch.monitor_tick(predicted_drawdown_pct=dd),
         "allocation": allocation,
         "market_temp": {"label": snap.get("label"), "predicted_drawdown": dd, "stale": snap.get("stale", False)},
@@ -232,12 +248,36 @@ def list_agents(user_id: str | None = None) -> dict:
     return {"agents": _registry.list_agents(user_id)}
 
 
+def _execution_status(doc: dict) -> dict:
+    """Per-agent execution/custody status the app displays (web3.md §2c/§2d).
+
+    Honest defaults: the hosted flow is PAPER until founder-flipped (the default
+    `DelegatedExecutionAdapter` refuses live orders), so `dry_run=True` / `live=False`
+    unless the spec explicitly says otherwise. `venue` comes off the registry doc /
+    spec; `custody` reports the configured signing backend (okx_tee | privy_embedded |
+    none) without ever exposing a key."""
+    spec = doc.get("spec") or {}
+    venue = doc.get("venue") or spec.get("venue") or "paper"
+    # dry_run defaults True (paper-safe). Honor an explicit spec flag if present.
+    raw_dry = spec.get("dry_run")
+    dry_run = True if raw_dry is None else bool(raw_dry)
+    try:
+        _pk, custody, _status = _resolve_signer()
+    except Exception:
+        custody = "none"
+    return {"venue": venue, "dry_run": dry_run, "live": (not dry_run), "custody": custody}
+
+
 @app.get("/agents/{agent_id}", response_model=AgentDetailResponse)
 def get_agent(agent_id: str) -> dict:
     doc = _registry.get(agent_id)
     if not doc:
         raise HTTPException(404, f"no agent {agent_id!r}")
-    return {"agent": doc, "state": _state.get_state(agent_id)}
+    return {
+        "agent": doc,
+        "state": _state.get_state(agent_id),
+        "execution": _execution_status(doc),
+    }
 
 
 @app.post("/agents/{agent_id}/stop", response_model=StopAgentResponse)

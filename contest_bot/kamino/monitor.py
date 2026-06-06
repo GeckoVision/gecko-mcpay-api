@@ -142,6 +142,20 @@ def evaluate(
 
     # 3. Hurdle: is the yield even worth the risk?
     if not clears:
+        # A pure lend leg has NO borrow leg (leverage<=1 and/or borrow_rate==0). Its
+        # spread == collateral_yield > 0, so `leverage_to_clear` would happily suggest
+        # "lever up for free" — but levering a lend leg means borrowing at 0%, which
+        # isn't real (defi.md: the conservative-profile spurious ROTATE→2.07x artifact).
+        # A no-borrow position has no leverage knob to turn, so it can only HOLD: the
+        # user picked the no-liquidation-surface profile; we don't invent a rotate.
+        if strategy.leverage <= 1.0 or strategy.borrow_rate == 0.0:
+            return VaultVerdict(
+                HOLD,
+                f"net {net:.2%} < hurdle {hurdle.apy:.2%} ({hurdle.label}) but this is an "
+                f"unlevered lend leg (no borrow) — no liquidation surface to optimize; hold",
+                net,
+                clears,
+            )
         target = leverage_to_clear(strategy, hurdle.apy)
         if target is None or (not strategy.correlated):
             # can't safely lever to clear it, or doing so adds price risk → get out
