@@ -2,7 +2,7 @@
 """Bot-contest scoreboard — rank the paper bots by realized PnL + survival.
 
 Reads each contestant's bot_state.json (GECKO_STATE_DIR-isolated). Paper only;
-these strategies are −EV per the gauntlet, so this measures BEHAVIOR / least-bad,
+these strategies are -EV per the gauntlet, so this measures BEHAVIOR / least-bad,
 NOT validated alpha. "Best until tomorrow wins" = top realized paper PnL with a
 survival check (not blown up).
 
@@ -11,6 +11,7 @@ survival check (not blown up).
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
@@ -32,7 +33,8 @@ def _score(path: str) -> dict | None:
     if not os.path.exists(path):
         return None
     try:
-        d = json.load(open(path))
+        with open(path) as f:
+            d = json.load(f)
     except (OSError, json.JSONDecodeError):
         return None
     pos = d.get("positions", []) or []
@@ -44,10 +46,8 @@ def _score(path: str) -> dict | None:
     saved = d.get("saved_at")
     age_min = None
     if saved:
-        try:
+        with contextlib.suppress(ValueError, TypeError):
             age_min = round((datetime.now(UTC) - datetime.fromisoformat(saved)).total_seconds() / 60, 1)
-        except (ValueError, TypeError):
-            pass
     return {
         "pnl_usd": pnl,
         "pnl_pct": round(100 * pnl / START_USD, 2),
@@ -79,7 +79,7 @@ def main() -> int:
     if ranked:
         lead = ranked[0]
         print(f"\nLEADER: {lead[0]}  {lead[1]['pnl_usd']:+.2f} USD ({lead[1]['trades']} trades)")
-    print("Note: −EV per gauntlet — this is behavior data, not validated alpha.\n")
+    print("Note: -EV per gauntlet — this is behavior data, not validated alpha.\n")
     return 0
 
 

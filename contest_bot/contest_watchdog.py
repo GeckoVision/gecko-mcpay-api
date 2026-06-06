@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import urllib.request
 from datetime import UTC, datetime
 
@@ -50,7 +49,10 @@ def main() -> int:
     unhealthy = []
     for name, (path, port) in CONTESTANTS.items():
         up = _port_up(port)
-        d = json.load(open(path)) if os.path.exists(path) else {}
+        d = {}
+        if os.path.exists(path):
+            with open(path) as f:
+                d = json.load(f)
         pos = d.get("positions", []) or []
         closed = [p for p in pos if p.get("exit_ts") or p.get("status") in ("closed", "exited")]
         openp = len(pos) - len(closed)
@@ -59,11 +61,14 @@ def main() -> int:
 
         status, why = "OK", []
         if not up:
-            status = "DEAD"; why.append(f"port {port} down")
+            status = "DEAD"
+            why.append(f"port {port} down")
         if age is not None and age > FREEZE_MIN:
-            status = "FROZEN"; why.append(f"no state write {age:.0f}m")
+            status = "FROZEN"
+            why.append(f"no state write {age:.0f}m")
         if up and len(closed) == 0 and openp == 0 and boot is not None and boot / 60 > GRACE_HRS:
-            status = "STUCK"; why.append(f"0 trades {boot/60:.1f}h (the 30h-stuck pattern)")
+            status = "STUCK"
+            why.append(f"0 trades {boot/60:.1f}h (the 30h-stuck pattern)")
         flag = "✅" if status == "OK" else "🚨"
         fresh = f"{age:.0f}m" if age is not None else "—"
         print(f"{flag} {name:<16} {status:<7} trades={len(closed)} open={openp} fresh={fresh}")
