@@ -311,7 +311,9 @@ def build_unsigned_swap_tx(
 
 def _b64_to_b58(b64: str) -> str:
     """base64 wire tx → base58 (the form onchainos `--unsigned-tx` expects).
-    Mirrors kamino/live_executor._b64_to_b58."""
+
+    CANONICAL impl (item #6, 2026-06-05): kamino/live_executor.py and basedbid_exec.py
+    both import this — do NOT redeclare a copy anywhere else."""
     raw = base64.b64decode(b64)
     try:
         import base58

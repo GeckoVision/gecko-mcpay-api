@@ -19,9 +19,39 @@ from dataclasses import dataclass, field
 
 from kamino import vault_gate as vg
 from kamino.monitor import DELEVERAGE, EXIT, FIAT_CDB_BR, HOLD, ROTATE, Hurdle, evaluate
-from kamino.multiply import LeverageStrategy
+from kamino.multiply import LeverageStrategy, project_balance, time_to_target
 
 logger = logging.getLogger("kamino.vault_orchestrator")
+
+# Human-readable label + one-line "what is this" per yield_source, for the app tile
+# (the wire previously only carried the raw `source` key). Keyed by yield_source.
+_SOURCE_LABELS: dict[str, tuple[str, str]] = {
+    "stable_spread": (
+        "Stable lend",
+        "Plain USDC lend — no leverage, no price-liquidation surface (modeled rate).",
+    ),
+    "lst_staking": (
+        "Liquid-staked SOL (leveraged)",
+        "JitoSOL/SOL staking spread, leveraged — correlated legs, depeg-protected (modeled rate).",
+    ),
+    "jlp_fees": (
+        "JLP perps LP (leveraged)",
+        "Jupiter perps LP fees, leveraged — JLP is ~65% volatile crypto, real liquidation risk (modeled rate).",
+    ),
+    "rwa_credit": (
+        "Real-world credit",
+        "Maple/mortgages/reinsurance — counterparty default risk, slow exit (modeled rate).",
+    ),
+    "equity": (
+        "Tokenized equity",
+        "Directional tokenized stocks — no yield floor (modeled rate).",
+    ),
+}
+
+
+def label_for(yield_source: str) -> tuple[str, str]:
+    """(human label, one-line description) for a yield_source; honest fallback if unknown."""
+    return _SOURCE_LABELS.get(yield_source, (yield_source, "Yield position (modeled rate)."))
 
 
 # ── Profile baskets: (strategy template, weight). Weights sum to 1.0. ──────
@@ -201,21 +231,48 @@ class VaultOrchestrator:
                 pass
         return changed
 
-    def snapshot(self) -> dict:
-        """Dashboard/API view of the whole vault."""
+    def snapshot(
+        self,
+        *,
+        target_principal_usd: float = 1000.0,
+        target_gain_usd: float = 100.0,
+    ) -> dict:
+        """Dashboard/API view of the whole vault.
+
+        Each lot carries a human `label` + `description` (only the raw `source` key
+        used to cross the wire) and a projection for the "$1000 → +$100 in N" tile,
+        reusing `time_to_target` / `project_balance` from `multiply` (NOT reinvented).
+        `days_to_target` is None when net_apy ≤ 0 (a non-positive yield never reaches
+        a positive target) — the app renders "—" rather than fabricating a date.
+        """
+        lots: list[dict] = []
+        for lot in self.lots:
+            label, description = label_for(lot.source)
+            net_apy = lot.strategy.net_apy
+            years = time_to_target(target_principal_usd, net_apy, target_gain_usd)
+            lots.append(
+                {
+                    "source": lot.source,
+                    "label": label,
+                    "description": description,
+                    "principal_usd": round(lot.principal_usd, 2),
+                    "leverage": lot.strategy.leverage,
+                    "net_apy": round(net_apy, 4),
+                    "liquidation_drop_pct": round(lot.strategy.liquidation_drop_pct, 4),
+                    "correlated": lot.strategy.correlated,
+                    # "$1000 → +$100 in N" tile inputs (target_* echoed so the app
+                    # can label the tile; days_to_target None when net_apy ≤ 0).
+                    "target_principal_usd": target_principal_usd,
+                    "target_gain_usd": target_gain_usd,
+                    "days_to_target": (round(years * 365.0, 1) if years is not None else None),
+                    "projected_balance_1y": round(
+                        project_balance(target_principal_usd, net_apy, 1.0), 2
+                    ),
+                }
+            )
         return {
             "profile": self.profile,
             "allocation_usd": round(self.allocation_usd, 2),
             "hurdle_apy": self.hurdle.apy,
-            "lots": [
-                {
-                    "source": lot.source,
-                    "principal_usd": round(lot.principal_usd, 2),
-                    "leverage": lot.strategy.leverage,
-                    "net_apy": round(lot.strategy.net_apy, 4),
-                    "liquidation_drop_pct": round(lot.strategy.liquidation_drop_pct, 4),
-                    "correlated": lot.strategy.correlated,
-                }
-                for lot in self.lots
-            ],
+            "lots": lots,
         }

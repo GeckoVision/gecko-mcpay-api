@@ -174,6 +174,10 @@ class BasedBidExecutionAdapter:
                                    f"built+ready (NOT submitted: {why}); sandbox={self.sandbox}")
 
         # 4. OKX TEE sign + broadcast (the unsigned based.bid tx already carries blockhash)
+        # TODO(item #6): unify the broadcast seam — Jupiter goes through the OnchainOS
+        # Python wrapper (wallet_contract_call); this + kamino/live_executor shell out to
+        # subprocess directly. Same CLI underneath; migrate both to OnchainOS so there is
+        # ONE broadcast path to audit/mock. Deferred (touches live-money seam; risky now).
         b58 = _b64_to_b58(tx_b64)
         proc = subprocess.run(
             [self._cli, "wallet", "contract-call", "--chain", "solana",

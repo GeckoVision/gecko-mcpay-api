@@ -69,6 +69,14 @@ class VaultLot(BaseModel):
     net_apy: float
     liquidation_drop_pct: float
     correlated: bool
+    # S47 item #5 — human label/description + the "$1000 → +$100 in N" projection.
+    # Optional so the honest-empty shape (lots: []) and any older payload still validate.
+    label: str | None = None
+    description: str | None = None
+    target_principal_usd: float | None = None
+    target_gain_usd: float | None = None
+    days_to_target: float | None = None  # None when net_apy ≤ 0 (never reaches a positive target)
+    projected_balance_1y: float | None = None
 
 
 class VaultSnapshot(BaseModel):
@@ -249,10 +257,22 @@ class AgentListResponse(BaseModel):
     agents: list[AgentDoc] = []
 
 
+class AgentExecutionStatus(BaseModel):
+    """Per-agent execution/custody posture for the app (web3.md §2c). Honest
+    paper defaults: `dry_run=True` / `live=False` until founder-flipped."""
+
+    model_config = _CFG
+    venue: str = "paper"  # paper | jupiter | basedbid | okx
+    dry_run: bool = True
+    live: bool = False
+    custody: str = "none"  # okx_tee | privy_embedded | none
+
+
 class AgentDetailResponse(BaseModel):
     model_config = _CFG
     agent: AgentDoc
     state: AgentStateDoc | None = None
+    execution: AgentExecutionStatus | None = None
 
 
 # ── orchestrator + start/stop/kill ────────────────────────────────────────

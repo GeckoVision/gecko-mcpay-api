@@ -18,7 +18,6 @@ confirm prompt). So `dry_run=False, confirm=True` IS the broadcast — treat it 
 
 from __future__ import annotations
 
-import base64
 import json
 import subprocess
 from dataclasses import dataclass
@@ -28,6 +27,7 @@ from trade_safety import (
     Order,
     SafetyContext,
     TradeSafetyPolicy,
+    _b64_to_b58,  # canonical b64→b58 helper (item #6: single impl, lives in trade_safety)
     check_order,
     kamino_policy,
     with_global_kill,
@@ -50,18 +50,6 @@ def _resolve_global_kill() -> bool:
         return bool(is_global_kill())
     except Exception:
         return True
-
-
-def _b64_to_b58(b64: str) -> str:
-    raw = base64.b64decode(b64)
-    try:
-        import base58
-
-        return base58.b58encode(raw).decode()
-    except ImportError:  # solana-py ships based58
-        import based58
-
-        return based58.b58encode(raw).decode()
 
 
 @dataclass
@@ -147,6 +135,9 @@ class KaminoLiveExecutor:
             )
 
         # 4. live submit via OKX TEE (broadcasts directly under policy limit)
+        # TODO(item #6): unify the broadcast seam — migrate this subprocess call (and
+        # basedbid_exec's) to the OnchainOS.wallet_contract_call wrapper Jupiter uses,
+        # so there is ONE broadcast path to audit/mock. Deferred (live-money seam).
         proc = subprocess.run(
             [self._cli, "wallet", "contract-call", "--chain", "solana",
              "--to", KLEND_PROGRAM, "--unsigned-tx", b58],
