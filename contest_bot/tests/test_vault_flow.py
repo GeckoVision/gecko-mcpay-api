@@ -132,3 +132,141 @@ def test_predicted_drawdown_neutral_is_none():
 def test_predicted_drawdown_stale_is_none():
     assert vo.predicted_drawdown_from_market_temp({"temp": -0.57, "stale": True}) is None
     assert vo.predicted_drawdown_from_market_temp(None) is None
+
+
+# ── S48 Pegana depeg escalation ──────────────────────────────────────────────
+def _lend():
+    return LeverageStrategy("USDC lend", 0.058, 0.0, 1.0, 0.75, 0.80, True, "stable_spread")
+
+
+def test_monitor_pegged_unchanged():
+    # PEGGED → no override; the unlevered lend HOLD verdict is unchanged.
+    base = mon.evaluate(_lend(), hurdle=mon.CRYPTO_ONLY)
+    with_peg = mon.evaluate(_lend(), hurdle=mon.CRYPTO_ONLY, peg_state={"state": "PEGGED", "discount": -0.0001})
+    assert with_peg.action == base.action == mon.HOLD
+
+
+def test_monitor_none_peg_unchanged():
+    base = mon.evaluate(_lst(4.0), hurdle=mon.CRYPTO_ONLY)
+    assert mon.evaluate(_lst(4.0), hurdle=mon.CRYPTO_ONLY, peg_state=None).action == base.action
+
+
+def test_monitor_depeg_forces_exit_overriding_hold():
+    # A would-be HOLD (good yield, clears hurdle) is OVERRIDDEN to EXIT on DEPEG.
+    s = _lst(4.0)
+    assert mon.evaluate(s, hurdle=mon.CRYPTO_ONLY).action == mon.HOLD
+    v = mon.evaluate(s, hurdle=mon.CRYPTO_ONLY, peg_state={"state": "DEPEG", "discount": -0.04})
+    assert v.action == mon.EXIT and "peg_DEPEG" in v.reason
+
+
+def test_monitor_critical_forces_exit():
+    v = mon.evaluate(_lst(4.0), hurdle=mon.CRYPTO_ONLY, peg_state={"state": "CRITICAL", "discount": -0.052})
+    assert v.action == mon.EXIT and "peg_CRITICAL" in v.reason
+
+
+def test_monitor_drift_deleverages_leveraged_leg():
+    v = mon.evaluate(_lst(4.0), hurdle=mon.CRYPTO_ONLY, peg_state={"state": "DRIFT", "discount": -0.018})
+    assert v.action == mon.DELEVERAGE and "peg_DRIFT" in v.reason
+
+
+def test_monitor_drift_exits_unlevered_leg():
+    # No leverage knob to cut on a plain lend leg → DRIFT escalates to EXIT.
+    v = mon.evaluate(_lend(), hurdle=mon.CRYPTO_ONLY, peg_state={"state": "DRIFT", "discount": -0.012})
+    assert v.action == mon.EXIT
+
+
+def test_monitor_unknown_peg_no_override():
+    base = mon.evaluate(_lst(4.0), hurdle=mon.CRYPTO_ONLY)
+    assert mon.evaluate(_lst(4.0), hurdle=mon.CRYPTO_ONLY, peg_state={"state": "UNKNOWN"}).action == base.action
+
+
+# ── S48 gate: deny deposit into an off-peg leg ──────────────────────────────
+def test_gate_denies_deposit_into_drifting_leg():
+    v = vg.vault_check(
+        vg.DEPOSIT, 100.0, _pol(hurdle=mon.CRYPTO_ONLY),
+        strategy=_lst(4.0), peg_state={"state": "DRIFT", "discount": -0.018},
+    )
+    assert not v.allow and any("off-peg" in r and "peg_DRIFT" in r for r in v.reasons)
+
+
+def test_gate_denies_deposit_into_depeg_leg():
+    v = vg.vault_check(
+        vg.DEPOSIT, 100.0, _pol(hurdle=mon.CRYPTO_ONLY),
+        strategy=_lst(4.0), peg_state={"state": "DEPEG", "discount": -0.04},
+    )
+    assert not v.allow and any("off-peg" in r for r in v.reasons)
+
+
+def test_gate_allows_deposit_into_pegged_leg():
+    v = vg.vault_check(
+        vg.DEPOSIT, 100.0, _pol(hurdle=mon.CRYPTO_ONLY),
+        strategy=_lst(4.0), peg_state={"state": "PEGGED", "discount": -0.0001},
+    )
+    assert v.allow and not v.reasons
+
+
+# ── S48 orchestrator wiring (stubbed Pegana client) ─────────────────────────
+class _PegStub:
+    """Stand-in for PeganaClient: returns canned states by symbol."""
+
+    def __init__(self, by_symbol):
+        self.by_symbol = by_symbol
+
+    def peg_states(self, symbols, *, now=None):
+        return {s: self.by_symbol[s] for s in symbols if s in self.by_symbol}
+
+
+def test_orchestrator_monitor_tick_exposes_peg_state_and_exits():
+    # Seed HELD lots directly (the gate would block a NEW deposit into a DEPEG leg —
+    # that's covered separately). The monitor escalates a held jitoSOL leg to EXIT.
+    orch = vo.VaultOrchestrator(
+        profile="moderate", policy=_pol(max_leverage=10.0), hurdle=mon.CRYPTO_ONLY,
+        pegana_client=_PegStub({"jitoSOL": {"state": "DEPEG", "discount": -0.04}}),
+    )
+    orch.lots = [
+        vo.VaultLot("lst_staking", 600.0, _lst(4.0)),
+        vo.VaultLot("stable_spread", 400.0, _lend()),
+    ]
+    verdicts = orch.monitor_tick()
+    lst = next(v for v in verdicts if v["source"] == "lst_staking")
+    assert lst["action"] == mon.EXIT and lst["peg_state"] == "DEPEG" and lst["peg_discount"] == -0.04
+    # the stable_spread (USDC) leg is PEGGED-absent → no override, no peg_state
+    lend = next(v for v in verdicts if v["source"] == "stable_spread")
+    assert lend["peg_state"] is None
+
+
+def test_orchestrator_allocate_denies_drifting_leg():
+    orch = vo.VaultOrchestrator(
+        profile="moderate", policy=_pol(max_leverage=10.0), hurdle=mon.CRYPTO_ONLY,
+        pegana_client=_PegStub({"jitoSOL": {"state": "DRIFT", "discount": -0.018}}),
+    )
+    rep = orch.allocate_profit(1000.0)
+    denied_sources = {d["source"] for d in rep["denied"]}
+    assert "lst_staking" in denied_sources  # drifting leg blocked from new deposit
+
+
+def test_orchestrator_failopen_when_pegana_raises():
+    class _Boom:
+        def peg_states(self, symbols, *, now=None):
+            raise RuntimeError("pegana down")
+
+    orch = vo.VaultOrchestrator(
+        profile="moderate", policy=_pol(max_leverage=10.0), hurdle=mon.CRYPTO_ONLY,
+        pegana_client=_Boom(),
+    )
+    # fail-open: allocation + monitor still run, no crash, no peg override
+    rep = orch.allocate_profit(1000.0)
+    assert rep["deposited"] and orch.lots
+    verdicts = orch.monitor_tick()
+    assert all(v["peg_state"] is None for v in verdicts)
+
+
+def test_orchestrator_snapshot_carries_peg_state():
+    orch = vo.VaultOrchestrator(
+        profile="moderate", policy=_pol(max_leverage=10.0), hurdle=mon.CRYPTO_ONLY,
+        pegana_client=_PegStub({"jitoSOL": {"state": "DRIFT", "discount": -0.018}}),
+    )
+    orch.lots = [vo.VaultLot("lst_staking", 600.0, _lst(4.0))]
+    snap = orch.snapshot()
+    lst = next(lot for lot in snap["lots"] if lot["source"] == "lst_staking")
+    assert lst["peg_state"] == "DRIFT" and lst["peg_discount"] == -0.018

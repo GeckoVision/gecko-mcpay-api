@@ -50,10 +50,16 @@ def vault_check(
     strategy: LeverageStrategy | None = None,
     current_allocation_usd: float = 0.0,
     predicted_drawdown_pct: float | None = None,
+    peg_state: dict | None = None,
 ) -> VaultGateVerdict:
     """The gate. `strategy` is the position being deposited into / held (None for a
     plain withdrawal). For deposits into a LEVERAGED strategy, the monitor must not
-    say EXIT — we never add capital to a position we'd be pulling out of."""
+    say EXIT — we never add capital to a position we'd be pulling out of.
+
+    `peg_state` (S48) is the Pegana `{state, discount, ...}` for the leg's
+    collateral. Deny-default: NEVER deposit into a leg whose asset is
+    DRIFT/DEPEG/CRITICAL — adding capital to a depegging collateral is the exact
+    failure the signal exists to prevent. None / PEGGED / UNKNOWN = no veto."""
     reasons: list[str] = []
     monitor_action: str | None = None
 
@@ -65,6 +71,13 @@ def vault_check(
         reasons.append("non-positive amount")
 
     if op in (DEPOSIT, REBALANCE):
+        # S48 — deny a deposit into a leg whose collateral is off-peg.
+        if peg_state:
+            ps = str(peg_state.get("state") or "").upper()
+            if ps in ("DRIFT", "DEPEG", "CRITICAL"):
+                disc = peg_state.get("discount")
+                disc_s = f" disc={disc:+.2%}" if isinstance(disc, (int, float)) else ""
+                reasons.append(f"collateral off-peg (peg_{ps}{disc_s}) — no deposit into a depegging leg")
         if current_allocation_usd + amount_usd > policy.max_allocation_usd:
             reasons.append(
                 f"would exceed allocation cap: ${current_allocation_usd:.2f}+${amount_usd:.2f} "
@@ -78,7 +91,12 @@ def vault_check(
             if policy.allowed_yield_sources and strategy.yield_source not in policy.allowed_yield_sources:
                 reasons.append(f"yield source {strategy.yield_source!r} not allowed")
             # the wedge: don't deposit into a position the monitor would exit/deleverage
-            v = evaluate(strategy, hurdle=policy.hurdle, predicted_drawdown_pct=predicted_drawdown_pct)
+            v = evaluate(
+                strategy,
+                hurdle=policy.hurdle,
+                predicted_drawdown_pct=predicted_drawdown_pct,
+                peg_state=peg_state,
+            )
             monitor_action = v.action
             if v.action == EXIT:
                 reasons.append(f"monitor says EXIT before depositing: {v.reason}")
