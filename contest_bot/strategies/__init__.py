@@ -14,12 +14,15 @@ from typing import cast
 from .base import ExitPolicy, Signal, Strategy
 from .legacy import JtoBreakoutLegacy
 from .meanrev import MeanReversion
+from .range_fade import RangeFade
 from .spec import StrategySpec
-from .trend import TrendBreakout
+from .trend import TrendBreakout, TrendBreakoutRegimeGated
 
 _REGISTRY = {
     "trend_breakout": TrendBreakout,
+    "trend_breakout_regime": TrendBreakoutRegimeGated,
     "mean_reversion": MeanReversion,
+    "range_fade": RangeFade,
     "jto_breakout": JtoBreakoutLegacy,
 }
 
@@ -39,9 +42,11 @@ __all__ = [
     "ExitPolicy",
     "JtoBreakoutLegacy",
     "MeanReversion",
+    "RangeFade",
     "Signal",
     "Strategy",
     "StrategySpec",
     "TrendBreakout",
+    "TrendBreakoutRegimeGated",
     "load_strategy",
 ]
