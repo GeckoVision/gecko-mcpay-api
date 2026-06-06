@@ -151,10 +151,22 @@ def vault(
     snap = mt.load_snapshot()
     dd = vo.predicted_drawdown_from_market_temp(snap)
     hurdle = hurdle_for(profile)
+    # S48 — attach a live Pegana client so the depeg signal reaches the monitor/gate.
+    # Best-effort: construction never raises; the client itself fails open if the
+    # REST API is down (then the monitor falls back to the market-temp path).
+    pegana_client = None
+    if os.environ.get("GECKO_PEGANA_ENABLED", "0").lower() in ("1", "true", "yes", "on"):
+        try:
+            from pegana_feed import PeganaClient
+
+            pegana_client = PeganaClient()
+        except Exception:  # pragma: no cover — import/availability guard, fail-open
+            pegana_client = None
     orch = vo.VaultOrchestrator(
         profile=profile,
         policy=vg.VaultPolicy(max_allocation_usd=1_000_000.0, hurdle=hurdle),
         hurdle=hurdle,
+        pegana_client=pegana_client,
     )
     allocation = orch.allocate_profit(demo_profit, predicted_drawdown_pct=dd) if demo_profit > 0 else None
     return {

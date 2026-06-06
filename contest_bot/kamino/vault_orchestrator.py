@@ -15,6 +15,7 @@ behind the gate. This module decides WHAT to do; the adapter does it.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 
 from kamino import vault_gate as vg
@@ -119,6 +120,10 @@ class VaultOrchestrator:
     # submits unless live_confirm=True AND the executor itself is dry_run=False. Triple-gated.
     executor: object | None = None
     live_confirm: bool = False
+    # S48: optional injected Pegana client (None = a default one is constructed on
+    # demand). Tests inject a stubbed client; production uses the live REST feed.
+    # Fail-open everywhere — if Pegana is down the monitor falls back to market-temp.
+    pegana_client: object | None = None
 
     @property
     def allocation_usd(self) -> float:
@@ -130,6 +135,27 @@ class VaultOrchestrator:
         return template.yield_source == "stable_spread" and template.leverage == 1.0
 
     # ── allocation ─────────────────────────────────────────────────────────
+    def _peg_states(self, sources: list[str]) -> dict[str, dict]:
+        """S48 — fetch Pegana peg states for the given vault legs in ONE call.
+        Best-effort: any failure → {} (fail-open, treated as UNKNOWN downstream).
+        Keyed by `yield_source`. Importing lazily keeps the module load-safe even
+        if pegana_feed/httpx is unavailable."""
+        # An INJECTED client always runs (production wire + tests). With NO injected
+        # client, the live default-client (real network) is built ONLY when
+        # GECKO_PEGANA_ENABLED is truthy — so unit/e2e tests never hit the network
+        # unless they opt in. The /vault endpoint sets the flag for production.
+        if self.pegana_client is None and os.environ.get("GECKO_PEGANA_ENABLED", "0").lower() not in (
+            "1", "true", "yes", "on",
+        ):
+            return {}
+        try:
+            from pegana_feed import peg_states_for_sources
+
+            return peg_states_for_sources(sources, client=self.pegana_client)
+        except Exception as exc:  # never break the loop on the add-on signal
+            logger.warning("vault _peg_states swallow: %s", exc)
+            return {}
+
     def allocate_profit(
         self, profit_usd: float, *, predicted_drawdown_pct: float | None = None
     ) -> dict:
@@ -137,6 +163,8 @@ class VaultOrchestrator:
         the ones that pass. Returns a per-leg report (never raises)."""
         try:
             basket = PROFILE_BASKETS.get(self.profile, PROFILE_BASKETS["conservative"])
+            # S48: one Pegana call for every target leg's collateral asset.
+            peg = self._peg_states([t.yield_source for t, _ in basket])
             deposited: list[dict] = []
             denied: list[dict] = []
             for template, weight in basket:
@@ -148,6 +176,7 @@ class VaultOrchestrator:
                     strategy=template,
                     current_allocation_usd=self.allocation_usd,
                     predicted_drawdown_pct=predicted_drawdown_pct,
+                    peg_state=peg.get(template.yield_source),
                 )
                 if not v.allow:
                     denied.append({"source": template.yield_source, "amount": amt, "reasons": v.reasons})
@@ -192,13 +221,24 @@ class VaultOrchestrator:
         """Judge every lot with the S42 monitor (fed the Oracle's downside). Returns
         a verdict per lot; does NOT mutate — call apply_actions to act."""
         out: list[dict] = []
+        # S48: one Pegana call for every held leg's collateral asset.
+        peg = self._peg_states([lot.source for lot in self.lots])
         for lot in self.lots:
             try:
-                v = evaluate(lot.strategy, hurdle=self.hurdle, predicted_drawdown_pct=predicted_drawdown_pct)
+                ps = peg.get(lot.source)
+                v = evaluate(
+                    lot.strategy,
+                    hurdle=self.hurdle,
+                    predicted_drawdown_pct=predicted_drawdown_pct,
+                    peg_state=ps,
+                )
                 out.append({
                     "source": lot.source, "principal_usd": lot.principal_usd,
                     "action": v.action, "reason": v.reason, "net_apy": round(v.net_apy, 4),
                     "suggested_leverage": v.suggested_leverage,
+                    # surface the peg signal so the app can show it (None when no signal)
+                    "peg_state": (ps.get("state") if ps else None),
+                    "peg_discount": (ps.get("discount") if ps else None),
                 })
             except Exception as exc:
                 logger.warning("vault monitor_tick swallow (%s): %s", lot.source, exc)
@@ -246,10 +286,13 @@ class VaultOrchestrator:
         a positive target) — the app renders "—" rather than fabricating a date.
         """
         lots: list[dict] = []
+        # S48: one Pegana call for every held leg (honest-None when no signal).
+        peg = self._peg_states([lot.source for lot in self.lots])
         for lot in self.lots:
             label, description = label_for(lot.source)
             net_apy = lot.strategy.net_apy
             years = time_to_target(target_principal_usd, net_apy, target_gain_usd)
+            ps = peg.get(lot.source)
             lots.append(
                 {
                     "source": lot.source,
@@ -260,6 +303,9 @@ class VaultOrchestrator:
                     "net_apy": round(net_apy, 4),
                     "liquidation_drop_pct": round(lot.strategy.liquidation_drop_pct, 4),
                     "correlated": lot.strategy.correlated,
+                    # S48 peg signal (None when Pegana down / asset untracked)
+                    "peg_state": (ps.get("state") if ps else None),
+                    "peg_discount": (ps.get("discount") if ps else None),
                     # "$1000 → +$100 in N" tile inputs (target_* echoed so the app
                     # can label the tile; days_to_target None when net_apy ≤ 0).
                     "target_principal_usd": target_principal_usd,

@@ -257,6 +257,47 @@ def test_vault_bogus_profile_422():
     assert "detail" in r.json()
 
 
+def test_vault_cold_no_peg_signal_when_disabled(monkeypatch):
+    """S48 — with Pegana disabled (default in tests), /vault never hits the network;
+    lots carry an honest-None peg_state. Cold has no lots, but the field contract
+    holds for the populated path below."""
+    monkeypatch.delenv("GECKO_PEGANA_ENABLED", raising=False)
+    j = _client().get("/vault?demo_profit=100&profile=moderate").json()
+    for lot in j["snapshot"]["lots"]:
+        assert lot.get("peg_state") is None  # no signal → honest None
+    for v in j["verdicts"]:
+        assert v.get("peg_state") is None
+
+
+def test_vault_exposes_peg_state_when_enabled(monkeypatch):
+    """S48 end-to-end — flag on, Pegana client MOCKED (no network). A DRIFT on
+    jitoSOL surfaces on the moderate basket's held lst leg: snapshot lot + verdict
+    both carry peg_state=DRIFT and the verdict is DELEVERAGE. (DRIFT lets the
+    deposit through with a deleverage signal; DEPEG would be denied at the gate, a
+    path covered by the unit suite.)"""
+    import pegana_feed as pf
+
+    class _Stub:
+        def __init__(self, *a, **k):
+            pass
+
+        def peg_states(self, symbols, *, now=None):
+            return {s: {"state": "DRIFT", "discount": -0.018} for s in symbols if s == "jitoSOL"}
+
+    monkeypatch.setenv("GECKO_PEGANA_ENABLED", "1")
+    monkeypatch.setattr(pf, "PeganaClient", _Stub)
+    j = _client().get("/vault?demo_profit=100&profile=moderate").json()
+    # DRIFT denies the NEW deposit into the lst leg (deny-default on off-peg)
+    denied = {d["source"] for d in (j["allocation"] or {}).get("denied", [])}
+    assert "lst_staking" in denied
+    # the lend leg (USDC, no signal) still deposits and carries honest-None peg_state
+    lend_lot = [lot for lot in j["snapshot"]["lots"] if lot["source"] == "stable_spread"]
+    assert lend_lot and lend_lot[0]["peg_state"] is None
+    # field contract: every verdict/lot carries the peg_state key (None or a state)
+    for v in j["verdicts"]:
+        assert "peg_state" in v and "peg_discount" in v
+
+
 # ════════════════════════════════════════════════════════════════════════════
 # 4. /arena/board — cold honest-empty + ?live=1 with the feed MOCKED
 # ════════════════════════════════════════════════════════════════════════════

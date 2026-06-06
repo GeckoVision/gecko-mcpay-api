@@ -77,6 +77,10 @@ class VaultLot(BaseModel):
     target_gain_usd: float | None = None
     days_to_target: float | None = None  # None when net_apy ≤ 0 (never reaches a positive target)
     projected_balance_1y: float | None = None
+    # S48 — Pegana peg-risk signal for this lot's collateral. None when Pegana is
+    # down or the asset isn't peg-tracked (honest-empty); state ∈ PEGGED|DRIFT|DEPEG|CRITICAL.
+    peg_state: str | None = None
+    peg_discount: float | None = None  # signed; negative = below intrinsic
 
 
 class VaultSnapshot(BaseModel):
@@ -95,6 +99,9 @@ class VaultVerdict(BaseModel):
     reason: str
     net_apy: float
     suggested_leverage: float | None = None
+    # S48 — Pegana peg-risk signal that may have driven this verdict (None = no signal)
+    peg_state: str | None = None
+    peg_discount: float | None = None
 
 
 class AllocationLiveLeg(BaseModel):

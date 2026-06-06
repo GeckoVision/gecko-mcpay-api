@@ -72,16 +72,84 @@ class VaultVerdict:
     suggested_leverage: float | None = None  # for ROTATE: the leverage that would clear the hurdle
 
 
+def _peg_override(
+    strategy: LeverageStrategy, peg_state: dict | None
+) -> VaultVerdict | None:
+    """S48 — Pegana depeg escalation. A depeg of the collateral asset is
+    catastrophic REGARDLESS of APY, so it OVERRIDES the yield-based verdict.
+    `peg_state` is `{state, discount, confidence}` for THIS lot's collateral
+    asset (from `pegana_feed.PeganaClient.peg_states`), or None when there's no
+    signal (Pegana down / asset untracked) → no override, normal yield logic.
+
+    Escalation rules:
+      CRITICAL / DEPEG → EXIT  (de-risk the collateral leg before it blows up)
+      DRIFT            → DELEVERAGE if leveraged; for a no-leverage lend leg
+                         (no leverage knob), DRIFT → EXIT — a drifting *stable*
+                         lend collateral has no upside to wait out and no way to
+                         cut leverage, so the only de-risking lever is to pull
+                         out. (Documented judgment call: leverage cut isn't
+                         available on an unlevered leg, so we step to EXIT.)
+      PEGGED/UNKNOWN/None → None (no override)
+    The reason string NAMES the depeg, e.g. `peg_CRITICAL jitoSOL disc=-1.8%`.
+    """
+    if not peg_state:
+        return None
+    state = str(peg_state.get("state") or UNKNOWN).upper()
+    if state in (PEGGED, UNKNOWN):
+        return None
+    net = strategy.net_apy
+    clears = net >= 0.0  # peg risk dominates; hurdle is moot here
+    disc = peg_state.get("discount")
+    disc_s = f" disc={disc:+.2%}" if isinstance(disc, (int, float)) else ""
+    asset = peg_state.get("symbol") or strategy.yield_source
+    tag = f"peg_{state} {asset}{disc_s}"
+    if state in (CRITICAL, DEPEG):
+        return VaultVerdict(
+            EXIT,
+            f"{tag} — collateral is depegging; exit before it cascades (overrides yield)",
+            net,
+            clears,
+        )
+    # DRIFT
+    if strategy.leverage > 1.0:
+        return VaultVerdict(
+            DELEVERAGE,
+            f"{tag} — collateral drifting off peg; cut leverage to de-risk (overrides yield)",
+            net,
+            clears,
+        )
+    return VaultVerdict(
+        EXIT,
+        f"{tag} — unlevered collateral drifting off peg, no leverage to cut; exit to de-risk",
+        net,
+        clears,
+    )
+
+
+# Peg states (mirror of pegana_feed; kept local so monitor has no import cycle).
+PEGGED = "PEGGED"
+DRIFT = "DRIFT"
+DEPEG = "DEPEG"
+CRITICAL = "CRITICAL"
+UNKNOWN = "UNKNOWN"
+
+
 def evaluate(
     strategy: LeverageStrategy,
     hurdle: Hurdle = FIAT_CDB_BR,
     ltv_warn_buffer: float = 0.03,
     predicted_drawdown_pct: float | None = None,
     liq_safety_factor: float = 0.6,
+    peg_state: dict | None = None,
 ) -> VaultVerdict:
-    """Decide what to do with a live position. Severity order: liquidation-risk
-    and spread-inversion (capital-preservation) outrank the hurdle (opportunity).
+    """Decide what to do with a live position. Severity order: a DEPEG of the
+    collateral (S48 Pegana signal) is catastrophic and outranks everything; then
+    liquidation-risk and spread-inversion (capital-preservation) outrank the
+    hurdle (opportunity).
 
+    0. Pegana depeg override (`peg_state`): CRITICAL/DEPEG → EXIT, DRIFT →
+       DELEVERAGE (EXIT if unlevered). A depeg blows up the position regardless
+       of APY, so it short-circuits the yield logic below. None = no override.
     1. Spread inverted (borrow > yield) → EXIT. Leverage is multiplying a loss;
        the un-leveraged base would do better. No floor.
     2. ORACLE-PREDICTED downside vs the liquidation buffer (price-liquidatable
@@ -95,6 +163,11 @@ def evaluate(
        or EXIT if no safe leverage can (capped at the eMode ceiling).
     5. Else HOLD.
     """
+    # 0. Pegana depeg override — catastrophic, outranks all yield logic.
+    peg_verdict = _peg_override(strategy, peg_state)
+    if peg_verdict is not None:
+        return peg_verdict
+
     net = strategy.net_apy
     clears = net >= hurdle.apy
 
