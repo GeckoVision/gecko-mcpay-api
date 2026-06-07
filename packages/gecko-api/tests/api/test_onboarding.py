@@ -78,3 +78,21 @@ def test_withdraw_requires_session(client):
 def test_bad_session_token_rejected(client):
     r = client.get("/v1/onboarding/me", headers={"Authorization": "Bearer not.a.real.token"})
     assert r.status_code == 401
+
+
+def test_revoke_pulls_grant_and_blocks_agent(client):
+    tok = _link(client)["session_token"]
+    h = {"Authorization": f"Bearer {tok}"}
+    client.post("/v1/onboarding/grant", headers=h)
+    # user revokes the agent's access
+    r = client.post("/v1/onboarding/revoke", headers=h)
+    assert r.status_code == 200 and r.json()["revoked"] is True
+    # the agent can no longer act on the user's behalf
+    w = client.post("/v1/vault/withdraw", json={"amount": 10.0}, headers=h)
+    assert w.status_code == 409  # RevokedError surfaces as conflict
+    # but the user is still recognized — the wallet is theirs, not unlinked
+    assert client.get("/v1/onboarding/me", headers=h).status_code == 200
+
+
+def test_revoke_requires_session(client):
+    assert client.post("/v1/onboarding/revoke").status_code == 401
