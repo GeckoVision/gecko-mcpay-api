@@ -149,6 +149,30 @@ class VaultResponse(BaseModel):
     market_temp: VaultMarketTemp
 
 
+# ── /vault/catalog ─────────────────────────────────────────────────────────
+class CatalogOption(BaseModel):
+    """One pickable Kamino market, profile-filtered + cost-aware ranked. The app's
+    portfolio-picker row. `min_hold_days` is the break-even hold (don't liquidate
+    before this); null when the position never clears its round-trip cost."""
+
+    model_config = _CFG
+    name: str
+    net_apy: float
+    net_apy_after_cost: float
+    leverage: float
+    liquidation_drop_pct: float
+    min_hold_days: float | None = None
+
+
+class CatalogResponse(BaseModel):
+    model_config = _CFG
+    profile: str  # canonical (aliases normalized): conservative | Balanced | aggressive
+    options: list[CatalogOption] = []
+    source: str  # "live" | "fallback"
+    cost_pct: float  # round-trip cost used for ranking (fraction of equity)
+    horizon_years: float
+
+
 # ── /arena/board ──────────────────────────────────────────────────────────
 class ArenaRow(BaseModel):
     """Bucketed-only by design — NO raw floats cross the wire."""

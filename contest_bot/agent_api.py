@@ -44,6 +44,7 @@ from api_models import (  # noqa: E402
     AgentListResponse,
     ArenaBoardResponse,
     BacktestResponse,
+    CatalogResponse,
     DeployResponse,
     GlobalKillResponse,
     HealthzResponse,
@@ -95,7 +96,9 @@ class BacktestRequest(BaseModel):
 
 
 class DeployRequest(BaseModel):
-    spec: dict = Field(..., description="a StrategySpec (strategy_id, universe, venue, entry_gates, exit, …)")
+    spec: dict = Field(
+        ..., description="a StrategySpec (strategy_id, universe, venue, entry_gates, exit, …)"
+    )
     user_id: str = "local"
     verdict: str | None = Field(None, description="the §5 verdict; deploy refused if 'REJECT'")
 
@@ -171,14 +174,62 @@ def vault(
         hurdle=hurdle,
         pegana_client=pegana_client,
     )
-    allocation = orch.allocate_profit(demo_profit, predicted_drawdown_pct=dd) if demo_profit > 0 else None
+    allocation = (
+        orch.allocate_profit(demo_profit, predicted_drawdown_pct=dd) if demo_profit > 0 else None
+    )
     return {
         "snapshot": orch.snapshot(
             target_principal_usd=target_principal_usd, target_gain_usd=target_gain_usd
         ),
         "verdicts": orch.monitor_tick(predicted_drawdown_pct=dd),
         "allocation": allocation,
-        "market_temp": {"label": snap.get("label"), "predicted_drawdown": dd, "stale": snap.get("stale", False)},
+        "market_temp": {
+            "label": snap.get("label"),
+            "predicted_drawdown": dd,
+            "stale": snap.get("stale", False),
+        },
+    }
+
+
+@app.get("/vault/catalog", response_model=CatalogResponse)
+def vault_catalog(
+    profile: str = "conservative",
+    principal_usd: float = 1000.0,
+    horizon_years: float = 0.5,
+    entry_swap_bps: float = 10.0,
+    flash_fee_bps: float = 5.0,
+    exit_swap_bps: float = 10.0,
+    gas_bps: float = 2.0,
+) -> dict:
+    """The portfolio-picker menu: live Kamino markets, filtered to the user's risk
+    profile (Conservative / Balanced / Aggressive), ranked by net-APY-after-cost,
+    each carrying its minimum-hold period (the break-even hold — don't liquidate
+    before it). The app renders these as the 'choose an investment' list; the user
+    picks one. Aliases (e.g. 'moderate') are normalized. Paper only — read-only."""
+    from kamino import catalog as cat
+    from kamino import selector as sel
+    from kamino import vault_orchestrator as vo
+    from kamino.multiply import round_trip_cost
+
+    prof = vo.normalize_profile(profile)
+    if prof not in sel.PROFILE_RULES:
+        raise HTTPException(
+            422, f"unknown profile {profile!r}; allowed: {sorted(sel.PROFILE_RULES)}"
+        )
+    rows = cat.load_catalog()
+    source = "fallback" if rows is cat.CURATED_FALLBACK else "live"
+    cost = round_trip_cost(entry_swap_bps, flash_fee_bps, exit_swap_bps, gas_bps)
+    menu = sel.rank_catalog(
+        rows, profile=prof, principal=principal_usd, cost=cost, horizon_years=horizon_years
+    )
+    # drop the internal LeverageStrategy object (not JSON-serializable; app doesn't need it)
+    options = [{k: v for k, v in row.items() if k != "_strategy"} for row in menu]
+    return {
+        "profile": prof,
+        "options": options,
+        "source": source,
+        "cost_pct": round(cost, 6),
+        "horizon_years": horizon_years,
     }
 
 
@@ -209,7 +260,12 @@ def arena_board(live: bool = False) -> dict:
     except Exception as e:  # never 500 the board; honest-empty on data error
         return {"board": [], "error": f"{type(e).__name__}", "note": "feed unavailable"}
     asc.save_board_snapshot(board)  # warm the cache for subsequent cheap reads
-    return {"board": board, "kpi": "survival (bucketed) — not raw PnL", "n": len(board), "live": True}
+    return {
+        "board": board,
+        "kpi": "survival (bucketed) — not raw PnL",
+        "n": len(board),
+        "live": True,
+    }
 
 
 @app.post("/backtest", response_model=BacktestResponse)
@@ -218,8 +274,12 @@ def backtest(req: BacktestRequest) -> dict:
         raise HTTPException(422, f"unknown strategy_id {req.strategy_id!r}")
     try:
         return bt.run_backtest(
-            strategy_id=req.strategy_id, entry_gates=req.entry_gates, exit_overrides=req.exit,
-            coins=req.coins, fee_pct=req.fee_pct, both=req.both,
+            strategy_id=req.strategy_id,
+            entry_gates=req.entry_gates,
+            exit_overrides=req.exit,
+            coins=req.coins,
+            fee_pct=req.fee_pct,
+            both=req.both,
         )
     except ValueError as e:
         raise HTTPException(503, str(e)) from e
@@ -237,8 +297,11 @@ def deploy(req: DeployRequest) -> dict:
         agent_id = _registry.deploy(req.spec, user_id=req.user_id, verdict=req.verdict)
     except ValueError as e:  # REJECT verdict
         raise HTTPException(409, str(e)) from e
-    return {"agent_id": agent_id, "status": "deployed",
-            "launch": f"bash launch_agent.sh {agent_id}"}
+    return {
+        "agent_id": agent_id,
+        "status": "deployed",
+        "launch": f"bash launch_agent.sh {agent_id}",
+    }
 
 
 @app.post("/agents/{agent_id}/start", response_model=StartAgentResponse)
