@@ -1,0 +1,159 @@
+"""Kamino LIVE executor (A6) — the proven real-money flow as reusable, gated code.
+
+This formalizes the exact path validated on mainnet 2026-06-05 ($10 USDC deposit +
+withdraw round-trip): our TS sidecar builds an UNSIGNED klend tx → base64→base58 →
+`onchainos wallet contract-call --chain solana --unsigned-tx` → the OKX Agentic
+Wallet TEE signs + scans + broadcasts (custody never leaves the TEE).
+
+DOUBLE-GATED so it can never spend by accident:
+  1. instance `dry_run=True` (default) — builds + returns the tx, NEVER submits.
+  2. per-call `confirm=True` — required IN ADDITION to dry_run=False to submit.
+Submission happens ONLY when `dry_run=False AND confirm=True`. Anything else is a
+build-only dry run. The orchestrator never flips both on its own — a real deposit
+is always an explicit, founder-gated action (per the standing X402/PAPER discipline).
+
+⚠️ Under the OKX per-tx policy limit, `contract-call` broadcasts DIRECTLY (no extra
+confirm prompt). So `dry_run=False, confirm=True` IS the broadcast — treat it as live.
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+from dataclasses import dataclass
+from decimal import Decimal
+
+from trade_safety import (
+    Order,
+    SafetyContext,
+    TradeSafetyPolicy,
+    _b64_to_b58,  # canonical b64→b58 helper (item #6: single impl, lives in trade_safety)
+    check_order,
+    kamino_policy,
+    with_global_kill,
+)
+
+from kamino.apy_cache import KAMINO_MAIN_MARKET, KAMINO_USDC_RESERVE
+from kamino.devnet_harness import KAMINO_KLEND_DEVNET, build_unsigned_kamino_tx
+
+# Mainnet klend program (the eventual real path; KAMINO_*_DEVNET in devnet_harness
+# is the same program id string — klend is deployed under one id on both clusters).
+KLEND_PROGRAM = KAMINO_KLEND_DEVNET  # "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD"
+
+
+def _resolve_global_kill() -> bool:
+    """Read the operator-wide kill flag from the control plane. Lazy import keeps
+    this module light; if the store is unavailable we FAIL CLOSED (treat as killed)."""
+    try:
+        from agent_store import is_global_kill
+
+        return bool(is_global_kill())
+    except Exception:
+        return True
+
+
+@dataclass
+class ExecOutcome:
+    ok: bool
+    submitted: bool
+    action: str
+    amount_usd: float
+    detail: str
+    tx_hash: str | None = None
+    num_instructions: int | None = None
+
+
+class KaminoLiveExecutor:
+    """Reusable deposit/withdraw against real Kamino via the OKX TEE. Default dry."""
+
+    def __init__(
+        self,
+        owner_pubkey: str,
+        *,
+        dry_run: bool = True,
+        market: str = KAMINO_MAIN_MARKET,
+        reserve: str = KAMINO_USDC_RESERVE,
+        cluster: str = "mainnet",
+        rpc_url: str | None = None,
+        onchainos_bin: str = "onchainos",
+        # safety-gate wiring — injectable per-agent caps; default is a deny-default
+        # policy that ALWAYS honors the global kill-switch even when nothing is wired.
+        policy: TradeSafetyPolicy | None = None,
+        safety_ctx: SafetyContext | None = None,
+        global_kill_fn=None,
+    ) -> None:
+        self.owner = owner_pubkey
+        self.dry_run = dry_run
+        self.market = market
+        self.reserve = reserve
+        self.cluster = cluster
+        self.rpc_url = rpc_url
+        self._cli = onchainos_bin
+        # default policy enables the kamino venue but keeps require_verified_strategy
+        # (deny-default): a caller must pass a DEPLOY verdict via safety_ctx to proceed.
+        self.policy = policy if policy is not None else kamino_policy()
+        self.safety_ctx = safety_ctx if safety_ctx is not None else SafetyContext()
+        self._global_kill_fn = global_kill_fn or _resolve_global_kill
+
+    def deposit(self, amount_usd: float, *, confirm: bool = False) -> ExecOutcome:
+        return self._run("deposit", amount_usd, confirm=confirm)
+
+    def withdraw(self, amount_usd: float, *, confirm: bool = False) -> ExecOutcome:
+        return self._run("withdraw", amount_usd, confirm=confirm)
+
+    # ── internals ────────────────────────────────────────────────────────────
+    def _run(self, action: str, amount_usd: float, *, confirm: bool) -> ExecOutcome:
+        # 1. build the unsigned tx via the sidecar (always — cheap, no money)
+        env = build_unsigned_kamino_tx(
+            cluster=self.cluster, action=action, market=self.market, reserve=self.reserve,
+            amount_usd=Decimal(str(amount_usd)), owner_pubkey=self.owner, rpc_url=self.rpc_url,
+        )
+        if not env.get("ok"):
+            return ExecOutcome(False, False, action, amount_usd, f"sidecar build failed: {env}")
+        nix = env.get("numInstructions")
+        b58 = _b64_to_b58(env["unsignedTxBase64"])
+
+        # 2. SAFETY GATE (deny-default) — global kill → check_order. This is the gate
+        #    the app's /kill + per-agent notional/daily-loss caps ride on. A deposit
+        #    moves USDC, so notional == amount_usd. Mirrors the Jupiter check_order path.
+        order = Order(symbol="USDC", venue="kamino", notional_usd=float(amount_usd), side=action)
+        policy = with_global_kill(self.policy, self._global_kill_fn())
+        verdict = check_order(order, policy, self.safety_ctx)
+        if not verdict.allow:
+            return ExecOutcome(
+                False, False, action, amount_usd,
+                "safety-gate denied: " + "; ".join(verdict.reasons),
+            )
+
+        # 3. the double gate — submit ONLY when explicitly armed AND confirmed
+        will_submit = (not self.dry_run) and confirm
+        if not will_submit:
+            why = "dry_run" if self.dry_run else "confirm=False"
+            return ExecOutcome(
+                True, False, action, amount_usd,
+                f"built+ready (NOT submitted: {why}); {nix}-ix tx", num_instructions=nix,
+            )
+
+        # 4. live submit via OKX TEE (broadcasts directly under policy limit)
+        # TODO(item #6): unify the broadcast seam — migrate this subprocess call (and
+        # basedbid_exec's) to the OnchainOS.wallet_contract_call wrapper Jupiter uses,
+        # so there is ONE broadcast path to audit/mock. Deferred (live-money seam).
+        proc = subprocess.run(
+            [self._cli, "wallet", "contract-call", "--chain", "solana",
+             "--to", KLEND_PROGRAM, "--unsigned-tx", b58],
+            capture_output=True, text=True, timeout=180.0,
+        )
+        out = (proc.stdout or "").strip()
+        try:
+            resp = json.loads(out)
+        except json.JSONDecodeError:
+            return ExecOutcome(False, False, action, amount_usd,
+                               f"contract-call non-JSON: {(out or proc.stderr)[:300]}")
+        if not resp.get("ok"):
+            return ExecOutcome(False, False, action, amount_usd, f"contract-call error: {resp}")
+        tx_hash = (resp.get("data") or {}).get("txHash")
+        return ExecOutcome(
+            True, True, action, amount_usd,
+            "submitted via OKX TEE (txHash is for tracking only — verify on-chain)",
+            tx_hash=tx_hash, num_instructions=nix,
+        )
