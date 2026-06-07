@@ -24,3 +24,13 @@ def test_entrypoint_never_flips_live():
 
 def test_entrypoint_execs_monolith():
     assert "jto_breakout_gecko_gated_contest_bot.py" in _entrypoint()
+
+
+def test_entrypoint_uses_headless_okx_spot_venue():
+    # 2026-06-07 crash-loop fix: the hosted agent MUST run the okx_spot paper
+    # venue (public ccxt market data — no onchainos CLI, no wallet login).
+    # The legacy onchainos venue can't run headless and crash-looped on
+    # "Not logged in → sys.exit(1)". Lock the venue so it can't silently regress.
+    s = _entrypoint()
+    assert "GECKO_VENUE=" in s and "okx_spot" in s
+    assert "GECKO_STRATEGY=" in s
