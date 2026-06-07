@@ -58,6 +58,16 @@ Resources:
           Environment:
             - {Name: GECKO_AGENT_ID,   Value: !Ref AgentId}
             - {Name: PYTHONUNBUFFERED,  Value: '1'}
+            # Headless PAPER venue, enforced at the INFRA layer (not just the
+            # entrypoint) so it holds even if a stale image runs. The monolith
+            # reads GECKO_VENUE from os.environ; okx_spot uses public ccxt OKX
+            # data → preflight() skips the wallet/login check entirely (the
+            # onchainos venue crash-loops on "Not logged in" headless).
+            - {Name: GECKO_VENUE,    Value: okx_spot}
+            - {Name: GECKO_STRATEGY, Value: trend_breakout}
+            - {Name: GECKO_UNIVERSE, Value: 'BTC,ETH,SOL,DOGE'}
+            - {Name: PAPER_TRADE,    Value: 'true'}
+            - {Name: X402_MODE,      Value: stub}
           Secrets:
             - Name: MONGODB_URI
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/MONGODB_URI
