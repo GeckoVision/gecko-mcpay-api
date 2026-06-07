@@ -88,3 +88,21 @@ def test_me_scope_null_before_grant_then_populated(client):
     s = client.get("/v1/onboarding/me", headers=h).json()["scope"]
     assert s["withdraw_allowlist"] == [WALLET]
     assert "kamino_deposit" in s["allowed_actions"] and s["revoked"] is False
+
+
+def test_revoke_pulls_grant_and_blocks_agent(client):
+    tok = _link(client)["session_token"]
+    h = {"Authorization": f"Bearer {tok}"}
+    client.post("/v1/onboarding/grant", headers=h)
+    # user revokes the agent's access
+    r = client.post("/v1/onboarding/revoke", headers=h)
+    assert r.status_code == 200 and r.json()["revoked"] is True
+    # the agent can no longer act on the user's behalf
+    w = client.post("/v1/vault/withdraw", json={"amount": 10.0}, headers=h)
+    assert w.status_code == 409  # RevokedError surfaces as conflict
+    # but the user is still recognized — the wallet is theirs, not unlinked
+    assert client.get("/v1/onboarding/me", headers=h).status_code == 200
+
+
+def test_revoke_requires_session(client):
+    assert client.post("/v1/onboarding/revoke").status_code == 401

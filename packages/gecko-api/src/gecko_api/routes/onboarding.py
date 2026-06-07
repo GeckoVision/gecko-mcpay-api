@@ -183,6 +183,23 @@ def grant(authorization: Annotated[str | None, Header()] = None) -> dict:
     }
 
 
+class RevokeResponse(BaseModel):
+    model_config = _CFG
+    user_id: str
+    revoked: bool
+
+
+@router.post("/onboarding/revoke", response_model=RevokeResponse)
+def revoke(authorization: Annotated[str | None, Header()] = None) -> dict:
+    """Revoke the agent's grant. The user can pull the agent's trade access at
+    ANY time — after this, execute/withdraw via the agent are refused until a new
+    grant. The wallet (and its funds) remain entirely the user's; this only tears
+    down Gecko's scoped permission. The cornerstone of the non-custodial promise."""
+    user_id, _wallet = _session(authorization)
+    _provider.revoke(user_id)
+    return {"user_id": user_id, "revoked": True}
+
+
 class WithdrawRequest(BaseModel):
     amount: float = Field(..., gt=0)
 
