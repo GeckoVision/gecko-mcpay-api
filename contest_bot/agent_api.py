@@ -139,9 +139,12 @@ def vault(
     from kamino import vault_orchestrator as vo
     from kamino.monitor import hurdle_for
 
-    # Validate ?profile against the known baskets — fail LOUD (422) instead of the
-    # old silent fallback to conservative (defi.md must-build: the app must know it
-    # asked for something that doesn't exist, not get a different basket back).
+    # Normalize back-compat aliases (e.g. the V1 rename moderate→Balanced) before
+    # validating, so old callers keep working. Then validate against the known
+    # baskets — fail LOUD (422) instead of the old silent fallback to conservative
+    # (defi.md must-build: the app must know it asked for something that doesn't
+    # exist, not get a different basket back).
+    profile = vo.normalize_profile(profile)
     if profile not in vo.PROFILE_BASKETS:
         raise HTTPException(
             422,

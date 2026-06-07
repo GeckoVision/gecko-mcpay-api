@@ -70,6 +70,34 @@ class VaultVerdict:
     net_apy: float
     clears_hurdle: bool
     suggested_leverage: float | None = None  # for ROTATE: the leverage that would clear the hurdle
+    # safety=True ⇒ capital-preservation exit (spread inversion / liquidation distance):
+    # these ALWAYS fire, even inside the min-hold lock. safety=False ⇒ optimization
+    # (hurdle-driven ROTATE/EXIT) — deferrable until the position clears its break-even.
+    safety: bool = False
+
+
+def apply_min_hold_lock(action: str, *, reason: str, locked: bool, safety: bool) -> dict:
+    """Min-hold lock (S48): "don't liquidate before it's worth it."
+
+    A Multiply position has a break-even holding period (kamino.multiply.min_hold_period)
+    before accrued yield clears its round-trip cost. Until then we must NOT exit for
+    OPTIMIZATION reasons (ROTATE to a better yield, or a yield-driven DELEVERAGE on
+    non-dangerous spread compression) — that just realizes the cost for nothing.
+
+    SAFETY exits ALWAYS override the lock: depeg (Pegana DEPEG/CRITICAL), liquidation-
+    distance breach, deep spread inversion. The caller classifies `safety`.
+
+    Returns {action, locked, override?, deferred_reason?}:
+      - safety=True               → pass the action through, tag `override`=reason.
+      - locked & action in {ROTATE, DELEVERAGE} & not safety → downgrade to HOLD,
+        tag `deferred_reason`=reason.
+      - otherwise                 → pass through unchanged.
+    """
+    if safety:
+        return {"action": action, "locked": locked, "override": reason}
+    if locked and action in (ROTATE, DELEVERAGE):
+        return {"action": HOLD, "locked": True, "deferred_reason": reason}
+    return {"action": action, "locked": locked}
 
 
 def _peg_override(
@@ -179,6 +207,7 @@ def evaluate(
             f"{strategy.collateral_yield:.2%}) — leverage multiplies the loss; no floor",
             net,
             clears,
+            safety=True,
         )
 
     # 2. Oracle-predicted downside vs the liquidation buffer (the founder's insight:
@@ -193,6 +222,7 @@ def evaluate(
                 f"{buffer:.0%} liquidation buffer at {strategy.leverage:.0f}x — exit before liquidation",
                 net,
                 clears,
+                safety=True,
             )
         if predicted_drawdown_pct >= buffer * liq_safety_factor:
             return VaultVerdict(
@@ -201,6 +231,7 @@ def evaluate(
                 f"{liq_safety_factor:.0%} of the {buffer:.0%} buffer at {strategy.leverage:.0f}x — cut leverage",
                 net,
                 clears,
+                safety=True,
             )
 
     # 3. Static LTV proximity (price-liquidatable assets only, no prediction).
@@ -211,6 +242,7 @@ def evaluate(
             f"liquidation {strategy.liquidation_ltv:.2%} on a volatile asset",
             net,
             clears,
+            safety=True,
         )
 
     # 3. Hurdle: is the yield even worth the risk?
@@ -248,4 +280,6 @@ def evaluate(
             suggested_leverage=target,
         )
 
-    return VaultVerdict(HOLD, f"net {net:.2%} ≥ hurdle {hurdle.apy:.2%} ({hurdle.label})", net, clears)
+    return VaultVerdict(
+        HOLD, f"net {net:.2%} ≥ hurdle {hurdle.apy:.2%} ({hurdle.label})", net, clears
+    )

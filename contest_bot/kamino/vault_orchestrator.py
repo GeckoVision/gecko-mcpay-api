@@ -17,9 +17,19 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 from kamino import vault_gate as vg
-from kamino.monitor import DELEVERAGE, EXIT, FIAT_CDB_BR, HOLD, ROTATE, Hurdle, evaluate
+from kamino.monitor import (
+    DELEVERAGE,
+    EXIT,
+    FIAT_CDB_BR,
+    HOLD,
+    ROTATE,
+    Hurdle,
+    apply_min_hold_lock,
+    evaluate,
+)
 from kamino.multiply import LeverageStrategy, project_balance, time_to_target
 
 logger = logging.getLogger("kamino.vault_orchestrator")
@@ -61,7 +71,9 @@ def _lend() -> LeverageStrategy:
 
 
 def _lst(leverage: float) -> LeverageStrategy:
-    return LeverageStrategy(f"JitoSOL/SOL {leverage:g}x", 0.07, 0.06, leverage, 0.90, 0.93, True, "lst_staking")
+    return LeverageStrategy(
+        f"JitoSOL/SOL {leverage:g}x", 0.07, 0.06, leverage, 0.90, 0.93, True, "lst_staking"
+    )
 
 
 def _jlp() -> LeverageStrategy:
@@ -71,9 +83,20 @@ def _jlp() -> LeverageStrategy:
 # conservative = no liquidation surface; aggressive = leverage + a volatile sleeve.
 PROFILE_BASKETS: dict[str, list[tuple[LeverageStrategy, float]]] = {
     "conservative": [(_lend(), 1.0)],
-    "moderate": [(_lst(4.0), 0.6), (_lend(), 0.4)],
+    "Balanced": [(_lst(4.0), 0.6), (_lend(), 0.4)],  # was "moderate" (V1 rename, S48)
     "aggressive": [(_lst(8.0), 0.5), (_jlp(), 0.3), (_lend(), 0.2)],
 }
+
+# Back-compat: the profile was historically "moderate"; V1 renamed it to
+# "Balanced" (Conservative / Balanced / Aggressive, aligned to Kamino's risk
+# categories). Pattern A: one canonical key + an alias map. Every consumer
+# routes incoming labels through normalize_profile before indexing.
+_PROFILE_ALIASES: dict[str, str] = {"moderate": "Balanced"}
+
+
+def normalize_profile(name: str) -> str:
+    """Map any incoming profile label to its canonical key (back-compat for 'moderate')."""
+    return _PROFILE_ALIASES.get(name, name)
 
 
 def predicted_drawdown_from_market_temp(snap: dict | None) -> float | None:
@@ -105,6 +128,12 @@ class VaultLot:
     source: str  # yield_source key, doubles as the lot id within a profile
     principal_usd: float
     strategy: LeverageStrategy
+    # Min-hold lock (S48): set on a Multiply open from selector.min_hold_period.
+    # While `now < min_hold_until`, optimization exits (ROTATE / yield-driven
+    # DELEVERAGE) are deferred; safety exits always fire. Empty = no lock
+    # (the profit-allocation paper path leaves these unset → behaves as before).
+    entry_ts: str = ""
+    min_hold_until: str = ""  # ISO-UTC
 
 
 @dataclass
@@ -162,7 +191,9 @@ class VaultOrchestrator:
         """Split realized profit across the profile basket; gate each leg; paper-deposit
         the ones that pass. Returns a per-leg report (never raises)."""
         try:
-            basket = PROFILE_BASKETS.get(self.profile, PROFILE_BASKETS["conservative"])
+            basket = PROFILE_BASKETS.get(
+                normalize_profile(self.profile), PROFILE_BASKETS["conservative"]
+            )
             # S48: one Pegana call for every target leg's collateral asset.
             peg = self._peg_states([t.yield_source for t, _ in basket])
             deposited: list[dict] = []
@@ -172,14 +203,18 @@ class VaultOrchestrator:
                 if amt <= 0:
                     continue
                 v = vg.vault_check(
-                    vg.DEPOSIT, amt, self.policy,
+                    vg.DEPOSIT,
+                    amt,
+                    self.policy,
                     strategy=template,
                     current_allocation_usd=self.allocation_usd,
                     predicted_drawdown_pct=predicted_drawdown_pct,
                     peg_state=peg.get(template.yield_source),
                 )
                 if not v.allow:
-                    denied.append({"source": template.yield_source, "amount": amt, "reasons": v.reasons})
+                    denied.append(
+                        {"source": template.yield_source, "amount": amt, "reasons": v.reasons}
+                    )
                     continue
                 self._add_to_lot(template, amt)
                 rec = {"source": template.yield_source, "amount": amt, "monitor": v.monitor_action}
@@ -197,7 +232,9 @@ class VaultOrchestrator:
             if lot.source == template.yield_source and lot.strategy.leverage == template.leverage:
                 lot.principal_usd = round(lot.principal_usd + amt, 4)
                 return
-        self.lots.append(VaultLot(source=template.yield_source, principal_usd=amt, strategy=template))
+        self.lots.append(
+            VaultLot(source=template.yield_source, principal_usd=amt, strategy=template)
+        )
 
     def _maybe_live(self, template: LeverageStrategy, action: str, amt: float) -> dict | None:
         """Route a deposit/withdraw to the LIVE executor — ONLY for the conservative
@@ -232,27 +269,54 @@ class VaultOrchestrator:
                     predicted_drawdown_pct=predicted_drawdown_pct,
                     peg_state=ps,
                 )
-                out.append({
-                    "source": lot.source, "principal_usd": lot.principal_usd,
-                    "action": v.action, "reason": v.reason, "net_apy": round(v.net_apy, 4),
-                    "suggested_leverage": v.suggested_leverage,
-                    # surface the peg signal so the app can show it (None when no signal)
-                    "peg_state": (ps.get("state") if ps else None),
-                    "peg_discount": (ps.get("discount") if ps else None),
-                })
+                out.append(
+                    {
+                        "source": lot.source,
+                        "principal_usd": lot.principal_usd,
+                        "action": v.action,
+                        "reason": v.reason,
+                        "net_apy": round(v.net_apy, 4),
+                        "suggested_leverage": v.suggested_leverage,
+                        "safety": v.safety,
+                        # surface the peg signal so the app can show it (None when no signal)
+                        "peg_state": (ps.get("state") if ps else None),
+                        "peg_discount": (ps.get("discount") if ps else None),
+                    }
+                )
             except Exception as exc:
                 logger.warning("vault monitor_tick swallow (%s): %s", lot.source, exc)
         return out
 
-    def apply_actions(self, verdicts: list[dict]) -> list[dict]:
+    def apply_actions(self, verdicts: list[dict], *, now: datetime | None = None) -> list[dict]:
         """Paper-act on monitor verdicts: EXIT closes the lot, DELEVERAGE/ROTATE
-        re-leverages it. Returns what changed. Real execution swaps in the adapter."""
+        re-leverages it. Returns what changed. Real execution swaps in the adapter.
+
+        Min-hold lock (S48): if a lot has a `min_hold_until` in the future, an
+        OPTIMIZATION exit (ROTATE / yield-driven DELEVERAGE) is deferred to HOLD;
+        SAFETY verdicts (verdict["safety"]) always pass. `now` is injectable for tests."""
+        clock = now or datetime.now(UTC)
         changed: list[dict] = []
         for v in verdicts:
             lot = next((lt for lt in self.lots if lt.source == v["source"]), None)
             if lot is None:
                 continue
-            action = v.get("action")
+            locked = bool(lot.min_hold_until) and clock < datetime.fromisoformat(lot.min_hold_until)
+            gated = apply_min_hold_lock(
+                v.get("action"),
+                reason=v.get("reason", ""),
+                locked=locked,
+                safety=bool(v.get("safety", False)),
+            )
+            if gated.get("deferred_reason"):
+                changed.append(
+                    {
+                        "source": v["source"],
+                        "did": "deferred (min-hold)",
+                        "until": lot.min_hold_until,
+                    }
+                )
+                continue
+            action = gated["action"]
             if action == EXIT:
                 live = self._maybe_live(lot.strategy, "withdraw", lot.principal_usd)  # real exit (conservative)
                 self.lots.remove(lot)
@@ -262,7 +326,9 @@ class VaultOrchestrator:
                 changed.append(rec)
             elif action == ROTATE and v.get("suggested_leverage"):
                 lot.strategy = lot.strategy.with_leverage(v["suggested_leverage"])
-                changed.append({"source": v["source"], "did": f"rotated→{v['suggested_leverage']:.1f}x"})
+                changed.append(
+                    {"source": v["source"], "did": f"rotated→{v['suggested_leverage']:.1f}x"}
+                )
             elif action == DELEVERAGE:
                 new_lev = max(1.0, lot.strategy.leverage * 0.5)
                 lot.strategy = lot.strategy.with_leverage(new_lev)
