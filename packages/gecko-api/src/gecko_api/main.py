@@ -1178,6 +1178,15 @@ from gecko_api.routes.permissions import router as _permissions_router  # noqa: 
 app.include_router(_permissions_router)
 
 
+# V1 Phase A — non-custodial onboarding + withdraw. Binds the user's own wallet
+# to a Gecko session and exposes the sacred (never-gated) withdraw path. Wired to
+# the gecko_core WalletProvider seam (stub today; Privy/OKX/MagicBlock adapter
+# swaps in during the real deploy).
+from gecko_api.routes.onboarding import router as _onboarding_router  # noqa: E402
+
+app.include_router(_onboarding_router)
+
+
 # S20-B3 — single x402-gated dispatcher for the 12-skill manifest. Mounted
 # AFTER middleware so the route's own dispatcher (X402Dispatcher) is the
 # 402 gate, not the x402 PaymentMiddlewareASGI — the manifest skills are

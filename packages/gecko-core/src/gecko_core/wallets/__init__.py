@@ -13,12 +13,36 @@ from gecko_core.wallets.privy import (
     PrivyWallet,
     is_privy_configured,
 )
+from gecko_core.wallets.provider import (
+    TRADE_ONLY_ACTIONS,
+    ExecReceipt,
+    NotLinkedError,
+    RevokedError,
+    Scope,
+    ScopeError,
+    StubWalletProvider,
+    WalletLink,
+    WalletProvider,
+    WalletProviderError,
+    user_scope,
+)
 
 __all__ = [
+    "TRADE_ONLY_ACTIONS",
+    "ExecReceipt",
+    "NotLinkedError",
     "PrivyClient",
     "PrivyClientError",
     "PrivyNotConfiguredError",
     "PrivyPolicy",
     "PrivyWallet",
+    "RevokedError",
+    "Scope",
+    "ScopeError",
+    "StubWalletProvider",
+    "WalletLink",
+    "WalletProvider",
+    "WalletProviderError",
     "is_privy_configured",
+    "user_scope",
 ]
