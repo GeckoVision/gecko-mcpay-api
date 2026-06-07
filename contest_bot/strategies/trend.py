@@ -124,3 +124,43 @@ class TrendBreakout:
             flat_stall_hi=e["flat_stall_hi"],
             revert_to_mean=False,
         )
+
+
+# ── T1 — regime-gated arm of trend_breakout (adaptive-slate §2 T1) ───
+def default_spec_regime_gated() -> StrategySpec:
+    """Same gates as trend_breakout, but only fires in a clean point-in-time
+    TREND-UP regime. The ONE new question (quant-gate review §2 T1): does
+    regime-gating flip the -0.47%-net live baseline from -EV to >=0?"""
+    s = default_spec()
+    s.strategy_id = "trend_breakout_regime"
+    s.universe = ["BTC", "ETH", "SOL"]
+    s.entry_gates = dict(s.entry_gates)
+    # regime gate is applied in should_enter; thresholds are frozen-from-prior
+    # (compute_regime_1h's ADX/CHOP cutoffs) and declared frozen in the pre-reg
+    # so they do NOT add to n_trials.
+    return s
+
+
+class TrendBreakoutRegimeGated(TrendBreakout):
+    """trend_breakout that fires ONLY when the instrument's 1h regime is TREND-UP
+    and BTC's 1h regime is not TREND-DOWN. Everything else is identical to the
+    base — so the A/B isolates the regime gate, nothing else.
+
+    The regime labels MUST be supplied point-in-time (computed from bars up to
+    and including the decision bar) by the caller; this rule only reads them."""
+
+    def __init__(self, spec: StrategySpec | None = None) -> None:
+        super().__init__(spec or default_spec_regime_gated())
+
+    def should_enter(self, features: dict[str, object]) -> Signal | None:
+        reg = str(features.get("regime_1h", "")).upper().replace("_", "-")
+        btc = str(features.get("btc_regime_1h", "")).upper().replace("_", "-")
+        # regime gate FIRST — fail closed unless we explicitly see TREND-UP
+        if reg != "TREND-UP":
+            return None
+        if btc == "TREND-DOWN":
+            return None
+        sig = super().should_enter(features)
+        if sig is not None:
+            sig.reason = f"[regime-gated TREND-UP btc={btc}] " + sig.reason
+        return sig
