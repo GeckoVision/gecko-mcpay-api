@@ -1,0 +1,41 @@
+# =============================================================================
+# Dockerfile.agent — hosted Setup-C bot (paper). Reuses the workspace venv and
+# adds contest_bot/. The root Dockerfile deliberately EXCLUDES contest_bot/;
+# this image ships it. Runtime deps (pymongo, ccxt, httpx, openai, pydantic) are
+# already in uv.lock via the gecko-core workspace package.
+# =============================================================================
+FROM python:3.12-slim AS builder
+COPY --from=ghcr.io/astral-sh/uv:0.5.30 /uv /usr/local/bin/uv
+WORKDIR /app
+COPY pyproject.toml uv.lock README.md ./
+COPY packages/gecko-core/pyproject.toml ./packages/gecko-core/
+COPY packages/gecko-api/pyproject.toml  ./packages/gecko-api/
+COPY packages/gecko-mcp/pyproject.toml  ./packages/gecko-mcp/
+COPY apps/cli/pyproject.toml            ./apps/cli/
+COPY apps/demo-agent/pyproject.toml     ./apps/demo-agent/
+COPY packages/gecko-core/src ./packages/gecko-core/src
+COPY packages/gecko-api/src  ./packages/gecko-api/src
+COPY packages/gecko-mcp/src  ./packages/gecko-mcp/src
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --package gecko-core \
+            --reinstall-package gecko-core
+
+FROM python:3.12-slim AS runner
+RUN useradd --create-home --shell /bin/bash gecko
+WORKDIR /app
+COPY --from=builder /app/.venv ./.venv
+COPY --from=builder /app/packages/gecko-core/src ./packages/gecko-core/src
+COPY --from=builder /app/pyproject.toml ./
+COPY --from=builder /app/packages/gecko-core/pyproject.toml ./packages/gecko-core/
+COPY contest_bot ./contest_bot
+COPY docker-entrypoint-agent.sh ./
+RUN chown -R gecko:gecko /app && chmod +x docker-entrypoint-agent.sh
+USER gecko
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app/contest_bot
+# Healthcheck: bot dashboard on localhost only (never published).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8265/healthz',timeout=3).status==200 else 1)" || exit 1
+ENTRYPOINT ["./docker-entrypoint-agent.sh"]

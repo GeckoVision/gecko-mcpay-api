@@ -1,0 +1,94 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  gecko-agent — zero-inbound Fargate service running the Setup-C paper bot.
+  Reuses the gecko-api-ecs VPC/cluster/private-subnets (passed as parameters by
+  deploy-agent.sh). No ALB, no inbound port — the task only makes outbound calls
+  (OKX tape, OpenRouter, Mongo). State persists in Mongo so a task restart
+  resumes without orphaning a position. Paper-only: PAPER_TRADE/X402_MODE are
+  baked in the container entrypoint, not here.
+
+Parameters:
+  Image:
+    Type: String
+    Default: PLACEHOLDER_SET_BY_DEPLOY_SCRIPT
+  ClusterArn:
+    Type: String
+    Description: ARN (or name) of the existing ECS cluster (gecko-api).
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PrivateSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+  SSMPrefix:
+    Type: String
+    Default: /gecko-agent
+  AgentId:
+    Type: String
+    Default: hosted-setupc-001
+
+Resources:
+  AgentLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/gecko-agent
+      RetentionInDays: 30
+
+  AgentSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: gecko-agent - egress only, ZERO inbound
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - {IpProtocol: -1, CidrIp: 0.0.0.0/0}
+
+  AgentTaskDef:
+    Type: AWS::ECS::TaskDefinition
+    DependsOn: AgentLogGroup
+    Properties:
+      Family: gecko-agent
+      Cpu: '512'
+      Memory: '1024'
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskExecutionRole
+      TaskRoleArn:      !Sub arn:aws:iam::${AWS::AccountId}:role/EcsTaskRole
+      ContainerDefinitions:
+        - Name: agent
+          Image: !Ref Image
+          Essential: true
+          Environment:
+            - {Name: GECKO_AGENT_ID,   Value: !Ref AgentId}
+            - {Name: PYTHONUNBUFFERED,  Value: '1'}
+          Secrets:
+            - Name: MONGODB_URI
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/MONGODB_URI
+            - Name: MONGODB_DB
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/MONGODB_DB
+            - Name: OPENROUTER_API_KEY
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OPENROUTER_API_KEY
+            - Name: LLM_ROUTER
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/LLM_ROUTER
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: /ecs/gecko-agent
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: agent
+
+  AgentService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: gecko-agent
+      Cluster: !Ref ClusterArn
+      TaskDefinition: !Ref AgentTaskDef
+      LaunchType: FARGATE
+      DesiredCount: 1
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: !Ref PrivateSubnets
+          SecurityGroups: [!Ref AgentSecurityGroup]
+          AssignPublicIp: DISABLED
+
+Outputs:
+  ServiceName:
+    Description: ECS service name for the hosted agent
+    Value: !GetAtt AgentService.Name
