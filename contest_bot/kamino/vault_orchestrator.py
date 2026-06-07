@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from kamino import vault_gate as vg
 from kamino.monitor import (
@@ -30,7 +30,12 @@ from kamino.monitor import (
     apply_min_hold_lock,
     evaluate,
 )
-from kamino.multiply import LeverageStrategy, project_balance, time_to_target
+from kamino.multiply import (
+    LeverageStrategy,
+    min_hold_period,
+    project_balance,
+    time_to_target,
+)
 
 logger = logging.getLogger("kamino.vault_orchestrator")
 
@@ -153,6 +158,11 @@ class VaultOrchestrator:
     # demand). Tests inject a stubbed client; production uses the live REST feed.
     # Fail-open everywhere — if Pegana is down the monitor falls back to market-temp.
     pegana_client: object | None = None
+    # S48 min-hold: round-trip cost (fraction of equity) used to stamp each new
+    # lot's break-even hold. Default 0.0 → no stamping (min_hold_until stays empty
+    # → the apply_actions lock is inert; backward-compatible). Set >0 (e.g.
+    # round_trip_cost(...) ≈ 0.0027) so opened lots carry "don't liquidate before".
+    round_trip_cost_pct: float = 0.0
 
     @property
     def allocation_usd(self) -> float:
@@ -173,8 +183,13 @@ class VaultOrchestrator:
         # client, the live default-client (real network) is built ONLY when
         # GECKO_PEGANA_ENABLED is truthy — so unit/e2e tests never hit the network
         # unless they opt in. The /vault endpoint sets the flag for production.
-        if self.pegana_client is None and os.environ.get("GECKO_PEGANA_ENABLED", "0").lower() not in (
-            "1", "true", "yes", "on",
+        if self.pegana_client is None and os.environ.get(
+            "GECKO_PEGANA_ENABLED", "0"
+        ).lower() not in (
+            "1",
+            "true",
+            "yes",
+            "on",
         ):
             return {}
         try:
@@ -186,10 +201,16 @@ class VaultOrchestrator:
             return {}
 
     def allocate_profit(
-        self, profit_usd: float, *, predicted_drawdown_pct: float | None = None
+        self,
+        profit_usd: float,
+        *,
+        predicted_drawdown_pct: float | None = None,
+        now: datetime | None = None,
     ) -> dict:
         """Split realized profit across the profile basket; gate each leg; paper-deposit
-        the ones that pass. Returns a per-leg report (never raises)."""
+        the ones that pass. Returns a per-leg report (never raises). `now` is injectable
+        for deterministic min-hold stamping in tests."""
+        clock = now or datetime.now(UTC)
         try:
             basket = PROFILE_BASKETS.get(
                 normalize_profile(self.profile), PROFILE_BASKETS["conservative"]
@@ -216,7 +237,7 @@ class VaultOrchestrator:
                         {"source": template.yield_source, "amount": amt, "reasons": v.reasons}
                     )
                     continue
-                self._add_to_lot(template, amt)
+                self._add_to_lot(template, amt, now=clock)
                 rec = {"source": template.yield_source, "amount": amt, "monitor": v.monitor_action}
                 live = self._maybe_live(template, "deposit", amt)
                 if live is not None:
@@ -227,14 +248,41 @@ class VaultOrchestrator:
             logger.warning("vault allocate_profit swallow: %s", exc)
             return {"deposited": [], "denied": [], "error": f"{type(exc).__name__}: {exc}"}
 
-    def _add_to_lot(self, template: LeverageStrategy, amt: float) -> None:
+    def _add_to_lot(
+        self, template: LeverageStrategy, amt: float, *, now: datetime | None = None
+    ) -> None:
         for lot in self.lots:
             if lot.source == template.yield_source and lot.strategy.leverage == template.leverage:
+                # Top-up of an existing lot: keep the ORIGINAL entry_ts/min_hold_until
+                # (break-even was set at first open; adding capital doesn't reset it).
                 lot.principal_usd = round(lot.principal_usd + amt, 4)
                 return
+        # New lot — stamp the break-even hold when a round-trip cost is configured.
+        entry_ts, min_hold_until = self._stamp_min_hold(template, amt, now)
         self.lots.append(
-            VaultLot(source=template.yield_source, principal_usd=amt, strategy=template)
+            VaultLot(
+                source=template.yield_source,
+                principal_usd=amt,
+                strategy=template,
+                entry_ts=entry_ts,
+                min_hold_until=min_hold_until,
+            )
         )
+
+    def _stamp_min_hold(
+        self, template: LeverageStrategy, principal: float, now: datetime | None
+    ) -> tuple[str, str]:
+        """Compute (entry_ts, min_hold_until) ISO strings for a new lot. Returns
+        ("","") when no cost is configured or the position never clears its cost
+        (net_apy <= 0) — i.e. no lock, the apply_actions guard stays inert."""
+        if self.round_trip_cost_pct <= 0:
+            return "", ""
+        years = min_hold_period(template, principal, self.round_trip_cost_pct)
+        if years is None or years <= 0:
+            return "", ""
+        clock = now or datetime.now(UTC)
+        until = clock + timedelta(days=years * 365.25)
+        return clock.isoformat(), until.isoformat()
 
     def _maybe_live(self, template: LeverageStrategy, action: str, amt: float) -> dict | None:
         """Route a deposit/withdraw to the LIVE executor — ONLY for the conservative
@@ -246,9 +294,11 @@ class VaultOrchestrator:
         try:
             fn = self.executor.deposit if action == "deposit" else self.executor.withdraw
             out = fn(amt, confirm=self.live_confirm)
-            return {"submitted": getattr(out, "submitted", False),
-                    "tx_hash": getattr(out, "tx_hash", None),
-                    "detail": getattr(out, "detail", "")}
+            return {
+                "submitted": getattr(out, "submitted", False),
+                "tx_hash": getattr(out, "tx_hash", None),
+                "detail": getattr(out, "detail", ""),
+            }
         except Exception as exc:  # never break allocation/monitor on an executor error
             logger.warning("vault live %s swallow: %s", action, exc)
             return {"submitted": False, "tx_hash": None, "detail": f"error: {type(exc).__name__}"}
@@ -318,7 +368,9 @@ class VaultOrchestrator:
                 continue
             action = gated["action"]
             if action == EXIT:
-                live = self._maybe_live(lot.strategy, "withdraw", lot.principal_usd)  # real exit (conservative)
+                live = self._maybe_live(
+                    lot.strategy, "withdraw", lot.principal_usd
+                )  # real exit (conservative)
                 self.lots.remove(lot)
                 rec = {"source": v["source"], "did": "exited", "freed_usd": lot.principal_usd}
                 if live is not None:
