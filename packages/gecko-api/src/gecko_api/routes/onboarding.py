@@ -120,17 +120,42 @@ def link(req: LinkRequest) -> dict:
     }
 
 
+class MeScope(BaseModel):
+    model_config = _CFG
+    allowed_actions: list[str]
+    withdraw_allowlist: list[str]
+    revoked: bool
+
+
 class MeResponse(BaseModel):
     model_config = _CFG
     user_id: str
     wallet_address: str
     custody: str = "user-owned"
+    # The user's current grant (null when they haven't granted, or after revoke
+    # leaves no live grant). Lets the app show "what can the agent do right now".
+    scope: MeScope | None = None
 
 
 @router.get("/onboarding/me", response_model=MeResponse)
 def me(authorization: Annotated[str | None, Header()] = None) -> dict:
     user_id, wallet = _session(authorization)
-    return {"user_id": user_id, "wallet_address": wallet, "custody": "user-owned"}
+    scope = _provider.scope_for(user_id)
+    scope_out = (
+        {
+            "allowed_actions": sorted(scope.allowed_actions),
+            "withdraw_allowlist": sorted(scope.withdraw_allowlist),
+            "revoked": scope.revoked,
+        }
+        if scope is not None
+        else None
+    )
+    return {
+        "user_id": user_id,
+        "wallet_address": wallet,
+        "custody": "user-owned",
+        "scope": scope_out,
+    }
 
 
 class GrantResponse(BaseModel):

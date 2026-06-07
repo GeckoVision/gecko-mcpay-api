@@ -100,6 +100,7 @@ class WalletProvider(Protocol):
 
     def link(self, user_id: str, address: str) -> WalletLink: ...
     def grant_scope(self, user_id: str, scope: Scope) -> Scope: ...
+    def scope_for(self, user_id: str) -> Scope | None: ...
     def revoke(self, user_id: str) -> None: ...
     def execute(self, user_id: str, action: str, amount: float) -> ExecReceipt: ...
     def withdraw(self, user_id: str, amount: float, to_address: str) -> ExecReceipt: ...
@@ -126,6 +127,11 @@ class StubWalletProvider:
             raise NotLinkedError(f"no wallet linked for {user_id!r}")
         self._scopes[user_id] = scope
         return scope
+
+    def scope_for(self, user_id: str) -> Scope | None:
+        """The user's current grant (or None if never granted). Read-only — lets
+        the app show 'what can the agent do, and is it revoked'."""
+        return self._scopes.get(user_id)
 
     def revoke(self, user_id: str) -> None:
         scope = self._scopes.get(user_id)

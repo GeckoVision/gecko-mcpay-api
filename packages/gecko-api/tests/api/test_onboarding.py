@@ -80,6 +80,16 @@ def test_bad_session_token_rejected(client):
     assert r.status_code == 401
 
 
+def test_me_scope_null_before_grant_then_populated(client):
+    tok = _link(client)["session_token"]
+    h = {"Authorization": f"Bearer {tok}"}
+    assert client.get("/v1/onboarding/me", headers=h).json()["scope"] is None
+    client.post("/v1/onboarding/grant", headers=h)
+    s = client.get("/v1/onboarding/me", headers=h).json()["scope"]
+    assert s["withdraw_allowlist"] == [WALLET]
+    assert "kamino_deposit" in s["allowed_actions"] and s["revoked"] is False
+
+
 def test_revoke_pulls_grant_and_blocks_agent(client):
     tok = _link(client)["session_token"]
     h = {"Authorization": f"Bearer {tok}"}

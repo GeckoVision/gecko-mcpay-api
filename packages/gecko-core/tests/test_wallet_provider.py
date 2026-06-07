@@ -74,6 +74,17 @@ def test_grant_requires_link():
         p.grant_scope(USER, user_scope(USER_ADDR))
 
 
+def test_scope_for_none_then_reflects_grant_and_revoke():
+    p = StubWalletProvider()
+    p.link(USER, USER_ADDR)
+    assert p.scope_for(USER) is None  # no grant yet
+    p.grant_scope(USER, user_scope(USER_ADDR))
+    s = p.scope_for(USER)
+    assert s is not None and USER_ADDR in s.withdraw_allowlist and s.revoked is False
+    p.revoke(USER)
+    assert p.scope_for(USER).revoked is True  # revoke is visible
+
+
 def test_execute_requires_grant():
     p = StubWalletProvider()
     p.link(USER, USER_ADDR)
