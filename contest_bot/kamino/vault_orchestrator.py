@@ -16,9 +16,19 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 from kamino import vault_gate as vg
-from kamino.monitor import DELEVERAGE, EXIT, FIAT_CDB_BR, HOLD, ROTATE, Hurdle, evaluate
+from kamino.monitor import (
+    DELEVERAGE,
+    EXIT,
+    FIAT_CDB_BR,
+    HOLD,
+    ROTATE,
+    Hurdle,
+    apply_min_hold_lock,
+    evaluate,
+)
 from kamino.multiply import LeverageStrategy
 
 logger = logging.getLogger("kamino.vault_orchestrator")
@@ -87,6 +97,12 @@ class VaultLot:
     source: str  # yield_source key, doubles as the lot id within a profile
     principal_usd: float
     strategy: LeverageStrategy
+    # Min-hold lock (S48): set on a Multiply open from selector.min_hold_period.
+    # While `now < min_hold_until`, optimization exits (ROTATE / yield-driven
+    # DELEVERAGE) are deferred; safety exits always fire. Empty = no lock
+    # (the profit-allocation paper path leaves these unset → behaves as before).
+    entry_ts: str = ""
+    min_hold_until: str = ""  # ISO-UTC
 
 
 @dataclass
@@ -165,21 +181,43 @@ class VaultOrchestrator:
                         "reason": v.reason,
                         "net_apy": round(v.net_apy, 4),
                         "suggested_leverage": v.suggested_leverage,
+                        "safety": v.safety,
                     }
                 )
             except Exception as exc:
                 logger.warning("vault monitor_tick swallow (%s): %s", lot.source, exc)
         return out
 
-    def apply_actions(self, verdicts: list[dict]) -> list[dict]:
+    def apply_actions(self, verdicts: list[dict], *, now: datetime | None = None) -> list[dict]:
         """Paper-act on monitor verdicts: EXIT closes the lot, DELEVERAGE/ROTATE
-        re-leverages it. Returns what changed. Real execution swaps in the adapter."""
+        re-leverages it. Returns what changed. Real execution swaps in the adapter.
+
+        Min-hold lock (S48): if a lot has a `min_hold_until` in the future, an
+        OPTIMIZATION exit (ROTATE / yield-driven DELEVERAGE) is deferred to HOLD;
+        SAFETY verdicts (verdict["safety"]) always pass. `now` is injectable for tests."""
+        clock = now or datetime.now(UTC)
         changed: list[dict] = []
         for v in verdicts:
             lot = next((lt for lt in self.lots if lt.source == v["source"]), None)
             if lot is None:
                 continue
-            action = v.get("action")
+            locked = bool(lot.min_hold_until) and clock < datetime.fromisoformat(lot.min_hold_until)
+            gated = apply_min_hold_lock(
+                v.get("action"),
+                reason=v.get("reason", ""),
+                locked=locked,
+                safety=bool(v.get("safety", False)),
+            )
+            if gated.get("deferred_reason"):
+                changed.append(
+                    {
+                        "source": v["source"],
+                        "did": "deferred (min-hold)",
+                        "until": lot.min_hold_until,
+                    }
+                )
+                continue
+            action = gated["action"]
             if action == EXIT:
                 self.lots.remove(lot)
                 changed.append(
