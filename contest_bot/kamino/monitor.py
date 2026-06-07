@@ -72,6 +72,30 @@ class VaultVerdict:
     suggested_leverage: float | None = None  # for ROTATE: the leverage that would clear the hurdle
 
 
+def apply_min_hold_lock(action: str, *, reason: str, locked: bool, safety: bool) -> dict:
+    """Min-hold lock (S48): "don't liquidate before it's worth it."
+
+    A Multiply position has a break-even holding period (kamino.multiply.min_hold_period)
+    before accrued yield clears its round-trip cost. Until then we must NOT exit for
+    OPTIMIZATION reasons (ROTATE to a better yield, or a yield-driven DELEVERAGE on
+    non-dangerous spread compression) — that just realizes the cost for nothing.
+
+    SAFETY exits ALWAYS override the lock: depeg (Pegana DEPEG/CRITICAL), liquidation-
+    distance breach, deep spread inversion. The caller classifies `safety`.
+
+    Returns {action, locked, override?, deferred_reason?}:
+      - safety=True               → pass the action through, tag `override`=reason.
+      - locked & action in {ROTATE, DELEVERAGE} & not safety → downgrade to HOLD,
+        tag `deferred_reason`=reason.
+      - otherwise                 → pass through unchanged.
+    """
+    if safety:
+        return {"action": action, "locked": locked, "override": reason}
+    if locked and action in (ROTATE, DELEVERAGE):
+        return {"action": HOLD, "locked": True, "deferred_reason": reason}
+    return {"action": action, "locked": locked}
+
+
 def evaluate(
     strategy: LeverageStrategy,
     hurdle: Hurdle = FIAT_CDB_BR,
@@ -161,4 +185,6 @@ def evaluate(
             suggested_leverage=target,
         )
 
-    return VaultVerdict(HOLD, f"net {net:.2%} ≥ hurdle {hurdle.apy:.2%} ({hurdle.label})", net, clears)
+    return VaultVerdict(
+        HOLD, f"net {net:.2%} ≥ hurdle {hurdle.apy:.2%} ({hurdle.label})", net, clears
+    )

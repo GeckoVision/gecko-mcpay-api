@@ -26,10 +26,10 @@ from dataclasses import dataclass
 # Where the yield comes from = what the risk actually is. The monitor keys off this.
 YIELD_SOURCES = {
     "stable_spread",  # yield-bearing stable vs borrow stable — only spread/rate risk
-    "lst_staking",    # SOL LST staking yield, SOL debt — depeg-protected, SOL-denominated
-    "rwa_credit",     # Maple / mortgages / reinsurance — counterparty DEFAULT risk, slow exit
-    "jlp_fees",       # Jupiter perps LP fees — JLP is ~65% volatile crypto, real liquidation
-    "equity",         # tokenized stocks — directional, NO yield floor
+    "lst_staking",  # SOL LST staking yield, SOL debt — depeg-protected, SOL-denominated
+    "rwa_credit",  # Maple / mortgages / reinsurance — counterparty DEFAULT risk, slow exit
+    "jlp_fees",  # Jupiter perps LP fees — JLP is ~65% volatile crypto, real liquidation
+    "equity",  # tokenized stocks — directional, NO yield floor
 }
 
 
@@ -174,3 +174,34 @@ def time_to_target(principal: float, net_apy: float, target_gain_usd: float) -> 
 
     ratio = (principal + target_gain_usd) / principal
     return math.log(ratio) / math.log(1.0 + net_apy)
+
+
+# ── Round-trip cost + minimum-hold period (S48 profit-vault) ──────────────────
+# The founder's question: "what's the minimum period to make a Multiply worth it,
+# and don't liquidate before that." A leveraged loop has a real open+close cost
+# (entry swap + flash-loan fee + exit swap + gas); the position only turns net
+# positive once accrued yield clears that cost. `min_hold_period` is that
+# break-even horizon; the monitor's min-hold lock keys off it.
+
+
+def round_trip_cost(
+    entry_swap_bps: float, flash_fee_bps: float, exit_swap_bps: float, gas_bps: float = 0.0
+) -> float:
+    """Total open+close cost as a FRACTION of equity. bps → fraction (/10_000)."""
+    return (entry_swap_bps + flash_fee_bps + exit_swap_bps + gas_bps) / 10_000.0
+
+
+def min_hold_period(strat: LeverageStrategy, principal: float, cost: float) -> float | None:
+    """Years to hold before accrued net yield clears the round-trip `cost`
+    (fraction of equity). The 'don't liquidate before this' number. None if the
+    position never earns (net_apy <= 0). Reuses time_to_target."""
+    return time_to_target(principal, strat.net_apy, cost * principal)
+
+
+def net_apy_after_cost(strat: LeverageStrategy, cost: float, horizon_years: float) -> float:
+    """net_apy with the round-trip cost amortized over `horizon_years` — the
+    ranking metric. A high-APY position with a long break-even ranks below a
+    modest one held past break-even."""
+    if horizon_years <= 0:
+        return strat.net_apy
+    return strat.net_apy - (cost / horizon_years)

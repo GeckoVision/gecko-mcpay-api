@@ -30,7 +30,9 @@ def _lend() -> LeverageStrategy:
 
 
 def _lst(leverage: float) -> LeverageStrategy:
-    return LeverageStrategy(f"JitoSOL/SOL {leverage:g}x", 0.07, 0.06, leverage, 0.90, 0.93, True, "lst_staking")
+    return LeverageStrategy(
+        f"JitoSOL/SOL {leverage:g}x", 0.07, 0.06, leverage, 0.90, 0.93, True, "lst_staking"
+    )
 
 
 def _jlp() -> LeverageStrategy:
@@ -40,9 +42,20 @@ def _jlp() -> LeverageStrategy:
 # conservative = no liquidation surface; aggressive = leverage + a volatile sleeve.
 PROFILE_BASKETS: dict[str, list[tuple[LeverageStrategy, float]]] = {
     "conservative": [(_lend(), 1.0)],
-    "moderate": [(_lst(4.0), 0.6), (_lend(), 0.4)],
+    "Balanced": [(_lst(4.0), 0.6), (_lend(), 0.4)],  # was "moderate" (V1 rename, S48)
     "aggressive": [(_lst(8.0), 0.5), (_jlp(), 0.3), (_lend(), 0.2)],
 }
+
+# Back-compat: the profile was historically "moderate"; V1 renamed it to
+# "Balanced" (Conservative / Balanced / Aggressive, aligned to Kamino's risk
+# categories). Pattern A: one canonical key + an alias map. Every consumer
+# routes incoming labels through normalize_profile before indexing.
+_PROFILE_ALIASES: dict[str, str] = {"moderate": "Balanced"}
+
+
+def normalize_profile(name: str) -> str:
+    """Map any incoming profile label to its canonical key (back-compat for 'moderate')."""
+    return _PROFILE_ALIASES.get(name, name)
 
 
 def predicted_drawdown_from_market_temp(snap: dict | None) -> float | None:
@@ -94,7 +107,9 @@ class VaultOrchestrator:
         """Split realized profit across the profile basket; gate each leg; paper-deposit
         the ones that pass. Returns a per-leg report (never raises)."""
         try:
-            basket = PROFILE_BASKETS.get(self.profile, PROFILE_BASKETS["conservative"])
+            basket = PROFILE_BASKETS.get(
+                normalize_profile(self.profile), PROFILE_BASKETS["conservative"]
+            )
             deposited: list[dict] = []
             denied: list[dict] = []
             for template, weight in basket:
@@ -102,16 +117,22 @@ class VaultOrchestrator:
                 if amt <= 0:
                     continue
                 v = vg.vault_check(
-                    vg.DEPOSIT, amt, self.policy,
+                    vg.DEPOSIT,
+                    amt,
+                    self.policy,
                     strategy=template,
                     current_allocation_usd=self.allocation_usd,
                     predicted_drawdown_pct=predicted_drawdown_pct,
                 )
                 if not v.allow:
-                    denied.append({"source": template.yield_source, "amount": amt, "reasons": v.reasons})
+                    denied.append(
+                        {"source": template.yield_source, "amount": amt, "reasons": v.reasons}
+                    )
                     continue
                 self._add_to_lot(template, amt)
-                deposited.append({"source": template.yield_source, "amount": amt, "monitor": v.monitor_action})
+                deposited.append(
+                    {"source": template.yield_source, "amount": amt, "monitor": v.monitor_action}
+                )
             return {"deposited": deposited, "denied": denied, "allocation_usd": self.allocation_usd}
         except Exception as exc:  # never break the bot loop
             logger.warning("vault allocate_profit swallow: %s", exc)
@@ -122,7 +143,9 @@ class VaultOrchestrator:
             if lot.source == template.yield_source and lot.strategy.leverage == template.leverage:
                 lot.principal_usd = round(lot.principal_usd + amt, 4)
                 return
-        self.lots.append(VaultLot(source=template.yield_source, principal_usd=amt, strategy=template))
+        self.lots.append(
+            VaultLot(source=template.yield_source, principal_usd=amt, strategy=template)
+        )
 
     # ── monitor cadence ──────────────────────────────────────────────────────
     def monitor_tick(self, *, predicted_drawdown_pct: float | None = None) -> list[dict]:
@@ -131,12 +154,19 @@ class VaultOrchestrator:
         out: list[dict] = []
         for lot in self.lots:
             try:
-                v = evaluate(lot.strategy, hurdle=self.hurdle, predicted_drawdown_pct=predicted_drawdown_pct)
-                out.append({
-                    "source": lot.source, "principal_usd": lot.principal_usd,
-                    "action": v.action, "reason": v.reason, "net_apy": round(v.net_apy, 4),
-                    "suggested_leverage": v.suggested_leverage,
-                })
+                v = evaluate(
+                    lot.strategy, hurdle=self.hurdle, predicted_drawdown_pct=predicted_drawdown_pct
+                )
+                out.append(
+                    {
+                        "source": lot.source,
+                        "principal_usd": lot.principal_usd,
+                        "action": v.action,
+                        "reason": v.reason,
+                        "net_apy": round(v.net_apy, 4),
+                        "suggested_leverage": v.suggested_leverage,
+                    }
+                )
             except Exception as exc:
                 logger.warning("vault monitor_tick swallow (%s): %s", lot.source, exc)
         return out
@@ -152,10 +182,14 @@ class VaultOrchestrator:
             action = v.get("action")
             if action == EXIT:
                 self.lots.remove(lot)
-                changed.append({"source": v["source"], "did": "exited", "freed_usd": lot.principal_usd})
+                changed.append(
+                    {"source": v["source"], "did": "exited", "freed_usd": lot.principal_usd}
+                )
             elif action == ROTATE and v.get("suggested_leverage"):
                 lot.strategy = lot.strategy.with_leverage(v["suggested_leverage"])
-                changed.append({"source": v["source"], "did": f"rotated→{v['suggested_leverage']:.1f}x"})
+                changed.append(
+                    {"source": v["source"], "did": f"rotated→{v['suggested_leverage']:.1f}x"}
+                )
             elif action == DELEVERAGE:
                 new_lev = max(1.0, lot.strategy.leverage * 0.5)
                 lot.strategy = lot.strategy.with_leverage(new_lev)
