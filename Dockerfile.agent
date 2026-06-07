@@ -35,6 +35,11 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app/contest_bot
+# Build-time runtime-import guard (S64): fail the BUILD, not the deploy, if the
+# okx_spot runtime path is missing a dep. Exercises the LAZY import chain
+# (strategies.okx_feed → ccxt) that top-level import-checks miss. This is what
+# would have caught the ccxt ModuleNotFoundError before it hit ECS.
+RUN python -c "from strategies.okx_feed import OkxSpotCandleProvider; from strategies import load_strategy; load_strategy('trend_breakout'); print('agent okx_spot runtime imports OK')"
 # Healthcheck: bot dashboard on localhost only (never published).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8265/healthz',timeout=3).status==200 else 1)" || exit 1

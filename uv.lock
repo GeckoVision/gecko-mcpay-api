@@ -1438,6 +1438,7 @@ source = { editable = "packages/gecko-core" }
 dependencies = [
     { name = "ag2", extra = ["openai"] },
     { name = "beautifulsoup4" },
+    { name = "ccxt" },
     { name = "cohere" },
     { name = "deepgram-sdk" },
     { name = "eth-account" },
@@ -1474,6 +1475,7 @@ rerank = [
 requires-dist = [
     { name = "ag2", extras = ["openai"], specifier = ">=0.8" },
     { name = "beautifulsoup4", specifier = ">=4.12" },
+    { name = "ccxt", specifier = ">=4.4" },
     { name = "cohere", specifier = ">=5.0" },
     { name = "deepgram-sdk", specifier = ">=3.7" },
     { name = "eth-account", specifier = ">=0.13" },
