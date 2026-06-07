@@ -49,6 +49,13 @@ dependencies = [
     # offline parse of unsigned calldata; no RPC. Already a gecko-mcp dep,
     # declared here so the validator import doesn't rely on transitive pull.
     "solders>=0.21",
+    # S64 — ccxt is the OKX public-market-data client used by the hosted paper
+    # agent (contest_bot/strategies/okx_feed.py, GECKO_VENUE=okx_spot). contest_bot
+    # isn't a uv package; the agent Docker image installs it by syncing gecko-core
+    # with --no-dev, so ccxt MUST be a real (non-dev) gecko-core dep — it was only
+    # in the dev group, so --no-dev excluded it and the task crash-looped on
+    # `ModuleNotFoundError: ccxt`. Public data only (no keys).
+    "ccxt>=4.4",
 ]
 
 [project.optional-dependencies]
