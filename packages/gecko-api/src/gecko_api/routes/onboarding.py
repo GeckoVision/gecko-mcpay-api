@@ -21,12 +21,7 @@ the kill-switch — money-out must always be available.
 
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
 import logging
-import os
-import time
 from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException
@@ -38,60 +33,26 @@ from gecko_core.wallets import (
 )
 from pydantic import BaseModel, ConfigDict, Field
 
+# Session-token logic now lives in the shared `_session` module (Task 1.2 — the
+# Phase 1 read route reuses it). Re-exported here under the historical private
+# names so onboarding's routes (and any test monkeypatching) keep working
+# unchanged. The token format is byte-identical to the pre-extraction format.
+# `_verify` is re-exported for backward compat even though no route calls it
+# directly — keep it so existing importers/monkeypatch parity survive the move.
+from ._session import issue as _issue
+from ._session import session_from_header as _session
+from ._session import user_id_for as _user_id_for
+from ._session import verify_session_token as _verify  # noqa: F401
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1", tags=["onboarding"])
 
 _CFG = ConfigDict(extra="allow")
-_SESSION_TTL = 7 * 24 * 3600  # 7 days
-_PREFIX = "onboard"
 
 # Module-level provider seam. Swap to a vendor adapter (Privy/OKX/MagicBlock)
 # behind this name later; tests monkeypatch it with a fresh stub per test.
 _provider: WalletProvider = StubWalletProvider()
-
-
-def _secret() -> str:
-    return (
-        os.environ.get("GECKO_SESSION_SECRET")
-        or os.environ.get("EVENTS_SECRET")
-        or "dev-session-secret-not-for-production"
-    )
-
-
-def _user_id_for(wallet: str) -> str:
-    """Deterministic user id from the wallet (V1: one wallet = one user)."""
-    return "u_" + hashlib.sha256(wallet.encode()).hexdigest()[:16]
-
-
-def _issue(user_id: str, wallet: str, *, now: float | None = None) -> str:
-    issued = int(now if now is not None else time.time())
-    payload = f"{_PREFIX}.{user_id}.{wallet}.{issued + _SESSION_TTL}"
-    sig = hmac.new(_secret().encode(), payload.encode(), hashlib.sha256).hexdigest()
-    return base64.urlsafe_b64encode(f"{payload}.{sig}".encode()).rstrip(b"=").decode("ascii")
-
-
-def _verify(token: str, *, now: float | None = None) -> tuple[str, str]:
-    try:
-        raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4)).decode("ascii")
-        prefix, user_id, wallet, exp_s, sig = raw.split(".")
-    except Exception as e:
-        raise HTTPException(401, "invalid session token") from e
-    if prefix != _PREFIX:
-        raise HTTPException(401, "wrong token type")
-    payload = f"{prefix}.{user_id}.{wallet}.{exp_s}"
-    expected = hmac.new(_secret().encode(), payload.encode(), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected, sig):
-        raise HTTPException(401, "bad session signature")
-    if int(now if now is not None else time.time()) > int(exp_s):
-        raise HTTPException(401, "session expired")
-    return user_id, wallet
-
-
-def _session(authorization: str | None) -> tuple[str, str]:
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(401, "missing bearer session token")
-    return _verify(authorization.split(None, 1)[1].strip())
 
 
 class LinkRequest(BaseModel):
