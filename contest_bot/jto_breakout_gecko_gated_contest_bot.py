@@ -1257,7 +1257,7 @@ def _rsi_last(closes: list[float], period: int = 14) -> float | None:
 
 # ── Event logger ───────────────────────────────────────────────────
 def _log(event_type: str, msg: str, data: dict | None = None) -> None:
-    ts = datetime.utcnow().isoformat()
+    ts = datetime.now(UTC).isoformat()
     entry = {"ts": ts, "type": event_type, "msg": msg}
     if data:
         entry["data"] = data
@@ -2751,7 +2751,7 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
     else:
         _log("info", f"[ORACLE] {instrument}: no cached verdict (degraded)")
 
-    ts = datetime.utcnow().isoformat()
+    ts = datetime.now(UTC).isoformat()
     # Adaptive TP (s60): scale TP to volatility — TP% = clamp(1.5 x ATR%, 0.5, 3.0).
     # Validated by scripts/calibration/adaptive_tp_validation.py: beats fixed-2% CI-clean
     # on win-rate (44.6%->55.5%) + drawdown (exit hygiene, not alpha). Per-position; falls
@@ -2969,7 +2969,7 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
     pos.update(
         {
             "status": "closed",
-            "exit_ts": datetime.utcnow().isoformat(),
+            "exit_ts": datetime.now(UTC).isoformat(),
             "exit_price": current_price,
             "exit_reason": reason,
             "pnl_pct": round(pnl_pct, 2),
@@ -3384,7 +3384,7 @@ def monitor_positions() -> None:
 # ── Risk guards ────────────────────────────────────────────────────
 def reset_daily() -> None:
     global daily_trades, last_reset_day
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
     if today != last_reset_day:
         daily_trades = 0
         last_reset_day = today
@@ -3468,7 +3468,7 @@ def main() -> None:
         import json as _json
 
         _ack = {
-            "ts": datetime.utcnow().isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "strategy": "jto_breakout_gecko_gated_contest",
             "confirmation": "CONFIRM",
             "budget_cap": MAX_BUDGET_USD,
