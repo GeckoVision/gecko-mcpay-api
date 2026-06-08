@@ -1187,6 +1187,15 @@ from gecko_api.routes.onboarding import router as _onboarding_router  # noqa: E4
 app.include_router(_onboarding_router)
 
 
+# V1 Phase 1 — Task 1.4 — session-scoped read route GET /v1/agent/state. Resolves
+# the session principal -> the caller's OWN user_agents binding -> the hosted
+# agent's scoped Mongo state. Security-critical: the ownership gate is the route's
+# user_id-filtered Supabase lookup (Mongo agent_state has no RLS).
+from gecko_api.routes.agent_state import router as _agent_state_router  # noqa: E402
+
+app.include_router(_agent_state_router)
+
+
 # S20-B3 — single x402-gated dispatcher for the 12-skill manifest. Mounted
 # AFTER middleware so the route's own dispatcher (X402Dispatcher) is the
 # 402 gate, not the x402 PaymentMiddlewareASGI — the manifest skills are
