@@ -22,6 +22,7 @@ the kill-switch — money-out must always be available.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException
@@ -39,6 +40,7 @@ from pydantic import BaseModel, ConfigDict, Field
 # unchanged. The token format is byte-identical to the pre-extraction format.
 # `_verify` is re-exported for backward compat even though no route calls it
 # directly — keep it so existing importers/monkeypatch parity survive the move.
+from ._bindings import bind_user_agent
 from ._session import issue as _issue
 from ._session import session_from_header as _session
 from ._session import user_id_for as _user_id_for
@@ -47,6 +49,11 @@ from ._session import verify_session_token as _verify  # noqa: F401
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1", tags=["onboarding"])
+
+# The Mongo GECKO_AGENT_ID this user's grant binds to. Single hosted Setup-C bot
+# in V1 Phase 1; env-overridable for multi-agent later. Read at call time so a
+# test/deploy override takes effect without reimporting the module.
+_DEFAULT_AGENT_ID = "hosted-setupc-001"
 
 _CFG = ConfigDict(extra="allow")
 
@@ -136,6 +143,16 @@ def grant(authorization: Annotated[str | None, Header()] = None) -> dict:
         scope = _provider.grant_scope(user_id, user_scope(wallet))
     except WalletProviderError as e:
         raise HTTPException(409, str(e)) from e
+
+    # Additive side-effect: write the user->agent ownership row so the Phase 1
+    # read route can resolve this user's bot. A bind failure must NOT 500 the
+    # grant — the scope is already granted and that's the user-facing contract.
+    agent_id = os.environ.get("GECKO_DEFAULT_AGENT_ID", _DEFAULT_AGENT_ID)
+    try:
+        bind_user_agent(user_id, agent_id=agent_id)
+    except Exception:
+        logger.exception("bind_user_agent failed for user=%s agent=%s", user_id, agent_id)
+
     return {
         "user_id": user_id,
         "allowed_actions": sorted(scope.allowed_actions),
