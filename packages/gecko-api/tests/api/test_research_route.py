@@ -123,6 +123,23 @@ def test_request_body_passes_through_to_core(client, call_recorder):
     assert call_recorder["tier"] == "basic"
 
 
+def test_pro_tier_is_coerced_to_basic(client, call_recorder):
+    # The route forces basic regardless of the request body — the pro panel
+    # (80-100s) exceeds the sync HTTP timeout, so a caller can't trigger a 504.
+    r = client.post(
+        "/v1/research",
+        headers=_auth(),
+        json={
+            "idea": "long WIF on the breakout",
+            "protocol": "drift",
+            "tier": "pro",
+        },
+    )
+    assert r.status_code == 200, r.text
+    # even though the body sent tier="pro", core was called with basic
+    assert call_recorder["tier"] == "basic"
+
+
 def test_missing_bearer_returns_401(client):
     r = client.post(
         "/v1/research",

@@ -9,11 +9,12 @@ this surface is meant for the logged-in app, not the public x402 catalog.
 X402_MODE stays stub for this route: stub mode runs the panel and returns the
 verdict with no real payment wiring. Charging is a later task.
 
-Tier: this handler defaults to BASIC and is synchronous (JSON in / JSON out).
-The basic panel fits inside an HTTP request; the pro panel runs 80-100s and
-exceeds typical HTTP timeouts, so pro-tier needs the SSE/streaming pattern as a
-follow-up. A caller that sends `tier="pro"` is still passed through (mirroring
-the existing sync `/trade_research` behavior), but the default is basic.
+Tier: this handler is synchronous (JSON in / JSON out) and FORCES basic. The
+basic panel fits inside an HTTP request; the pro panel runs 80-100s and exceeds
+typical HTTP timeouts, so pro-tier needs the SSE/streaming pattern as a
+follow-up. A caller that sends `tier="pro"` is coerced to basic (the `tier`
+field stays on the request model for forward-compat) so the app can't
+accidentally trigger a 504.
 
 Thin transport: the panel + LLM config live in core / `main.py`. This module
 parses input, gates on the session, calls core, and returns the pydantic model.
@@ -69,12 +70,14 @@ async def research(
     Defaults to basic tier; see the module docstring for why pro needs SSE.
     """
     llm_config = _research_llm_config()
+    # pro tier (80-100s) exceeds sync HTTP timeout — force basic until the SSE path lands
+    tier: Tier = "basic"
     try:
         verdict = await run_trade_panel_with_retrieval(
             idea=req.idea,
             protocol=req.protocol,
             vertical=req.vertical,
-            tier=req.tier,
+            tier=tier,
             llm_config=llm_config,
         )
     except Exception as exc:
