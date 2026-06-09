@@ -106,3 +106,66 @@ def test_revoke_pulls_grant_and_blocks_agent(client):
 
 def test_revoke_requires_session(client):
     assert client.post("/v1/onboarding/revoke").status_code == 401
+
+
+class _FakeTable:
+    """Records upsert calls so the test can assert the payload + on_conflict."""
+
+    def __init__(self, recorder: list[dict]) -> None:
+        self._recorder = recorder
+
+    def upsert(self, payload, *, on_conflict=None, **_kw):
+        self._recorder.append({"payload": payload, "on_conflict": on_conflict})
+        return self
+
+    def execute(self):  # mimic the supabase-py fluent .execute() terminal
+        return self
+
+
+class _FakeSupabase:
+    """Minimal stand-in for the service-role Supabase client. Records every
+    table().upsert() so the bind writer can be asserted without a network."""
+
+    def __init__(self) -> None:
+        self.upserts: list[dict] = []
+        self.tables: list[str] = []
+
+    def table(self, name: str) -> _FakeTable:
+        self.tables.append(name)
+        return _FakeTable(self.upserts)
+
+
+def test_grant_binds_agent(client, monkeypatch):
+    from gecko_api.routes import _bindings
+
+    fake = _FakeSupabase()
+    # Module seam: bind_user_agent resolves its client through _bindings._client().
+    monkeypatch.setattr(_bindings, "_client", lambda: fake)
+
+    tok = _link(client)["session_token"]
+    user_id = _link(client)["user_id"]  # deterministic from WALLET
+    r = client.post("/v1/onboarding/grant", headers={"Authorization": f"Bearer {tok}"})
+    assert r.status_code == 200, r.text
+
+    assert fake.tables == ["user_agents"], fake.tables
+    assert len(fake.upserts) == 1, fake.upserts
+    call = fake.upserts[0]
+    assert call["on_conflict"] == "agent_id"
+    assert call["payload"]["user_id"] == user_id
+    assert call["payload"]["agent_id"] == "hosted-setupc-001"
+
+
+def test_grant_succeeds_even_if_bind_write_fails(client, monkeypatch):
+    """The bind is an additive side-effect: a write failure must NOT 500 the
+    grant. The grant succeeding is the user-facing contract."""
+    from gecko_api.routes import _bindings
+
+    def _boom():
+        raise RuntimeError("supabase down")
+
+    monkeypatch.setattr(_bindings, "_client", _boom)
+
+    tok = _link(client)["session_token"]
+    r = client.post("/v1/onboarding/grant", headers={"Authorization": f"Bearer {tok}"})
+    assert r.status_code == 200, r.text
+    assert r.json()["revoked"] is False
