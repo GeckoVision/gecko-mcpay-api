@@ -133,6 +133,17 @@ class PrivyClient:
     Balance lookups deliberately do NOT call Privy — Privy doesn't surface
     SPL token balances cleanly per-token. We delegate to the Solana RPC the
     rest of the x402 stack already uses.
+
+    EVENT-LOOP SAFETY. The control-plane adapter (``PrivyWalletAdapter``) runs
+    each Privy coroutine on a FRESH event loop via ``asyncio.run`` — one loop
+    per link/grant/revoke call. A persistent ``httpx.AsyncClient`` held on
+    ``self`` binds to the FIRST such loop and then raises
+    ``RuntimeError: Event loop is closed`` on the SECOND sync call. So by
+    default we open + close a fresh ``httpx.AsyncClient`` PER REQUEST (inside
+    whatever loop is currently running). Connection-pool reuse is sacrificed,
+    which is fine for low-volume custody ops. A client may still be injected
+    (``client=``) for tests/respx or for callers that manage their own loop +
+    pool; an injected client is reused and NOT closed by us.
     """
 
     def __init__(
@@ -157,14 +168,16 @@ class PrivyClient:
         self._app_id: str = aid.strip()
         self._app_secret: str = sec.strip()
         self._base_url: str = base_url.rstrip("/")
-        self._owns_client: bool = client is None
-        self._client: httpx.AsyncClient = client or httpx.AsyncClient(
-            timeout=timeout_s,
-        )
+        self._timeout_s: float = timeout_s
+        # An INJECTED client is reused across calls and never closed by us; the
+        # caller owns its lifecycle. With no injected client we open + close a
+        # fresh AsyncClient per request (see EVENT-LOOP SAFETY above).
+        self._client: httpx.AsyncClient | None = client
 
     async def aclose(self) -> None:
-        if self._owns_client:
-            await self._client.aclose()
+        # Nothing to close: an injected client is the caller's to close, and a
+        # per-request client is already closed by its own ``async with``.
+        return None
 
     async def __aenter__(self) -> PrivyClient:
         return self
@@ -188,20 +201,36 @@ class PrivyClient:
             "Content-Type": "application/json",
         }
 
-    async def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+    async def _request(
+        self, method: str, path: str, body: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Issue one Privy request, opening a fresh client when none is injected.
+
+        A fresh per-request ``httpx.AsyncClient`` binds to the CURRENTLY-running
+        loop, so the ``asyncio.run``-per-call sync bridge never hits
+        ``Event loop is closed``. respx patches the transport globally, so a
+        per-request client is still intercepted by mocks in tests.
+        """
         url = f"{self._base_url}{path}"
-        resp = await self._client.post(url, json=body, headers=self._auth_headers())
+        headers = self._auth_headers()
+        kwargs: dict[str, Any] = {"headers": headers}
+        if body is not None:
+            kwargs["json"] = body
+        if self._client is not None:
+            resp = await self._client.request(method, url, **kwargs)
+            return self._handle(resp)
+        async with httpx.AsyncClient(timeout=self._timeout_s) as c:
+            resp = await c.request(method, url, **kwargs)
         return self._handle(resp)
+
+    async def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+        return await self._request("POST", path, body)
 
     async def _get(self, path: str) -> dict[str, Any]:
-        url = f"{self._base_url}{path}"
-        resp = await self._client.get(url, headers=self._auth_headers())
-        return self._handle(resp)
+        return await self._request("GET", path)
 
     async def _patch(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-        url = f"{self._base_url}{path}"
-        resp = await self._client.patch(url, json=body, headers=self._auth_headers())
-        return self._handle(resp)
+        return await self._request("PATCH", path, body)
 
     @staticmethod
     def _handle(resp: httpx.Response) -> dict[str, Any]:
@@ -283,7 +312,12 @@ class PrivyClient:
                 f"create_policy: chain_type={chain_type!r} unsupported "
                 "(gecko-core is Solana-only per S2-05)."
             )
+        # `version: "1.0"` is REQUIRED by live Privy v2 POST /v1/policies.
+        # Verified against the real API: without it the call 400s with
+        # `invalid_policy_format`; with it the call 200s. (L1 live smoke,
+        # 2026-06-09.)
         body: dict[str, Any] = {
+            "version": "1.0",
             "name": name,
             "chain_type": chain_type,
             "rules": rules,
@@ -326,6 +360,13 @@ class PrivyClient:
         delta — the returned policy enforces exactly what is passed. The
         policy_id is preserved, so the wallet stays attached and no detach is
         needed.
+
+        WIRE SCHEMA (verified live, 2026-06-09): unlike ``POST /v1/policies``,
+        this PATCH endpoint must NOT carry a top-level ``version`` key — sending
+        it 400s with ``invalid_data`` / ``unrecognized_keys``. PATCH takes
+        ``rules`` only. The deny-all rewrite returns 200 and genuinely flips the
+        live policy to deny-all (confirmed by re-reading the policy: its single
+        rule becomes ``method='*'``, ``action='DENY'``).
 
         This is the lever ``PrivyWalletAdapter.revoke`` uses: rewriting the
         granted policy's rules to a single deny-all rule removes ALL signing

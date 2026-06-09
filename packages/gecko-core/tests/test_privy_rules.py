@@ -6,18 +6,22 @@ returned rule dicts. The sacred non-custodial invariant under test:
     The ONLY permitted transfer/withdraw destination is the user's OWN address.
     Any transfer to a non-allowlisted destination MUST be denied.
 
-Grounded against the Privy v2 policy schema (deny-by-default, DENY > ALLOW):
+Grounded against the LIVE Privy v2 policy schema (verified 2026-06-09):
   * rule  = {name, method, conditions[], action in {ALLOW, DENY}}
   * cond  = {field_source, field, operator, value}
   * Solana field_sources: solana_program_instruction(programId),
     solana_token_program_instruction(Transfer.destination),
     solana_system_program_instruction(Transfer.to).
+  * Solana-supported operators: {eq, gt, gte, lt, lte, in, in_condition_set}.
+    `neq` is REJECTED on the wire — so non-self transfers are denied by Privy
+    DENY-BY-DEFAULT (no eq-self ALLOW matches them), NOT by an explicit DENY.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from gecko_core.wallets.privy_rules import (
     DRIFT_V2_PROGRAM_ID,
     JUPITER_V6_PROGRAM_ID,
@@ -25,12 +29,16 @@ from gecko_core.wallets.privy_rules import (
     TRADE_ACTION_PROGRAM_IDS,
     scope_to_privy_rules,
 )
-from gecko_core.wallets.provider import TRADE_ONLY_ACTIONS, user_scope
+from gecko_core.wallets.provider import TRADE_ONLY_ACTIONS, Scope, user_scope
 
 # A non-real, non-secret base58-shaped placeholder for the user's own address.
 USER_ADDRESS = "GeckoUser1111111111111111111111111111111111"
 # A different placeholder standing in for "some other wallet" (attacker / drain).
 OTHER_ADDRESS = "Attacker22222222222222222222222222222222222"
+
+# The ONLY operators Privy's live Solana condition validator accepts. `neq` is
+# deliberately absent — emitting it 400s the policy create on the real API.
+ALLOWED_SOLANA_OPERATORS = frozenset({"eq", "gt", "gte", "lt", "lte", "in", "in_condition_set"})
 
 
 def _conditions(rule: dict[str, Any]) -> list[dict[str, Any]]:
@@ -137,19 +145,42 @@ def test_transfer_destination_is_pinned_to_user_address() -> None:
     assert pinned_values == {USER_ADDRESS}
 
 
-def test_explicit_deny_for_non_self_transfer_destination() -> None:
-    """Deny-by-default is not enough on its own to be self-documenting: there is
-    an explicit DENY rule for transfers whose destination != user_address."""
+def test_no_neq_deny_rules_emitted() -> None:
+    """The corrected wire shape carries NO `neq` rules at all.
+
+    Privy's live Solana validator rejects `neq` (400 invalid_policy_format), so
+    the old belt-and-suspenders DENY rules were removed. Non-self transfers are
+    now denied by deny-by-default, not by an explicit DENY. Assert there is no
+    DENY transfer rule and no condition anywhere uses the `neq` operator.
+    """
     scope = user_scope(USER_ADDRESS)
     rules = scope_to_privy_rules(scope, USER_ADDRESS)
 
-    found = False
+    # No DENY rule constrains a transfer destination anymore.
     for r in _deny_rules(rules):
         for c in _conditions(r):
-            if _is_transfer_dest_condition(c) and c["operator"] == "neq":
-                assert c["value"] == USER_ADDRESS
-                found = True
-    assert found, "no explicit DENY rule for transfer destination != user_address"
+            assert not _is_transfer_dest_condition(c), (
+                "explicit non-self transfer DENY must be gone"
+            )
+
+    # No condition anywhere uses `neq`.
+    for r in rules:
+        for c in _conditions(r):
+            assert c["operator"] != "neq", f"`neq` operator emitted in rule {r['name']!r}"
+
+
+def test_every_operator_is_in_the_supported_solana_set() -> None:
+    """Hard wire-conformance guard: every operator the mapper emits must be in
+    Privy's allowed Solana operator set. This is the Pattern-C check that would
+    have caught the `neq` bug before the live run."""
+    scope = user_scope(USER_ADDRESS)
+    rules = scope_to_privy_rules(scope, USER_ADDRESS)
+    for r in rules:
+        for c in _conditions(r):
+            assert c["operator"] in ALLOWED_SOLANA_OPERATORS, (
+                f"operator {c['operator']!r} in rule {r['name']!r} is not a "
+                f"Privy-supported Solana operator {sorted(ALLOWED_SOLANA_OPERATORS)}"
+            )
 
 
 def test_no_rule_allows_a_non_self_destination() -> None:
@@ -179,6 +210,26 @@ def test_self_withdrawal_is_permitted() -> None:
         for c in _conditions(r)
     )
     assert self_allowed, "withdrawal to the user's own address must be permitted"
+
+
+def test_fail_closed_on_widened_allowlist() -> None:
+    """The fail-closed guard is now the ONLY thing (with deny-by-default) gating
+    an arbitrary-destination withdrawal — it MUST still raise if the scope's
+    withdraw_allowlist is anything other than exactly {user_address}."""
+    widened = Scope(
+        allowed_actions=TRADE_ONLY_ACTIONS,
+        withdraw_allowlist=frozenset({USER_ADDRESS, OTHER_ADDRESS}),
+    )
+    with pytest.raises(ValueError, match="withdraw_allowlist must be exactly"):
+        scope_to_privy_rules(widened, USER_ADDRESS)
+
+    # Even a SINGLE foreign address (not the user's own) must fail closed.
+    foreign_only = Scope(
+        allowed_actions=TRADE_ONLY_ACTIONS,
+        withdraw_allowlist=frozenset({OTHER_ADDRESS}),
+    )
+    with pytest.raises(ValueError, match="withdraw_allowlist must be exactly"):
+        scope_to_privy_rules(foreign_only, USER_ADDRESS)
 
 
 def test_allowlist_drawn_from_scope_not_hardcoded() -> None:

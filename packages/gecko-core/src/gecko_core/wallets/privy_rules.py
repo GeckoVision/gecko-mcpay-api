@@ -8,24 +8,45 @@ exists to encode on-chain:
     The ONLY permitted transfer / withdraw destination is the user's OWN
     address. A transfer to ANY non-allowlisted destination MUST be denied.
 
+ENFORCEMENT MODEL — DENY-BY-DEFAULT (corrected against the live Privy API,
+2026-06-09). Privy's Solana condition validator accepts ONLY these operators:
+``eq | gt | gte | lt | lte | in | in_condition_set``. It REJECTS ``neq``. The
+original belt-and-suspenders explicit ``neq`` DENY rules were therefore invalid
+on the wire and have been REMOVED. After their removal, "no non-self transfer"
+is enforced by exactly two things, together:
+
+  1. self-pinned ``eq`` ALLOW rules — a transfer is ALLOWed only when its
+     destination/`to` field equals ``user_address``; and
+  2. Privy **deny-by-default** — any signing request that matches no ALLOW rule
+     is denied. A transfer to any non-self destination matches no ``eq``-self
+     ALLOW, so it falls through to the default deny.
+
+There is NO explicit DENY rule for non-self transfers anymore. The self-pinned
+``eq`` ALLOW + deny-by-default is the whole enforcement. The fail-closed guard
+in ``scope_to_privy_rules`` (raises unless ``withdraw_allowlist == {user_address}``)
+remains the second line of defence so we never emit a policy that pins anything
+other than the user's own address.
+
+⚠️  L2 DEVNET VERIFICATION IS MANDATORY BEFORE LIVE SIGNING. Deny-by-default is
+only as strong as Privy's destination extraction. A real non-self transfer MUST
+be observed to be REJECTED on devnet — including a CPI-NESTED transfer buried
+inside an otherwise-allowed program call (e.g. a Jupiter route that smuggles an
+SPL transfer to a foreign address). That residual extraction risk is exactly
+why ``execute``/``withdraw`` signing stays gated (NotImplementedError) until L2
+confirms rejection on the wire.
+
 This is a PURE function — no network, no Privy client. It produces the exact
 ``rules`` shape ``PrivyClient.create_policy(rules=...)`` passes through verbatim
-to ``POST /v1/policies`` (the adapter that calls Privy is Task 2.2). The Privy
-policy schema we target (grounded against https://docs.privy.io/controls/
-policies/overview):
+to ``POST /v1/policies`` (the adapter that calls Privy is Task 2.2). Schema:
 
-  * Policy semantics are **deny-by-default**: a request matching no rule is
-    denied, and **DENY takes precedence over ALLOW**. So locking transfers to
-    self needs (a) an ALLOW pinned to the user's address and (b) an explicit
-    DENY for any other destination — the DENY is belt-and-suspenders over the
-    implicit default-deny, and is self-documenting.
   * Rule  = ``{name, method, conditions: [...], action: "ALLOW" | "DENY"}``.
   * Cond  = ``{field_source, field, operator, value}``.
   * Solana field sources / fields used here:
       - ``solana_program_instruction`` / ``programId`` — gate program interaction
       - ``solana_token_program_instruction`` / ``Transfer.destination`` — SPL dest
       - ``solana_system_program_instruction`` / ``Transfer.to`` — native SOL dest
-  * Operators: ``eq`` / ``neq`` (and ``in`` for multi-value, unused here).
+  * Operators (Solana-supported set): ``eq`` / ``gt`` / ``gte`` / ``lt`` /
+    ``lte`` / ``in`` / ``in_condition_set``. ``neq`` is NOT supported.
 
 We do NOT call Privy and we do NOT widen the allowlist: if a destination cannot
 be pinned to exactly ``user_address``, this module fails closed (deny) rather
@@ -115,52 +136,21 @@ def _self_transfer_allow_rules(user_address: str) -> list[dict[str, Any]]:
     ]
 
 
-def _non_self_transfer_deny_rules(user_address: str) -> list[dict[str, Any]]:
-    """Explicit DENY for any SPL/SOL transfer whose destination != user_address.
-
-    Belt-and-suspenders over Privy's implicit deny-by-default: because DENY
-    beats ALLOW, this guarantees no program-allow rule can be abused to drain
-    funds to a foreign address via a bundled transfer instruction.
-    """
-    return [
-        {
-            "name": "deny-spl-transfer-to-non-self",
-            "method": _SIGN_METHOD,
-            "conditions": [
-                {
-                    "field_source": "solana_token_program_instruction",
-                    "field": "Transfer.destination",
-                    "operator": "neq",
-                    "value": user_address,
-                }
-            ],
-            "action": "DENY",
-        },
-        {
-            "name": "deny-sol-transfer-to-non-self",
-            "method": _SIGN_METHOD,
-            "conditions": [
-                {
-                    "field_source": "solana_system_program_instruction",
-                    "field": "Transfer.to",
-                    "operator": "neq",
-                    "value": user_address,
-                }
-            ],
-            "action": "DENY",
-        },
-    ]
-
-
 def scope_to_privy_rules(scope: Scope, user_address: str) -> list[dict[str, Any]]:
     """Render a Gecko ``Scope`` as a Privy v2 policy ``rules[]`` array.
 
     Encodes:
       (a) ALLOW interaction with the program behind each granted trade action
           (Kamino KLend / Jupiter v6 / Drift v2);
-      (b) ALLOW SPL + native-SOL transfers ONLY to ``user_address`` (the scope's
-          own withdraw allowlist is the user's address — see ``user_scope``);
-      (c) explicit DENY of any transfer to a non-self destination.
+      (b) ALLOW SPL + native-SOL transfers ONLY when the destination ``eq``s
+          ``user_address`` (the scope's own withdraw allowlist is the user's
+          address — see ``user_scope``).
+
+    Non-self transfers are denied by Privy **deny-by-default** (no ALLOW rule
+    matches them), NOT by an explicit DENY — the original ``neq`` DENY rules are
+    invalid on the live Solana validator and have been removed. See the module
+    docstring "ENFORCEMENT MODEL — DENY-BY-DEFAULT" + the mandatory L2 devnet
+    verification note.
 
     Pure — no I/O. The result is consumed verbatim by
     ``PrivyClient.create_policy(rules=...)`` in Task 2.2.
@@ -168,6 +158,9 @@ def scope_to_privy_rules(scope: Scope, user_address: str) -> list[dict[str, Any]
     Raises ``ValueError`` if the scope's ``withdraw_allowlist`` is anything other
     than exactly ``{user_address}`` — we refuse to emit a policy that could
     permit an arbitrary withdrawal (fail closed, never widen the allowlist).
+    This fail-closed guard is now the ONLY thing (together with deny-by-default)
+    standing between a granted scope and an arbitrary-destination withdrawal, so
+    it MUST NOT be relaxed.
     """
     if scope.withdraw_allowlist != frozenset({user_address}):
         raise ValueError(
@@ -187,9 +180,11 @@ def scope_to_privy_rules(scope: Scope, user_address: str) -> list[dict[str, Any]
             continue
         rules.append(_program_allow_rule(action, program_id))
 
-    # (b) withdraw-to-self ALLOW, then (c) non-self DENY (DENY > ALLOW).
+    # (b) withdraw-to-self ALLOW. Non-self transfers fall through to Privy's
+    # deny-by-default — there is intentionally NO explicit non-self DENY rule
+    # (neq is unsupported on the live Solana validator). The self-pinned eq
+    # ALLOW above is the whole positive surface; everything else is denied.
     rules.extend(_self_transfer_allow_rules(user_address))
-    rules.extend(_non_self_transfer_deny_rules(user_address))
 
     return rules
 

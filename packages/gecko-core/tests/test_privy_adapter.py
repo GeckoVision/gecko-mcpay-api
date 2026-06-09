@@ -181,14 +181,26 @@ def test_grant_scope_creates_policy_with_self_only_rules(privy_client: PrivyClie
 
     import json as _json
 
-    rules = _json.loads(policy_route.calls.last.request.content)["rules"]
-    # withdraw allowlist is the user's own address — there must be an explicit
-    # DENY for any non-self destination, and every transfer-allow pins self.
-    deny_rules = [r for r in rules if r["action"] == "DENY"]
-    assert deny_rules, "policy must DENY non-self transfers"
-    for r in deny_rules:
-        for cond in r["conditions"]:
-            assert cond["value"] == USER_ADDR  # neq self → denied
+    create_body = _json.loads(policy_route.calls.last.request.content)
+    # Live Privy v2 POST /v1/policies REQUIRES a top-level version="1.0".
+    assert create_body["version"] == "1.0"
+    assert create_body["chain_type"] == "solana"
+
+    rules = create_body["rules"]
+    # Corrected wire shape: NO `neq` and NO explicit non-self transfer DENY —
+    # non-self transfers are denied by Privy deny-by-default. Every transfer
+    # ALLOW pins the destination to the user's own address with `eq`.
+    assert all(c["operator"] != "neq" for r in rules for c in r["conditions"]), (
+        "no rule may use the unsupported `neq` operator"
+    )
+    transfer_allow_dests = {
+        c["value"]
+        for r in rules
+        if r["action"] == "ALLOW"
+        for c in r["conditions"]
+        if c["field"] in ("Transfer.destination", "Transfer.to")
+    }
+    assert transfer_allow_dests == {USER_ADDR}, "transfer ALLOWs must pin self only"
 
     # attach payload references exactly the created policy
     attach_body = _json.loads(attach_route.calls.last.request.content)
