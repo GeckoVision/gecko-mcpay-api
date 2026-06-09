@@ -122,6 +122,23 @@ class PrivyNotConfiguredError(RuntimeError):
 _PRIVY_BASE_URL: Final[str] = "https://api.privy.io"
 _DEFAULT_TIMEOUT_S: Final[float] = 10.0
 
+# CAIP-2 chain identifiers for Privy's Solana wallet RPC. Grounded against the
+# Privy API reference (2026-06-09):
+#   mainnet  solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp
+#   devnet   solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1
+#   testnet  solana:4uhcVJyU9pJkvQyS88uRDiswHXSCkY3z
+# We hard-code ONLY devnet here — the gated signing path is devnet-only by
+# construction (see sign_and_send_solana_devnet). Mainnet is intentionally
+# absent so a typo can never broadcast real money through this method.
+SOLANA_DEVNET_CAIP2: Final[str] = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"
+
+#: Env flag that arms the devnet signing path. Absent / != "1" => method refuses.
+_SIGNING_DEVNET_FLAG: Final[str] = "GECKO_PRIVY_SIGNING_DEVNET"
+
+
+class PrivySigningNotArmedError(RuntimeError):
+    """Devnet signing attempted without GECKO_PRIVY_SIGNING_DEVNET=1."""
+
 
 class PrivyClient:
     """Server-side Privy v2 client for embedded-wallet operations.
@@ -379,6 +396,56 @@ class PrivyClient:
         data = await self._patch(f"/v1/policies/{policy_id}", {"rules": rules})
         return _parse_policy(data)
 
+    async def sign_and_send_solana_devnet(
+        self,
+        *,
+        wallet_id: str,
+        b64_tx: str,
+    ) -> dict[str, Any]:
+        """DEVNET-ONLY: sign+broadcast a base64 Solana tx through Privy's policy.
+
+        This is the L2 policy-enforcement probe path. It is NOT wired into the
+        ``PrivyWalletAdapter`` execute/withdraw surface — those stay gated
+        (NotImplementedError) until the L2 verdict authorizes a reviewed
+        un-gate. This method exists only to let the devnet smoke observe
+        whether Privy's policy engine ALLOWs vs DENYs a given transaction at
+        signing time.
+
+        GATING. Refuses unless ``GECKO_PRIVY_SIGNING_DEVNET=1`` is set in the
+        environment. Without the flag it raises ``PrivySigningNotArmedError``
+        before any network call — production code paths never set the flag.
+
+        NETWORK. Hard-pinned to ``SOLANA_DEVNET_CAIP2``. There is no mainnet
+        code path in this method; the caip2 is not a parameter.
+
+        Wire shape (grounded against Privy API reference, 2026-06-09):
+            POST /v1/wallets/{wallet_id}/rpc
+            {
+              "method": "signAndSendTransaction",
+              "caip2": "<devnet>",
+              "params": {"transaction": "<b64>", "encoding": "base64"}
+            }
+
+        Returns the raw Privy response dict verbatim. On a policy DENY (or any
+        other non-2xx) Privy returns a non-2xx body which ``_handle`` surfaces
+        as ``PrivyClientError`` with the body intact — the caller distinguishes
+        ALLOW (this returns a dict with a tx hash) from DENY (PrivyClientError)
+        WITHOUT us rephrasing the error.
+        """
+        if os.environ.get(_SIGNING_DEVNET_FLAG) != "1":
+            raise PrivySigningNotArmedError(
+                "sign_and_send_solana_devnet refuses to run: set "
+                f"{_SIGNING_DEVNET_FLAG}=1 to arm the devnet signing path. "
+                "Production signing stays gated; this is a reviewed devnet-only "
+                "capability."
+            )
+        body: dict[str, Any] = {
+            "method": "signAndSendTransaction",
+            "caip2": SOLANA_DEVNET_CAIP2,
+            "params": {"transaction": b64_tx, "encoding": "base64"},
+        }
+        return await self._post(f"/v1/wallets/{wallet_id}/rpc", body)
+
     async def get_wallet_balance(self, wallet_id: str) -> Decimal:
         """USDC balance for a wallet's Solana address.
 
@@ -478,10 +545,12 @@ def _parse_policy(data: dict[str, Any]) -> PrivyPolicy:
 
 
 __all__ = [
+    "SOLANA_DEVNET_CAIP2",
     "PrivyClient",
     "PrivyClientError",
     "PrivyNotConfiguredError",
     "PrivyPolicy",
+    "PrivySigningNotArmedError",
     "PrivyWallet",
     "is_privy_configured",
 ]

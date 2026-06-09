@@ -8,6 +8,7 @@ on the real API.
 from __future__ import annotations
 
 import base64
+import json
 from datetime import datetime
 
 import httpx
@@ -350,3 +351,63 @@ async def test_create_policy_handles_missing_optional_fields() -> None:
     assert policy.policy_id == "policy-xyz"
     assert policy.name is None
     assert policy.created_at is None
+
+
+# ---------------------------------------------------------------------------
+# L2 — devnet-gated signing (sign_and_send_solana_devnet)
+#
+# Production signing stays gated; this method is ONLY armed by the explicit
+# GECKO_PRIVY_SIGNING_DEVNET=1 env flag and ONLY targets Solana devnet.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sign_and_send_devnet_refuses_without_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Absent GECKO_PRIVY_SIGNING_DEVNET=1, signing refuses BEFORE any network."""
+    from gecko_core.wallets.privy import PrivySigningNotArmedError
+
+    monkeypatch.delenv("GECKO_PRIVY_SIGNING_DEVNET", raising=False)
+    # No respx mock: a network call would error loudly, proving the guard
+    # short-circuits before the POST.
+    async with PrivyClient(app_id="cmapp", app_secret="sec") as client:
+        with pytest.raises(PrivySigningNotArmedError):
+            await client.sign_and_send_solana_devnet(wallet_id="w1", b64_tx="AAAA")
+
+
+@pytest.mark.asyncio
+async def test_sign_and_send_devnet_posts_to_rpc_with_devnet_caip2(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Armed: POSTs signAndSendTransaction to /rpc with the DEVNET caip2."""
+    from gecko_core.wallets.privy import SOLANA_DEVNET_CAIP2
+
+    monkeypatch.setenv("GECKO_PRIVY_SIGNING_DEVNET", "1")
+    async with respx.mock(base_url=PRIVY_BASE, assert_all_called=True) as router:
+        route = router.post("/v1/wallets/w1/rpc").mock(
+            return_value=httpx.Response(200, json={"hash": "sig123"})
+        )
+        async with PrivyClient(app_id="cmapp", app_secret="sec") as client:
+            resp = await client.sign_and_send_solana_devnet(wallet_id="w1", b64_tx="AAAA")
+
+    assert resp == {"hash": "sig123"}
+    sent = json.loads(route.calls.last.request.content)
+    assert sent["method"] == "signAndSendTransaction"
+    assert sent["caip2"] == SOLANA_DEVNET_CAIP2
+    assert sent["params"] == {"transaction": "AAAA", "encoding": "base64"}
+
+
+@pytest.mark.asyncio
+async def test_sign_and_send_devnet_propagates_policy_deny_verbatim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A policy DENY (non-2xx) surfaces as PrivyClientError with the body intact."""
+    monkeypatch.setenv("GECKO_PRIVY_SIGNING_DEVNET", "1")
+    async with respx.mock(base_url=PRIVY_BASE, assert_all_called=True) as router:
+        router.post("/v1/wallets/w1/rpc").mock(
+            return_value=httpx.Response(403, text="transaction violates policy")
+        )
+        async with PrivyClient(app_id="cmapp", app_secret="sec") as client:
+            with pytest.raises(PrivyClientError, match="transaction violates policy"):
+                await client.sign_and_send_solana_devnet(wallet_id="w1", b64_tx="AAAA")
