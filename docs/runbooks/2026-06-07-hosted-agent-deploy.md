@@ -55,6 +55,36 @@ aws ecs update-service --cluster gecko-api --service gecko-agent --desired-count
 aws ecs update-service --cluster gecko-api --service gecko-agent --desired-count 1 --region us-east-2   # start
 ```
 
+## App watches the agent — `GET /v1/agent/state` (Phase 1)
+The app reads the agent's runtime state through **gecko-api**, not the zero-inbound
+container. Path: app holds a user's HMAC session token → `GET /v1/agent/state` →
+gecko-api verifies the token → looks up the caller's `user_agents` ownership row in
+Supabase → reads the matching `agent_state` doc from Mongo → returns a **field-scoped**
+view (`positions, realized_pnl_today, wins/losses_today, daily_trades, still_alive_at,
+poll_count, updated_at`; never `spec`/`total_spent_usd`). A token for any other user
+gets **404** (never leaks another user's agent). The agent stays zero-inbound.
+
+**Prereqs (founder, once):**
+1. **Apply the schema** if not yet applied: `infra/supabase/migrations/20260607010000_supabase_remodel.sql`
+   (creates `app_users`, `user_agents` + the owner-only RLS).
+2. **Seed the founder binding** so the app can read `hosted-setupc-001` before UI onboarding:
+   ```bash
+   FUID=$(python -c "import hashlib,sys;print('u_'+hashlib.sha256(sys.argv[1].encode()).hexdigest()[:16])" <FOUNDER_WALLET>)
+   psql "$SUPABASE_DB_URL" -v founder_user_id="$FUID" -v agent_id="hosted-setupc-001" \
+     -f infra/supabase/scripts/seed_founder_binding.sql
+   ```
+   The script creates the `app_users` owner row + the idempotent `user_agents` binding.
+3. **Smoke:** `link → grant → GET /v1/agent/state` returns 200 with the scoped body (state may
+   be empty until Mongo has a doc).
+
+> **Phase-1 follow-ups (tracked, non-blocking for the single deployed agent):**
+> - `bind_user_agent` (bind-on-grant) FK-fails silently for users with no `app_users` row —
+>   nothing creates `app_users` yet. The seed covers the founder; the multi-user path needs an
+>   `app_users` upsert in link/grant before bind-on-grant works end-to-end.
+> - PostgREST `on_conflict="agent_id"` doesn't bind the partial unique index → a re-grant is a
+>   silent no-op (the raw-SQL seed handles the predicate correctly; the writer needs select-then-upsert).
+> Both want a **live contract test** (Pattern C) against the real Supabase tables.
+
 ## Boundaries
 Paper + stub (baked). No real-money flip without explicit founder go. The bot
 trades paper fills against live tape; no signing path exists in this image.
