@@ -18,30 +18,38 @@ does NOT call Privy; a network call only happens on a real wallet/policy
 operation. So importing onboarding (which calls this factory at import time) with
 no Privy env returns the stub and never touches the network.
 
-KNOWN LIMITATION — in-memory GrantStore. When the Privy branch is taken we
-construct `PrivyWalletAdapter` with a fresh in-memory `GrantStore`. That store
-does NOT persist across processes/requests, so enabling Privy in a multi-process
-prod deploy will lose grant state between replicas. A Supabase-backed `GrantStore`
-(same Protocol; `wallet_links` + `agent_grants` in the Supabase remodel) is a
-REQUIRED follow-up before flipping `GECKO_WALLET_PROVIDER` to Privy in prod. This
-factory stays advisor-first / single-replica until then.
+GRANTSTORE SELECTION. When the Privy branch is taken we persist the grant
+mapping in Supabase IFF Supabase is configured: `SupabaseGrantStore` (same
+`GrantStore` Protocol; `wallet_links` + `agent_grants` in the Supabase remodel)
+survives across processes/replicas — the prod-persistence prerequisite for
+flipping `GECKO_WALLET_PROVIDER` to Privy. The Supabase client is built lazily
+(on first grant op), so picking it here costs no network call.
+
+If Supabase is NOT configured we fall back to the in-memory `GrantStore` and emit
+a LOUD `logger.warning` — that store does NOT persist across processes, so a
+multi-process prod Privy deploy on the in-memory store would lose grant state
+between replicas. The in-memory fallback is fine for single-replica / dev.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 
 from gecko_core.wallets.privy import PrivyClient, is_privy_configured
 from gecko_core.wallets.privy_adapter import GrantStore, PrivyWalletAdapter
 from gecko_core.wallets.provider import StubWalletProvider, WalletProvider
 
+logger = logging.getLogger(__name__)
+
 
 def make_wallet_provider() -> WalletProvider:
     """Return the wallet provider for the current environment.
 
     Returns `StubWalletProvider` unless Privy is fully configured AND the
-    `GECKO_WALLET_PROVIDER` env var is not the literal `"stub"`. See module
-    docstring for the in-memory-GrantStore limitation that gates a prod flip.
+    `GECKO_WALLET_PROVIDER` env var is not the literal `"stub"`. When Privy is
+    enabled, the grant store is Supabase-backed if Supabase is configured, else
+    an in-memory fallback (with a loud warning — see module docstring).
     """
     if os.environ.get("GECKO_WALLET_PROVIDER", "").strip() == "stub":
         return StubWalletProvider()
@@ -49,9 +57,32 @@ def make_wallet_provider() -> WalletProvider:
         return StubWalletProvider()
     # Privy enabled. PrivyClient reads PRIVY_APP_ID/SECRET from env (already
     # validated non-sentinel by is_privy_configured) and is lazy — no network
-    # call until a real operation. Fresh in-memory GrantStore — see the
-    # module-docstring limitation before enabling in multi-process prod.
-    return PrivyWalletAdapter(PrivyClient(), store=GrantStore())
+    # call until a real operation.
+    return PrivyWalletAdapter(PrivyClient(), store=_make_grant_store())
+
+
+def _make_grant_store() -> GrantStore:
+    """Supabase-backed store when configured (prod persistence), else in-memory.
+
+    `is_supabase_configured()` is a cheap, network-free env/sentinel check, and
+    `SupabaseGrantStore` builds its client lazily, so this never touches the
+    network or reads the service-role key at wiring time.
+    """
+    from gecko_core.db import is_supabase_configured
+
+    if is_supabase_configured():
+        from gecko_core.wallets.supabase_grant_store import SupabaseGrantStore
+
+        # SupabaseGrantStore conforms to the GrantStore get/put surface.
+        return SupabaseGrantStore()  # type: ignore[return-value]
+
+    logger.warning(
+        "Privy enabled but Supabase is NOT configured — using the in-memory "
+        "GrantStore. Grant state will NOT persist across processes/replicas; do "
+        "NOT run Privy in multi-process prod on this fallback. Configure "
+        "SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY for persistence."
+    )
+    return GrantStore()
 
 
 __all__ = ["make_wallet_provider"]

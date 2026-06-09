@@ -235,6 +235,7 @@ async def test_create_policy_sends_rules_verbatim() -> None:
 
     body = _json.loads(call.request.read())
     assert body == {
+        "version": "1.0",
         "name": "gecko-trade-agent-scope",
         "chain_type": "solana",
         "rules": rules,

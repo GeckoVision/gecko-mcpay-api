@@ -17,6 +17,7 @@ Chunk-store selection goes through :func:`get_chunk_store` — default
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 
 from pydantic import Field, SecretStr
@@ -24,6 +25,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from supabase import Client, create_client
 
 from gecko_core.db.chunk_store import ChunkStore, ChunkStoreSettings, get_chunk_store
+
+# Sentinels treated as "not configured" (mirrors the .env.example placeholders +
+# the is_privy_configured sentinel set). Cheap, network-free detection.
+_SUPABASE_SENTINELS: frozenset[str] = frozenset(
+    {"", "__unset__", "__dev_change_me__", "changeme", "your-supabase-url"}
+)
 
 
 class SupabaseSettings(BaseSettings):
@@ -68,10 +75,35 @@ def create_supabase_client(
     return create_client(url, key)
 
 
+def is_supabase_configured(
+    url: str | None = None,
+    service_role_key: str | None = None,
+) -> bool:
+    """Cheap, network-free check: are real (non-sentinel) Supabase creds present?
+
+    Reads the process environment (``SUPABASE_URL`` / ``SUPABASE_SERVICE_ROLE_KEY``)
+    when args are ``None``. Does NOT construct a client or touch the network — it
+    only gates which ``GrantStore`` the wallet factory picks. Mirrors the
+    ``is_privy_configured`` sentinel pattern.
+    """
+    raw_url = url if url is not None else os.environ.get("SUPABASE_URL", "")
+    raw_key = (
+        service_role_key
+        if service_role_key is not None
+        else os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+    )
+    clean_url = (raw_url or "").strip()
+    clean_key = (raw_key or "").strip()
+    if clean_url in _SUPABASE_SENTINELS or clean_key in _SUPABASE_SENTINELS:
+        return False
+    return bool(clean_url) and bool(clean_key)
+
+
 __all__ = [
     "ChunkStore",
     "ChunkStoreSettings",
     "SupabaseSettings",
     "create_supabase_client",
     "get_chunk_store",
+    "is_supabase_configured",
 ]
