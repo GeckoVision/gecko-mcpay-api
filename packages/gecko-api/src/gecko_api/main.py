@@ -399,6 +399,26 @@ def _build_routes(settings: Settings) -> dict[str, RouteConfig]:
             ],
             description="Generate the 3-file scaffold bundle for a Pro session",
         )
+        # V1 verdict-loop — POST /v1/research is the session-gated web surface
+        # over the SAME heavy 7-agent trade panel as /trade_research. It runs
+        # the basic tier (the route forces basic to stay under the sync HTTP
+        # timeout), so it charges the basic price and reuses the same
+        # payTo/network source. FREE in stub (registered only outside stub, so
+        # the middleware never 402s a first-user validation call), CHARGED in
+        # live. Without this entry the route would bypass the payment middleware
+        # entirely and run the expensive panel free even in live mode.
+        routes["POST /v1/research"] = RouteConfig(
+            accepts=[
+                PaymentOption(
+                    scheme="exact",
+                    pay_to=pay_to,
+                    price=settings.trade_research_basic_price,
+                    network=chain_id,
+                    extra=svm_extra,
+                ),
+            ],
+            description="Run the session-gated trade research verdict loop (basic tier)",
+        )
     # S13-COMMO-01..03 — Track E commoditization wedges. Registered in BOTH
     # stub and live modes so Bazaar discovery + the bazaar-extensions tests
     # see them under either deploy. In stub mode the middleware still issues
@@ -835,7 +855,9 @@ _RATE_LIMITED_PATHS = frozenset({"/research", "/research/pro", "/plan"})
 # Phase 10A — /trade_research is heavier than /research (AG2 7-agent
 # debate + Mongo retrieval per call), so it gets a stricter unpaid cap.
 _TRADE_RESEARCH_RATE_LIMIT_PER_MINUTE = 10
-_TRADE_RESEARCH_RATE_LIMITED_PATHS = frozenset({"/trade_research", "/trade_research/pro"})
+_TRADE_RESEARCH_RATE_LIMITED_PATHS = frozenset(
+    {"/trade_research", "/trade_research/pro", "/v1/research"}
+)
 
 
 # Per-IP token bucket state. Single-process only; Sprint 13+ should
@@ -1546,6 +1568,9 @@ _ROUTE_SPEND_ESTIMATE_USD: dict[str, float] = {
     "POST /research": 0.10,
     "POST /research/pro": 1.50,
     "POST /plan": 0.10,
+    # V1 verdict-loop runs the basic trade panel — same cost basis as the
+    # basic /research surface.
+    "POST /v1/research": 0.10,
 }
 
 

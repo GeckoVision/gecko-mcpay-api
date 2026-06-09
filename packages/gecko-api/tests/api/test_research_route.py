@@ -155,3 +155,40 @@ def test_non_bearer_scheme_returns_401(client):
         json={"idea": "long WIF on the breakout", "protocol": "drift"},
     )
     assert r.status_code == 401
+
+
+def _first_option(cfg):
+    accepts = cfg.accepts if isinstance(cfg.accepts, list) else [cfg.accepts]
+    return accepts[0]
+
+
+def test_v1_research_wired_into_x402_middleware_in_live():
+    # Regression guard: routes absent from _routes_config bypass the payment
+    # middleware entirely — the original hole let /v1/research run the
+    # expensive panel FREE even in live mode. In live, POST /v1/research MUST
+    # be registered at the same basic-tier price/payTo/network as the
+    # /trade_research basic surface (same heavy 7-agent panel).
+    from gecko_api.main import _build_routes, _settings
+
+    live_settings = _settings.model_copy(update={"x402_mode": "live"})
+    routes = _build_routes(live_settings)
+
+    assert "POST /v1/research" in routes
+    v1 = _first_option(routes["POST /v1/research"])
+    basic = _first_option(routes["POST /trade_research"])
+    assert v1.price == basic.price
+    assert v1.pay_to == basic.pay_to
+    assert v1.network == basic.network
+
+
+def test_v1_research_free_in_stub():
+    # Stub stays free for first-user validation: the route is NOT registered in
+    # the payment middleware under X402_MODE=stub (mirrors /review + /scaffold),
+    # so a plain valid-session call returns 200 + verdict with no 402 challenge.
+    # The existing test_valid_session_returns_verdict_envelope already asserts
+    # the 200 path; this asserts the *reason* it stays free.
+    from gecko_api.main import _build_routes, _settings
+
+    stub_settings = _settings.model_copy(update={"x402_mode": "stub"})
+    routes = _build_routes(stub_settings)
+    assert "POST /v1/research" not in routes
