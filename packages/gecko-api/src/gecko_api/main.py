@@ -1196,6 +1196,15 @@ from gecko_api.routes.agent_state import router as _agent_state_router  # noqa: 
 app.include_router(_agent_state_router)
 
 
+# V1 verdict-loop — session-gated POST /v1/research. Runs the SAME basic trade
+# panel as the public /trade_research surface, but behind require_session, for the
+# logged-in web app's first-user validation loop (pass/defer + dissent +
+# citations). X402_MODE stays stub; no real-payment wiring here.
+from gecko_api.routes.research import router as _research_router  # noqa: E402
+
+app.include_router(_research_router)
+
+
 # S20-B3 — single x402-gated dispatcher for the 12-skill manifest. Mounted
 # AFTER middleware so the route's own dispatcher (X402Dispatcher) is the
 # 402 gate, not the x402 PaymentMiddlewareASGI — the manifest skills are
