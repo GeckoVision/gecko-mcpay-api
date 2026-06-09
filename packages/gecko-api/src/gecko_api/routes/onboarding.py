@@ -27,9 +27,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException
 from gecko_core.wallets import (
-    StubWalletProvider,
     WalletProvider,
     WalletProviderError,
+    make_wallet_provider,
     user_scope,
 )
 from pydantic import BaseModel, ConfigDict, Field
@@ -57,9 +57,12 @@ _DEFAULT_AGENT_ID = "hosted-setupc-001"
 
 _CFG = ConfigDict(extra="allow")
 
-# Module-level provider seam. Swap to a vendor adapter (Privy/OKX/MagicBlock)
-# behind this name later; tests monkeypatch it with a fresh stub per test.
-_provider: WalletProvider = StubWalletProvider()
+# Module-level provider seam. `make_wallet_provider()` is env-gated (Task 2.3):
+# StubWalletProvider unless Privy is configured AND GECKO_WALLET_PROVIDER != "stub".
+# With no Privy creds (dev/test/stub) this is byte-identical to the old hardcoded
+# StubWalletProvider() and never touches the network at import time. Tests
+# monkeypatch this attr with a fresh stub per test.
+_provider: WalletProvider = make_wallet_provider()
 
 
 class LinkRequest(BaseModel):

@@ -314,6 +314,30 @@ class PrivyClient:
         data = await self._patch(f"/v1/wallets/{wallet_id}", body)
         return _parse_wallet(data)
 
+    async def update_policy_rules(
+        self,
+        *,
+        policy_id: str,
+        rules: list[dict[str, Any]],
+    ) -> PrivyPolicy:
+        """Replace a policy's rule set in place (``PATCH /v1/policies/{id}``).
+
+        Privy's policy-PATCH accepts the FULL desired ``rules`` array, not a
+        delta — the returned policy enforces exactly what is passed. The
+        policy_id is preserved, so the wallet stays attached and no detach is
+        needed.
+
+        This is the lever ``PrivyWalletAdapter.revoke`` uses: rewriting the
+        granted policy's rules to a single deny-all rule removes ALL signing
+        authority while keeping the policy attached. We deliberately do NOT
+        detach the policy from the wallet to revoke, because a wallet with no
+        policy attached is NOT guaranteed by Privy's docs to be deny-by-default
+        — detaching could *widen* authority to permissionless signing. Keeping
+        the policy attached and flipping its rules to deny-all is fail-closed.
+        """
+        data = await self._patch(f"/v1/policies/{policy_id}", {"rules": rules})
+        return _parse_policy(data)
+
     async def get_wallet_balance(self, wallet_id: str) -> Decimal:
         """USDC balance for a wallet's Solana address.
 
@@ -381,9 +405,7 @@ def _parse_policy(data: dict[str, Any]) -> PrivyPolicy:
     """
     policy_id = data.get("id")
     if not isinstance(policy_id, str):
-        raise PrivyClientError(
-            f"Privy policy response missing id: keys={sorted(data.keys())}"
-        )
+        raise PrivyClientError(f"Privy policy response missing id: keys={sorted(data.keys())}")
     name_raw = data.get("name")
     name = name_raw if isinstance(name_raw, str) else None
     chain_type = data.get("chain_type") or "solana"

@@ -5,6 +5,7 @@ gecko-core never imports this module unless `is_privy_configured()` returns
 True at the call site, so devnet flows without Privy keys keep working.
 """
 
+from gecko_core.wallets.factory import make_wallet_provider
 from gecko_core.wallets.privy import (
     PrivyClient,
     PrivyClientError,
@@ -44,5 +45,6 @@ __all__ = [
     "WalletProvider",
     "WalletProviderError",
     "is_privy_configured",
+    "make_wallet_provider",
     "user_scope",
 ]
