@@ -196,4 +196,4 @@ Before merging:
 
 ---
 
-**Sister repos**: [`gecko-mcpay-app`](https://github.com/<owner>/gecko-mcpay-app) | [`gecko-claude`](https://github.com/ernanibmurtinho/gecko-claude) | **Domain**: `app.geckovision.tech`
+**Sister repos**: [`gecko-mcpay-app`](https://github.com/GeckoVision/gecko-mcpay-app) | [`gecko-claude`](https://github.com/GeckoVision/gecko-claude) | **Domain**: `app.geckovision.tech`

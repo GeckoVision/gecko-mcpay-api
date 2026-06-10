@@ -9,7 +9,7 @@
 
 One Claude Code skill. Three MCP tools. Real Solana payments via [frames.ag](https://frames.ag). No API keys, no signup, no credit card — just a wallet.
 
-The Python backend lives in [`gecko-mcpay-api`](https://github.com/ernanibmurtinho/gecko-mcpay-api) (private). The web frontend lives at `gecko-mcpay-app`. This repo is the **user-facing scaffold** — what `curl | bash` drops into your project.
+The Python backend lives in [`gecko-mcpay-api`](https://github.com/GeckoVision/gecko-mcpay-api) (private). The web frontend lives at `gecko-mcpay-app`. This repo is the **user-facing scaffold** — what `curl | bash` drops into your project.
 
 ---
 

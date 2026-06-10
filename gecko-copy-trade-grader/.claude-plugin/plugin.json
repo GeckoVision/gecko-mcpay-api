@@ -4,9 +4,9 @@
   "version": "0.2.0",
   "author": {
     "name": "Gecko",
-    "github": "ernanibmurtinho"
+    "github": "GeckoVision"
   },
   "license": "MIT",
   "keywords": ["copy-trading", "okx", "rigor", "sharpe", "leaderboard", "due-diligence"],
-  "repository": "https://github.com/ernanibmurtinho/gecko-mcpay-api"
+  "repository": "https://github.com/GeckoVision/gecko-mcpay-api"
 }

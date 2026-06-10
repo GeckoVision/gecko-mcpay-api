@@ -43,6 +43,11 @@ def test_self_citation_url_detection() -> None:
         "https://github.com/ernanibmurtinho/gecko-mcpay-api/blob/main/README.md"
     )
     assert is_self_citation("https://github.com/ernanibmurtinho/gecko-mcpay-app/issues/1")
+    # Current GeckoVision org paths (post-2026-06-10 migration)
+    assert is_self_citation(
+        "https://github.com/GeckoVision/gecko-claude/blob/main/README.md"
+    )
+    assert is_self_citation("https://github.com/GeckoVision/gecko-programs/issues/1")
     # Case-insensitive
     assert is_self_citation("HTTPS://APP.GECKOVISION.TECH/FOO")
 
