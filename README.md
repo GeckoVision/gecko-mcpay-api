@@ -22,6 +22,45 @@ CLI. The Next.js app lives in
 
 ---
 
+## Architecture
+
+Gecko sits **above** any trading agent. An agent doesn't trade and hope — it asks
+Gecko *"is this safe and sound?"* first, and only acts on a grounded verdict.
+
+```mermaid
+flowchart TD
+    A["Your agent<br/>(or a single trade idea)"] -->|"is this safe & sound?"| GATE
+
+    subgraph GECKO["Gecko — verification layer"]
+        direction TB
+        GATE["Pre-trade safety gate<br/>risk-off · price-impact · deny-by-default · depeg"]
+        PANEL["Oracle: 7-voice adversarial panel"]
+        DATA[("Investor canon +<br/>market / peg data<br/>Pegana · Pyth · …")]
+        GATE --> PANEL
+        DATA -. grounds the debate .-> PANEL
+        PANEL --> VERDICT{"Verdict"}
+    end
+
+    VERDICT -->|"act"| EXEC["Execution — neutral adapters<br/>OKX · Jupiter · Kamino · Drift"]
+    VERDICT -->|"pass / defer"| NO["No trade<br/>+ surviving dissent + citations"]
+    EXEC --> WALLET["Non-custodial wallet<br/>keys in a TEE / scoped — never held by Gecko"]
+    WALLET --> POS["Open position"]
+    POS -. hurdle + liquidation buffer .-> MON["Safety monitor"]
+    MON -. EXIT / DELEVERAGE / ROTATE .-> EXEC
+```
+
+1. **Intent** → an agent forms a trade/yield decision (doesn't execute yet).
+2. **Safety gate** → risk-off, price-impact, deny-by-default, depeg checks.
+3. **Oracle verdict** → a 7-voice adversarial panel, grounded in external investor canon + live market data, returns a verdict with **surviving dissent** + citations.
+4. **`act` / `pass` / `defer`** → a `pass`/`defer` *is* the product (don't take the trade).
+5. **Execution** → neutral adapters (OKX/Jupiter/Kamino/Drift); **non-custodial** signing in a TEE / scoped wallet — Gecko never holds your key.
+6. **Monitor** → open positions watched against a hurdle + liquidation buffer; de-risks before damage.
+7. **Rigor first** → strategies graded default-REJECT (CPCV / PBO / Deflated Sharpe) before deploy; an honest null is a valid outcome.
+
+Full walkthrough: [docs.geckovision.tech/architecture](https://docs.geckovision.tech/architecture).
+
+---
+
 ## Three install paths
 
 Pick the one that matches how you'll use Gecko.
