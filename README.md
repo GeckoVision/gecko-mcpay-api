@@ -7,15 +7,18 @@
 [![gecko-mcp](https://img.shields.io/badge/gecko--mcp-0.2.6-success.svg)](https://pypi.org/project/gecko-mcp/)
 [![gecko-core](https://img.shields.io/badge/gecko--core-0.2.6-success.svg)](https://pypi.org/project/gecko-core/)
 
-> Gecko gives crypto builders a deep, multi-voice verdict on their idea — with
-> the dissent and falsifiers attached — so they know what to do next.
-> Complementary to frames.ag (settlement) and Bazaar (marketplace).
+> **Gecko is the safety & verification layer for trading agents — not another agent.**
+> It gates every order against a pre-trade safety check, monitors every yield
+> position against a hurdle + liquidation buffer, and grades strategies with
+> default-REJECT rigor (CPCV / PBO / Deflated Sharpe). The same multi-voice
+> verdict engine also powers the Builder Bootstrap idea-research tools.
 
-This repository is the **Python backend**: `uv` workspace housing the SDK, the
-FastAPI service, the MCP server, and the `bb` / `gecko` CLI. The Next.js app
-lives in [**gecko-mcpay-app**](https://github.com/<owner>/gecko-mcpay-app).
-
-> **Status (2026-05-05):** gecko-mcp 0.2.4 on PyPI. Plug-and-play for external users — no ClawRouter, no Node.js, no local env config. One command installs; Email+OTP wallet in under 30 seconds; `gecko_research` fires in under 5 minutes from zero. See [`docs/build-plan-sprint-mcp-plug-and-play.md`](docs/build-plan-sprint-mcp-plug-and-play.md).
+This repository is the **Python backend**: a `uv` workspace housing the SDK, the
+FastAPI service (`api.geckovision.tech`), the MCP server, and the `bb` / `gecko`
+CLI. The Next.js app lives in
+[**gecko-mcpay-app**](https://github.com/GeckoVision/gecko-mcpay-app); public docs
++ the `skill.md` install surface live in
+[**gecko-claude**](https://github.com/GeckoVision/gecko-claude) ([docs.geckovision.tech](https://docs.geckovision.tech)).
 
 ---
 
@@ -57,7 +60,7 @@ Read https://app.geckovision.tech/skill.md and follow the instructions.
 ### B. `bb` CLI direct (developers, contributors, stub-mode demos)
 
 ```bash
-git clone https://github.com/<owner>/gecko-mcpay-api.git
+git clone https://github.com/GeckoVision/gecko-mcpay-api.git
 cd gecko-mcpay-api
 uv sync
 cp .env.example .env             # X402_MODE=stub by default — no money required
@@ -78,7 +81,7 @@ uv run gecko-api                 # local
 ```
 
 Production: `https://api.geckovision.tech/openapi.json` is the contract that
-[**gecko-mcpay-app**](https://github.com/<owner>/gecko-mcpay-app), Bazaar
+[**gecko-mcpay-app**](https://github.com/GeckoVision/gecko-mcpay-app), Bazaar
 discovery, and third-party agents call. Routes are listed in CDP Bazaar at
 `/.well-known/x402` (S12).
 
@@ -261,8 +264,9 @@ When opening a PR:
 
 ## Sister repos
 
-- [**gecko-mcpay-app**](https://github.com/<owner>/gecko-mcpay-app) — Next.js frontend (`app.geckovision.tech`)
-- [**gecko-mcpay-skills**](https://github.com/<owner>/gecko-mcpay-skills) — Public skills; `app.geckovision.tech/skill.md`
+- [**gecko-mcpay-app**](https://github.com/GeckoVision/gecko-mcpay-app) — Next.js frontend (`app.geckovision.tech`)
+- [**gecko-claude**](https://github.com/GeckoVision/gecko-claude) — Public docs + skills + the `skill.md` install surface (`docs.geckovision.tech`, `app.geckovision.tech/skill.md`)
+- [**gecko-programs**](https://github.com/GeckoVision/gecko-programs) — Solana programs (custody-probe + on-chain ops)
 
 ---
 
