@@ -31,12 +31,20 @@ from __future__ import annotations
 
 # Gecko-owned domains and repository paths. Match is case-insensitive
 # substring on the URL string, so subdomains and path prefixes both hit.
-# Sourced from `git remote -v` (origin = github.com/ernanibmurtinho/gecko-mcpay-api)
-# plus the sister repos referenced in CLAUDE.md and the production domain.
+# Repos live under the GeckoVision org (moved from ernanibmurtinho 2026-06-10).
+# Entries are lowercase because is_self_citation lowercases the URL before
+# matching. The old ernanibmurtinho paths are retained because GitHub redirects
+# them and the corpus still holds chunks ingested under the old URLs.
 GECKO_SELF_DOMAINS: frozenset[str] = frozenset(
     {
         "app.geckovision.tech",
         "geckovision.tech",
+        # current — GeckoVision org
+        "github.com/geckovision/gecko-mcpay-api",
+        "github.com/geckovision/gecko-mcpay-app",
+        "github.com/geckovision/gecko-claude",
+        "github.com/geckovision/gecko-programs",
+        # historical — pre-migration paths (still resolve via redirect)
         "github.com/ernanibmurtinho/gecko-mcpay-api",
         "github.com/ernanibmurtinho/gecko-mcpay-app",
         "github.com/ernanibmurtinho/gecko-claude",

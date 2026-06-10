@@ -17,7 +17,7 @@ For every legitimate `(symbol, mint)` pair in your agent's universe, generate **
 ## Quickstart
 
 ```bash
-git clone https://github.com/ernanibmurtinho/gecko-mcpay-api.git
+git clone https://github.com/GeckoVision/gecko-mcpay-api.git
 cd gecko-mcpay-api/gecko-honeypot-generator
 python3 honeypot_generator.py
 ```

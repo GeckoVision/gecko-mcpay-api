@@ -159,7 +159,7 @@ All 4 are skilled — but none cleared the persistence bar. Picking ANY of them 
 ## Quickstart
 
 ```bash
-git clone https://github.com/ernanibmurtinho/gecko-mcpay-api.git
+git clone https://github.com/GeckoVision/gecko-mcpay-api.git
 cd gecko-mcpay-api/gecko-copy-trade-grader
 pip install -r requirements.txt
 
