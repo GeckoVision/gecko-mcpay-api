@@ -39,6 +39,7 @@ from gecko_core.wallets.provider import Scope
 if TYPE_CHECKING:
     from supabase import Client
 
+_APP_USERS = "app_users"
 _WALLET_LINKS = "wallet_links"
 _AGENT_GRANTS = "agent_grants"
 
@@ -128,6 +129,13 @@ class SupabaseGrantStore:
         """
         db = self._db()
 
+        # Mint the identity root FIRST. wallet_links + agent_grants both
+        # FK-reference app_users(id); without an app_users row the first put()
+        # for a fresh user fails with `23503 foreign_key_violation` and 500s the
+        # whole onboarding/link flow (the Privy wallet is already created by the
+        # time we get here, so the FK error is the user-facing failure).
+        self._ensure_user(db, record.user_id)
+
         wallet_payload: dict[str, Any] = {
             "user_id": record.user_id,
             "address": record.address,
@@ -148,6 +156,22 @@ class SupabaseGrantStore:
         self._upsert(db, _AGENT_GRANTS, record.user_id, grant_payload)
 
     # -- helpers ---------------------------------------------------------
+
+    @staticmethod
+    def _ensure_user(db: Client, user_id: str) -> None:
+        """Idempotently mint the ``app_users`` identity row (PK = ``id``).
+
+        ``app_users`` is the identity root (``id = u_<sha256(wallet)[:16]>``);
+        ``wallet_links`` + ``agent_grants`` (and ``credits``) FK-reference it.
+        Insert-if-absent only — we NEVER update the identity row here. Keyed on
+        ``id`` (not ``user_id``), so this can't reuse ``_upsert`` which filters on
+        the ``user_id`` column. Select-then-insert mirrors ``_upsert``'s style; on
+        the single-replica V1 the insert-race window is the same one ``_upsert``
+        already tolerates.
+        """
+        existing = db.table(_APP_USERS).select("id").eq("id", user_id).execute().data
+        if not existing:
+            db.table(_APP_USERS).insert({"id": user_id}).execute()
 
     @staticmethod
     def _upsert(db: Client, table: str, user_id: str, payload: dict[str, Any]) -> None:

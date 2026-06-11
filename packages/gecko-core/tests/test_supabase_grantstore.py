@@ -87,8 +87,9 @@ class _FakeQuery:
         )
         if self._op == "select":
             rows = self._client.seeded.get(self._table, [])
-            uid = self._filters.get("user_id")
-            matched = [r for r in rows if uid is None or r.get("user_id") == uid]
+            # Match ALL applied filters (e.g. user_id for the grant tables, OR
+            # `id` for app_users which is keyed on its PK, not user_id).
+            matched = [r for r in rows if all(r.get(k) == v for k, v in self._filters.items())]
             return _FakeResponse(matched)
         return _FakeResponse([self._payload] if isinstance(self._payload, dict) else [])
 
@@ -185,7 +186,9 @@ def test_put_upserts_agent_grants_with_policy_id_and_scope_arrays() -> None:
 
 
 def test_put_existing_row_updates_not_double_inserts() -> None:
+    # A fully-returning user: identity row + both grant rows already exist.
     seeded = {
+        "app_users": [{"id": "user-1"}],
         "wallet_links": [{"user_id": "user-1", "address": "OwnerAddr111"}],
         "agent_grants": [{"user_id": "user-1", "allowed_actions": [], "revoked": False}],
     }
@@ -200,10 +203,65 @@ def test_put_existing_row_updates_not_double_inserts() -> None:
             scope=_scope(),
         )
     )
-    # When a row already exists we UPDATE it (filtered by user_id), never insert.
+    # When all rows already exist we UPDATE them (filtered by user_id), never
+    # insert — including app_users, which is only ever insert-if-absent.
     ops = {c["op"] for c in client.calls if c["op"] in ("insert", "update")}
     assert "update" in ops
     assert "insert" not in ops
+
+
+def test_put_mints_app_users_before_fk_children() -> None:
+    """The identity row must be inserted into app_users BEFORE wallet_links /
+    agent_grants, or the FK (wallet_links.user_id -> app_users.id) 500s the
+    first onboarding/link for any fresh user (23503 foreign_key_violation)."""
+    client = FakeSupabaseClient()
+    store = SupabaseGrantStore(client=client)
+
+    store.put(
+        GrantRecord(
+            user_id="user-1",
+            wallet_id="wallet-xyz",
+            address="OwnerAddr111",
+            policy_id="policy-abc",
+            scope=_scope(),
+        )
+    )
+
+    # app_users was inserted, keyed on its PK `id` (not user_id).
+    au_inserts = [c for c in _calls_for(client, "app_users") if c["op"] == "insert"]
+    assert au_inserts, "put must mint the app_users identity row"
+    assert au_inserts[0]["payload"] == {"id": "user-1"}
+
+    # ...and it happens BEFORE the first wallet_links write (ordering matters:
+    # the FK parent must exist first).
+    order = [c["table"] for c in client.calls]
+    first_app_user = order.index("app_users")
+    first_wallet_link = order.index("wallet_links")
+    assert first_app_user < first_wallet_link
+
+
+def test_put_idempotent_user_not_reinserted() -> None:
+    """A returning user (app_users row already present) is NOT re-inserted —
+    _ensure_user is insert-if-absent, never update/double-insert."""
+    seeded = {"app_users": [{"id": "user-1"}]}
+    client = FakeSupabaseClient(seeded=seeded)
+    store = SupabaseGrantStore(client=client)
+
+    store.put(
+        GrantRecord(
+            user_id="user-1",
+            wallet_id="wallet-xyz",
+            address="OwnerAddr111",
+            policy_id="policy-abc",
+            scope=_scope(),
+        )
+    )
+
+    au = _calls_for(client, "app_users")
+    assert any(c["op"] == "select" for c in au), "must check existence first"
+    assert not any(c["op"] == "insert" for c in au), "existing user must NOT be re-inserted"
+    # app_users is the identity root: never UPDATE it from the grant store.
+    assert not any(c["op"] == "update" for c in au)
 
 
 # ---------------------------------------------------------------------------
