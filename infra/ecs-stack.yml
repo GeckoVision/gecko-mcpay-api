@@ -483,6 +483,18 @@ Resources:
             - {Name: ENVIRONMENT, Value: !Ref Environment}
             - {Name: PYTHONUNBUFFERED,     Value: '1'}
             - {Name: PYTHONDONTWRITEBYTECODE, Value: '1'}
+            # V1 Phase 1 — pin the onboarding wallet provider to the stub.
+            # The factory (gecko_core.wallets.factory.make_wallet_provider)
+            # auto-selects the live Privy adapter whenever PRIVY_APP_ID/SECRET
+            # hold real (non-sentinel) creds in SSM — and that adapter makes a
+            # live create_solana_wallet network call on /v1/onboarding/link,
+            # which 500s the first-user loop. The first-10-users phase is
+            # stub-backed by design (X402_MODE=stub too). Pinning this literal
+            # forces the stub regardless of SSM creds; the `== "stub"` pin in
+            # the factory always wins. To go live with Privy: delete this line,
+            # confirm PRIVY creds are valid + migration 20260609010000 applied,
+            # then redeploy.
+            - {Name: GECKO_WALLET_PROVIDER, Value: 'stub'}
           Secrets:
             # ── Database / external APIs ─────────────────────────
             - Name: SUPABASE_URL
