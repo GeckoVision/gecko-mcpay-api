@@ -1,0 +1,46 @@
+{
+  "_comment": "Recorded getTransaction(encoding=jsonParsed) result for a Decision-Receipt memo tx. Synthetic devnet fixture for the verifier contract test (no live RPC). The memo carries gecko:v1:<VECTOR_HASH> and the oracle pubkey is a signer. To re-record from a real devnet tx: POST getTransaction with {encoding:jsonParsed, maxSupportedTransactionVersion:0} and commit the .result here (redact nothing — public on-chain data).",
+  "slot": 312345678,
+  "blockTime": 1749700000,
+  "meta": {
+    "err": null,
+    "fee": 5000,
+    "logMessages": [
+      "Program MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr invoke [1]",
+      "Program log: Signed by GEcKoOrac1eDevNetPubKeyPlaceholder1111111111",
+      "Program log: Memo (len 73): \"gecko:v1:8821a7156451e9b5c8492b07c1f1985905589206a39847c9ffb40b4f4d9bf56b\"",
+      "Program MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr success"
+    ]
+  },
+  "transaction": {
+    "message": {
+      "accountKeys": [
+        {
+          "pubkey": "GEcKoOrac1eDevNetPubKeyPlaceholder1111111111",
+          "signer": true,
+          "writable": true,
+          "source": "transaction"
+        },
+        {
+          "pubkey": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+          "signer": false,
+          "writable": false,
+          "source": "transaction"
+        }
+      ],
+      "instructions": [
+        {
+          "program": "spl-memo",
+          "programId": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+          "parsed": "gecko:v1:8821a7156451e9b5c8492b07c1f1985905589206a39847c9ffb40b4f4d9bf56b",
+          "stackHeight": null
+        }
+      ],
+      "recentBlockhash": "11111111111111111111111111111111"
+    },
+    "signatures": [
+      "5DecisionReceiptDevnetSignaturePlaceholderXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+    ]
+  },
+  "version": 0
+}

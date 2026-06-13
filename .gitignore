@@ -16,6 +16,9 @@ CLAUDE.local.md
 # Solana keypairs anywhere in the tree
 *.keypair.json
 gecko-demo-treasury.json
+# V1 Decision Receipt devnet oracle keypair (GECKO_RECEIPT_ORACLE_KEYPAIR)
+devnet-oracle.json
+*-oracle.json
 
 # Private strategy / pitch / findings — sensitive, never in the public repo.
 # Lives on-disk only (see private/README.md). Code stays tracked; strategy goes here.
