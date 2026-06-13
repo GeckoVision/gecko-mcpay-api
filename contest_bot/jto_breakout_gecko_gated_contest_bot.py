@@ -2112,6 +2112,25 @@ def _deterministic_coordinator_gate(sym: str, regime_1h: str | None) -> tuple[st
     return coordinator(opinions, regime_1h=regime_1h, chop=chop, mfi=mfi)
 
 
+def _log_scan_heartbeat() -> None:
+    """Stdout heartbeat — one line per scan so log aggregators (CloudWatch) show
+    the loop is alive and evaluating. The existing ``_record_heartbeat`` writes
+    to a file (dashboard) + the artifact stream, which are INVISIBLE in container
+    stdout — so a deployed run looks silent after boot even when healthy. This
+    line distinguishes "scanning, no breakout" (snapshots=N) from "feed dead"
+    (snapshots=0 → the OKX-from-ECS reachability failure). Best-effort: never raises.
+    """
+    try:
+        open_n = sum(1 for p in positions if p.get("status") == "open")
+        syms = ",".join(sorted(_LAST_INDEX.keys())) or "NONE"
+        print(
+            f"[scan #{_POLL_COUNT}] snapshots={len(_LAST_INDEX)} ({syms}) | open={open_n}",
+            flush=True,
+        )
+    except Exception as _exc:  # a heartbeat must never crash the trading loop
+        print(f"[scan #?] heartbeat error: {_exc}", flush=True)
+
+
 def poll_instruments() -> None:
     """Iterate INSTRUMENTS once per poll. MAX_CONCURRENT / daily_trades /
     total_spent_usd guards are checked PER ITERATION so a fill on JTO
@@ -3523,6 +3542,7 @@ def main() -> None:
 
             monitor_positions()
             poll_instruments()
+            _log_scan_heartbeat()
             time.sleep(POLL_SEC)
 
     except KeyboardInterrupt:
