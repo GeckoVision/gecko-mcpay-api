@@ -226,6 +226,97 @@ class SafetyBlock(BaseModel):
         return cls(checked=False, source=source, rug_flags=[flag])
 
 
+# --- Bento pre-flight enforcement provenance (Pattern A: ONE canonical Literal) ---
+# DELIBERATELY NOT a member of ``gecko_core.sources.types.ProviderKind``. That
+# Literal is the ``chunks.provider_kind`` column contract (drift-guarded against
+# a SQL CHECK), and any value there becomes a *retrievable Mongo chunk kind*.
+# A Bento pre-flight result is a per-tx ENFORCEMENT EVENT, not corpus the panel
+# cites — routing it through the retrieval ProviderKind would re-import Pattern F
+# (permanent-corpus pollution by ephemeral per-request events). So enforcement
+# provenance gets its own one-value canonical Literal here, next to the block it
+# tags. ``provider_kind="bento_preflight"`` is an audit/economics-ledger tag ONLY.
+EnforcementProvider = Literal["bento_preflight"]
+"""Canonical provenance tag for the EnforcementBlock source. Provenance ONLY —
+NOT inserted as a Mongo retrieval chunk, NOT eligible for panel ``$match``."""
+
+
+class EnforcementBlock(BaseModel):
+    """First-class execution-layer enforcement result on the verdict envelope.
+
+    Sibling of :class:`SafetyBlock`, but a different primitive (per
+    ``private/strategy/2026-06-13-bento-layering-architecture.md`` §3b):
+
+      * ``SafetyBlock`` is a fail-OPEN *judgment SIGNAL* at research time over an
+        abstract target (a mint). Advisory; never blocks.
+      * ``EnforcementBlock`` records a fail-CLOSED *broadcast-time VETO* over the
+        realized unsigned tx. A vetoed tx never reaches the chain.
+
+    The honeypot-generator harness is the proof the two are non-substitutable:
+    target-level signal alone = 8% mint-substitution bypass; + a Bento
+    pre-flight that BLOCKS broadcast = 0%.
+
+    Fail-CLOSED posture is documented in the wire shape itself (``fail_posture``)
+    so a consumer reading the envelope sees the enforcement contract. ``checked``
+    is the one-glance boolean the audit trail reads first.
+
+    Provenance, NOT retrieval: ``source``/``provider_kind`` tag the block for the
+    economics ledger + audit trail. This block is NOT written as a Mongo chunk
+    and is NOT eligible for panel ``$match`` (avoids Pattern F).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    checked: bool = Field(
+        ...,
+        description="True when a Bento pre-flight actually ran for this tx.",
+    )
+    verdict: Literal["allow", "veto", "unavailable"] = Field(
+        ...,
+        description=(
+            "Enforcement decision. 'allow' = broadcast may proceed; 'veto' = "
+            "broadcast was BLOCKED (fail-closed); 'unavailable' = pre-flight "
+            "could not run (and, fail-closed, the broadcast was still blocked)."
+        ),
+    )
+    reasons: list[str] = Field(
+        default_factory=list,
+        description="Bento's veto/decision reasons (e.g. 'mint_substitution').",
+    )
+    tx_hash: str | None = Field(
+        default=None,
+        description="The realized tx inspected (tracking only); None when no tx existed.",
+    )
+    source: str = Field(
+        default="bento",
+        description="Enforcement provider provenance ('bento'); never a secret.",
+    )
+    provider_kind: EnforcementProvider = Field(
+        default="bento_preflight",
+        description=(
+            "Audit/economics-ledger provenance tag. Provenance ONLY — this block "
+            "is NOT a Mongo retrieval chunk (Pattern F kept clean)."
+        ),
+    )
+    fail_posture: Literal["closed"] = Field(
+        default="closed",
+        description="Documents the enforcement contract in the envelope: fail-CLOSED.",
+    )
+
+    @classmethod
+    def unavailable(cls, *, reasons: list[str] | None = None) -> EnforcementBlock:
+        """Fail-CLOSED 'could not verify' constructor.
+
+        Bento could not run (no client, transport error, or pre-flight off-but-
+        recorded). The safe enforcement default is to treat this as a block, so
+        ``verdict='unavailable'`` and the caller MUST NOT broadcast.
+        """
+        return cls(
+            checked=False,
+            verdict="unavailable",
+            reasons=reasons or ["bento_preflight_unavailable"],
+        )
+
+
 class TradePanelVerdict(BaseModel):
     """Final aggregated verdict from the coordinator + per-turn audit trail."""
 
@@ -298,6 +389,18 @@ class TradePanelVerdict(BaseModel):
             "— so the envelope shows whether the contract was checked."
         ),
     )
+    enforcement: EnforcementBlock | None = Field(
+        default=None,
+        description=(
+            "feat/bento-preflight-gate — execution-layer enforcement result "
+            "(Bento pre-flight). Sibling of `safety`, but a different layer: "
+            "`safety` is the fail-OPEN judgment signal at research time; "
+            "`enforcement` is the fail-CLOSED broadcast-time veto over the "
+            "realized tx. None on any path that did not run a pre-flight (the "
+            "default — most verdict envelopes are research-only and never reach "
+            "an execution adapter). Additive; never required."
+        ),
+    )
     backtest: BacktestReport | None = Field(
         default=None,
         description=(
@@ -333,6 +436,8 @@ class TradePanelVerdict(BaseModel):
 __all__ = [
     "BacktestReport",
     "Citation",
+    "EnforcementBlock",
+    "EnforcementProvider",
     "SafetyBlock",
     "TradePanelTurn",
     "TradePanelVerdict",

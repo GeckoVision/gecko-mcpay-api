@@ -81,8 +81,18 @@ from typing import Any
 # above changes. Verifiers match on this exact prefix.
 RECEIPT_MEMO_PREFIX = "gecko:v1:"
 
+# Bento co-anchor memo prefix (Option 2 — second memo in the SAME anchor tx).
+# This is a SEPARATE instruction, NOT a change to the frozen ``gecko:v1:{h}``
+# verdict-hash spec above. The Bento memo carries the pre-flight allow/deny +
+# a reference id: ``bento:v1:{allow|deny}:{ref}``. A verifier reads both memos
+# from the same ``getTransaction``. See
+# ``private/strategy/2026-06-13-bento-enforcement-mechanics.md`` §2 Option 2.
+BENTO_MEMO_PREFIX = "bento:v1:"
+
 __all__ = [
+    "BENTO_MEMO_PREFIX",
     "RECEIPT_MEMO_PREFIX",
+    "bento_memo_string",
     "canonical_envelope_json",
     "memo_string",
     "receipt_hash",
@@ -190,3 +200,19 @@ def memo_string(envelope_or_hash: Any) -> str:
     else:
         h = receipt_hash(envelope_or_hash)
     return f"{RECEIPT_MEMO_PREFIX}{h}"
+
+
+def bento_memo_string(*, allow: bool, ref: str) -> str:
+    """Return the Bento co-anchor memo ``bento:v1:{allow|deny}:{ref}``.
+
+    Option 2 from the enforcement-mechanics doc: a SECOND memo instruction in
+    the SAME anchor tx, co-located + co-signed with the verdict memo. This does
+    NOT touch ``h`` or the frozen ``gecko:v1:`` spec — the two attestations are
+    independent instructions a verifier reads from the same transaction.
+
+    ``ref`` is the Bento attestation id / pre-flight ref (provenance, not a
+    secret). Stripped/escaped of nothing — keep it short; the SPL Memo per-tx
+    byte budget is shared across both memos (limit 566 bytes each).
+    """
+    decision = "allow" if allow else "deny"
+    return f"{BENTO_MEMO_PREFIX}{decision}:{ref}"

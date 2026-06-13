@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from gecko_core.payments.receipt.config import ReceiptConfig, load_config
-from gecko_core.payments.receipt.hash import memo_string, receipt_hash
+from gecko_core.payments.receipt.hash import bento_memo_string, memo_string, receipt_hash
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from solders.keypair import Keypair
@@ -42,6 +42,21 @@ MEMO_PROGRAM_ID_STR = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
 _MIN_BALANCE_LAMPORTS = 1_000_000
 _AIRDROP_LAMPORTS = 1_000_000_000  # 1 SOL devnet airdrop when under the floor.
 
+# Bento co-anchor feature flag (Option 2 — second SPL Memo in the same tx).
+# DEFAULT OFF. When on AND a bento decision is supplied, anchor_receipt appends
+# a ``bento:v1:{allow|deny}:{ref}`` memo alongside the frozen ``gecko:v1:{h}``
+# memo. The verdict-hash spec is UNCHANGED — this is a second instruction.
+BENTO_COANCHOR_ENV = "GECKO_RECEIPT_BENTO_COANCHOR"
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def is_bento_coanchor_enabled(env: Mapping[str, str] | None = None) -> bool:
+    """True iff the Bento co-anchor flag is set. Default off."""
+    import os as _os
+
+    src = env if env is not None else _os.environ
+    return src.get(BENTO_COANCHOR_ENV, "").strip().lower() in _TRUTHY
+
 
 @dataclass(frozen=True)
 class ReceiptAnchor:
@@ -52,6 +67,10 @@ class ReceiptAnchor:
     oracle_pubkey: str
     memo: str
     cluster: str = "devnet"
+    # The Bento co-anchor memo, when Option 2 was active for this anchor tx.
+    # None when the co-anchor flag is off or no Bento decision was supplied.
+    # When set, this memo is co-located + co-signed in the SAME ``receipt_sig``.
+    bento_memo: str | None = None
 
 
 def load_oracle_keypair(path: str | Any) -> Keypair:
@@ -88,6 +107,8 @@ def anchor_receipt(
     *,
     config: ReceiptConfig | None = None,
     env: Mapping[str, str] | None = None,
+    bento_allow: bool | None = None,
+    bento_ref: str | None = None,
 ) -> ReceiptAnchor:
     """Anchor ``envelope`` as a Decision Receipt and return the signature.
 
@@ -95,6 +116,13 @@ def anchor_receipt(
     :class:`ReceiptConfigError` on bad config. Network/RPC errors from the
     Solana client propagate verbatim (we never catch-and-rephrase payment-path
     failures).
+
+    Bento co-anchor (Option 2, OPT-IN): when ``GECKO_RECEIPT_BENTO_COANCHOR`` is
+    on AND ``bento_allow`` is supplied, a SECOND SPL Memo
+    ``bento:v1:{allow|deny}:{ref}`` is appended to the SAME anchor tx. The frozen
+    ``gecko:v1:{h}`` verdict-hash memo is UNCHANGED — the Bento memo is an extra
+    instruction, not a change to ``h``. Default off: when the flag is unset OR
+    ``bento_allow`` is None, exactly one memo is posted (unchanged behavior).
     """
     from solana.rpc.api import Client
     from solana.rpc.commitment import Confirmed
@@ -129,11 +157,27 @@ def anchor_receipt(
             message=memo.encode("utf-8"),
         )
     )
+    instructions = [memo_ix]
+
+    # Option 2 co-anchor: append a SECOND memo iff the flag is on AND a Bento
+    # decision was supplied. The verdict memo above is untouched.
+    bento_memo: str | None = None
+    if bento_allow is not None and is_bento_coanchor_enabled(env):
+        bento_memo = bento_memo_string(allow=bento_allow, ref=bento_ref or "")
+        instructions.append(
+            create_memo(
+                MemoParams(
+                    program_id=Pubkey.from_string(MEMO_PROGRAM_ID_STR),
+                    signer=oracle_pubkey,
+                    message=bento_memo.encode("utf-8"),
+                )
+            )
+        )
 
     blockhash = client.get_latest_blockhash().value.blockhash
     message = MessageV0.try_compile(
         payer=oracle_pubkey,
-        instructions=[memo_ix],
+        instructions=instructions,
         address_lookup_table_accounts=[],
         recent_blockhash=blockhash,
     )
@@ -145,19 +189,24 @@ def anchor_receipt(
     receipt_sig = str(resp.value)
     client.confirm_transaction(resp.value, commitment=Confirmed)
 
-    logger.info("anchored receipt h=%s sig=%s", h, receipt_sig)
+    logger.info(
+        "anchored receipt h=%s sig=%s bento_coanchor=%s", h, receipt_sig, bento_memo is not None
+    )
     return ReceiptAnchor(
         h=h,
         receipt_sig=receipt_sig,
         oracle_pubkey=str(oracle_pubkey),
         memo=memo,
         cluster="devnet",
+        bento_memo=bento_memo,
     )
 
 
 __all__ = [
+    "BENTO_COANCHOR_ENV",
     "MEMO_PROGRAM_ID_STR",
     "ReceiptAnchor",
     "anchor_receipt",
+    "is_bento_coanchor_enabled",
     "load_oracle_keypair",
 ]
