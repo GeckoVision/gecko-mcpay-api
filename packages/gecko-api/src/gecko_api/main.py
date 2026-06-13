@@ -1527,6 +1527,19 @@ class TradeResearchResponse(BaseModel):
             "evidence_citations. Not relevance-trimmed: canon is cross-cutting."
         ),
     )
+    safety: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "feat/verdict-contract-safety — first-class contract-safety read. "
+            "Mirrors gecko_core...SafetyBlock: {checked, honeypot, mint_mutable, "
+            "freeze_mutable, tax_rate, top_holder_pct, rug_flags, source}. "
+            "Populated from the raw-chain rug/honeypot client for SPL-mint "
+            "targets; an explicit fail-OPEN block (checked=False + rug_flags) "
+            "when the target is a known protocol or the source was unavailable. "
+            "Always present on the retrieval-path envelope — the field shows "
+            "whether the contract was checked, never silently omitted."
+        ),
+    )
     backtest: dict[str, Any] | None = Field(
         default=None,
         description=(

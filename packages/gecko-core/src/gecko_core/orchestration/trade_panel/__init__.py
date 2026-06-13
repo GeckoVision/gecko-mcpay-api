@@ -41,6 +41,7 @@ from gecko_core.orchestration.trade_panel.models import (
     CITATION_SNIPPET_MAX_LEN,
     Citation,
     DissentEntry,
+    SafetyBlock,
     TradePanelTurn,
     TradePanelVerdict,
     TradeVerdictLiteral,
@@ -60,6 +61,7 @@ from gecko_core.orchestration.trade_panel.prompts import (
     TradePanelPromptsConfigError,
     load_prompts,
 )
+from gecko_core.orchestration.trade_panel.safety_check import evaluate_contract_safety
 from gecko_core.sources.types import (
     FRESHNESS_TIER_VALUES,
     PROVIDER_KINDS,
@@ -79,12 +81,14 @@ __all__ = [
     "STRATEGIST",
     "TECHNICAL_ANALYST",
     "Citation",
+    "SafetyBlock",
     "TradePanelPromptsConfigError",
     "TradePanelTurn",
     "TradePanelVerdict",
     "TradeVerdictLiteral",
     "build_citations_from_chunks",
     "build_groupchat",
+    "evaluate_contract_safety",
     "load_prompts",
     "partition_emitted_citations",
     "retrieve_trade_corpus_chunks",
@@ -2081,6 +2085,33 @@ def partition_emitted_citations(
     return evidence, framework
 
 
+def _attach_safety(verdict: TradePanelVerdict, safety: SafetyBlock) -> TradePanelVerdict:
+    """Attach the contract-safety block to the envelope; amplify a hard honeypot.
+
+    The block is ALWAYS attached so the envelope shows whether the contract was
+    checked. A confirmed ``honeypot=True`` is a signal the coordinator must not
+    bury: we floor confidence to 0, push a leading ``key_driver``, and prepend a
+    ``blocker_question`` — without flipping the verdict literal (the panel's
+    closing line stays authoritative; we make the danger loud, not silent).
+    """
+    update: dict[str, Any] = {"safety": safety}
+
+    if safety.honeypot is True:
+        flags = ", ".join(safety.rug_flags) or "rug_risk"
+        driver = f"CONTRACT SAFETY: honeypot/rug risk ({flags}) [source={safety.source}]"
+        blocker = f"Contract failed safety check ({flags}) — confirm before sizing any position."
+        update["confidence"] = 0.0
+        update["key_drivers"] = [driver, *verdict.key_drivers]
+        update["blocker_questions"] = [blocker, *verdict.blocker_questions]
+        _log.warning(
+            "trade_panel.safety.honeypot source=%s flags=%s",
+            safety.source,
+            safety.rug_flags,
+        )
+
+    return verdict.model_copy(update=update)
+
+
 async def run_trade_panel_with_retrieval(
     idea: str,
     protocol: str,
@@ -2098,6 +2129,7 @@ async def run_trade_panel_with_retrieval(
     as_of: str | date | datetime | None = None,
     pool: str | None = None,
     news_provider: Any | None = None,
+    safety_client: Any | None = None,
 ) -> TradePanelVerdict:
     """Convenience wrapper — fetch corpus chunks, then run the 7-agent panel.
 
@@ -2258,6 +2290,18 @@ async def run_trade_panel_with_retrieval(
     # `confidence` and appends an explicit blocker — it never spends, never
     # calls the model, and never flips the verdict literal.
     verdict, _grounding_report = apply_grounding_gate(verdict)
+
+    # feat/verdict-contract-safety — first-class contract-safety attach.
+    #
+    # Pattern E: the QuickNode raw-chain rug/honeypot client shipped (PR #125)
+    # but its signal never reached the sold verdict. Wire it HERE so every
+    # `gecko_trade_research` envelope carries a `safety` block. For SPL-mint
+    # targets this is a real raw-chain read (mint/freeze renounced, holder
+    # concentration); for known protocols / unconfigured RPC it is an explicit
+    # fail-OPEN block (`not_a_token_mint` / `safety_check_unavailable`) so the
+    # envelope ALWAYS shows whether the contract was checked. Never raises.
+    safety_block = await evaluate_contract_safety(protocol, client=safety_client)
+    verdict = _attach_safety(verdict, safety_block)
 
     if not enable_backtest:
         return verdict
