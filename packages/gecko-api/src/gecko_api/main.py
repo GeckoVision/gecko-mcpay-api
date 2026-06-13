@@ -1227,6 +1227,16 @@ from gecko_api.routes.research import router as _research_router  # noqa: E402
 app.include_router(_research_router)
 
 
+# V1 Decision Receipt — public verifier POST /v1/receipt/verify (devnet, SPL
+# Memo, v0). A third party submits a verdict envelope + receipt_sig and gets
+# back whether the on-chain memo proves Gecko anchored that exact decision. No
+# payment, no session gate. 503s if GECKO_RECEIPT_ORACLE_PUBKEY / _RPC_URL are
+# unset, so it never passes against an unknown oracle key.
+from gecko_api.routes.receipt import router as _receipt_router  # noqa: E402
+
+app.include_router(_receipt_router)
+
+
 # S20-B3 — single x402-gated dispatcher for the 12-skill manifest. Mounted
 # AFTER middleware so the route's own dispatcher (X402Dispatcher) is the
 # 402 gate, not the x402 PaymentMiddlewareASGI — the manifest skills are

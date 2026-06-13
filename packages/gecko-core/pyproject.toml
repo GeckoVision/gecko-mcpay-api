@@ -49,6 +49,12 @@ dependencies = [
     # offline parse of unsigned calldata; no RPC. Already a gecko-mcp dep,
     # declared here so the validator import doesn't rely on transitive pull.
     "solders>=0.21",
+    # V1 Decision Receipt (payments/receipt) — the `solana` package provides the
+    # devnet RPC Client (anchor.py) AND the spl.memo create_memo helper +
+    # MEMO_PROGRAM_ID constant. Pulled transitively by solders today, declared
+    # explicitly so the receipt anchor import doesn't rely on transitive
+    # resolution. Devnet-only, gated behind GECKO_RECEIPT_ENABLED.
+    "solana>=0.36",
     # S64 — ccxt is the OKX public-market-data client used by the hosted paper
     # agent (contest_bot/strategies/okx_feed.py, GECKO_VENUE=okx_spot). contest_bot
     # isn't a uv package; the agent Docker image installs it by syncing gecko-core
