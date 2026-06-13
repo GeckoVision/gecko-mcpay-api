@@ -141,6 +141,91 @@ class DissentEntry(BaseModel):
     )
 
 
+class SafetyBlock(BaseModel):
+    """First-class contract-safety read attached to the verdict envelope.
+
+    feat/verdict-contract-safety — Pattern E: we owned the QuickNode raw-chain
+    rug/honeypot client (``gecko_core.sources.quicknode``) but the signal never
+    reached the sold verdict. This block is the canonical wire shape so the
+    oracle can truthfully say "our safety layer checked the contract" instead
+    of borrowing it from a venue (OKX).
+
+    Fail-OPEN + explicit: when the check could not run (target is not an SPL
+    mint, source unavailable, or the RPC errored) every measured field is
+    ``None`` and ``rug_flags`` carries an explicit marker
+    (``"not_a_token_mint"`` / ``"safety_check_unavailable"``). The envelope
+    ALWAYS shows whether the check ran — never silently omit. ``checked`` is the
+    one-glance boolean the coordinator / gate reads first.
+
+    Field semantics:
+      - ``honeypot``        — True when the contract structurally cannot be
+        sold safely. v0.1 derives this from un-renounced mint/freeze authority
+        (the dev can mint-dilute or freeze your position); refined when a
+        sell-simulation source lands.
+      - ``mint_mutable``    — True when mint authority is NOT renounced.
+      - ``freeze_mutable``  — True when freeze authority is NOT renounced.
+      - ``tax_rate``        — transfer-tax fraction in [0,1] when a source
+        exposes it; ``None`` until a tax source is wired (SPL token-2022
+        transfer-fee extension is the v0.2 target).
+      - ``top_holder_pct``  — largest single holder's share of supply in
+        [0,1]; concentration proxy for rug risk.
+      - ``rug_flags``       — explicit string flags (e.g. ``"mint_not_renounced"``,
+        ``"freeze_not_renounced"``, ``"high_holder_concentration"``,
+        ``"safety_check_unavailable"``).
+      - ``source``          — provenance of the read (``"quicknode"`` /
+        ``"unavailable"``); never a secret/URL.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    checked: bool = Field(
+        ...,
+        description="True when a contract-safety source actually ran for this target.",
+    )
+    honeypot: bool | None = Field(
+        default=None,
+        description="True = contract structurally unsafe to sell; None = not measured.",
+    )
+    mint_mutable: bool | None = Field(
+        default=None,
+        description="True when mint authority is NOT renounced (dev can dilute).",
+    )
+    freeze_mutable: bool | None = Field(
+        default=None,
+        description="True when freeze authority is NOT renounced (dev can freeze).",
+    )
+    tax_rate: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Transfer-tax fraction in [0,1]; None until a tax source is wired.",
+    )
+    top_holder_pct: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Largest single holder share of supply in [0,1]; None if unmeasured.",
+    )
+    rug_flags: list[str] = Field(
+        default_factory=list,
+        description="Explicit rug/honeypot/availability flags; never empty-silent on failure.",
+    )
+    source: str = Field(
+        default="unavailable",
+        description="Read provenance ('quicknode' / 'unavailable'); never a secret.",
+    )
+
+    @classmethod
+    def unavailable(cls, *, source: str = "unavailable", reason: str | None = None) -> SafetyBlock:
+        """Fail-OPEN constructor — the check could not run, and we say so.
+
+        Use when the RPC is unconfigured/errored or the target is not an SPL
+        mint. Always emits a flag so the envelope shows the check did not run.
+        """
+        flag = reason or "safety_check_unavailable"
+        return cls(checked=False, source=source, rug_flags=[flag])
+
+
 class TradePanelVerdict(BaseModel):
     """Final aggregated verdict from the coordinator + per-turn audit trail."""
 
@@ -201,6 +286,18 @@ class TradePanelVerdict(BaseModel):
             "single citations[] so canon no longer drags citation_relevance."
         ),
     )
+    safety: SafetyBlock | None = Field(
+        default=None,
+        description=(
+            "feat/verdict-contract-safety — first-class contract-safety read. "
+            "Populated for SPL-mint targets from the raw-chain rug/honeypot "
+            "client (gecko_core.sources.quicknode). None ONLY on the legacy "
+            "path that did not run the check at all (e.g. a unit-constructed "
+            "verdict); the retrieval entry point always attaches a block — a "
+            "fail-OPEN `SafetyBlock.unavailable()` when the check could not run "
+            "— so the envelope shows whether the contract was checked."
+        ),
+    )
     backtest: BacktestReport | None = Field(
         default=None,
         description=(
@@ -236,6 +333,7 @@ class TradePanelVerdict(BaseModel):
 __all__ = [
     "BacktestReport",
     "Citation",
+    "SafetyBlock",
     "TradePanelTurn",
     "TradePanelVerdict",
     "TradeVerdictLiteral",
