@@ -364,6 +364,14 @@ class JupiterSwapExecutionAdapter:
         # injected for tests; defaults to the real bridge / CLI wrapper
         build_fn: Any = None,
         onchainos_client: Any = None,
+        # Bento pre-flight (feat/bento-preflight-gate). Both default None: the
+        # gate is an explicit, env-toggled (BENTO_PREFLIGHT=on) fail-closed veto.
+        # When BENTO_PREFLIGHT is off, this is a NO-OP regardless of the client.
+        bento_client: Any = None,
+        # Advisory hint from the verdict SafetyBlock: the mint we judged clean +
+        # its rug_flags. Passed INTO Bento as the mint-equality anchor. The hint
+        # NEVER disarms the veto (layering doc §3a). Optional.
+        safety_hint: Any = None,
     ) -> None:
         self.owner = owner_pubkey
         self.policy = policy
@@ -378,7 +386,12 @@ class JupiterSwapExecutionAdapter:
         self._onchainos_bin = onchainos_bin
         self._build_fn = build_fn or build_unsigned_swap_tx
         self._onchainos = onchainos_client  # lazy-init in _submit if None
+        self._bento_client = bento_client
+        self._safety_hint = safety_hint
         self.last_build: dict[str, Any] | None = None
+        # Last enforcement result (for the EnforcementBlock / audit trail). None
+        # until a pre-flight actually runs.
+        self.last_enforcement: Any = None
 
     def _to_base_units(self, notional_usd: float) -> str:
         """USD notional → input-mint base units (USDC: 6 decimals). String, no float
@@ -415,6 +428,12 @@ class JupiterSwapExecutionAdapter:
         guard = self._quote_guard(quote, amount_base)
         if guard is not None:
             return ExecResult(ok=False, detail=f"quote-guard denied: {guard}", paper=False)
+
+        # 2b. BENTO PRE-FLIGHT — the fail-CLOSED execution-layer veto. Sits in
+        # the same band as the quote-guard (after it, before the double-gate
+        # broadcast), exactly where the layering doc places it. Deny → raises
+        # ExecAdapterError BEFORE any broadcast. NO-OP when BENTO_PREFLIGHT=off.
+        self._bento_preflight(build.get("unsignedTxBase64"))
 
         # 3. the double gate — submit ONLY when explicitly armed AND confirmed
         will_submit = (not self.dry_run) and confirm
@@ -464,6 +483,68 @@ class JupiterSwapExecutionAdapter:
             return f"min-out (otherAmountThreshold) is {thresh} — no enforceable slippage floor"
         return None
 
+    def _bento_preflight(self, unsigned_tx_b64: str | None) -> None:
+        """Fail-CLOSED Bento pre-flight veto over the realized unsigned tx.
+
+        Contract (web3 enforcement doc point B + layering doc §2.2):
+          * NO-OP when ``BENTO_PREFLIGHT`` is off (default). Never blocks.
+          * When on: run the Bento scan; on deny OR "could not run", raise
+            :class:`ExecAdapterError` BEFORE any broadcast. Fail-closed: a
+            missing client / a pre-flight that did not run is a VETO, never a
+            silent pass.
+          * The advisory ``safety_hint`` (intended mint + rug_flags) is passed
+            INTO Bento as the mint-equality anchor. It NEVER disarms the veto.
+
+        Records ``self.last_enforcement`` (a BentoPreflightResult) for the
+        EnforcementBlock / audit trail regardless of allow/deny.
+        """
+        # Lazy imports keep trade_safety import-light (no gecko_core preflight at
+        # module load; contest_bot stays runnable without the core installed for
+        # the legacy paper paths).
+        from gecko_core.trade_agent.exec_adapters import ExecAdapterError
+        from gecko_core.trade_agent.preflight import (
+            BentoPreflightContext,
+            BentoPreflightResult,
+            is_preflight_enabled,
+        )
+
+        if not is_preflight_enabled():
+            # OFF = clean no-op pass-through. Do not even construct a client.
+            return
+
+        client = self._bento_client
+        if client is None:
+            # Enabled but no client wired → fail-CLOSED. We refuse to broadcast
+            # an unverified tx rather than silently pass.
+            self.last_enforcement = BentoPreflightResult(
+                allowed=False, ran=False, reasons=["bento_client_unavailable"]
+            )
+            raise ExecAdapterError(
+                "BENTO_PREFLIGHT=on but no Bento client is wired; fail-closed — "
+                "refusing to broadcast an un-screened tx."
+            )
+
+        # Build the advisory hint from the SafetyBlock-shaped object (duck-typed:
+        # any object exposing rug_flags / top_holder_pct / checked works).
+        hint = self._safety_hint
+        context = BentoPreflightContext(
+            intended_mint=self.output_mint,
+            gecko_rug_flags=list(getattr(hint, "rug_flags", []) or []),
+            gecko_top_holder_pct=getattr(hint, "top_holder_pct", None),
+            gecko_safety_checked=bool(getattr(hint, "checked", False)),
+        )
+
+        result = client.scan(
+            unsigned_tx_b64=unsigned_tx_b64,
+            mint=self.output_mint,
+            context=context,
+        )
+        self.last_enforcement = result
+
+        if not result.ran or not result.allowed:
+            reasons = ", ".join(result.reasons) or "unspecified"
+            raise ExecAdapterError(f"bento pre-flight VETO (fail-closed): {reasons}")
+
     def _submit(self, unsigned_tx_b64: str, quote: dict[str, Any]) -> ExecResult:
         """Hand the unsigned tx to the delegated OKX TEE for sign+scan+broadcast.
         Errors are surfaced verbatim, never faked-success (CLAUDE.md)."""
@@ -499,12 +580,19 @@ class JupiterSwapExecutionAdapter:
 
 
 def dispatch(
-    order: Order, policy: TradeSafetyPolicy, ctx: SafetyContext, adapter: ExecutionAdapter,
+    order: Order,
+    policy: TradeSafetyPolicy,
+    ctx: SafetyContext,
+    adapter: ExecutionAdapter,
     ref_price: float,
 ) -> ExecResult:
     """Safe rails: run the safety gate FIRST; only a clean verdict reaches the
     execution adapter. A denied order never touches custody/execution."""
     verdict = check_order(order, policy, ctx)
     if not verdict.allow:
-        return ExecResult(ok=False, detail="safety-gate denied: " + "; ".join(verdict.reasons), paper=adapter.venue == "paper")
+        return ExecResult(
+            ok=False,
+            detail="safety-gate denied: " + "; ".join(verdict.reasons),
+            paper=adapter.venue == "paper",
+        )
     return adapter.place_order(order, ref_price)

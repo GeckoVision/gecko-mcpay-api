@@ -19,14 +19,18 @@ See ``private/strategy/2026-06-12-onchain-receipt-research.md``.
 from __future__ import annotations
 
 from gecko_core.payments.receipt.hash import (
+    BENTO_MEMO_PREFIX,
     RECEIPT_MEMO_PREFIX,
+    bento_memo_string,
     canonical_envelope_json,
     memo_string,
     receipt_hash,
 )
 
 __all__ = [
+    "BENTO_MEMO_PREFIX",
     "RECEIPT_MEMO_PREFIX",
+    "bento_memo_string",
     "canonical_envelope_json",
     "memo_string",
     "receipt_hash",
