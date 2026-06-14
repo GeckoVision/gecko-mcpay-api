@@ -47,6 +47,16 @@ class ResearchRequest(BaseModel):
     protocol: str = Field(..., min_length=1, max_length=64)
     vertical: str = Field(default="dex", min_length=1, max_length=64)
     tier: Tier = "basic"
+    mint: str | None = Field(
+        default=None,
+        min_length=32,
+        max_length=44,
+        description=(
+            "Optional SPL mint address. When set, the contract-safety check "
+            "fires on it directly (safety.checked=true) instead of trying to "
+            "base58-decode the protocol string. Use this for token queries."
+        ),
+    )
 
 
 def _research_llm_config() -> dict[str, Any]:
@@ -79,6 +89,7 @@ async def research(
             vertical=req.vertical,
             tier=tier,
             llm_config=llm_config,
+            mint=req.mint,
         )
     except Exception as exc:
         # One-line user-facing message; class name only, never the message

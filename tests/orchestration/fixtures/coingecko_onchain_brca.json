@@ -1,0 +1,16 @@
+{
+  "data": {
+    "id": "solana_BrCAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "type": "token",
+    "attributes": {
+      "address": "BrCAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "name": "BrCA",
+      "symbol": "BRCA",
+      "decimals": 6,
+      "price_usd": "0.026310",
+      "fdv_usd": "26310000.0",
+      "market_cap_usd": "26310000.0",
+      "total_reserve_in_usd": "22400.0"
+    }
+  }
+}

@@ -186,6 +186,7 @@ def client() -> Iterator[TestClient]:
         agent_factory: object | None = None,
         enable_backtest: bool = False,
         history_source: object | None = None,
+        **_extra: object,
     ) -> TradePanelVerdict:
         verdict = TradePanelVerdict(
             verdict="act",
