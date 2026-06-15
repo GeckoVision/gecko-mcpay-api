@@ -61,7 +61,10 @@ from gecko_core.orchestration.trade_panel.prompts import (
     TradePanelPromptsConfigError,
     load_prompts,
 )
-from gecko_core.orchestration.trade_panel.safety_check import evaluate_contract_safety
+from gecko_core.orchestration.trade_panel.safety_check import (
+    build_onchain_safety_chunk,
+    evaluate_contract_safety,
+)
 from gecko_core.sources.types import (
     FRESHNESS_TIER_VALUES,
     PROVIDER_KINDS,
@@ -2151,6 +2154,48 @@ def _attach_safety(verdict: TradePanelVerdict, safety: SafetyBlock) -> TradePane
     return verdict.model_copy(update=update)
 
 
+# Phase 0.2 — pre-panel safety read budget. The read is fail-OPEN already, but
+# firing it BEFORE the panel puts it on the critical path, so it is also wrapped
+# in a hard timeout: a slow RPC must never delay (let alone block) the panel.
+# ~2s covers a healthy QuickNode + CoinGecko round-trip with margin; on timeout
+# the block degrades to fail-OPEN and no onchain_live chunk is injected.
+_SAFETY_READ_BUDGET_S: float = 2.0
+
+
+async def _evaluate_contract_safety_bounded(
+    protocol: str,
+    *,
+    mint: str | None,
+    client: Any | None,
+    market_client: Any | None,
+) -> SafetyBlock:
+    """Run :func:`evaluate_contract_safety` under a hard timeout, fail-OPEN.
+
+    ``evaluate_contract_safety`` never raises on RPC/parse errors, but it CAN
+    be slow; on the pre-panel critical path a slow read must degrade silently.
+    On timeout or any unexpected error this returns a fail-OPEN block so the
+    panel still runs (and no synthetic chunk is injected).
+    """
+    try:
+        return await asyncio.wait_for(
+            evaluate_contract_safety(
+                protocol,
+                mint=mint,
+                client=client,
+                market_client=market_client,
+            ),
+            timeout=_SAFETY_READ_BUDGET_S,
+        )
+    except Exception as exc:  # pragma: no cover - defensive; TimeoutError included
+        # asyncio.wait_for raises TimeoutError (a builtin Exception subclass in
+        # 3.11+) on budget exhaustion; any other error degrades the same way.
+        _log.warning(
+            "trade_panel.safety_read.degraded reason=%s",
+            type(exc).__name__,
+        )
+        return SafetyBlock.unavailable(reason="safety_check_unavailable")
+
+
 async def run_trade_panel_with_retrieval(
     idea: str,
     protocol: str,
@@ -2273,6 +2318,38 @@ async def run_trade_panel_with_retrieval(
         )
         news_added = len(chunks) - before_news
 
+    # Phase 0.2 (context-engineering) — fire the contract-safety / Information-
+    # MEV read BEFORE the panel and merge its numbers into the chunk slate.
+    #
+    # The block is computed ONCE here and reused for the post-panel
+    # `_attach_safety` amplifier below (never double-run). Wiring it in front of
+    # the panel closes two gaps the post-hoc-only attach left open:
+    #   - the risk_manager voice now SEES the safety / IMEV signal (honeypot,
+    #     liquidity/mcap, top-holder %, IMEV score) — the input most relevant to
+    #     its job — instead of it being bolted on after the verdict;
+    #   - the grounding gate no longer REDACTS live on-chain numbers a voice
+    #     cites (the "BrCA redaction"): the synthetic onchain_live chunk is in
+    #     the slate, becomes a real citation, and its figures are grounded-by-
+    #     construction in the gate's snippet corpus.
+    #
+    # Fail-OPEN + non-blocking: the read is wrapped in a ~2s budget; on timeout
+    # or ANY error the block degrades to a fail-OPEN SafetyBlock and NO chunk is
+    # injected — the panel still runs identically. Same in-memory injection
+    # pattern as the news/reconstruction merges above; never persisted.
+    safety_block = await _evaluate_contract_safety_bounded(
+        protocol,
+        mint=mint,
+        client=safety_client,
+        market_client=safety_market_client,
+    )
+    onchain_added = 0
+    onchain_chunk = build_onchain_safety_chunk(safety_block, protocol=protocol, mint=mint)
+    if onchain_chunk is not None:
+        existing_ids = {c.get("id") for c in chunks if c.get("id")}
+        if onchain_chunk.get("id") not in existing_ids:
+            chunks = [*list(chunks), onchain_chunk]
+            onchain_added = 1
+
     # Issue #12 — panel kickoff log. Truthy chunks here but empty
     # `citations` on the response would point at hypothesis 3 (prompt-drop):
     # retrieval landed rows but the panel's _format_chunks / opening prompt
@@ -2281,13 +2358,15 @@ async def run_trade_panel_with_retrieval(
     chunk_ids = [c.get("id", "") for c in chunks]
     _log.info(
         "trade_panel.kickoff protocol=%s vertical=%s tier=%s "
-        "chunks_passed_to_panel=%d reconstructed=%d news_added=%d chunk_ids=%s",
+        "chunks_passed_to_panel=%d reconstructed=%d news_added=%d "
+        "onchain_added=%d chunk_ids=%s",
         protocol.strip().lower(),
         vertical,
         tier,
         len(chunks),
         recon_count,
         news_added,
+        onchain_added,
         chunk_ids,
     )
 
@@ -2342,21 +2421,19 @@ async def run_trade_panel_with_retrieval(
     # feat/verdict-contract-safety — first-class contract-safety attach.
     #
     # Pattern E: the QuickNode raw-chain rug/honeypot client shipped (PR #125)
-    # but its signal never reached the sold verdict. Wire it HERE so every
-    # `gecko_trade_research` envelope carries a `safety` block. For SPL-mint
-    # targets this is a real raw-chain read (mint/freeze renounced, holder
-    # concentration); for known protocols / unconfigured RPC it is an explicit
-    # fail-OPEN block (`not_a_token_mint` / `safety_check_unavailable`) so the
-    # envelope ALWAYS shows whether the contract was checked. Never raises.
-    # `mint` (when set) fires the safety read directly — a token query no longer
-    # has to cram the mint into `protocol`. Base58-in-`protocol` stays as the
-    # back-compat fallback inside evaluate_contract_safety.
-    safety_block = await evaluate_contract_safety(
-        protocol,
-        mint=mint,
-        client=safety_client,
-        market_client=safety_market_client,
-    )
+    # but its signal never reached the sold verdict. The block is attached HERE
+    # so every `gecko_trade_research` envelope carries a `safety` block. For
+    # SPL-mint targets this is a real raw-chain read (mint/freeze renounced,
+    # holder concentration); for known protocols / unconfigured RPC it is an
+    # explicit fail-OPEN block (`not_a_token_mint` / `safety_check_unavailable`)
+    # so the envelope ALWAYS shows whether the contract was checked.
+    #
+    # Phase 0.2: the SAME `safety_block` computed BEFORE the panel (and merged
+    # into the chunk slate) is reused here — it is NOT re-run (the read is
+    # billed/latency-bearing; computing once and using twice is the contract).
+    # `_attach_safety` stays as the post-hoc AMPLIFIER: it still floors
+    # confidence on a hard signal and prepends the loud driver/blocker. This
+    # phase is additive to the prompt/grounding side, not a replacement.
     verdict = _attach_safety(verdict, safety_block)
 
     if not enable_backtest:

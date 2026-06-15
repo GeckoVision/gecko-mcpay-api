@@ -91,6 +91,8 @@ def test_canonical_provider_kinds_value() -> None:
         "market_data",
         # S26 #14 — direct protocol-native API ingest.
         "protocol_native",
+        # Phase 0.2 — synthetic live on-chain safety / Information-MEV chunk.
+        "onchain_live",
     )
 
 

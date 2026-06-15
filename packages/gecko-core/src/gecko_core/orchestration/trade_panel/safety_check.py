@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import UTC, datetime
 from typing import Any
 
 from gecko_core.execution.yield_base.validation import b58decode
@@ -438,8 +439,122 @@ async def _fetch_market(
         return None
 
 
+# Phase 0.2 (context-engineering) — synthetic on-chain-live chunk builder.
+#
+# The contract-safety read used to be attached to the verdict ONLY post-hoc
+# (`_attach_safety`), AFTER the panel ran. Two consequences:
+#   - the risk_manager voice never saw the safety / Information-MEV signal —
+#     the one input most relevant to its job;
+#   - the grounding gate REDACTED any live on-chain number a voice mentioned,
+#     because the figure wasn't in any cited chunk (the "BrCA redaction").
+# Firing the read BEFORE the panel and merging its numbers into the chunk
+# slate fixes both: the voices read it, it is a real citation, and its figures
+# are grounded-by-construction in the gate's snippet corpus. This builder
+# renders a populated SafetyBlock into the panel's expected chunk shape. The
+# block is computed ONCE and reused for both this chunk and the post-panel
+# `_attach_safety` amplifier (never double-run).
+
+
+def _has_signal(safety: SafetyBlock) -> bool:
+    """True when the block carries an actual on-chain read worth injecting.
+
+    A fail-OPEN / unavailable block (``checked=False``, no measured fields)
+    carries no numbers a voice could ground on, so we inject NO chunk and the
+    panel runs exactly as before. We require ``checked`` AND at least one
+    measured numeric field — otherwise there is nothing to say.
+    """
+    if not safety.checked:
+        return False
+    return any(
+        v is not None
+        for v in (
+            safety.market_cap_usd,
+            safety.liquidity_usd,
+            safety.liquidity_to_mcap_pct,
+            safety.top_holder_pct,
+            safety.mint_mutable,
+            safety.freeze_mutable,
+        )
+    )
+
+
+def _safety_chunk_text(safety: SafetyBlock, *, now_iso: str) -> str:
+    """Compact, sourced, dated statement of the safety / IMEV facts.
+
+    Numbers are the REAL SafetyBlock values so a voice that cites them grounds
+    cleanly against this chunk in the grounding gate. Rendered in the same
+    number formats the voices naturally write ($26.31M, $22,400, 0.085%, 60%)
+    so the gate's fuzzy numeric match links a voice claim to this snippet.
+    """
+    parts: list[str] = [f"On-chain live read (as of {now_iso}):"]
+
+    if safety.market_cap_usd is not None:
+        parts.append(f"market cap ~${_fmt_usd(safety.market_cap_usd)}")
+    if safety.liquidity_usd is not None:
+        # Render with thousands separators too — voices write both "$22.4K"
+        # and "$22,400"; emitting both surface forms maximizes grounding.
+        liq = safety.liquidity_usd
+        parts.append(f"on-chain liquidity ~${_fmt_usd(liq)} (${liq:,.0f})")
+    if safety.liquidity_to_mcap_pct is not None:
+        flag_note = ""
+        if "fake_market_cap" in safety.rug_flags:
+            flag_note = " [flag: fake_market_cap]"
+        elif "thin_liquidity_vs_mcap" in safety.rug_flags:
+            flag_note = " [flag: thin_liquidity_vs_mcap]"
+        parts.append(f"liquidity/mcap {safety.liquidity_to_mcap_pct:.3f}%{flag_note}")
+    if safety.top_holder_pct is not None:
+        parts.append(f"top holder {safety.top_holder_pct * 100:.0f}% of supply")
+
+    if safety.mint_mutable is not None:
+        parts.append(f"mint authority {'mutable' if safety.mint_mutable else 'renounced'}")
+    if safety.freeze_mutable is not None:
+        parts.append(f"freeze authority {'mutable' if safety.freeze_mutable else 'renounced'}")
+    if safety.honeypot is True:
+        parts.append("honeypot/rug risk: TRUE")
+
+    if safety.information_mev is not None:
+        imev = safety.information_mev
+        reasons = "; ".join(imev.reasons) if imev.reasons else "no manipulation signals"
+        parts.append(f"Information-MEV: {imev.label} (score {imev.score:.2f}) — {reasons}")
+
+    return ". ".join(parts) + "."
+
+
+def build_onchain_safety_chunk(
+    safety: SafetyBlock,
+    *,
+    protocol: str,
+    mint: str | None = None,
+) -> dict[str, Any] | None:
+    """Build a synthetic ``onchain_live`` chunk from a populated SafetyBlock.
+
+    Returns ``None`` (inject nothing) when the block carries no on-chain
+    numbers to ground on — the panel then runs exactly as before. The chunk
+    shape mirrors the news/reconstruction in-memory injection pattern so
+    ``_format_chunks`` renders it identically, the citation breadth directive
+    applies uniformly, and ``partition_emitted_citations`` places it into the
+    evidence path (not framework_context — it is live data, not the canon lens).
+    """
+    if not _has_signal(safety):
+        return None
+    now_iso = datetime.now(UTC).isoformat()
+    text = _safety_chunk_text(safety, now_iso=now_iso)
+    chunk_key = (mint or protocol or "").strip().lower()
+    return {
+        "id": f"onchain-live-{chunk_key}" if chunk_key else "onchain-live",
+        "text": text,
+        "source": safety.source or "onchain",
+        "provider_kind": "onchain_live",
+        "url": "",
+        "published_ts": now_iso,
+        "protocol": (protocol or "").strip().lower(),
+        "freshness_tier": "hot",
+    }
+
+
 __all__ = [
     "assess_information_mev",
+    "build_onchain_safety_chunk",
     "compute_manipulation_signals",
     "evaluate_contract_safety",
     "is_spl_mint",
