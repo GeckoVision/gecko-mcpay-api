@@ -28,8 +28,13 @@ COINGECKO_BASE_URL = "https://api.coingecko.com/api/v3"
 # coin-id `/coins/markets` surface, this resolves a raw SPL mint directly and
 # exposes both market cap AND on-chain DEX liquidity (`total_reserve_in_usd`),
 # which is the input for the thin-liquidity / fake-market-cap manipulation read.
-# Free tier, no key (a Pro key lifts rate limits via the same header).
-COINGECKO_ONCHAIN_BASE_URL = "https://api.coingecko.com/api/v3/onchain"
+#
+# Uses GeckoTerminal's PUBLIC API directly (free, keyless, ~30 req/min). The
+# CoinGecko-hosted mirror (`api.coingecko.com/api/v3/onchain/...`) was gated to
+# paid keys in 2026 — calling it keyless now 401s, which silently broke the
+# manipulation read (every token fell through to manipulation_check_unavailable).
+# The two share identical `data.attributes` field names, so only the base moves.
+COINGECKO_ONCHAIN_BASE_URL = "https://api.geckoterminal.com/api/v2"
 
 # A venue is "low trust" below this CoinGecko trust_score tier.
 _TRUST_RANK = {"red": 0, "yellow": 1, "green": 2}

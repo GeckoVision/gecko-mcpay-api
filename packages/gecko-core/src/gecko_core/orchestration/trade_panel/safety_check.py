@@ -23,7 +23,11 @@ import os
 from typing import Any
 
 from gecko_core.execution.yield_base.validation import b58decode
-from gecko_core.orchestration.trade_panel.models import SafetyBlock
+from gecko_core.orchestration.trade_panel.models import (
+    InformationMEVBlock,
+    InformationMEVLabel,
+    SafetyBlock,
+)
 from gecko_core.sources.coingecko import CoinGeckoClient, OnchainTokenMarket
 from gecko_core.sources.quicknode import QuickNodeClient, TokenSafety
 
@@ -43,6 +47,16 @@ _HOLDER_CONCENTRATION_FLAG = 0.35
 # venue ratings called it "Normal". These are the signals that catch that.
 _THIN_LIQUIDITY_PCT = 1.0
 _FAKE_MCAP_PCT = 0.2
+
+# Absolute on-chain liquidity floor (USD). The liq/mcap RATIO alone is a
+# false-positive magnet for large caps: a $585M token with $2.0M on-chain DEX
+# liquidity is 0.34% but perfectly tradable — its real depth lives on CEXes that
+# ``total_reserve_in_usd`` does not capture. A thin float is only a manipulation
+# signal when liquidity is ALSO small in ABSOLUTE terms (a real-size order can't
+# exit). Below this floor BrCA ($160K) flags; above it JUP/BONK (~$2M+) do not.
+# CAVEAT: a genuinely large-cap token whose liquidity is almost entirely on CEX
+# could in theory dip below the floor; that edge is accepted for v1. Tunable.
+_MIN_LIQUIDITY_USD = 500_000.0
 
 # FOLLOW-UP (not built here): holder-distribution VELOCITY — top holders selling
 # down over time is a distinct rug signal from static concentration. It needs a
@@ -133,14 +147,106 @@ def compute_manipulation_signals(
         return mcap, liquidity, None, []
     ratio_pct = liquidity / mcap * 100.0
     flags: list[str] = []
-    if ratio_pct < _FAKE_MCAP_PCT:
+    # A low ratio is only a manipulation signal when liquidity is ALSO thin in
+    # absolute terms — otherwise a deep-liquidity large cap (whose off-chain CEX
+    # depth this source can't see) trips a false positive. Require both.
+    thin_absolute = liquidity < _MIN_LIQUIDITY_USD
+    if thin_absolute and ratio_pct < _FAKE_MCAP_PCT:
         # fake_market_cap is the stronger claim; it implies thin liquidity too,
         # so emit both so a consumer filtering on either flag still catches it.
         flags.append("thin_liquidity_vs_mcap")
         flags.append("fake_market_cap")
-    elif ratio_pct < _THIN_LIQUIDITY_PCT:
+    elif thin_absolute and ratio_pct < _THIN_LIQUIDITY_PCT:
         flags.append("thin_liquidity_vs_mcap")
     return mcap, liquidity, ratio_pct, flags
+
+
+# Information-MEV scoring weights (W1). Deterministic, derived from the
+# manipulation flags PR #136 already computes — no new data dependency.
+# fake_market_cap is the strongest single signal (the price is fictional); thin
+# liquidity alone is milder; single-wallet concentration compounds either (one
+# holder can dump the whole float). Tuned so BrCA ($26.3M mcap / $22.4K liq,
+# 77% top holder) => ~0.95 'manipulated', a deep-liquidity major => 0.0 'clean'.
+_IMEV_FAKE_MCAP = 0.7
+_IMEV_THIN_LIQUIDITY = 0.4
+_IMEV_CONCENTRATION = 0.25
+_IMEV_MANIPULATED_AT = 0.6
+_IMEV_ELEVATED_AT = 0.25
+
+
+def _fmt_usd(v: float | None) -> str:
+    if v is None:
+        return "?"
+    if v >= 1_000_000:
+        return f"{v / 1_000_000:.2f}M"
+    if v >= 1_000:
+        return f"{v / 1_000:.1f}K"
+    return f"{v:.0f}"
+
+
+def _fmt_pct(v: float | None) -> str:
+    return "?" if v is None else f"{v:.3f}%"
+
+
+def assess_information_mev(
+    *,
+    market_cap_usd: float | None,
+    liquidity_usd: float | None,
+    ratio_pct: float | None,
+    manip_flags: list[str],
+    top_holder_pct: float | None,
+) -> InformationMEVBlock | None:
+    """Package the raw manipulation signals into a named Information-MEV read.
+
+    Returns ``None`` (fail-OPEN) only when there is nothing to assess — no
+    liquidity/mcap ratio AND no holder-concentration read. Otherwise returns a
+    scored block, including an honest ``"clean"`` verdict when signals are
+    present but benign (a positive read is information too — never fabricated).
+    """
+    if ratio_pct is None and top_holder_pct is None:
+        return None
+
+    score = 0.0
+    reasons: list[str] = []
+
+    if "fake_market_cap" in manip_flags:
+        score += _IMEV_FAKE_MCAP
+        reasons.append(
+            f"Market cap (~${_fmt_usd(market_cap_usd)}) is backed by only "
+            f"~${_fmt_usd(liquidity_usd)} of on-chain liquidity "
+            f"({_fmt_pct(ratio_pct)}) — the price is unsupportable on real "
+            "volume; bot-inflation / fake-market-cap pattern."
+        )
+    elif "thin_liquidity_vs_mcap" in manip_flags:
+        score += _IMEV_THIN_LIQUIDITY
+        reasons.append(
+            f"Liquidity is thin vs market cap ({_fmt_pct(ratio_pct)}) — the "
+            "visible price is movable on small volume."
+        )
+
+    if top_holder_pct is not None and top_holder_pct >= _HOLDER_CONCENTRATION_FLAG:
+        score += _IMEV_CONCENTRATION
+        reasons.append(
+            f"Top holder controls ~{top_holder_pct * 100:.0f}% of supply — "
+            "single-wallet dump / float-control risk."
+        )
+
+    score = min(score, 1.0)
+    label: InformationMEVLabel
+    if score >= _IMEV_MANIPULATED_AT:
+        label = "manipulated"
+    elif score >= _IMEV_ELEVATED_AT:
+        label = "elevated"
+    else:
+        label = "clean"
+
+    if not reasons:
+        note = f"No manipulation signals: liquidity {_fmt_pct(ratio_pct)} of market cap"
+        if top_holder_pct is not None:
+            note += f", top holder ~{top_holder_pct * 100:.0f}% of supply"
+        reasons.append(note + ".")
+
+    return InformationMEVBlock(score=round(score, 2), label=label, reasons=reasons)
 
 
 def _block_from_token_safety(
@@ -173,6 +279,14 @@ def _block_from_token_safety(
 
     source = "quicknode+coingecko" if market is not None else "quicknode"
 
+    information_mev = assess_information_mev(
+        market_cap_usd=mcap,
+        liquidity_usd=liquidity,
+        ratio_pct=ratio_pct,
+        manip_flags=manip_flags,
+        top_holder_pct=top_holder_pct,
+    )
+
     return SafetyBlock(
         checked=True,
         honeypot=honeypot,
@@ -184,6 +298,7 @@ def _block_from_token_safety(
         liquidity_usd=liquidity,
         liquidity_to_mcap_pct=ratio_pct,
         rug_flags=flags,
+        information_mev=information_mev,
         source=source,
     )
 
@@ -299,4 +414,9 @@ async def _fetch_market(
         return None
 
 
-__all__ = ["compute_manipulation_signals", "evaluate_contract_safety", "is_spl_mint"]
+__all__ = [
+    "assess_information_mev",
+    "compute_manipulation_signals",
+    "evaluate_contract_safety",
+    "is_spl_mint",
+]

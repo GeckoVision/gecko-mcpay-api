@@ -141,6 +141,46 @@ class DissentEntry(BaseModel):
     )
 
 
+InformationMEVLabel = Literal["clean", "elevated", "manipulated"]
+
+
+class InformationMEVBlock(BaseModel):
+    """Named Information-MEV read — manipulation severity of a token's *visible signal*.
+
+    W1 (MEV-decision-provider sprint). PR #136 computed the raw manipulation
+    flags (``thin_liquidity_vs_mcap`` / ``fake_market_cap`` /
+    ``high_holder_concentration``) but left them as loose strings on
+    ``SafetyBlock.rug_flags``. This block is the product surface: a single
+    0–1 ``score``, a one-glance ``label``, and human-readable ``reasons`` — so a
+    consumer (the gate, the app, the deck) can read *"is this decision being
+    made on a manipulated price?"* without re-deriving it.
+
+    *Information-MEV* = value extracted by manipulating the information a
+    decision rests on (bot-inflated price, fake market cap, single-wallet
+    float) — the decision-layer analogue of transaction-MEV. The score measures
+    how manipulable the *visible market signal* is; it is NOT contract-rug risk
+    (that stays on the mint/freeze/honeypot fields).
+
+    Fail-OPEN: the whole block is ``None`` when there were no inputs to assess
+    (market source unreachable AND no holder read) — never a fabricated
+    ``"clean"``. When signals exist but are benign, a real ``"clean"`` block is
+    emitted (a positive read is information too).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    score: float = Field(
+        ..., ge=0.0, le=1.0, description="Manipulation severity in [0,1]; 0 = clean."
+    )
+    label: InformationMEVLabel = Field(
+        ..., description="One-glance band: clean / elevated / manipulated."
+    )
+    reasons: list[str] = Field(
+        default_factory=list,
+        description="Human-readable signals behind the score; carries the 'clean' note when benign.",
+    )
+
+
 class SafetyBlock(BaseModel):
     """First-class contract-safety read attached to the verdict envelope.
 
@@ -238,6 +278,15 @@ class SafetyBlock(BaseModel):
     rug_flags: list[str] = Field(
         default_factory=list,
         description="Explicit rug/honeypot/availability flags; never empty-silent on failure.",
+    )
+    information_mev: InformationMEVBlock | None = Field(
+        default=None,
+        description=(
+            "W1 — named Information-MEV read: manipulation severity of the "
+            "visible market signal, derived from the liquidity/mcap ratio + "
+            "holder concentration already on this block. None when there were "
+            "no inputs to assess (fail-OPEN)."
+        ),
     )
     source: str = Field(
         default="unavailable",
@@ -362,6 +411,8 @@ class TradePanelVerdict(BaseModel):
 __all__ = [
     "BacktestReport",
     "Citation",
+    "InformationMEVBlock",
+    "InformationMEVLabel",
     "SafetyBlock",
     "TradePanelTurn",
     "TradePanelVerdict",

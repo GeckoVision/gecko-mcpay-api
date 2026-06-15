@@ -63,6 +63,20 @@ def _safety_client() -> QuickNodeClient:
     return QuickNodeClient("https://rpc.example/qn", client=httpx.AsyncClient(transport=transport))
 
 
+class _NoMarketClient:
+    """Offline market client — keeps this reachability test off the network.
+
+    The manipulation (mcap/liquidity) read is out of scope here: this test
+    asserts the *contract-safety* (QuickNode) signal reaches the envelope, so
+    the market client returns None and ``source`` stays ``"quicknode"``. Without
+    this, the default client would hit the live GeckoTerminal endpoint for the
+    fixture mint, breaking the "No live network" guarantee in the docstring.
+    """
+
+    async def onchain_token_market(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
+
+
 # --- canned panel (no LLM) -------------------------------------------------
 
 # Each persona's closing line matches CLOSING_LINE_PATTERNS so the panel parses
@@ -113,6 +127,7 @@ def _run(target: str) -> Any:
             protocol=target,
             agent_factory=_agent_factory,
             safety_client=_safety_client(),
+            safety_market_client=_NoMarketClient(),
         )
     )
 
