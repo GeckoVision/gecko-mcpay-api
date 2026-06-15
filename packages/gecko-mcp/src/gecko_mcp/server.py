@@ -1511,6 +1511,10 @@ async def _run_trade_research(
         ],
         "temperature": 0.3,
     }
+    # Phase 2.1 — ENV-gated live-news injection (default OFF, fail-OPEN). The
+    # local-dev MCP surface honors GECKO_NEWS_PROVIDER the same way the API does.
+    from gecko_core.orchestration.trade_panel.news_factory import build_news_provider
+
     verdict = await run_trade_panel_with_retrieval(
         idea=idea,
         protocol=protocol,
@@ -1518,6 +1522,7 @@ async def _run_trade_research(
         tier=tier,
         llm_config=llm_config,
         mint=mint,
+        news_provider=build_news_provider(),
     )
     return verdict.model_dump(mode="json")
 

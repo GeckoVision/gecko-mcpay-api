@@ -82,6 +82,12 @@ async def research(
     llm_config = _research_llm_config()
     # pro tier (80-100s) exceeds sync HTTP timeout — force basic until the SSE path lands
     tier: Tier = "basic"
+    # Phase 2.1 — ENV-gated live-news injection. Default OFF (returns None →
+    # byte-identical to today). When GECKO_NEWS_PROVIDER=okx AND the OKX news
+    # key/url are provisioned, the sentiment_analyst voice sees live headlines
+    # instead of degrading to a constant `neutral`. Fail-OPEN by construction.
+    from gecko_core.orchestration.trade_panel.news_factory import build_news_provider
+
     try:
         verdict = await run_trade_panel_with_retrieval(
             idea=req.idea,
@@ -90,6 +96,7 @@ async def research(
             tier=tier,
             llm_config=llm_config,
             mint=req.mint,
+            news_provider=build_news_provider(),
         )
     except Exception as exc:
         # One-line user-facing message; class name only, never the message

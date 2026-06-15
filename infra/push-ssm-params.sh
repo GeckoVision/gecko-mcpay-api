@@ -132,6 +132,15 @@ declare -A PARAMS=(
   # optional full RPC URL that takes precedence when set.
   [HELIUS_API_KEY]="HELIUS_API_KEY"
   [QUICKNODE_RPC_URL]="QUICKNODE_RPC_URL"
+
+  # Phase 2.1 (context-engineering) — ENV-gated live-news for the
+  # sentiment_analyst voice. GECKO_NEWS_PROVIDER selects the adapter (default
+  # OFF); OKX_NEWS_API_URL + OKX_API_KEY drive the OKX direct-HTTP adapter.
+  # All three fail-OPEN: with the sentinels in place the panel runs corpus-only,
+  # exactly as before. Flip GECKO_NEWS_PROVIDER=okx only after the key/url land.
+  [GECKO_NEWS_PROVIDER]="GECKO_NEWS_PROVIDER"
+  [OKX_NEWS_API_URL]="OKX_NEWS_API_URL"
+  [OKX_API_KEY]="OKX_API_KEY"
 )
 
 echo "==> Region:     $REGION"
@@ -188,6 +197,13 @@ declare -A REQUIRED_AT_BOOT=(
   # unset (fail-OPEN: no RPC -> safety_check_unavailable, never a broken URL).
   [HELIUS_API_KEY]="__unset__"
   [QUICKNODE_RPC_URL]="__unset__"
+  # Phase 2.1 — live-news flag + OKX adapter creds. Sentinels keep ECS booting
+  # before the key/url are provisioned; news_factory treats `__unset__` (and an
+  # unset flag) as OFF, so the panel runs corpus-only until the founder flips
+  # GECKO_NEWS_PROVIDER=okx AND provisions OKX_NEWS_API_URL + OKX_API_KEY.
+  [GECKO_NEWS_PROVIDER]="none"
+  [OKX_NEWS_API_URL]="__unset__"
+  [OKX_API_KEY]="__unset__"
 )
 
 SKIPPED=()
