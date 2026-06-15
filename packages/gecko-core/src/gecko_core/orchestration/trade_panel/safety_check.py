@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import UTC, datetime
 from typing import Any
 
 from gecko_core.execution.yield_base.validation import b58decode
@@ -29,6 +30,7 @@ from gecko_core.orchestration.trade_panel.models import (
     SafetyBlock,
 )
 from gecko_core.sources.coingecko import CoinGeckoClient, OnchainTokenMarket
+from gecko_core.sources.pegana import DepegRisk, PeganaClient
 from gecko_core.sources.quicknode import QuickNodeClient, TokenSafety
 
 logger = logging.getLogger(__name__)
@@ -94,9 +96,33 @@ def is_spl_mint(candidate: str) -> bool:
 
 
 def _rpc_url() -> str | None:
-    """Read the Solana RPC endpoint from env. Never logged."""
-    url = os.environ.get("QUICKNODE_RPC_URL", "").strip()
-    return url or None
+    """Resolve a Solana RPC endpoint from env. Never logged.
+
+    Precedence: an explicit ``QUICKNODE_RPC_URL`` (any full RPC URL, provider-
+    neutral) wins; otherwise fall back to **Helius**, built from the configured
+    ``HELIUS_API_KEY``. Without this fallback the contract-safety read went dark
+    in prod whenever ``QUICKNODE_RPC_URL`` was unset — and it is absent from the
+    API SSM param map, so the wedge signal silently never fired. Helius is the
+    configured primary; the URL embeds the key and must never be logged.
+    """
+    url = _env_clean("QUICKNODE_RPC_URL")
+    if url:
+        return url
+    helius_key = _env_clean("HELIUS_API_KEY")
+    if helius_key:
+        return f"https://mainnet.helius-rpc.com/?api-key={helius_key}"
+    return None
+
+
+def _env_clean(name: str) -> str:
+    """Env value, stripped, treating the SSM ``__unset__`` sentinel as empty.
+
+    The infra pushes a ``__unset__`` sentinel for not-yet-provisioned keys so
+    ECS resolves ``secrets:`` at boot without error; runtime code must treat it
+    as truly unset (the house convention).
+    """
+    value = os.environ.get(name, "").strip()
+    return "" if value == "__unset__" else value
 
 
 def _top_holder_pct(largest: list[dict[str, Any]], supply: str | None) -> float | None:
@@ -253,8 +279,9 @@ def _block_from_token_safety(
     safety: TokenSafety,
     top_holder_pct: float | None,
     market: OnchainTokenMarket | None,
+    depeg: DepegRisk | None = None,
 ) -> SafetyBlock:
-    """Map the raw-chain :class:`TokenSafety` + market read into the envelope."""
+    """Map the raw-chain :class:`TokenSafety` + market + peg reads into the envelope."""
     flags: list[str] = []
     if not safety.mint_renounced:
         flags.append("mint_not_renounced")
@@ -262,6 +289,17 @@ def _block_from_token_safety(
         flags.append("freeze_not_renounced")
     if top_holder_pct is not None and top_holder_pct >= _HOLDER_CONCENTRATION_FLAG:
         flags.append("high_holder_concentration")
+
+    # Phase 3.3 — peg-state from Pegana. Pegana already applies class-aware
+    # thresholds (an LST's normal unstaking discount is wider than a fiat
+    # stable's), so its ``risk_off`` is the authoritative "materially off-peg"
+    # signal — we surface a flag on it rather than re-deriving from the raw
+    # discount. ``depeg`` is None for non-peg tokens / any Pegana failure
+    # (fail-OPEN); when None the depeg fields stay None and no flag is added.
+    depeg_risk = depeg.discount_abs if depeg is not None else None
+    peg_status = depeg.state if depeg is not None else None
+    if depeg is not None and depeg.risk_off:
+        flags.append("depeg_risk")
 
     mcap, liquidity, ratio_pct, manip_flags = compute_manipulation_signals(market)
     flags.extend(manip_flags)
@@ -299,6 +337,8 @@ def _block_from_token_safety(
         liquidity_to_mcap_pct=ratio_pct,
         rug_flags=flags,
         information_mev=information_mev,
+        depeg_risk=depeg_risk,
+        peg_status=peg_status,
         source=source,
     )
 
@@ -330,6 +370,7 @@ async def evaluate_contract_safety(
     mint: str | None = None,
     client: QuickNodeClient | None = None,
     market_client: CoinGeckoClient | None = None,
+    peg_client: PeganaClient | None = None,
 ) -> SafetyBlock:
     """Build the verdict-envelope :class:`SafetyBlock` for a research target.
 
@@ -389,7 +430,12 @@ async def evaluate_contract_safety(
     # rug read above is never dropped because the market source failed.
     market = await _fetch_market(resolved, market_client)
 
-    return _block_from_token_safety(safety, top_pct, market)
+    # Phase 3.3 — peg state (Pegana). Best-effort, fail-OPEN to None: a non-peg
+    # token (Pegana 404s on the mint), Pegana being down, or any parse error all
+    # degrade to "no peg data" — never dropping the chain rug read.
+    depeg = await _fetch_depeg(resolved, peg_client)
+
+    return _block_from_token_safety(safety, top_pct, market, depeg)
 
 
 async def _fetch_market(
@@ -414,8 +460,158 @@ async def _fetch_market(
         return None
 
 
+async def _fetch_depeg(
+    mint: str,
+    peg_client: PeganaClient | None,
+) -> DepegRisk | None:
+    """Resolve peg state for ``mint``; None (fail-OPEN) on any failure.
+
+    Uses Pegana's public, no-auth ``/v1/assets/by-mint/{mint}/state`` read, so
+    NO API key is required. A default client is constructed only when one isn't
+    injected. Pegana 404s for any mint it doesn't track (i.e. non-LST / non-
+    stable tokens), which raises and degrades here to None — letting Pegana
+    decide what is a peg asset rather than gating on a local heuristic.
+    """
+    client = peg_client if peg_client is not None else PeganaClient()
+    try:
+        return await client.depeg_risk_by_mint(mint)
+    except Exception as exc:  # pragma: no cover - defensive; never crash the panel
+        # Most non-peg tokens 404 here — this is the expected path for them, not
+        # an error condition. Log the type only (never the mint-keyed URL body).
+        logger.debug(
+            "trade_panel.safety_check.peg_unavailable target=%s err_type=%s",
+            mint,
+            type(exc).__name__,
+        )
+        return None
+
+
+# Phase 0.2 (context-engineering) — synthetic on-chain-live chunk builder.
+#
+# The contract-safety read used to be attached to the verdict ONLY post-hoc
+# (`_attach_safety`), AFTER the panel ran. Two consequences:
+#   - the risk_manager voice never saw the safety / Information-MEV signal —
+#     the one input most relevant to its job;
+#   - the grounding gate REDACTED any live on-chain number a voice mentioned,
+#     because the figure wasn't in any cited chunk (the "BrCA redaction").
+# Firing the read BEFORE the panel and merging its numbers into the chunk
+# slate fixes both: the voices read it, it is a real citation, and its figures
+# are grounded-by-construction in the gate's snippet corpus. This builder
+# renders a populated SafetyBlock into the panel's expected chunk shape. The
+# block is computed ONCE and reused for both this chunk and the post-panel
+# `_attach_safety` amplifier (never double-run).
+
+
+def _has_signal(safety: SafetyBlock) -> bool:
+    """True when the block carries an actual on-chain read worth injecting.
+
+    A fail-OPEN / unavailable block (``checked=False``, no measured fields)
+    carries no numbers a voice could ground on, so we inject NO chunk and the
+    panel runs exactly as before. We require ``checked`` AND at least one
+    measured numeric field — otherwise there is nothing to say.
+    """
+    if not safety.checked:
+        return False
+    return any(
+        v is not None
+        for v in (
+            safety.market_cap_usd,
+            safety.liquidity_usd,
+            safety.liquidity_to_mcap_pct,
+            safety.top_holder_pct,
+            safety.mint_mutable,
+            safety.freeze_mutable,
+            safety.peg_status,
+        )
+    )
+
+
+def _safety_chunk_text(safety: SafetyBlock, *, now_iso: str) -> str:
+    """Compact, sourced, dated statement of the safety / IMEV facts.
+
+    Numbers are the REAL SafetyBlock values so a voice that cites them grounds
+    cleanly against this chunk in the grounding gate. Rendered in the same
+    number formats the voices naturally write ($26.31M, $22,400, 0.085%, 60%)
+    so the gate's fuzzy numeric match links a voice claim to this snippet.
+    """
+    parts: list[str] = [f"On-chain live read (as of {now_iso}):"]
+
+    if safety.market_cap_usd is not None:
+        parts.append(f"market cap ~${_fmt_usd(safety.market_cap_usd)}")
+    if safety.liquidity_usd is not None:
+        # Render with thousands separators too — voices write both "$22.4K"
+        # and "$22,400"; emitting both surface forms maximizes grounding.
+        liq = safety.liquidity_usd
+        parts.append(f"on-chain liquidity ~${_fmt_usd(liq)} (${liq:,.0f})")
+    if safety.liquidity_to_mcap_pct is not None:
+        flag_note = ""
+        if "fake_market_cap" in safety.rug_flags:
+            flag_note = " [flag: fake_market_cap]"
+        elif "thin_liquidity_vs_mcap" in safety.rug_flags:
+            flag_note = " [flag: thin_liquidity_vs_mcap]"
+        parts.append(f"liquidity/mcap {safety.liquidity_to_mcap_pct:.3f}%{flag_note}")
+    if safety.top_holder_pct is not None:
+        parts.append(f"top holder {safety.top_holder_pct * 100:.0f}% of supply")
+
+    if safety.mint_mutable is not None:
+        parts.append(f"mint authority {'mutable' if safety.mint_mutable else 'renounced'}")
+    if safety.freeze_mutable is not None:
+        parts.append(f"freeze authority {'mutable' if safety.freeze_mutable else 'renounced'}")
+    if safety.honeypot is True:
+        parts.append("honeypot/rug risk: TRUE")
+
+    if safety.information_mev is not None:
+        imev = safety.information_mev
+        reasons = "; ".join(imev.reasons) if imev.reasons else "no manipulation signals"
+        parts.append(f"Information-MEV: {imev.label} (score {imev.score:.2f}) — {reasons}")
+
+    # Phase 3.3 — peg state, so the voices (esp. risk_manager) see depeg risk.
+    if safety.peg_status is not None:
+        peg_part = f"peg status: {safety.peg_status}"
+        if safety.depeg_risk is not None:
+            peg_part += f", deviation {safety.depeg_risk * 100:.2f}%"
+        if "depeg_risk" in safety.rug_flags:
+            peg_part += " [flag: depeg_risk]"
+        parts.append(peg_part)
+
+    return ". ".join(parts) + "."
+
+
+def build_onchain_safety_chunk(
+    safety: SafetyBlock,
+    *,
+    protocol: str,
+    mint: str | None = None,
+) -> dict[str, Any] | None:
+    """Build a synthetic ``onchain_live`` chunk from a populated SafetyBlock.
+
+    Returns ``None`` (inject nothing) when the block carries no on-chain
+    numbers to ground on — the panel then runs exactly as before. The chunk
+    shape mirrors the news/reconstruction in-memory injection pattern so
+    ``_format_chunks`` renders it identically, the citation breadth directive
+    applies uniformly, and ``partition_emitted_citations`` places it into the
+    evidence path (not framework_context — it is live data, not the canon lens).
+    """
+    if not _has_signal(safety):
+        return None
+    now_iso = datetime.now(UTC).isoformat()
+    text = _safety_chunk_text(safety, now_iso=now_iso)
+    chunk_key = (mint or protocol or "").strip().lower()
+    return {
+        "id": f"onchain-live-{chunk_key}" if chunk_key else "onchain-live",
+        "text": text,
+        "source": safety.source or "onchain",
+        "provider_kind": "onchain_live",
+        "url": "",
+        "published_ts": now_iso,
+        "protocol": (protocol or "").strip().lower(),
+        "freshness_tier": "hot",
+    }
+
+
 __all__ = [
     "assess_information_mev",
+    "build_onchain_safety_chunk",
     "compute_manipulation_signals",
     "evaluate_contract_safety",
     "is_spl_mint",
