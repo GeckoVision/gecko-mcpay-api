@@ -720,6 +720,17 @@ async def list_tools() -> list[Tool]:
                             "'jito', 'drift', 'jupiter')."
                         ),
                     },
+                    "mint": {
+                        "type": "string",
+                        "description": (
+                            "Optional SPL mint address for a token query. When "
+                            "set, the contract-safety check fires on it directly "
+                            "(safety.checked=true: mint/freeze authority, holder "
+                            "concentration, market-cap-vs-liquidity manipulation "
+                            "signals). Pass the raw mint here for a token — do "
+                            "NOT cram it into 'protocol'."
+                        ),
+                    },
                     "vertical": {
                         "type": "string",
                         "default": "dex",
@@ -923,11 +934,13 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         tier_raw = arguments.get("tier", "basic")
         if tier_raw not in ("basic", "pro"):
             raise ValueError(f"tier must be 'basic' or 'pro', got {tier_raw!r}")
+        mint_raw = arguments.get("mint")
         result = await _run_trade_research(
             idea=str(arguments["idea"]),
             protocol=str(arguments["protocol"]),
             vertical=str(arguments.get("vertical", "dex") or "dex"),
             tier=str(tier_raw),
+            mint=str(mint_raw) if mint_raw else None,
         )
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
@@ -1462,6 +1475,7 @@ async def _run_trade_research(
     protocol: str,
     vertical: str,
     tier: str,
+    mint: str | None = None,
 ) -> dict[str, Any]:
     """Run the 7-agent trade research panel and return the verdict as JSON.
 
@@ -1477,7 +1491,7 @@ async def _run_trade_research(
     if not _route_uses_local_fallback(api_url):
         client = _get_client()
         return await client.trade_research(
-            idea=idea, protocol=protocol, vertical=vertical, tier=tier
+            idea=idea, protocol=protocol, vertical=vertical, tier=tier, mint=mint
         )
     # Local-dev fallback — call gecko_core directly. Lazy import keeps AG2
     # / openai out of the MCP startup path. Reuses the same orchestration
@@ -1503,6 +1517,7 @@ async def _run_trade_research(
         vertical=vertical,
         tier=tier,
         llm_config=llm_config,
+        mint=mint,
     )
     return verdict.model_dump(mode="json")
 

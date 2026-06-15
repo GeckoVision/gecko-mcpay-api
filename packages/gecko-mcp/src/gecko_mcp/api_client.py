@@ -946,20 +946,26 @@ class GeckoAPIClient:
         protocol: str,
         vertical: str = "dex",
         tier: str = "basic",
+        mint: str | None = None,
     ) -> dict[str, Any]:
         """POST /trade_research — 7-agent trade research panel (free in v1).
 
         Phase 8b ships unpaid; pricing decision deferred until eval data
         lands. Mirrors the /precedents free-POST shape rather than going
         through the x402 paid-post helper.
+
+        ``mint`` (optional SPL mint) fires the contract-safety check directly;
+        omitted from the body when None so older API hosts ignore it.
         """
         http = await self._free_client()
-        body = {
+        body: dict[str, Any] = {
             "idea": idea,
             "protocol": protocol,
             "vertical": vertical,
             "tier": tier,
         }
+        if mint:
+            body["mint"] = mint
         try:
             response = await http.post("/trade_research", json=body)
         except httpx.HTTPError as exc:

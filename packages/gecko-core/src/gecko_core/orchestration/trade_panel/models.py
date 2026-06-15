@@ -141,6 +141,46 @@ class DissentEntry(BaseModel):
     )
 
 
+InformationMEVLabel = Literal["clean", "elevated", "manipulated"]
+
+
+class InformationMEVBlock(BaseModel):
+    """Named Information-MEV read — manipulation severity of a token's *visible signal*.
+
+    W1 (MEV-decision-provider sprint). PR #136 computed the raw manipulation
+    flags (``thin_liquidity_vs_mcap`` / ``fake_market_cap`` /
+    ``high_holder_concentration``) but left them as loose strings on
+    ``SafetyBlock.rug_flags``. This block is the product surface: a single
+    0–1 ``score``, a one-glance ``label``, and human-readable ``reasons`` — so a
+    consumer (the gate, the app, the deck) can read *"is this decision being
+    made on a manipulated price?"* without re-deriving it.
+
+    *Information-MEV* = value extracted by manipulating the information a
+    decision rests on (bot-inflated price, fake market cap, single-wallet
+    float) — the decision-layer analogue of transaction-MEV. The score measures
+    how manipulable the *visible market signal* is; it is NOT contract-rug risk
+    (that stays on the mint/freeze/honeypot fields).
+
+    Fail-OPEN: the whole block is ``None`` when there were no inputs to assess
+    (market source unreachable AND no holder read) — never a fabricated
+    ``"clean"``. When signals exist but are benign, a real ``"clean"`` block is
+    emitted (a positive read is information too).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    score: float = Field(
+        ..., ge=0.0, le=1.0, description="Manipulation severity in [0,1]; 0 = clean."
+    )
+    label: InformationMEVLabel = Field(
+        ..., description="One-glance band: clean / elevated / manipulated."
+    )
+    reasons: list[str] = Field(
+        default_factory=list,
+        description="Human-readable signals behind the score; carries the 'clean' note when benign.",
+    )
+
+
 class SafetyBlock(BaseModel):
     """First-class contract-safety read attached to the verdict envelope.
 
@@ -169,11 +209,21 @@ class SafetyBlock(BaseModel):
         transfer-fee extension is the v0.2 target).
       - ``top_holder_pct``  — largest single holder's share of supply in
         [0,1]; concentration proxy for rug risk.
+      - ``market_cap_usd``  — token market cap in USD from the market-data
+        source (CoinGecko on-chain). ``None`` until a source resolves it.
+      - ``liquidity_usd``   — on-chain DEX liquidity (total reserve across
+        pools) in USD. ``None`` until a source resolves it.
+      - ``liquidity_to_mcap_pct`` — ``liquidity_usd / market_cap_usd * 100``
+        when both are known. A LOW ratio is the manipulation signal a venue
+        "Normal" rating misses: a $26M mcap backed by $22K of liquidity
+        (0.085%) is a fake-market-cap / thin-float setup. ``None`` when
+        either input is missing.
       - ``rug_flags``       — explicit string flags (e.g. ``"mint_not_renounced"``,
         ``"freeze_not_renounced"``, ``"high_holder_concentration"``,
+        ``"thin_liquidity_vs_mcap"``, ``"fake_market_cap"``,
         ``"safety_check_unavailable"``).
       - ``source``          — provenance of the read (``"quicknode"`` /
-        ``"unavailable"``); never a secret/URL.
+        ``"quicknode+coingecko"`` / ``"unavailable"``); never a secret/URL.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -206,9 +256,37 @@ class SafetyBlock(BaseModel):
         le=1.0,
         description="Largest single holder share of supply in [0,1]; None if unmeasured.",
     )
+    market_cap_usd: float | None = Field(
+        default=None,
+        ge=0.0,
+        description="Token market cap in USD (CoinGecko on-chain); None if unmeasured.",
+    )
+    liquidity_usd: float | None = Field(
+        default=None,
+        ge=0.0,
+        description="On-chain DEX liquidity (total reserve) in USD; None if unmeasured.",
+    )
+    liquidity_to_mcap_pct: float | None = Field(
+        default=None,
+        ge=0.0,
+        description=(
+            "liquidity_usd / market_cap_usd * 100. The manipulation signal: a "
+            "low ratio (<1%) flags thin liquidity vs mcap; <0.2% flags a fake "
+            "market cap. None when either input is missing."
+        ),
+    )
     rug_flags: list[str] = Field(
         default_factory=list,
         description="Explicit rug/honeypot/availability flags; never empty-silent on failure.",
+    )
+    information_mev: InformationMEVBlock | None = Field(
+        default=None,
+        description=(
+            "W1 — named Information-MEV read: manipulation severity of the "
+            "visible market signal, derived from the liquidity/mcap ratio + "
+            "holder concentration already on this block. None when there were "
+            "no inputs to assess (fail-OPEN)."
+        ),
     )
     source: str = Field(
         default="unavailable",
@@ -333,6 +411,8 @@ class TradePanelVerdict(BaseModel):
 __all__ = [
     "BacktestReport",
     "Citation",
+    "InformationMEVBlock",
+    "InformationMEVLabel",
     "SafetyBlock",
     "TradePanelTurn",
     "TradePanelVerdict",

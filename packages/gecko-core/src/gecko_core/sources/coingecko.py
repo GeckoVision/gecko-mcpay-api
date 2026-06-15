@@ -24,6 +24,18 @@ logger = logging.getLogger(__name__)
 
 COINGECKO_BASE_URL = "https://api.coingecko.com/api/v3"
 
+# On-chain (GeckoTerminal) API — token data BY CONTRACT ADDRESS. Unlike the
+# coin-id `/coins/markets` surface, this resolves a raw SPL mint directly and
+# exposes both market cap AND on-chain DEX liquidity (`total_reserve_in_usd`),
+# which is the input for the thin-liquidity / fake-market-cap manipulation read.
+#
+# Uses GeckoTerminal's PUBLIC API directly (free, keyless, ~30 req/min). The
+# CoinGecko-hosted mirror (`api.coingecko.com/api/v3/onchain/...`) was gated to
+# paid keys in 2026 — calling it keyless now 401s, which silently broke the
+# manipulation read (every token fell through to manipulation_check_unavailable).
+# The two share identical `data.attributes` field names, so only the base moves.
+COINGECKO_ONCHAIN_BASE_URL = "https://api.geckoterminal.com/api/v2"
+
 # A venue is "low trust" below this CoinGecko trust_score tier.
 _TRUST_RANK = {"red": 0, "yellow": 1, "green": 2}
 
@@ -109,6 +121,46 @@ def _venue_distribution(coin_id: str, tickers: list[CoinGeckoTicker]) -> VenueDi
     )
 
 
+class OnchainTokenMarket(BaseModel):
+    """Token market read from the on-chain ``/tokens/{address}`` endpoint.
+
+    The two load-bearing fields for the manipulation read are
+    ``market_cap_usd`` and ``total_reserve_in_usd`` (on-chain DEX liquidity).
+    ``fdv_usd`` is kept as a fallback denominator when CoinGecko cannot
+    resolve a circulating-supply market cap (common for thin tokens) — a fake
+    market cap quoted off FDV is exactly the case we want to catch.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    address: str | None = None
+    name: str | None = None
+    symbol: str | None = None
+    price_usd: float | None = None
+    market_cap_usd: float | None = None
+    fdv_usd: float | None = None
+    total_reserve_in_usd: float | None = None
+
+    @property
+    def effective_market_cap_usd(self) -> float | None:
+        """market_cap_usd when present, else fdv_usd (thin-token fallback)."""
+        if self.market_cap_usd is not None and self.market_cap_usd > 0:
+            return self.market_cap_usd
+        if self.fdv_usd is not None and self.fdv_usd > 0:
+            return self.fdv_usd
+        return None
+
+
+def _coerce_float(value: object) -> float | None:
+    """CoinGecko on-chain returns USD figures as JSON strings — coerce safely."""
+    if value is None:
+        return None
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
 class CoinGeckoClient:
     """Async client for CoinGecko market data + venue distribution."""
 
@@ -119,14 +171,16 @@ class CoinGeckoClient:
         api_key: str | None = None,
         timeout: float = 12.0,
         client: httpx.AsyncClient | None = None,
+        onchain_base_url: str = COINGECKO_ONCHAIN_BASE_URL,
     ) -> None:
         self._base_url = base_url.rstrip("/")
+        self._onchain_base_url = onchain_base_url.rstrip("/")
         self._api_key = api_key
         self._timeout = timeout
         self._client = client
 
-    async def _get(self, path: str) -> object:
-        url = f"{self._base_url}{path}"
+    async def _get(self, path: str, *, base: str | None = None) -> object:
+        url = f"{base or self._base_url}{path}"
         headers = {"x-cg-pro-api-key": self._api_key} if self._api_key else {}
         if self._client is not None:
             resp = await self._client.get(url, headers=headers, timeout=self._timeout)
@@ -153,11 +207,48 @@ class CoinGeckoClient:
         """Where the token trades — venue count + top-venue + low-trust shares."""
         return _venue_distribution(coin_id, await self.coin_tickers(coin_id))
 
+    async def onchain_token_market(
+        self, address: str, *, network: str = "solana"
+    ) -> OnchainTokenMarket | None:
+        """Market cap + on-chain DEX liquidity for a raw contract address.
+
+        Calls the on-chain (GeckoTerminal) ``/networks/{network}/tokens/{addr}``
+        endpoint. Returns ``None`` when the token is unknown to the source (404)
+        or the payload is malformed — callers fail-OPEN on ``None`` rather than
+        fabricating a read.
+        """
+        path = f"/networks/{quote(network, safe='')}/tokens/{quote(address, safe='')}"
+        try:
+            data = await self._get(path, base=self._onchain_base_url)
+        except httpx.HTTPStatusError as exc:
+            # 404 = the token is unknown to the on-chain index (common for very
+            # new / very thin tokens). Treat as "no read" (fail-OPEN) rather
+            # than an error; other statuses propagate to the caller's guard.
+            if exc.response.status_code == 404:
+                return None
+            raise
+        if not isinstance(data, dict):
+            return None
+        attrs = ((data.get("data") or {}).get("attributes")) if isinstance(data, dict) else None
+        if not isinstance(attrs, dict):
+            return None
+        return OnchainTokenMarket(
+            address=attrs.get("address"),
+            name=attrs.get("name"),
+            symbol=attrs.get("symbol"),
+            price_usd=_coerce_float(attrs.get("price_usd")),
+            market_cap_usd=_coerce_float(attrs.get("market_cap_usd")),
+            fdv_usd=_coerce_float(attrs.get("fdv_usd")),
+            total_reserve_in_usd=_coerce_float(attrs.get("total_reserve_in_usd")),
+        )
+
 
 __all__ = [
     "COINGECKO_BASE_URL",
+    "COINGECKO_ONCHAIN_BASE_URL",
     "CoinGeckoClient",
     "CoinGeckoMarket",
     "CoinGeckoTicker",
+    "OnchainTokenMarket",
     "VenueDistribution",
 ]

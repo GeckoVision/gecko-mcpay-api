@@ -1463,6 +1463,16 @@ class TradeResearchRequest(BaseModel):
     protocol: str = Field(..., min_length=1, max_length=64)
     vertical: str = Field(default="dex", min_length=1, max_length=64)
     tier: Tier = "basic"
+    mint: str | None = Field(
+        default=None,
+        min_length=32,
+        max_length=44,
+        description=(
+            "Optional SPL mint address. When set, the contract-safety check "
+            "fires on it directly (safety.checked=true) instead of trying to "
+            "base58-decode the protocol string. Use this for token queries."
+        ),
+    )
 
 
 def _extract_settle_receipt(request: Request) -> tuple[str | None, str]:
@@ -2431,6 +2441,7 @@ async def trade_research(req: TradeResearchRequest, request: Request) -> TradeRe
             vertical=req.vertical,
             tier=req.tier,
             llm_config=llm_config,
+            mint=req.mint,
         )
     except ValueError:
         # Missing llm_config in production is the expected ValueError; surface
@@ -2529,6 +2540,7 @@ async def trade_research_pro(req: TradeResearchRequest, request: Request) -> Tra
             tier="pro",
             llm_config=llm_config,
             enable_backtest=True,
+            mint=req.mint,
         )
     except ValueError:
         logger.exception("trade_research_pro: bad config for protocol=%r", req.protocol)

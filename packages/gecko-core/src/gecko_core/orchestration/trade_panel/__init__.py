@@ -2086,28 +2086,67 @@ def partition_emitted_citations(
 
 
 def _attach_safety(verdict: TradePanelVerdict, safety: SafetyBlock) -> TradePanelVerdict:
-    """Attach the contract-safety block to the envelope; amplify a hard honeypot.
+    """Attach the contract-safety block to the envelope; amplify hard signals.
 
     The block is ALWAYS attached so the envelope shows whether the contract was
-    checked. A confirmed ``honeypot=True`` is a signal the coordinator must not
-    bury: we floor confidence to 0, push a leading ``key_driver``, and prepend a
-    ``blocker_question`` — without flipping the verdict literal (the panel's
-    closing line stays authoritative; we make the danger loud, not silent).
+    checked. Two hard signals the coordinator must not bury, each floored to 0
+    confidence with a leading ``key_driver`` + prepended ``blocker_question``
+    (the verdict literal is NOT flipped — the panel's closing line stays
+    authoritative; we make the danger loud, not silent):
+
+      - ``honeypot=True`` — the contract is structurally unsafe to sell.
+      - ``fake_market_cap`` flag — liquidity is a fraction of the quoted market
+        cap (the manipulation signal a venue "Normal" rating misses).
     """
     update: dict[str, Any] = {"safety": safety}
 
+    drivers: list[str] = []
+    blockers: list[str] = []
+    floor_confidence = False
+
     if safety.honeypot is True:
         flags = ", ".join(safety.rug_flags) or "rug_risk"
-        driver = f"CONTRACT SAFETY: honeypot/rug risk ({flags}) [source={safety.source}]"
-        blocker = f"Contract failed safety check ({flags}) — confirm before sizing any position."
-        update["confidence"] = 0.0
-        update["key_drivers"] = [driver, *verdict.key_drivers]
-        update["blocker_questions"] = [blocker, *verdict.blocker_questions]
+        drivers.append(f"CONTRACT SAFETY: honeypot/rug risk ({flags}) [source={safety.source}]")
+        blockers.append(
+            f"Contract failed safety check ({flags}) — confirm before sizing any position."
+        )
+        floor_confidence = True
         _log.warning(
             "trade_panel.safety.honeypot source=%s flags=%s",
             safety.source,
             safety.rug_flags,
         )
+
+    if "fake_market_cap" in safety.rug_flags:
+        ratio = safety.liquidity_to_mcap_pct
+        ratio_str = f"{ratio:.3f}%" if ratio is not None else "unknown"
+        drivers.append(
+            "CONTRACT SAFETY: fake market cap — liquidity is "
+            f"{ratio_str} of market cap "
+            f"(liq=${safety.liquidity_usd:,.0f} / mcap=${safety.market_cap_usd:,.0f}) "
+            f"[source={safety.source}]"
+            if safety.liquidity_usd is not None and safety.market_cap_usd is not None
+            else f"CONTRACT SAFETY: fake market cap (liq/mcap={ratio_str}) [source={safety.source}]"
+        )
+        blockers.append(
+            "Market cap is not supported by on-chain liquidity "
+            f"(liq/mcap={ratio_str}) — the quoted price cannot be realized at size."
+        )
+        floor_confidence = True
+        _log.warning(
+            "trade_panel.safety.fake_market_cap source=%s ratio_pct=%s liq=%s mcap=%s",
+            safety.source,
+            safety.liquidity_to_mcap_pct,
+            safety.liquidity_usd,
+            safety.market_cap_usd,
+        )
+
+    if floor_confidence:
+        update["confidence"] = 0.0
+    if drivers:
+        update["key_drivers"] = [*drivers, *verdict.key_drivers]
+    if blockers:
+        update["blocker_questions"] = [*blockers, *verdict.blocker_questions]
 
     return verdict.model_copy(update=update)
 
@@ -2130,6 +2169,8 @@ async def run_trade_panel_with_retrieval(
     pool: str | None = None,
     news_provider: Any | None = None,
     safety_client: Any | None = None,
+    safety_market_client: Any | None = None,
+    mint: str | None = None,
 ) -> TradePanelVerdict:
     """Convenience wrapper — fetch corpus chunks, then run the 7-agent panel.
 
@@ -2156,6 +2197,13 @@ async def run_trade_panel_with_retrieval(
     (see docs/strategy/2026-05-19-backtest-phase2-reconstruction-design.md).
     Either parameter missing = no reconstruction; production callers (neither
     set) are byte-identical to the pre-Phase-2 path.
+
+    feat/safety-manipulation-signals addendum: ``mint`` is the explicit,
+    first-class SPL mint for the contract-safety read. When set, the safety
+    check fires on it directly — a token query no longer has to abuse the
+    ``protocol`` field (the live BrCA re-run found ``protocol="brca"`` is not
+    base58, so the check never fired). ``None`` (default) keeps the
+    base58-in-``protocol`` fallback, so existing callers are unaffected.
     """
     chunks = await retrieve_trade_corpus_chunks(
         idea=idea,
@@ -2300,7 +2348,15 @@ async def run_trade_panel_with_retrieval(
     # concentration); for known protocols / unconfigured RPC it is an explicit
     # fail-OPEN block (`not_a_token_mint` / `safety_check_unavailable`) so the
     # envelope ALWAYS shows whether the contract was checked. Never raises.
-    safety_block = await evaluate_contract_safety(protocol, client=safety_client)
+    # `mint` (when set) fires the safety read directly — a token query no longer
+    # has to cram the mint into `protocol`. Base58-in-`protocol` stays as the
+    # back-compat fallback inside evaluate_contract_safety.
+    safety_block = await evaluate_contract_safety(
+        protocol,
+        mint=mint,
+        client=safety_client,
+        market_client=safety_market_client,
+    )
     verdict = _attach_safety(verdict, safety_block)
 
     if not enable_backtest:
