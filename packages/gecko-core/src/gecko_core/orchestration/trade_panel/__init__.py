@@ -2168,6 +2168,7 @@ async def _evaluate_contract_safety_bounded(
     mint: str | None,
     client: Any | None,
     market_client: Any | None,
+    peg_client: Any | None = None,
 ) -> SafetyBlock:
     """Run :func:`evaluate_contract_safety` under a hard timeout, fail-OPEN.
 
@@ -2183,6 +2184,7 @@ async def _evaluate_contract_safety_bounded(
                 mint=mint,
                 client=client,
                 market_client=market_client,
+                peg_client=peg_client,
             ),
             timeout=_SAFETY_READ_BUDGET_S,
         )
@@ -2215,6 +2217,7 @@ async def run_trade_panel_with_retrieval(
     news_provider: Any | None = None,
     safety_client: Any | None = None,
     safety_market_client: Any | None = None,
+    safety_peg_client: Any | None = None,
     mint: str | None = None,
 ) -> TradePanelVerdict:
     """Convenience wrapper — fetch corpus chunks, then run the 7-agent panel.
@@ -2341,6 +2344,7 @@ async def run_trade_panel_with_retrieval(
         mint=mint,
         client=safety_client,
         market_client=safety_market_client,
+        peg_client=safety_peg_client,
     )
     onchain_added = 0
     onchain_chunk = build_onchain_safety_chunk(safety_block, protocol=protocol, mint=mint)

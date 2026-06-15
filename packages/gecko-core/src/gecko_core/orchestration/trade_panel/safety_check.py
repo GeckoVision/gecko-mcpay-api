@@ -30,6 +30,7 @@ from gecko_core.orchestration.trade_panel.models import (
     SafetyBlock,
 )
 from gecko_core.sources.coingecko import CoinGeckoClient, OnchainTokenMarket
+from gecko_core.sources.pegana import DepegRisk, PeganaClient
 from gecko_core.sources.quicknode import QuickNodeClient, TokenSafety
 
 logger = logging.getLogger(__name__)
@@ -278,8 +279,9 @@ def _block_from_token_safety(
     safety: TokenSafety,
     top_holder_pct: float | None,
     market: OnchainTokenMarket | None,
+    depeg: DepegRisk | None = None,
 ) -> SafetyBlock:
-    """Map the raw-chain :class:`TokenSafety` + market read into the envelope."""
+    """Map the raw-chain :class:`TokenSafety` + market + peg reads into the envelope."""
     flags: list[str] = []
     if not safety.mint_renounced:
         flags.append("mint_not_renounced")
@@ -287,6 +289,17 @@ def _block_from_token_safety(
         flags.append("freeze_not_renounced")
     if top_holder_pct is not None and top_holder_pct >= _HOLDER_CONCENTRATION_FLAG:
         flags.append("high_holder_concentration")
+
+    # Phase 3.3 — peg-state from Pegana. Pegana already applies class-aware
+    # thresholds (an LST's normal unstaking discount is wider than a fiat
+    # stable's), so its ``risk_off`` is the authoritative "materially off-peg"
+    # signal — we surface a flag on it rather than re-deriving from the raw
+    # discount. ``depeg`` is None for non-peg tokens / any Pegana failure
+    # (fail-OPEN); when None the depeg fields stay None and no flag is added.
+    depeg_risk = depeg.discount_abs if depeg is not None else None
+    peg_status = depeg.state if depeg is not None else None
+    if depeg is not None and depeg.risk_off:
+        flags.append("depeg_risk")
 
     mcap, liquidity, ratio_pct, manip_flags = compute_manipulation_signals(market)
     flags.extend(manip_flags)
@@ -324,6 +337,8 @@ def _block_from_token_safety(
         liquidity_to_mcap_pct=ratio_pct,
         rug_flags=flags,
         information_mev=information_mev,
+        depeg_risk=depeg_risk,
+        peg_status=peg_status,
         source=source,
     )
 
@@ -355,6 +370,7 @@ async def evaluate_contract_safety(
     mint: str | None = None,
     client: QuickNodeClient | None = None,
     market_client: CoinGeckoClient | None = None,
+    peg_client: PeganaClient | None = None,
 ) -> SafetyBlock:
     """Build the verdict-envelope :class:`SafetyBlock` for a research target.
 
@@ -414,7 +430,12 @@ async def evaluate_contract_safety(
     # rug read above is never dropped because the market source failed.
     market = await _fetch_market(resolved, market_client)
 
-    return _block_from_token_safety(safety, top_pct, market)
+    # Phase 3.3 — peg state (Pegana). Best-effort, fail-OPEN to None: a non-peg
+    # token (Pegana 404s on the mint), Pegana being down, or any parse error all
+    # degrade to "no peg data" — never dropping the chain rug read.
+    depeg = await _fetch_depeg(resolved, peg_client)
+
+    return _block_from_token_safety(safety, top_pct, market, depeg)
 
 
 async def _fetch_market(
@@ -433,6 +454,32 @@ async def _fetch_market(
     except Exception as exc:  # pragma: no cover - defensive; never crash the panel
         logger.warning(
             "trade_panel.safety_check.market_error target=%s err_type=%s",
+            mint,
+            type(exc).__name__,
+        )
+        return None
+
+
+async def _fetch_depeg(
+    mint: str,
+    peg_client: PeganaClient | None,
+) -> DepegRisk | None:
+    """Resolve peg state for ``mint``; None (fail-OPEN) on any failure.
+
+    Uses Pegana's public, no-auth ``/v1/assets/by-mint/{mint}/state`` read, so
+    NO API key is required. A default client is constructed only when one isn't
+    injected. Pegana 404s for any mint it doesn't track (i.e. non-LST / non-
+    stable tokens), which raises and degrades here to None — letting Pegana
+    decide what is a peg asset rather than gating on a local heuristic.
+    """
+    client = peg_client if peg_client is not None else PeganaClient()
+    try:
+        return await client.depeg_risk_by_mint(mint)
+    except Exception as exc:  # pragma: no cover - defensive; never crash the panel
+        # Most non-peg tokens 404 here — this is the expected path for them, not
+        # an error condition. Log the type only (never the mint-keyed URL body).
+        logger.debug(
+            "trade_panel.safety_check.peg_unavailable target=%s err_type=%s",
             mint,
             type(exc).__name__,
         )
@@ -474,6 +521,7 @@ def _has_signal(safety: SafetyBlock) -> bool:
             safety.top_holder_pct,
             safety.mint_mutable,
             safety.freeze_mutable,
+            safety.peg_status,
         )
     )
 
@@ -516,6 +564,15 @@ def _safety_chunk_text(safety: SafetyBlock, *, now_iso: str) -> str:
         imev = safety.information_mev
         reasons = "; ".join(imev.reasons) if imev.reasons else "no manipulation signals"
         parts.append(f"Information-MEV: {imev.label} (score {imev.score:.2f}) — {reasons}")
+
+    # Phase 3.3 — peg state, so the voices (esp. risk_manager) see depeg risk.
+    if safety.peg_status is not None:
+        peg_part = f"peg status: {safety.peg_status}"
+        if safety.depeg_risk is not None:
+            peg_part += f", deviation {safety.depeg_risk * 100:.2f}%"
+        if "depeg_risk" in safety.rug_flags:
+            peg_part += " [flag: depeg_risk]"
+        parts.append(peg_part)
 
     return ". ".join(parts) + "."
 
