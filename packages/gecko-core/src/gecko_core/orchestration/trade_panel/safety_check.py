@@ -94,9 +94,33 @@ def is_spl_mint(candidate: str) -> bool:
 
 
 def _rpc_url() -> str | None:
-    """Read the Solana RPC endpoint from env. Never logged."""
-    url = os.environ.get("QUICKNODE_RPC_URL", "").strip()
-    return url or None
+    """Resolve a Solana RPC endpoint from env. Never logged.
+
+    Precedence: an explicit ``QUICKNODE_RPC_URL`` (any full RPC URL, provider-
+    neutral) wins; otherwise fall back to **Helius**, built from the configured
+    ``HELIUS_API_KEY``. Without this fallback the contract-safety read went dark
+    in prod whenever ``QUICKNODE_RPC_URL`` was unset — and it is absent from the
+    API SSM param map, so the wedge signal silently never fired. Helius is the
+    configured primary; the URL embeds the key and must never be logged.
+    """
+    url = _env_clean("QUICKNODE_RPC_URL")
+    if url:
+        return url
+    helius_key = _env_clean("HELIUS_API_KEY")
+    if helius_key:
+        return f"https://mainnet.helius-rpc.com/?api-key={helius_key}"
+    return None
+
+
+def _env_clean(name: str) -> str:
+    """Env value, stripped, treating the SSM ``__unset__`` sentinel as empty.
+
+    The infra pushes a ``__unset__`` sentinel for not-yet-provisioned keys so
+    ECS resolves ``secrets:`` at boot without error; runtime code must treat it
+    as truly unset (the house convention).
+    """
+    value = os.environ.get(name, "").strip()
+    return "" if value == "__unset__" else value
 
 
 def _top_holder_pct(largest: list[dict[str, Any]], supply: str | None) -> float | None:

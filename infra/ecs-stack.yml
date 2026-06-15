@@ -589,6 +589,14 @@ Resources:
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/GECKO_CHUNK_STORE
             - Name: MONGODB_CHUNK_DB
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/MONGODB_CHUNK_DB
+            # Phase 0 (context-engineering) — Solana RPC for the contract-safety
+            # / Information-MEV read. Without one the wedge signal is dark in
+            # prod (safety_check -> safety_check_unavailable). Helius primary;
+            # QUICKNODE_RPC_URL optional override. Sentinel-safe (_env_clean).
+            - Name: HELIUS_API_KEY
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/HELIUS_API_KEY
+            - Name: QUICKNODE_RPC_URL
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/QUICKNODE_RPC_URL
           LogConfiguration:
             LogDriver: awslogs
             Options:

@@ -124,6 +124,14 @@ declare -A PARAMS=(
   # GECKO_RERANKER: voyage (enable rerank) | none (off). Off by default;
   # set GECKO_RERANKER=voyage in .env to turn it on in prod.
   [GECKO_RERANKER]="GECKO_RERANKER"
+
+  # Phase 0 (context-engineering) — Solana RPC for the contract-safety /
+  # Information-MEV read. Without one of these the wedge signal is DARK in prod
+  # (safety_check returns safety_check_unavailable). HELIUS_API_KEY builds the
+  # Helius mainnet RPC URL (configured primary); QUICKNODE_RPC_URL is an
+  # optional full RPC URL that takes precedence when set.
+  [HELIUS_API_KEY]="HELIUS_API_KEY"
+  [QUICKNODE_RPC_URL]="QUICKNODE_RPC_URL"
 )
 
 echo "==> Region:     $REGION"
@@ -175,6 +183,11 @@ declare -A REQUIRED_AT_BOOT=(
   # S33-#79 — reranker OFF by default; sentinel keeps boot clean. Set
   # GECKO_RERANKER=voyage in .env to enable the trade-panel reranker in prod.
   [GECKO_RERANKER]="none"
+  # Phase 0 — RPC for the safety read. Sentinels keep ECS booting before the
+  # keys are provisioned; safety_check._env_clean treats `__unset__` as truly
+  # unset (fail-OPEN: no RPC -> safety_check_unavailable, never a broken URL).
+  [HELIUS_API_KEY]="__unset__"
+  [QUICKNODE_RPC_URL]="__unset__"
 )
 
 SKIPPED=()
