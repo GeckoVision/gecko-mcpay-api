@@ -620,6 +620,13 @@ Resources:
             # provisioned and the source is wired into the panel.
             - Name: DUNE_API_KEY
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/DUNE_API_KEY
+            # OKX OnchainOS Market developer key (OK-ACCESS-KEY). Drives the
+            # gecko_core.sources.okx_onchainos_market client (token metrics,
+            # top-20 holders, manipulation-resistant index price). Distinct
+            # from OKX_API_KEY (Bearer-token news adapter). Sentinel __unset__
+            # keeps the client disabled (fail-OPEN) until the real key lands.
+            - Name: OKX_ONCHAINOS_API_KEY
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OKX_ONCHAINOS_API_KEY
           LogConfiguration:
             LogDriver: awslogs
             Options:

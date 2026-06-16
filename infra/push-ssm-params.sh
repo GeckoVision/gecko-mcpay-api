@@ -157,6 +157,12 @@ declare -A PARAMS=(
   # disabled, no call, fail-OPEN). Credit-metered — the client carries a
   # per-process execute ceiling so a future wiring can't burn the budget.
   [DUNE_API_KEY]="DUNE_API_KEY"
+  # OKX OnchainOS Market developer key (OK-ACCESS-KEY) — drives the
+  # gecko_core.sources.okx_onchainos_market client (token metrics, top-20
+  # holders, manipulation-resistant index price). Distinct from OKX_API_KEY
+  # (the Bearer-token news adapter). Sentinel keeps the client disabled
+  # (fail-OPEN) until the founder's real developer key is provisioned.
+  [OKX_ONCHAINOS_API_KEY]="OKX_ONCHAINOS_API_KEY"
 )
 
 echo "==> Region:     $REGION"
@@ -228,6 +234,9 @@ declare -A REQUIRED_AT_BOOT=(
   # key is provisioned; gecko_core.sources.dune treats `__unset__` as truly
   # unset (client disabled, fail-OPEN).
   [DUNE_API_KEY]="__unset__"
+  # OKX OnchainOS developer key — sentinel keeps ECS booting before the real
+  # key is provisioned; okx_onchainos_market treats `__unset__` as disabled.
+  [OKX_ONCHAINOS_API_KEY]="__unset__"
 )
 
 SKIPPED=()
