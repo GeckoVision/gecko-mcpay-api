@@ -613,6 +613,13 @@ Resources:
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OKX_TRADING_API_KEY
             - Name: OKX_TRADING_SECRET_KEY
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OKX_TRADING_SECRET_KEY
+            # Phase 3.4 (context-engineering) — Dune Analytics aggregate
+            # queries (holder-distribution / LP-concentration / wash-trade).
+            # Sentinel-safe: gecko_core.sources.dune treats `__unset__` as truly
+            # unset (client disabled, fail-OPEN) until the real key is
+            # provisioned and the source is wired into the panel.
+            - Name: DUNE_API_KEY
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/DUNE_API_KEY
           LogConfiguration:
             LogDriver: awslogs
             Options:

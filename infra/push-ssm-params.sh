@@ -149,6 +149,14 @@ declare -A PARAMS=(
   # add OKX_TRADING_PASSPHRASE here if the reworked adapter needs it.
   [OKX_TRADING_API_KEY]="OKX_TRADING_API_KEY"
   [OKX_TRADING_SECRET_KEY]="OKX_TRADING_SECRET_KEY"
+
+  # Phase 3.4 (context-engineering) — Dune Analytics aggregate queries
+  # (holder-distribution histograms, LP-concentration, wash-trade proxies) for
+  # the Information-MEV deepening. DUNE_API_KEY authenticates the execute-query
+  # API; gecko_core.sources.dune treats `__unset__` as truly unset (client
+  # disabled, no call, fail-OPEN). Credit-metered — the client carries a
+  # per-process execute ceiling so a future wiring can't burn the budget.
+  [DUNE_API_KEY]="DUNE_API_KEY"
 )
 
 echo "==> Region:     $REGION"
@@ -216,6 +224,10 @@ declare -A REQUIRED_AT_BOOT=(
   # before they're provisioned; the news adapter fails-OPEN on `__unset__`.
   [OKX_TRADING_API_KEY]="__unset__"
   [OKX_TRADING_SECRET_KEY]="__unset__"
+  # Phase 3.4 — Dune aggregate queries. Sentinel keeps ECS booting before the
+  # key is provisioned; gecko_core.sources.dune treats `__unset__` as truly
+  # unset (client disabled, fail-OPEN).
+  [DUNE_API_KEY]="__unset__"
 )
 
 SKIPPED=()
