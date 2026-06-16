@@ -608,7 +608,9 @@ Resources:
             - Name: OKX_API_KEY
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OKX_API_KEY
             # OKX V5 trading-key creds (account-associated; separate from the
-            # OnchainOS dev key). Drive the news/sentiment feed. Sentinel-safe.
+            # OnchainOS dev key). Drive the news/sentiment feed via the reworked
+            # HMAC adapter (GET /api/v5/orbit/news-search). Sentinel-safe. The
+            # PASSPHRASE is part of the OKX V5 HMAC header set (OK-ACCESS-PASSPHRASE).
             - Name: OKX_TRADING_API_KEY
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OKX_TRADING_API_KEY
             - Name: OKX_TRADING_SECRET_KEY
@@ -627,6 +629,8 @@ Resources:
             # keeps the client disabled (fail-OPEN) until the real key lands.
             - Name: OKX_ONCHAINOS_API_KEY
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OKX_ONCHAINOS_API_KEY
+            - Name: OKX_TRADING_PASSPHRASE
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OKX_TRADING_PASSPHRASE
           LogConfiguration:
             LogDriver: awslogs
             Options:
