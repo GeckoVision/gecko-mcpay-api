@@ -42,6 +42,10 @@ def _provider(handler: Any, *, passphrase: str = _PASSPHRASE) -> OKXHttpNewsProv
 
 
 def test_fetch_returns_panel_shaped_chunks() -> None:
+    # REAL OKX V5 orbit/news-search shape (recorded live 2026-06-16): articles
+    # are nested under data[].details (NOT directly under data), and carry
+    # `cTime` / `sourceUrl` / `summary` (content is typically empty). A guessed
+    # flat shape here is exactly how the envelope bug shipped — pin the real one.
     def handler(_req: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
@@ -50,10 +54,18 @@ def test_fetch_returns_panel_shaped_chunks() -> None:
                 "msg": "",
                 "data": [
                     {
-                        "title": "Kamino TVL hits ATH",
-                        "summary": "Deposits surged 20% this week.",
-                        "url": "https://news.example/a1",
-                        "publishTime": "1781913600000",
+                        "details": [
+                            {
+                                "id": "n1",
+                                "title": "Kamino TVL hits ATH",
+                                "content": "",
+                                "summary": "Deposits surged 20% this week.",
+                                "sourceUrl": "https://news.example/a1",
+                                "cTime": "1781913600000",
+                                "ccyList": ["KMNO"],
+                            }
+                        ],
+                        "nextCursor": "abc",
                     }
                 ],
             },
@@ -68,7 +80,7 @@ def test_fetch_returns_panel_shaped_chunks() -> None:
     assert c["protocol"] == "kamino"
     assert "Kamino TVL hits ATH" in c["text"]
     assert c["url"] == "https://news.example/a1"
-    # epoch-millis -> ISO-8601 UTC
+    # epoch-millis cTime -> ISO-8601 UTC
     assert c["published_ts"].startswith("20") and "T" in c["published_ts"]
 
 
@@ -163,8 +175,18 @@ def test_empty_protocol_returns_empty() -> None:
 
 
 def test_normalize_handles_list_and_wrapped_shapes() -> None:
-    assert _normalize_articles([{"title": "x"}]) == [{"title": "x"}]
+    # REAL OKX V5 shape: data = [{details: [...articles], nextCursor}]. Must
+    # unwrap to the article list — the bug was returning the envelope itself.
+    okx = {"code": "0", "data": [{"details": [{"title": "real"}], "nextCursor": "c"}]}
+    assert _normalize_articles(okx) == [{"title": "real"}]
+    # Multiple envelopes concatenate their details.
+    two = {"data": [{"details": [{"title": "a"}]}, {"details": [{"title": "b"}]}]}
+    assert _normalize_articles(two) == [{"title": "a"}, {"title": "b"}]
+    # Empty details -> no articles (e.g. a coin with no news).
+    assert _normalize_articles({"data": [{"details": [], "nextCursor": "c"}]}) == []
+    # Forward-compat: a flat data list with no `details` envelope is taken as-is.
     assert _normalize_articles({"data": [{"title": "d"}]}) == [{"title": "d"}]
+    assert _normalize_articles([{"title": "x"}]) == [{"title": "x"}]
     assert _normalize_articles({"articles": [{"title": "y"}]}) == [{"title": "y"}]
     assert _normalize_articles({"nope": 1}) == []
     assert _normalize_articles("garbage") == []
@@ -173,9 +195,11 @@ def test_normalize_handles_list_and_wrapped_shapes() -> None:
 
 
 def test_extract_published_handles_epoch_and_iso() -> None:
-    # epoch-millis (OKX publishTime) -> ISO-8601
-    iso = _extract_published({"publishTime": "1781913600000"})
+    # epoch-millis cTime (the REAL OKX orbit/news-search field) -> ISO-8601
+    iso = _extract_published({"cTime": "1781913600000"})
     assert iso is not None and iso.startswith("20") and "T" in iso
+    # legacy publishTime still works
+    assert _extract_published({"publishTime": "1781913600000"}) is not None
     # already-ISO passes through
     assert _extract_published({"publishedAt": "2026-06-14T00:00:00Z"}) == ("2026-06-14T00:00:00Z")
     # missing -> None
