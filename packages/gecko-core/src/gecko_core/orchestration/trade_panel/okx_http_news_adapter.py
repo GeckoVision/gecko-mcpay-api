@@ -212,13 +212,18 @@ class OKXHttpNewsProvider:
 def _extract_published(a: dict[str, Any]) -> str | None:
     """Resolve a published timestamp across OKX + generic field names.
 
-    OKX V5 news items carry ``publishTime`` as epoch-millis (string or int).
-    Generic feeds may use ``publishedAt`` / ``created_at`` / ``published_ts``.
-    Epoch-millis are converted to ISO-8601 UTC so the chunk shape is uniform;
-    non-numeric values pass through unchanged (build_news_chunk stores as-is).
+    OKX V5 ``orbit/news-search`` items carry ``cTime`` as epoch-millis (verified
+    live 2026-06-16); older/other feeds may use ``publishTime`` / ``publishedAt``
+    / ``created_at`` / ``published_ts``. Epoch-millis are converted to ISO-8601
+    UTC so the chunk shape is uniform; non-numeric values pass through unchanged
+    (build_news_chunk stores as-is).
     """
     raw = (
-        a.get("publishTime") or a.get("published_ts") or a.get("publishedAt") or a.get("created_at")
+        a.get("cTime")
+        or a.get("publishTime")
+        or a.get("published_ts")
+        or a.get("publishedAt")
+        or a.get("created_at")
     )
     if raw is None:
         return None
@@ -233,16 +238,38 @@ def _extract_published(a: dict[str, Any]) -> str | None:
 
 
 def _normalize_articles(payload: Any) -> list[dict[str, Any]]:
-    """Pull the article list out of various OKX response shapes.
+    """Pull the article list out of the OKX V5 news response shape.
 
-    OKX V5 wraps results under ``data`` (alongside ``code``/``msg``). We also
-    tolerate bare lists + the other common wrappers for forward-compat.
+    GROUND TRUTH (verified live 2026-06-16 against /api/v5/orbit/news-search):
+    the real shape nests articles one level below ``data`` ::
+
+        {"code": "0", "data": [{"details": [<article>, ...], "nextCursor": ...}]}
+
+    i.e. ``data`` is a one-element list of *envelope* objects, each carrying the
+    real articles under ``details`` (NOT directly under ``data``). The original
+    adapter returned ``data`` itself — a list of ``{details, nextCursor}`` dicts
+    with no ``title`` — so the chunk-build loop skipped every item and news was
+    silently empty (0 chunks, no error). We unwrap ``details`` when present, and
+    still tolerate a flat list / the other common wrappers for forward-compat.
     """
     if isinstance(payload, list):
         return [a for a in payload if isinstance(a, dict)]
     if not isinstance(payload, dict):
         return []
-    for key in ("data", "articles", "news", "results", "items"):
+    data = payload.get("data")
+    if isinstance(data, list):
+        # OKX V5: unwrap each envelope's ``details`` list when present.
+        unwrapped: list[dict[str, Any]] = []
+        envelope_seen = False
+        for item in data:
+            if isinstance(item, dict) and isinstance(item.get("details"), list):
+                envelope_seen = True
+                unwrapped.extend(a for a in item["details"] if isinstance(a, dict))
+        if envelope_seen:
+            return unwrapped
+        # No ``details`` envelope → ``data`` is already a flat article list.
+        return [a for a in data if isinstance(a, dict)]
+    for key in ("articles", "news", "results", "items"):
         v = payload.get(key)
         if isinstance(v, list):
             return [a for a in v if isinstance(a, dict)]
