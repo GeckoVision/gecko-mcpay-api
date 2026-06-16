@@ -288,6 +288,25 @@ class SafetyBlock(BaseModel):
             "no inputs to assess (fail-OPEN)."
         ),
     )
+    depeg_risk: float | None = Field(
+        default=None,
+        ge=0.0,
+        description=(
+            "Phase 3.3 — absolute peg deviation (discount) from the Pegana "
+            "peg-risk oracle, in [0,1+] (0 = on-peg). For LSTs/stablecoins a "
+            "material deviation is a decision-integrity risk the contract-rug "
+            "read alone misses. None when no peg data (non-peg token, Pegana "
+            "down, or any error — fail-OPEN)."
+        ),
+    )
+    peg_status: str | None = Field(
+        default=None,
+        description=(
+            "Phase 3.3 — Pegana peg state for the asset (e.g. 'PEGGED', "
+            "'DEPEGGED', 'DRIFTING'). None when no peg data (fail-OPEN). A "
+            "non-PEGGED or stale state adds the 'depeg_risk' rug flag."
+        ),
+    )
     source: str = Field(
         default="unavailable",
         description="Read provenance ('quicknode' / 'unavailable'); never a secret.",
