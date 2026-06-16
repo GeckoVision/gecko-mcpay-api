@@ -3545,6 +3545,71 @@ async def pricing() -> dict[str, Any]:
     }
 
 
+class SafetyCheckRequest(BaseModel):
+    """Request for POST /safety — the fast, deterministic safety / Information-MEV check.
+
+    No LLM panel, no retrieval: just the on-chain contract-safety + manipulation
+    read for an SPL mint. Sub-second class (a few RPC/market calls + math) — the
+    pre-trade veto tier, distinct from the considered 7-voice /trade_research.
+    """
+
+    mint: str = Field(..., min_length=32, max_length=44, description="SPL mint address (base58).")
+
+
+def _safety_gate(block: Any) -> str:
+    """One-glance pre-trade gate derived from the deterministic safety read.
+
+    - ``block``   — hard stop: honeypot, fake market cap, material depeg, or a
+      'manipulated' Information-MEV read.
+    - ``caution`` — elevated manipulation / thin liquidity / holder
+      concentration / un-renounced mint or freeze authority.
+    - ``ok``      — checked and clean.
+    - ``unknown`` — the check could not run (fail-OPEN; never trust as safe).
+    """
+    if not getattr(block, "checked", False):
+        return "unknown"
+    flags = set(getattr(block, "rug_flags", None) or [])
+    if getattr(block, "honeypot", False) or (flags & {"fake_market_cap", "depeg_risk"}):
+        return "block"
+    imev = getattr(block, "information_mev", None)
+    if imev is not None and getattr(imev, "label", None) == "manipulated":
+        return "block"
+    caution_flags = {
+        "thin_liquidity_vs_mcap",
+        "high_holder_concentration",
+        "mint_not_renounced",
+        "freeze_not_renounced",
+    }
+    if (imev is not None and getattr(imev, "label", None) == "elevated") or (flags & caution_flags):
+        return "caution"
+    return "ok"
+
+
+@app.post("/safety")
+async def safety_check(req: SafetyCheckRequest) -> dict[str, Any]:
+    """Fast deterministic safety / Information-MEV gate for an SPL mint.
+
+    Free, unauthenticated, sub-second class. Runs ONLY the on-chain
+    contract-safety read (honeypot + mint/freeze authority + holder
+    concentration + liquidity/mcap manipulation + peg) — never the LLM panel.
+    Returns the full ``SafetyBlock`` plus a one-glance ``gate`` recommendation
+    (block | caution | ok | unknown). Fail-OPEN: any error/timeout yields a
+    ``checked=false`` block with ``gate=unknown`` — never a 5xx, never a
+    fabricated 'safe'. The considered adjudication lives at /trade_research.
+    """
+    from gecko_core.orchestration.trade_panel.models import SafetyBlock
+    from gecko_core.orchestration.trade_panel.safety_check import evaluate_contract_safety
+
+    try:
+        block = await asyncio.wait_for(
+            evaluate_contract_safety(target=req.mint, mint=req.mint), timeout=4.0
+        )
+    except Exception:
+        block = SafetyBlock.unavailable(reason="safety_check_error")
+
+    return {"gate": _safety_gate(block), **block.model_dump(mode="json")}
+
+
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok", "payments": _settings.x402_mode}
