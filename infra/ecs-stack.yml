@@ -607,6 +607,12 @@ Resources:
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OKX_NEWS_API_URL
             - Name: OKX_API_KEY
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OKX_API_KEY
+            # OKX V5 trading-key creds (account-associated; separate from the
+            # OnchainOS dev key). Drive the news/sentiment feed. Sentinel-safe.
+            - Name: OKX_TRADING_API_KEY
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OKX_TRADING_API_KEY
+            - Name: OKX_TRADING_SECRET_KEY
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OKX_TRADING_SECRET_KEY
           LogConfiguration:
             LogDriver: awslogs
             Options:

@@ -141,6 +141,14 @@ declare -A PARAMS=(
   [GECKO_NEWS_PROVIDER]="GECKO_NEWS_PROVIDER"
   [OKX_NEWS_API_URL]="OKX_NEWS_API_URL"
   [OKX_API_KEY]="OKX_API_KEY"
+
+  # OKX V5 trading-key creds (account-associated, SEPARATE from the OnchainOS
+  # developer OK-ACCESS-KEY). Drives the OKX V5 news/sentiment feed. The news
+  # adapter is being reworked to use these (the prior OKX_NEWS_API_URL/OKX_API_KEY
+  # guessed-REST pair is superseded). Passphrase may also be required for V5 —
+  # add OKX_TRADING_PASSPHRASE here if the reworked adapter needs it.
+  [OKX_TRADING_API_KEY]="OKX_TRADING_API_KEY"
+  [OKX_TRADING_SECRET_KEY]="OKX_TRADING_SECRET_KEY"
 )
 
 echo "==> Region:     $REGION"
@@ -204,6 +212,10 @@ declare -A REQUIRED_AT_BOOT=(
   [GECKO_NEWS_PROVIDER]="none"
   [OKX_NEWS_API_URL]="__unset__"
   [OKX_API_KEY]="__unset__"
+  # OKX V5 trading-key creds (news/sentiment feed). Sentinels keep ECS booting
+  # before they're provisioned; the news adapter fails-OPEN on `__unset__`.
+  [OKX_TRADING_API_KEY]="__unset__"
+  [OKX_TRADING_SECRET_KEY]="__unset__"
 )
 
 SKIPPED=()

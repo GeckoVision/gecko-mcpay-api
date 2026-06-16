@@ -99,3 +99,35 @@ Add to `infra/push-ssm-params.sh` + ECS `secrets:`: **`QUICKNODE_RPC_URL` (missi
 ---
 
 *Sources: data-engineer + ai-ml-engineer + software-engineer passes, 2026-06-14, grounded in the live trade_panel / safety_check / sources / infra code.*
+
+---
+
+## Phase 4 — tx-MEV / Information-MEV deepening (Intelligence-Layer spec, 2026-06-15)
+
+Folds the founder's **Gecko Intelligence Layer** spec into the roadmap. It extends "Information-MEV" from *manipulation of the visible signal* (mcap/liquidity/holders — shipped) to *detecting tx-MEV patterns* (wash trading, sandwiches, sniping) as inputs to the verdict — and ties directly to the **Jito/BAM acquirer thesis** ([[project_mev_decision_provider_2026_06_14]]).
+
+### What we ALREADY have (don't rebuild)
+- Decision-integrity oracle + **Receipt** (act/pass/defer + dissent + citations) — the spec's "Gecko's role", shipped.
+- Manipulation signals: `fake_market_cap` / `thin_liquidity_vs_mcap` / holder concentration + named **Information-MEV** score (PR #136 + W1).
+- Contract safety: mint/freeze authority + honeypot proxy; **Pegana** peg-risk wired (3.3).
+- News/sentiment wired (2.1, env-gated) — partial coverage of "agent poisoning / social".
+- Pre-panel grounding (0.2) so all of the above reaches the model.
+
+### What the spec ADDS (new build → sequence after Phase 0-3)
+| Capability | Method (from spec) | Data substrate | Status |
+|---|---|---|---|
+| **Wash-trading detection** | trade-graph SCC + volume matching (Victor 2021); ML (Falk/Tsoukalas 2026) | **Dune** (being built now) + Helius | P4.1 |
+| **Sandwich detection** | pattern detect on flows; sandwiched.me/Helius data; **BAM attestations** | Helius/Geyser streams + BAM | P4.2 |
+| **Launch sniping / fake-liquidity / cross-slot** | new-token events + LP-drain + multi-slot patterns | Helius streams | P4.3 |
+| **BAM attestation ingestion** | parse Jito Block Assembly Marketplace ordering proofs | Jito/BAM | P4.4 — *strategic: the tx-MEV⇄info-MEV bridge + the Jito-acquirer integration* |
+| **Launcher monitoring surface** | post-launch dashboard/alerts (bot activity, wash %, sandwich attempts) | the above | P4.5 — *a SECOND ICP (launchers), distinct from the agent ICP* |
+
+### Decisions
+- **Alignment: strong.** This is "the MEV decision provider" made concrete and it makes the **Jito/BAM acquisition thesis tangible** — Gecko *consumes* BAM's verifiable data and adds the judgment layer. Lead the deck's Functionality story here once P4.1 ships.
+- **Sequence:** the **Dune provider (3.4, building now)** is the wash-trading data substrate → **P4.1 wash-trading graph detector** (highest-value first concrete tx-MEV signal; folds into the IMEV score + a `wash_trade` rug_flag) → P4.2 sandwich (needs Helius streams + BAM) → P4.5 launcher dashboard (new surface, new ICP — scope as its own product track).
+- **Honesty guard:** the spec's headline numbers ($370–500M sandwiched, 93% wide-sandwich) are real but sourced to sandwiched.me / Ghost Logs — cite as third-party, never as Gecko's own measurement. Each detector ships with a Pattern-E reachability test (signal reaches the verdict) before any claim.
+- **Don't build infra we consume:** per the ownership-tier discipline, Gecko stays the *judgment/intelligence* layer — we consume Helius/Geyser/BAM/Dune as inputs; we do NOT build RPC/streams/BAM ourselves.
+
+### OKX data-layer findings (2026-06-15) — feeds Phase 1/3
+- **OnchainOS Market** (developer key, `OK-ACCESS-KEY`, on prod): token mcap/liquidity/volume, **top-20 holders** (concentration without Helius), trending, and a **manipulation-resistant Index Price** (CEX+DEX+oracle composite). Provider being built now (`feat/ce-okx-onchainos-market`) — candidate to COMPLEMENT GeckoTerminal + QuickNode-holders in the safety read (holders + index price in fewer calls). **No news endpoint.**
+- **News/sentiment** = OKX **V5 API via the `okx` CLI** (`@okx_ai/okx-trade-cli`, OAuth2.1 / AK+SK+passphrase = the **trading key**, separate from the dev key; `~/.okx/config.toml`, `--profile live`, no demo). So the Phase 2.1 `OKXHttpNewsProvider` guessed-REST shape is likely WRONG — the correct adapter shells the `okx` CLI or uses the MCP `news_get_*` tools. Re-do the 2.1 adapter as a CLI/MCP-backed provider once the trading key is configured + tested.
