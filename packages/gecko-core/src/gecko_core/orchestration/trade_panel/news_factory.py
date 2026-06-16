@@ -14,16 +14,20 @@ protocol shape (see ``news_provider.py``).
 CONTRACT — ENV-gated + fail-OPEN:
   - ``GECKO_NEWS_PROVIDER`` unset / ``none`` / ``off`` (the default) → returns
     ``None`` → byte-identical to today's behavior. No news call.
-  - ``GECKO_NEWS_PROVIDER=okx`` → attempt to build the OKX direct-HTTP news
-    provider. It needs ``OKX_NEWS_API_URL`` + ``OKX_API_KEY``. If EITHER is
+  - ``GECKO_NEWS_PROVIDER=okx`` → attempt to build the OKX V5 HMAC news
+    provider. It needs ``OKX_TRADING_API_KEY`` + ``OKX_TRADING_SECRET_KEY``
+    (+ optional ``OKX_TRADING_PASSPHRASE``). If EITHER required cred is
     unprovisioned (unset or the SSM ``__unset__`` sentinel), the factory
     fails-OPEN to ``None`` — the prod call is NEVER broken by a half-configured
     flag. Nothing is logged at WARNING with secret material.
 
 DEPLOYMENT NOTE (founder): enabling OKX news in ECS requires provisioning
-``OKX_NEWS_API_URL`` + ``OKX_API_KEY`` in SSM (sentinel ``__unset__`` shipped
-today) AND setting ``GECKO_NEWS_PROVIDER=okx``. Until both land, the runtime
-default stays OFF and the panel behaves exactly as before.
+``OKX_TRADING_API_KEY`` + ``OKX_TRADING_SECRET_KEY`` (and, if the account's API
+key was issued with one, ``OKX_TRADING_PASSPHRASE``) in SSM (sentinel
+``__unset__`` shipped today) AND setting ``GECKO_NEWS_PROVIDER=okx``. Until both
+required creds land, the runtime default stays OFF and the panel behaves exactly
+as before. These are the account-associated OKX V5 trading creds — NOT the
+OnchainOS developer OK-ACCESS-KEY, which does not serve news.
 """
 
 from __future__ import annotations
@@ -68,23 +72,27 @@ def build_news_provider() -> Any | None:
 
 
 def _build_okx_http_provider() -> Any | None:
-    """Build the OKX direct-HTTP news provider if fully provisioned, else None.
+    """Build the OKX V5 HMAC news provider if provisioned, else None.
 
     The existing ``OKXNewsProvider`` (okx_news_adapter.py) requires an
     ``mcp_call`` transport that the ECS task does NOT have. For the deployed
-    path we use a direct-HTTP adapter driven by ``OKX_NEWS_API_URL`` +
-    ``OKX_API_KEY``. Both must be real (non-sentinel) or we fail-OPEN to None.
+    path we use the OKX V5 direct-HTTP adapter, signed with the account's
+    trading creds: ``OKX_TRADING_API_KEY`` + ``OKX_TRADING_SECRET_KEY`` (both
+    required) and ``OKX_TRADING_PASSPHRASE`` (optional — included in the HMAC
+    headers when present; OKX V5 keys are typically issued with one). The two
+    required creds must be real (non-sentinel) or we fail-OPEN to None.
     """
-    base_url = _env_clean("OKX_NEWS_API_URL")
-    api_key = _env_clean("OKX_API_KEY")
-    if not base_url or not api_key:
-        # Default state today: keys are __unset__ in SSM → stay OFF, identical
-        # to the pre-Phase-2.1 path. Never log the key (or its absence-by-name
-        # in a way that implies a value); a plain INFO is enough.
+    api_key = _env_clean("OKX_TRADING_API_KEY")
+    secret_key = _env_clean("OKX_TRADING_SECRET_KEY")
+    passphrase = _env_clean("OKX_TRADING_PASSPHRASE")
+    if not api_key or not secret_key:
+        # Default state today: creds are __unset__ in SSM → stay OFF, identical
+        # to the pre-Phase-2.1 path. Never log the key/secret (or its
+        # absence-by-name in a way that implies a value); a plain INFO is enough.
         _log.info(
-            "news_factory.okx_unprovisioned has_url=%s has_key=%s — news OFF",
-            bool(base_url),
+            "news_factory.okx_unprovisioned has_key=%s has_secret=%s — news OFF",
             bool(api_key),
+            bool(secret_key),
         )
         return None
 
@@ -92,7 +100,11 @@ def _build_okx_http_provider() -> Any | None:
         OKXHttpNewsProvider,
     )
 
-    return OKXHttpNewsProvider(base_url=base_url, api_key=api_key)
+    return OKXHttpNewsProvider(
+        api_key=api_key,
+        secret_key=secret_key,
+        passphrase=passphrase,
+    )
 
 
 __all__ = ["build_news_provider"]

@@ -143,12 +143,29 @@ declare -A PARAMS=(
   [OKX_API_KEY]="OKX_API_KEY"
 
   # OKX V5 trading-key creds (account-associated, SEPARATE from the OnchainOS
-  # developer OK-ACCESS-KEY). Drives the OKX V5 news/sentiment feed. The news
-  # adapter is being reworked to use these (the prior OKX_NEWS_API_URL/OKX_API_KEY
-  # guessed-REST pair is superseded). Passphrase may also be required for V5 —
-  # add OKX_TRADING_PASSPHRASE here if the reworked adapter needs it.
+  # developer OK-ACCESS-KEY). Drives the OKX V5 news/sentiment feed via the
+  # reworked HMAC adapter (okx_http_news_adapter), which signs requests to
+  # GET https://www.okx.com/api/v5/orbit/news-search. These SUPERSEDE the
+  # prior guessed-REST pair OKX_NEWS_API_URL/OKX_API_KEY (kept as harmless
+  # sentinels below; no longer read). OKX V5 keys are issued with a passphrase,
+  # which is part of the HMAC header set (OK-ACCESS-PASSPHRASE) — provision it.
   [OKX_TRADING_API_KEY]="OKX_TRADING_API_KEY"
   [OKX_TRADING_SECRET_KEY]="OKX_TRADING_SECRET_KEY"
+
+  # Phase 3.4 (context-engineering) — Dune Analytics aggregate queries
+  # (holder-distribution histograms, LP-concentration, wash-trade proxies) for
+  # the Information-MEV deepening. DUNE_API_KEY authenticates the execute-query
+  # API; gecko_core.sources.dune treats `__unset__` as truly unset (client
+  # disabled, no call, fail-OPEN). Credit-metered — the client carries a
+  # per-process execute ceiling so a future wiring can't burn the budget.
+  [DUNE_API_KEY]="DUNE_API_KEY"
+  # OKX OnchainOS Market developer key (OK-ACCESS-KEY) — drives the
+  # gecko_core.sources.okx_onchainos_market client (token metrics, top-20
+  # holders, manipulation-resistant index price). Distinct from OKX_API_KEY
+  # (the Bearer-token news adapter). Sentinel keeps the client disabled
+  # (fail-OPEN) until the founder's real developer key is provisioned.
+  [OKX_ONCHAINOS_API_KEY]="OKX_ONCHAINOS_API_KEY"
+  [OKX_TRADING_PASSPHRASE]="OKX_TRADING_PASSPHRASE"
 )
 
 echo "==> Region:     $REGION"
@@ -214,8 +231,19 @@ declare -A REQUIRED_AT_BOOT=(
   [OKX_API_KEY]="__unset__"
   # OKX V5 trading-key creds (news/sentiment feed). Sentinels keep ECS booting
   # before they're provisioned; the news adapter fails-OPEN on `__unset__`.
+  # PASSPHRASE is part of the OKX V5 HMAC header set — provision it alongside
+  # the key+secret. The factory treats `__unset__` passphrase as "no passphrase"
+  # (header omitted), so a key issued without one still works.
   [OKX_TRADING_API_KEY]="__unset__"
   [OKX_TRADING_SECRET_KEY]="__unset__"
+  # Phase 3.4 — Dune aggregate queries. Sentinel keeps ECS booting before the
+  # key is provisioned; gecko_core.sources.dune treats `__unset__` as truly
+  # unset (client disabled, fail-OPEN).
+  [DUNE_API_KEY]="__unset__"
+  # OKX OnchainOS developer key — sentinel keeps ECS booting before the real
+  # key is provisioned; okx_onchainos_market treats `__unset__` as disabled.
+  [OKX_ONCHAINOS_API_KEY]="__unset__"
+  [OKX_TRADING_PASSPHRASE]="__unset__"
 )
 
 SKIPPED=()

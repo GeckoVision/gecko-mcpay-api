@@ -608,11 +608,29 @@ Resources:
             - Name: OKX_API_KEY
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OKX_API_KEY
             # OKX V5 trading-key creds (account-associated; separate from the
-            # OnchainOS dev key). Drive the news/sentiment feed. Sentinel-safe.
+            # OnchainOS dev key). Drive the news/sentiment feed via the reworked
+            # HMAC adapter (GET /api/v5/orbit/news-search). Sentinel-safe. The
+            # PASSPHRASE is part of the OKX V5 HMAC header set (OK-ACCESS-PASSPHRASE).
             - Name: OKX_TRADING_API_KEY
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OKX_TRADING_API_KEY
             - Name: OKX_TRADING_SECRET_KEY
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OKX_TRADING_SECRET_KEY
+            # Phase 3.4 (context-engineering) — Dune Analytics aggregate
+            # queries (holder-distribution / LP-concentration / wash-trade).
+            # Sentinel-safe: gecko_core.sources.dune treats `__unset__` as truly
+            # unset (client disabled, fail-OPEN) until the real key is
+            # provisioned and the source is wired into the panel.
+            - Name: DUNE_API_KEY
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/DUNE_API_KEY
+            # OKX OnchainOS Market developer key (OK-ACCESS-KEY). Drives the
+            # gecko_core.sources.okx_onchainos_market client (token metrics,
+            # top-20 holders, manipulation-resistant index price). Distinct
+            # from OKX_API_KEY (Bearer-token news adapter). Sentinel __unset__
+            # keeps the client disabled (fail-OPEN) until the real key lands.
+            - Name: OKX_ONCHAINOS_API_KEY
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OKX_ONCHAINOS_API_KEY
+            - Name: OKX_TRADING_PASSPHRASE
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OKX_TRADING_PASSPHRASE
           LogConfiguration:
             LogDriver: awslogs
             Options:

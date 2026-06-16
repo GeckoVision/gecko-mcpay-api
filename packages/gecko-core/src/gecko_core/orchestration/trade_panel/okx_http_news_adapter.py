@@ -1,19 +1,43 @@
-"""OKX direct-HTTP news provider — Phase 2.1 (context-engineering, 2026-06-15).
+"""OKX V5 direct-HTTP news provider — reworked (context-engineering, 2026-06-16).
 
-The MCP-backed ``OKXNewsProvider`` (okx_news_adapter.py) needs an ``mcp_call``
-transport that the deployed ECS task does NOT have. This adapter talks to the
-OKX news REST endpoint directly over ``httpx`` so the deployed Pattern-E
-reachability for live news can finally be satisfied (the gap flagged in
-okx_news_adapter.py's DEPLOYMENT GAP note).
+Phase 2.1 shipped this adapter against a GUESSED REST shape
+(``OKX_NEWS_API_URL`` + ``Authorization: Bearer``). That was wrong. This rework
+hits the REAL OKX V5 news endpoint with the REAL auth model, reverse-engineered
+from the ``@okx_ai/okx-trade-cli`` source (``okx-files/agent-trade-kit``):
 
-Provider-neutral by construction: it satisfies the same ``NewsProvider``
-protocol as every other adapter; the panel never imports it directly (only the
-ENV-gated factory does).
+GROUND TRUTH (packages/core/src/tools/news.ts + client/rest-client.ts):
+  - Base host: ``https://www.okx.com`` (constants.ts ``OKX_API_BASE_URL``).
+  - News browse/by-coin/search all hit ONE path:
+    ``/api/v5/orbit/news-search`` (a "private" GET in the CLI).
+  - Auth model is DUAL in the CLI (rest-client.ts ``applyAuth``):
+      1. apiKey + secretKey + passphrase present -> OKX V5 HMAC signing
+         (headers OK-ACCESS-KEY / -SIGN / -PASSPHRASE / -TIMESTAMP).
+         **No OAuth fallback** when an API key is configured.
+      2. else -> OAuth2.1 Bearer token via the ``okx-auth`` binary.
+    The founder is provisioning AK + SK (+ passphrase) as env creds, so we take
+    the HMAC path — it is fully reproducible in Python (stdlib hmac), needs no
+    token-exchange binary, and no subprocess. CLI-shell was rejected: it would
+    require shipping the Node CLI + ``~/.okx/config.toml`` into ECS and shelling
+    out per request; the HMAC HTTP path is smaller, testable, and secret-clean.
 
-CONFIG (both required, else the factory never constructs this):
-  - ``OKX_NEWS_API_URL`` — full REST endpoint base, provider-neutral. The
-    coin/query is sent as a query param.
-  - ``OKX_API_KEY`` — bearer credential. NEVER logged.
+OKX V5 HMAC signature (signature.ts + OKX V5 spec):
+  timestamp = UTC ISO-8601 millis, e.g. "2026-06-16T12:00:00.000Z"
+  prehash   = timestamp + METHOD + requestPath + body
+              (requestPath INCLUDES the "?query" string; body is "" for GET)
+  sign      = base64( HMAC-SHA256(secretKey, prehash) )
+  headers   = OK-ACCESS-KEY / OK-ACCESS-SIGN / OK-ACCESS-PASSPHRASE /
+              OK-ACCESS-TIMESTAMP  (+ Content-Type/Accept JSON, Accept-Language)
+
+Provider-neutral by construction: satisfies the same ``NewsProvider`` protocol
+as every other adapter; the panel never imports it directly (only the ENV-gated
+factory does).
+
+CONFIG (read by the factory, not here):
+  - ``OKX_TRADING_API_KEY``     — OK-ACCESS-KEY. NEVER logged.
+  - ``OKX_TRADING_SECRET_KEY``  — HMAC secret. NEVER logged.
+  - ``OKX_TRADING_PASSPHRASE``  — OK-ACCESS-PASSPHRASE. NEVER logged.
+  (The OnchainOS developer OK-ACCESS-KEY is a DIFFERENT key and does NOT serve
+  news — do not wire it here.)
 
 FAIL-OPEN: any network / parse / auth error returns an empty list. The panel
 merges ``[]`` as a no-op, so news being down NEVER breaks the verdict.
@@ -21,7 +45,11 @@ merges ``[]`` as a no-op, so news being down NEVER breaks the verdict.
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -33,28 +61,55 @@ from gecko_core.orchestration.trade_panel.news_provider import (
 
 _log = logging.getLogger(__name__)
 
+# Canonical OKX V5 host + news path (from the okx-trade-cli source).
+_OKX_BASE_URL = "https://www.okx.com"
+_NEWS_SEARCH_PATH = "/api/v5/orbit/news-search"
+
 # Network budget — the panel's round-1 must not stall on a slow news endpoint.
 # Fail-OPEN on timeout: the sentiment voice runs corpus-only, exactly as today.
 _HTTP_TIMEOUT_S = 4.0
 
 
+def _okx_timestamp() -> str:
+    """UTC ISO-8601 with millisecond precision + ``Z`` — the OKX V5 format.
+
+    Mirrors the CLI's ``new Date().toISOString()`` (signature.ts ``getNow``),
+    which yields e.g. ``2026-06-16T12:00:00.000Z``. Python's default isoformat
+    uses ``+00:00`` and microseconds, both of which OKX rejects, so we format
+    explicitly.
+    """
+    now = datetime.now(UTC)
+    return now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"
+
+
+def _sign(secret_key: str, prehash: str) -> str:
+    """base64(HMAC-SHA256(secret, prehash)) — the OKX V5 signature."""
+    digest = hmac.new(secret_key.encode("utf-8"), prehash.encode("utf-8"), hashlib.sha256).digest()
+    return base64.b64encode(digest).decode("utf-8")
+
+
 class OKXHttpNewsProvider:
-    """NewsProvider backed by the OKX news REST endpoint over httpx.
+    """NewsProvider backed by the OKX V5 ``/api/v5/orbit/news-search`` endpoint.
 
     Satisfies the ``NewsProvider`` protocol. Construct only via the ENV-gated
     factory (``news_factory.build_news_provider``) so prod never wires it
-    without both ``OKX_NEWS_API_URL`` and ``OKX_API_KEY`` present.
+    without ``OKX_TRADING_API_KEY`` + ``OKX_TRADING_SECRET_KEY`` (+ passphrase)
+    present.
     """
 
     def __init__(
         self,
         *,
-        base_url: str,
         api_key: str,
+        secret_key: str,
+        passphrase: str = "",
+        base_url: str = _OKX_BASE_URL,
         client: httpx.AsyncClient | None = None,
     ) -> None:
-        self._base_url = base_url.rstrip("/")
         self._api_key = api_key
+        self._secret_key = secret_key
+        self._passphrase = passphrase
+        self._base_url = base_url.rstrip("/")
         # Injectable client for tests (httpx.MockTransport, vcr-style).
         self._client = client
 
@@ -72,7 +127,8 @@ class OKXHttpNewsProvider:
         try:
             articles = await self._fetch_articles(proto, max_results)
         except Exception as exc:
-            # Fail-OPEN. Class name only — the URL/key must never reach logs.
+            # Fail-OPEN. Class name only — the URL/key/secret/passphrase must
+            # never reach logs.
             _log.warning(
                 "okx_http_news.fetch_failed protocol=%s err=%s",
                 proto,
@@ -85,35 +141,103 @@ class OKXHttpNewsProvider:
             headline = (a.get("title") or a.get("headline") or "").strip()
             if not headline:
                 continue
-            body = (a.get("summary") or a.get("body") or a.get("description") or "").strip()
+            body = (
+                a.get("summary") or a.get("fullText") or a.get("body") or a.get("description") or ""
+            ).strip()
             chunks.append(
                 build_news_chunk(
                     headline=headline,
                     body=body,
-                    url=a.get("url") or a.get("link"),
-                    published_ts=(
-                        a.get("published_ts") or a.get("publishedAt") or a.get("created_at")
-                    ),
+                    url=a.get("url") or a.get("link") or a.get("sourceUrl"),
+                    published_ts=_extract_published(a),
                     protocol=proto,
                 )
             )
         return chunks
 
     async def _fetch_articles(self, proto: str, max_results: int) -> list[dict[str, Any]]:
-        params: dict[str, str | int] = {"coin": proto.upper(), "q": proto, "limit": max_results}
-        headers = {"Authorization": f"Bearer {self._api_key}"}
+        """Signed GET against ``/api/v5/orbit/news-search`` (coin-scoped).
+
+        Query mirrors the CLI's ``news_get_by_coin`` handler: ``sortBy=latest``,
+        ``ccyList=<TICKER>``, ``limit=<n>``. ``ccyList`` accepts standard
+        uppercase tickers; many protocol slugs (e.g. "kamino") map cleanly, and
+        the search index is forgiving — anything it can't resolve simply returns
+        no articles, which fails-OPEN at the call site.
+        """
+        # Build the query string in a stable order and sign over the EXACT
+        # request path (path + "?query"), per the OKX V5 prehash rule.
+        params: dict[str, str | int] = {
+            "sortBy": "latest",
+            "ccyList": proto.upper(),
+            "limit": max_results,
+        }
+        request = httpx.Request("GET", self._base_url + _NEWS_SEARCH_PATH, params=params)
+        # request.url.raw_path is bytes of "/path?query"; sign over that exact string.
+        request_path = request.url.raw_path.decode("ascii")
+        headers = self._auth_headers("GET", request_path, body="")
+
         if self._client is not None:
-            resp = await self._client.get(self._base_url, params=params, headers=headers)
+            resp = await self._client.get(
+                self._base_url + _NEWS_SEARCH_PATH, params=params, headers=headers
+            )
             resp.raise_for_status()
             return _normalize_articles(resp.json())
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_S) as client:
-            resp = await client.get(self._base_url, params=params, headers=headers)
+            resp = await client.get(
+                self._base_url + _NEWS_SEARCH_PATH, params=params, headers=headers
+            )
             resp.raise_for_status()
             return _normalize_articles(resp.json())
 
+    def _auth_headers(self, method: str, request_path: str, *, body: str) -> dict[str, str]:
+        """OKX V5 HMAC auth headers. Never logged; never returned to callers."""
+        timestamp = _okx_timestamp()
+        prehash = f"{timestamp}{method.upper()}{request_path}{body}"
+        signature = _sign(self._secret_key, prehash)
+        headers = {
+            "OK-ACCESS-KEY": self._api_key,
+            "OK-ACCESS-SIGN": signature,
+            "OK-ACCESS-TIMESTAMP": timestamp,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Accept-Language": "en-US",
+        }
+        # Passphrase is part of the OKX V5 HMAC scheme; omit the header only when
+        # truly absent so a key configured without a passphrase still attempts.
+        if self._passphrase:
+            headers["OK-ACCESS-PASSPHRASE"] = self._passphrase
+        return headers
+
+
+def _extract_published(a: dict[str, Any]) -> str | None:
+    """Resolve a published timestamp across OKX + generic field names.
+
+    OKX V5 news items carry ``publishTime`` as epoch-millis (string or int).
+    Generic feeds may use ``publishedAt`` / ``created_at`` / ``published_ts``.
+    Epoch-millis are converted to ISO-8601 UTC so the chunk shape is uniform;
+    non-numeric values pass through unchanged (build_news_chunk stores as-is).
+    """
+    raw = (
+        a.get("publishTime") or a.get("published_ts") or a.get("publishedAt") or a.get("created_at")
+    )
+    if raw is None:
+        return None
+    # Epoch-millis (OKX) -> ISO-8601 UTC.
+    s = str(raw)
+    if s.isdigit():
+        try:
+            return datetime.fromtimestamp(int(s) / 1000, tz=UTC).isoformat()
+        except (ValueError, OverflowError, OSError):
+            return s
+    return s
+
 
 def _normalize_articles(payload: Any) -> list[dict[str, Any]]:
-    """Pull the article list out of various OKX response shapes."""
+    """Pull the article list out of various OKX response shapes.
+
+    OKX V5 wraps results under ``data`` (alongside ``code``/``msg``). We also
+    tolerate bare lists + the other common wrappers for forward-compat.
+    """
     if isinstance(payload, list):
         return [a for a in payload if isinstance(a, dict)]
     if not isinstance(payload, dict):
@@ -126,7 +250,7 @@ def _normalize_articles(payload: Any) -> list[dict[str, Any]]:
 
 
 # Import-time protocol-conformance guard (catches drift, like okx_news_adapter).
-assert isinstance(OKXHttpNewsProvider(base_url="https://x", api_key="k"), NewsProvider)
+assert isinstance(OKXHttpNewsProvider(api_key="k", secret_key="s", passphrase="p"), NewsProvider)
 
 
 __all__ = ["OKXHttpNewsProvider"]
