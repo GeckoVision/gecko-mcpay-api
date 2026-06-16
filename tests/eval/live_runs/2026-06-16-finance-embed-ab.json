@@ -1,0 +1,313 @@
+{
+  "kind": "finance_embed_ab",
+  "generated_at": "2026-06-16T03:15:36.993522+00:00",
+  "baseline_model": "voyage-3-large",
+  "candidate_model": "voyage-finance-2",
+  "full_reembed_cost_estimate": {
+    "available": true,
+    "rate_usd_per_1m": 0.12,
+    "chars_per_token_assumed": 4.0,
+    "full_corpus": {
+      "chunks": 24208,
+      "chars": 32904194,
+      "est_tokens": 8226048,
+      "est_usd": 0.9871
+    },
+    "trade_relevant_corpus": {
+      "chunks": 7088,
+      "chars": 16307527,
+      "est_tokens": 4076882,
+      "est_usd": 0.4892
+    }
+  },
+  "live_ab": {
+    "ran": true,
+    "runs": [
+      {
+        "run": 0,
+        "sample_size": 200,
+        "n_queries": 10,
+        "baseline": {
+          "model": "voyage-3-large",
+          "recall_at_k": {
+            "3": 0.22,
+            "5": 0.3,
+            "10": 0.38
+          },
+          "ndcg_at_k": {
+            "3": 0.41067674461255116,
+            "5": 0.36291342951381983,
+            "10": 0.40527757559099814
+          },
+          "pk_coverage_at_k": {
+            "3": 0.9,
+            "5": 0.9,
+            "10": 0.9
+          }
+        },
+        "finance2": {
+          "model": "voyage-finance-2",
+          "recall_at_k": {
+            "3": 0.26,
+            "5": 0.32,
+            "10": 0.44
+          },
+          "ndcg_at_k": {
+            "3": 0.4524443490303273,
+            "5": 0.38626034367897844,
+            "10": 0.4425227899795813
+          },
+          "pk_coverage_at_k": {
+            "3": 0.9,
+            "5": 0.95,
+            "10": 0.95
+          }
+        },
+        "delta_finance2_minus_baseline": {
+          "recall_at_k": {
+            "3": 0.04,
+            "5": 0.02,
+            "10": 0.06
+          },
+          "ndcg_at_k": {
+            "3": 0.0418,
+            "5": 0.0233,
+            "10": 0.0372
+          },
+          "pk_coverage_at_k": {
+            "3": 0.0,
+            "5": 0.05,
+            "10": 0.05
+          }
+        },
+        "wall_s": 61.29
+      },
+      {
+        "run": 1,
+        "sample_size": 200,
+        "n_queries": 10,
+        "baseline": {
+          "model": "voyage-3-large",
+          "recall_at_k": {
+            "3": 0.14,
+            "5": 0.24000000000000002,
+            "10": 0.46
+          },
+          "ndcg_at_k": {
+            "3": 0.26466027069233244,
+            "5": 0.2662160636165628,
+            "10": 0.37491764160336516
+          },
+          "pk_coverage_at_k": {
+            "3": 0.5833333333333334,
+            "5": 0.6583333333333333,
+            "10": 0.7333333333333333
+          }
+        },
+        "finance2": {
+          "model": "voyage-finance-2",
+          "recall_at_k": {
+            "3": 0.16,
+            "5": 0.3,
+            "10": 0.52
+          },
+          "ndcg_at_k": {
+            "3": 0.34222033749502656,
+            "5": 0.34673960044664304,
+            "10": 0.4621514605118185
+          },
+          "pk_coverage_at_k": {
+            "3": 0.5583333333333333,
+            "5": 0.6083333333333333,
+            "10": 0.6083333333333333
+          }
+        },
+        "delta_finance2_minus_baseline": {
+          "recall_at_k": {
+            "3": 0.02,
+            "5": 0.06,
+            "10": 0.06
+          },
+          "ndcg_at_k": {
+            "3": 0.0776,
+            "5": 0.0805,
+            "10": 0.0872
+          },
+          "pk_coverage_at_k": {
+            "3": -0.025,
+            "5": -0.05,
+            "10": -0.125
+          }
+        },
+        "wall_s": 51.58
+      },
+      {
+        "run": 2,
+        "sample_size": 200,
+        "n_queries": 10,
+        "baseline": {
+          "model": "voyage-3-large",
+          "recall_at_k": {
+            "3": 0.2,
+            "5": 0.26,
+            "10": 0.34
+          },
+          "ndcg_at_k": {
+            "3": 0.3980257092503117,
+            "5": 0.3392753530841239,
+            "10": 0.3807796640777203
+          },
+          "pk_coverage_at_k": {
+            "3": 0.6583333333333333,
+            "5": 0.6833333333333333,
+            "10": 0.6833333333333333
+          }
+        },
+        "finance2": {
+          "model": "voyage-finance-2",
+          "recall_at_k": {
+            "3": 0.26,
+            "5": 0.32,
+            "10": 0.48
+          },
+          "ndcg_at_k": {
+            "3": 0.46727510748210216,
+            "5": 0.38927892029157196,
+            "10": 0.4731664625746586
+          },
+          "pk_coverage_at_k": {
+            "3": 0.6583333333333333,
+            "5": 0.6833333333333333,
+            "10": 0.6833333333333333
+          }
+        },
+        "delta_finance2_minus_baseline": {
+          "recall_at_k": {
+            "3": 0.06,
+            "5": 0.06,
+            "10": 0.14
+          },
+          "ndcg_at_k": {
+            "3": 0.0692,
+            "5": 0.05,
+            "10": 0.0924
+          },
+          "pk_coverage_at_k": {
+            "3": 0.0,
+            "5": 0.0,
+            "10": 0.0
+          }
+        },
+        "wall_s": 55.31
+      }
+    ],
+    "variance_summary": {
+      "recall_at_k": {
+        "3": {
+          "mean_delta": 0.04,
+          "spread": 0.04,
+          "per_run": [
+            0.04,
+            0.02,
+            0.06
+          ],
+          "win_signal": true
+        },
+        "5": {
+          "mean_delta": 0.0467,
+          "spread": 0.04,
+          "per_run": [
+            0.02,
+            0.06,
+            0.06
+          ],
+          "win_signal": true
+        },
+        "10": {
+          "mean_delta": 0.0867,
+          "spread": 0.08,
+          "per_run": [
+            0.06,
+            0.06,
+            0.14
+          ],
+          "win_signal": true
+        }
+      },
+      "ndcg_at_k": {
+        "3": {
+          "mean_delta": 0.0629,
+          "spread": 0.0358,
+          "per_run": [
+            0.0418,
+            0.0776,
+            0.0692
+          ],
+          "win_signal": true
+        },
+        "5": {
+          "mean_delta": 0.0513,
+          "spread": 0.0572,
+          "per_run": [
+            0.0233,
+            0.0805,
+            0.05
+          ],
+          "win_signal": false
+        },
+        "10": {
+          "mean_delta": 0.0723,
+          "spread": 0.0552,
+          "per_run": [
+            0.0372,
+            0.0872,
+            0.0924
+          ],
+          "win_signal": true
+        }
+      },
+      "pk_coverage_at_k": {
+        "3": {
+          "mean_delta": -0.0083,
+          "spread": 0.025,
+          "per_run": [
+            0.0,
+            -0.025,
+            0.0
+          ],
+          "win_signal": false
+        },
+        "5": {
+          "mean_delta": 0.0,
+          "spread": 0.1,
+          "per_run": [
+            0.05,
+            -0.05,
+            0.0
+          ],
+          "win_signal": false
+        },
+        "10": {
+          "mean_delta": -0.025,
+          "spread": 0.175,
+          "per_run": [
+            0.05,
+            -0.125,
+            0.0
+          ],
+          "win_signal": false
+        }
+      }
+    },
+    "spend": {
+      "embed_tokens": 751096,
+      "rerank_pairs": 6000,
+      "est_usd": 0.4352,
+      "budget_ceiling_usd": 6.0
+    },
+    "ground_truth": {
+      "judge": "voyage/rerank-2 cross-encoder",
+      "relevant_top_r": 5
+    }
+  }
+}
