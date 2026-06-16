@@ -83,6 +83,18 @@ ProviderKind = Literal[
     # applies. See scripts/protocol_native/ingest_protocol_native.py and
     # scripts/protocol_native/ingest_jito_mev.py.
     "protocol_native",
+    # Phase 0.2 (context-engineering) — synthetic, single-call live on-chain
+    # safety / Information-MEV read injected into the panel slate BEFORE the
+    # voices run. Carries the contract-safety SafetyBlock numbers (mcap,
+    # liquidity, liq/mcap ratio, top-holder %, mint/freeze authority, IMEV
+    # score) so the risk_manager voice SEES the signal AND the grounding gate
+    # treats those live numbers as grounded-by-construction (a real, sourced
+    # citation) instead of redacting them post-hoc (the "BrCA redaction").
+    # NEVER persisted to the vector store (freshness_tier="hot"): it is built
+    # in-memory per panel call, mirroring the news_provider / reconstruction
+    # injection pattern. See
+    # docs/strategy phase-0.2 context-engineering plan.
+    "onchain_live",
 ]
 """Static type alias for the ``chunks.provider_kind`` /
 ``sources.provider_kind`` column. Every consumer imports from here."""

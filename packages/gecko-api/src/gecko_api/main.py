@@ -2433,6 +2433,10 @@ async def trade_research(req: TradeResearchRequest, request: Request) -> TradeRe
 
     from gecko_core.observability import emit_event
 
+    # Phase 2.1 — ENV-gated live-news injection (default OFF, fail-OPEN). See
+    # news_factory.build_news_provider for the contract.
+    from gecko_core.orchestration.trade_panel.news_factory import build_news_provider
+
     _t0 = _time.monotonic()
     try:
         verdict = await run_trade_panel_with_retrieval(
@@ -2442,6 +2446,7 @@ async def trade_research(req: TradeResearchRequest, request: Request) -> TradeRe
             tier=req.tier,
             llm_config=llm_config,
             mint=req.mint,
+            news_provider=build_news_provider(),
         )
     except ValueError:
         # Missing llm_config in production is the expected ValueError; surface
@@ -2533,6 +2538,11 @@ async def trade_research_pro(req: TradeResearchRequest, request: Request) -> Tra
         # is then surfaced on the wire below. Backtest never raises (the
         # core wrapper catches and returns the verdict unchanged), so a
         # CoinGecko outage degrades gracefully to verdict-only.
+        # Phase 2.1 — ENV-gated live-news injection (default OFF, fail-OPEN).
+        from gecko_core.orchestration.trade_panel.news_factory import (
+            build_news_provider,
+        )
+
         verdict = await run_trade_panel_with_retrieval(
             idea=req.idea,
             protocol=req.protocol,
@@ -2541,6 +2551,7 @@ async def trade_research_pro(req: TradeResearchRequest, request: Request) -> Tra
             llm_config=llm_config,
             enable_backtest=True,
             mint=req.mint,
+            news_provider=build_news_provider(),
         )
     except ValueError:
         logger.exception("trade_research_pro: bad config for protocol=%r", req.protocol)

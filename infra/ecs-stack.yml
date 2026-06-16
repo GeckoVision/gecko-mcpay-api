@@ -589,6 +589,30 @@ Resources:
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/GECKO_CHUNK_STORE
             - Name: MONGODB_CHUNK_DB
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/MONGODB_CHUNK_DB
+            # Phase 0 (context-engineering) — Solana RPC for the contract-safety
+            # / Information-MEV read. Without one the wedge signal is dark in
+            # prod (safety_check -> safety_check_unavailable). Helius primary;
+            # QUICKNODE_RPC_URL optional override. Sentinel-safe (_env_clean).
+            - Name: HELIUS_API_KEY
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/HELIUS_API_KEY
+            - Name: QUICKNODE_RPC_URL
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/QUICKNODE_RPC_URL
+            # Phase 2.1 (context-engineering) — ENV-gated live-news for the
+            # sentiment_analyst voice. GECKO_NEWS_PROVIDER=okx + OKX_NEWS_API_URL
+            # + OKX_API_KEY enable it; sentinels keep the panel corpus-only until
+            # provisioned (news_factory treats `__unset__`/unset flag as OFF).
+            - Name: GECKO_NEWS_PROVIDER
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/GECKO_NEWS_PROVIDER
+            - Name: OKX_NEWS_API_URL
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OKX_NEWS_API_URL
+            - Name: OKX_API_KEY
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OKX_API_KEY
+            # OKX V5 trading-key creds (account-associated; separate from the
+            # OnchainOS dev key). Drive the news/sentiment feed. Sentinel-safe.
+            - Name: OKX_TRADING_API_KEY
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OKX_TRADING_API_KEY
+            - Name: OKX_TRADING_SECRET_KEY
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/OKX_TRADING_SECRET_KEY
           LogConfiguration:
             LogDriver: awslogs
             Options:
