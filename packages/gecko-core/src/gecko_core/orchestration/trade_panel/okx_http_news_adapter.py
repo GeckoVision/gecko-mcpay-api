@@ -69,6 +69,36 @@ _NEWS_SEARCH_PATH = "/api/v5/orbit/news-search"
 # Fail-OPEN on timeout: the sentiment voice runs corpus-only, exactly as today.
 _HTTP_TIMEOUT_S = 4.0
 
+# The panel passes a `protocol` — often a slug ("jupiter", "kamino") — but OKX
+# news `ccyList` wants the asset TICKER ("JUP", "KMNO"). Without this map a
+# protocol-shaped query resolves to e.g. "JUPITER" and OKX returns no articles
+# (silently, fail-OPEN). Only HIGH-CONFIDENCE slug→ticker pairs go here; anything
+# unmapped falls through to ``proto.upper()`` — correct for inputs that are
+# ALREADY tickers ("SOL", "BTC") and harmlessly returns no news for unknown
+# slugs (today's behavior). Add a pair only when the ticker is certain.
+_SLUG_TO_TICKER: dict[str, str] = {
+    "jupiter": "JUP",
+    "kamino": "KMNO",
+    "raydium": "RAY",
+    "orca": "ORCA",
+    "drift": "DRIFT",
+    "marinade": "MNDE",
+    "jito": "JTO",
+    "tensor": "TNSR",
+    "pyth": "PYTH",
+    "bonk": "BONK",
+    "solana": "SOL",
+}
+
+
+def _ccy_for(protocol: str) -> str:
+    """Resolve a panel protocol/slug to an OKX ``ccyList`` ticker.
+
+    Known slug → its ticker; otherwise upper-case passthrough (already-ticker
+    inputs work; unknown slugs return no news, same as before this map).
+    """
+    return _SLUG_TO_TICKER.get(protocol.strip().lower(), protocol.strip().upper())
+
 
 def _okx_timestamp() -> str:
     """UTC ISO-8601 with millisecond precision + ``Z`` — the OKX V5 format.
@@ -159,16 +189,16 @@ class OKXHttpNewsProvider:
         """Signed GET against ``/api/v5/orbit/news-search`` (coin-scoped).
 
         Query mirrors the CLI's ``news_get_by_coin`` handler: ``sortBy=latest``,
-        ``ccyList=<TICKER>``, ``limit=<n>``. ``ccyList`` accepts standard
-        uppercase tickers; many protocol slugs (e.g. "kamino") map cleanly, and
-        the search index is forgiving — anything it can't resolve simply returns
-        no articles, which fails-OPEN at the call site.
+        ``ccyList=<TICKER>``, ``limit=<n>``. ``ccyList`` needs the asset TICKER,
+        so a panel protocol/slug ("jupiter") is resolved via ``_ccy_for``
+        (→"JUP"); already-ticker inputs ("SOL") pass through. Anything OKX can't
+        resolve simply returns no articles, which fails-OPEN at the call site.
         """
         # Build the query string in a stable order and sign over the EXACT
         # request path (path + "?query"), per the OKX V5 prehash rule.
         params: dict[str, str | int] = {
             "sortBy": "latest",
-            "ccyList": proto.upper(),
+            "ccyList": _ccy_for(proto),
             "limit": max_results,
         }
         request = httpx.Request("GET", self._base_url + _NEWS_SEARCH_PATH, params=params)
