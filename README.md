@@ -305,8 +305,8 @@ When opening a PR:
 
 Gecko is built by two co-founders:
 
-- **Ernani** — Technical co-founder. Builds the Gecko stack end-to-end: the SDK, the multi-voice oracle, the FastAPI service, the MCP server, and the Solana / trading-agent layer.
-- **Leticia** — Co-founder, Product Designer. 8+ years designing for enterprises and startups; ex-Liga Ventures — watched hundreds of founders win or fail, and reads the difference early.
+- **Ernani** ([@ernanibritto](https://x.com/ernanibritto)) — Technical co-founder. Builds the Gecko stack end-to-end: the SDK, the multi-voice oracle, the FastAPI service, the MCP server, and the Solana / trading-agent layer.
+- **Leticia** ([@0xLeti](https://x.com/0xLeti)) — Co-founder, Product Designer. 8+ years designing for enterprises and startups; ex-Liga Ventures — watched hundreds of founders win or fail, and reads the difference early.
 
 ---
 
