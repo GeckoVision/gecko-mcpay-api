@@ -62,6 +62,11 @@ dependencies = [
     # in the dev group, so --no-dev excluded it and the task crash-looped on
     # `ModuleNotFoundError: ccxt`. Public data only (no keys).
     "ccxt>=4.4",
+    # gecko_core.config.provider_status reads infra/secrets-manifest.yml at boot
+    # to compute the gecko-api provider-status banner. Must be a real (non-dev)
+    # dep — the prod Docker image syncs gecko-core with --no-dev, and the banner
+    # runs in the FastAPI lifespan. (Same --no-dev lesson as ccxt above.)
+    "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]

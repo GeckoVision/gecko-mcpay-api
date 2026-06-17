@@ -601,6 +601,37 @@ def _track_inflight(task: asyncio.Task[None], session_id: UUID) -> None:
     task.add_done_callback(_drop)
 
 
+def _log_provider_status_banner() -> None:
+    """Log one line per manifest provider at boot (LIVE / DARK / disabled).
+
+    DARK = enabled but a required cred is sentinel/missing — the provider will
+    silently fail-OPEN in prod (the PR #150 dark-wedge class), so it's logged at
+    WARNING. Everything else is INFO. Reads only env-var PRESENCE via
+    ``resolve_all`` — never a secret value. Best-effort: if the manifest can't be
+    read we log a warning and continue (startup must not hinge on the banner).
+    """
+    try:
+        from gecko_core.config import resolve_all
+
+        statuses = resolve_all()
+    except Exception as exc:  # pragma: no cover — manifest-read failure is rare
+        logger.warning("provider-status banner skipped: %s", type(exc).__name__)
+        return
+    dark = sum(1 for s in statuses if s.is_dark)
+    logger.info(
+        "provider-status banner (%d providers, %d DARK):",
+        len(statuses),
+        dark,
+    )
+    for s in statuses:
+        line = "provider %-14s status=%-8s enabled=%s fail_mode=%-10s reason=%s"
+        args = (s.name, s.status, s.enabled, s.fail_mode, s.reason)
+        if s.is_dark:
+            logger.warning(line, *args)
+        else:
+            logger.info(line, *args)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     # S8-LOG-01 — install the redaction filter at app startup so httpcore /
@@ -633,6 +664,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         )
     else:
         logger.info("Privy configured: per-project wallet provisioning ON")
+    # Config-parity banner — one line per provider from the secrets manifest.
+    # WARNING on DARK (enabled but a required cred is sentinel/missing => the
+    # provider silently fail-OPENs in prod, the PR #150 dark-wedge class).
+    # Best-effort: a manifest read failure must never block startup.
+    _log_provider_status_banner()
     # S22-MCP-HOST-03 — drive the FastMCP Streamable HTTP session manager
     # for the lifetime of the FastAPI app. The session manager handles
     # SSE keepalives + stateless POST routing for the /mcp mount.
