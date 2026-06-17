@@ -42,6 +42,7 @@ from local_memory import LocalMemory
 from local_panel import LocalPanel
 from net_flow import NetFlowSignal, compute_net_flow
 from onchainos import OnchainOS
+from safety_gate import check_safety
 
 # ── Gecko wrap layer (circuit breaker + ledger) ─────────────────────
 # NOTE (s40-lab-#7): the per-candidate `GeckoGate` shadow call was
@@ -104,9 +105,17 @@ OBSERVATION_MODE = os.environ.get("OBSERVATION_MODE", "0").strip().lower() in ("
 # suppresses all long entries for the tick — a falling-knife belt above the BTC
 # overlay. Fail-open: missing/stale/unreadable snapshot never blocks trading.
 # Snapshot written by refresh_market_temp.py; read via market_temp.load_snapshot().
-GECKO_MARKET_TEMP_GATE = os.environ.get("GECKO_MARKET_TEMP_GATE", "0").strip().lower() in ("1", "true", "yes")
-GECKO_MARKET_TEMP_FLOOR = float(os.environ.get("GECKO_MARKET_TEMP_FLOOR", "-0.25"))  # temp ≤ floor = risk_off
-GECKO_MARKET_TEMP_MAX_AGE_S = float(os.environ.get("GECKO_MARKET_TEMP_MAX_AGE_S", "21600"))  # 6h; older = stale→fail-open
+GECKO_MARKET_TEMP_GATE = os.environ.get("GECKO_MARKET_TEMP_GATE", "0").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+GECKO_MARKET_TEMP_FLOOR = float(
+    os.environ.get("GECKO_MARKET_TEMP_FLOOR", "-0.25")
+)  # temp ≤ floor = risk_off
+GECKO_MARKET_TEMP_MAX_AGE_S = float(
+    os.environ.get("GECKO_MARKET_TEMP_MAX_AGE_S", "21600")
+)  # 6h; older = stale→fail-open
 CHAIN = "solana"
 POLL_SEC = 30
 TIMEFRAME = "5m"
@@ -208,7 +217,7 @@ FLAT_STALL_AGE_MIN = 90  # position must be at least this old
 # values. Falsifier: re-evaluate at N≥15 post-edit closes; if mean per
 # trade is worse than the prior -$2.10/9-close run, revert.
 FLAT_STALL_PNL_LO = -1.5  # was -0.5 — see Sprint 24-W note above
-FLAT_STALL_PNL_HI = 0.5   # was 2.0 — see Sprint 24-W note above
+FLAT_STALL_PNL_HI = 0.5  # was 2.0 — see Sprint 24-W note above
 FLAT_STALL_NO_NEW_HIGH_MIN = 30  # AND no new high in this many minutes
 
 # Sprint 24-Q (2026-05-31) — Fee-aware flat-stall exit (founder-flagged leak).
@@ -312,9 +321,7 @@ if GECKO_UNIVERSE:
         # majors have no Solana mint — reuse the `mint` slot to carry the ccxt
         # market symbol ("BTC/USDT") so evaluate_breakout/volume_spike pass it
         # straight through to the OKX candle provider unchanged.
-        INSTRUMENTS = [
-            {"symbol": s, "mint": f"{s}/USDT", "chain": "okx_spot"} for s in _syms
-        ]
+        INSTRUMENTS = [{"symbol": s, "mint": f"{s}/USDT", "chain": "okx_spot"} for s in _syms]
     else:
         # same venue, custom subset of the hardcoded universe
         INSTRUMENTS = [i for i in INSTRUMENTS if i["symbol"].upper() in set(_syms)]
@@ -558,15 +565,9 @@ def _record_decline_decision(
             try:
                 _BEHAVIOR_SINK.record(doc.to_dict(), run_id=_RUN_ID)
             except Exception as _sx:
-                print(
-                    f"[behavior-sink] decline record skipped: "
-                    f"{type(_sx).__name__}: {_sx}"
-                )
+                print(f"[behavior-sink] decline record skipped: {type(_sx).__name__}: {_sx}")
     except Exception as exc:  # MUST NOT propagate into the trading loop
-        print(
-            f"[decision-store] decline record skipped: "
-            f"{type(exc).__name__}: {exc}"
-        )
+        print(f"[decision-store] decline record skipped: {type(exc).__name__}: {exc}")
 
 
 # Arm the recorder at import (skipped under pytest via the env guard inside).
@@ -2214,7 +2215,10 @@ def poll_instruments() -> None:
                 _snap["regime_1h"] = regime_1h
                 _LAST_INDEX[sym] = _snap
             else:
-                _LAST_INDEX[sym] = {**_feat, "regime_1h": regime_1h}  # fallback: partial is better than nothing
+                _LAST_INDEX[sym] = {
+                    **_feat,
+                    "regime_1h": regime_1h,
+                }  # fallback: partial is better than nothing
             _sig = _STRATEGY.should_enter(_feat)
             if _sig is None:
                 _log_eval_telemetry(sym, action="decline", decline_reason="strategy_gate")
@@ -2286,6 +2290,41 @@ def poll_instruments() -> None:
 
         token = bo_cand["token"] if bo_cand else inst["mint"]
         symbol = bo_cand["symbol"] if bo_cand else f"{sym}-USDC"
+
+        # ── TIER 1: fast `/safety` veto (PR #140, the latency tier) ────────
+        # Runs on EVERY entry candidate, before the considered oracle/panel
+        # tier (tier 2, inside open_position). Sub-second deterministic read.
+        #   gate=block   → skip the entry (logged, counterfactual captured)
+        #   gate=caution → log + proceed
+        #   gate=ok/unknown → proceed to tier 2
+        # FAIL-OPEN: a /safety error/timeout yields gate=unknown → proceed.
+        # This demonstrates the two-tier Gecko-gated decision flow live.
+        safety_res = check_safety(token)
+        signal_data["safety_gate"] = safety_res.for_record()
+        if safety_res.should_skip:
+            _log("filter", f"[{sym}] ✗ /safety tier-1: {safety_res.gate} — skipping entry")
+            _log_eval_telemetry(sym, action="decline", decline_reason="safety_gate_block")
+            _LOGGER.log(
+                "candidate_blocked",
+                {
+                    "symbol": sym,
+                    "token": token,
+                    "primitive": primitive,
+                    "regime_1h": regime_1h,
+                    "stage": "safety_gate_tier1",
+                    "reasons": [safety_res.reason],
+                    "safety_gate": safety_res.for_record(),
+                    "signal_data": signal_data,
+                },
+            )
+            continue
+        if safety_res.gate == "caution":
+            _log(
+                "info",
+                f"[{sym}] ⚠ /safety tier-1: caution — proceeding to oracle tier",
+            )
+        else:
+            _log("info", f"[{sym}] ✓ /safety tier-1: {safety_res.gate}")
 
         ok, failed = passes_safety(token)
         if not ok:
@@ -2626,8 +2665,7 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
             # vs <70 entries win 4/8. Mirror at the panel-decision boundary;
             # also gate-checked at candidate-fire (act-path) under hard mode.
             "mfi_overbought": (
-                _mfi_at_decision is not None
-                and _mfi_at_decision >= MFI_SHADOW_THRESHOLD
+                _mfi_at_decision is not None and _mfi_at_decision >= MFI_SHADOW_THRESHOLD
             ),
         }
         _LOGGER.log(
@@ -2813,6 +2851,20 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
         },
     }
 
+    # Tier-2 oracle verdict projection — computed unconditionally so the
+    # position_open record can carry it even when the decision-store recorder
+    # is disarmed (pytest / init failure). None when no cached verdict exists.
+    _oracle_dict: dict[str, Any] | None = (
+        {
+            "verdict": fund_verdict.verdict,
+            "confidence": fund_verdict.confidence,
+            "citations": fund_verdict.citations_count,
+            "grounded": fund_verdict.citations_count >= ORACLE_GROUNDING_MIN_CITES,
+        }
+        if fund_verdict is not None
+        else None
+    )
+
     # ── Decision-record store (s43): record this act-decision ──────────
     # Wrapped so a recorder fault can NEVER break the trading loop. Only
     # fires when the recorder armed (skipped under pytest / on init failure).
@@ -2846,16 +2898,6 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
                 ]
                 if _LOCAL_PANEL is not None
                 else []
-            )
-            _oracle_dict = (
-                {
-                    "verdict": fund_verdict.verdict,
-                    "confidence": fund_verdict.confidence,
-                    "citations": fund_verdict.citations_count,
-                    "grounded": fund_verdict.citations_count >= ORACLE_GROUNDING_MIN_CITES,
-                }
-                if fund_verdict is not None
-                else None
             )
             _coordinator = (
                 {
@@ -2934,6 +2976,11 @@ def open_position(token: str, symbol_str: str, signal_data: dict) -> None:
             "entry_price": entry_price,
             "usd": USD_PER_TRADE,
             "mode": pos["mode"],
+            # Two-tier gate provenance on every entry record: tier-1 fast
+            # /safety result + tier-2 oracle verdict (None when no cached
+            # verdict / ungrounded). The exit reason + PnL land on close.
+            "safety_gate": signal_data.get("safety_gate"),
+            "oracle_verdict": _oracle_dict,
         },
         decision_id=fund_decision_id,
     )
@@ -3029,9 +3076,7 @@ def close_position(pos: dict, reason: str, current_price: float) -> None:
             # JSONL. patch_outcome is async + best-effort.
             if _BEHAVIOR_SINK is not None:
                 try:
-                    _BEHAVIOR_SINK.patch_outcome(
-                        pos["decision_id"], _outcome.model_dump()
-                    )
+                    _BEHAVIOR_SINK.patch_outcome(pos["decision_id"], _outcome.model_dump())
                 except Exception as _sx:
                     print(f"[behavior-sink] patch_outcome skipped: {type(_sx).__name__}: {_sx}")
         except Exception as exc:  # recorder must never break the close path
