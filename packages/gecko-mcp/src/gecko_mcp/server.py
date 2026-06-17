@@ -234,6 +234,13 @@ _TRADE_RESEARCH_DESCRIPTION = (
     "Pays $0.25 basic / $0.75 pro via x402."
 )
 
+_SAFETY_DESCRIPTION = (
+    "Sub-second pre-trade safety/integrity check for an SPL token mint — "
+    "returns gate (block/caution/ok/unknown) + honeypot, holder "
+    "concentration, liquidity/mcap, Information-MEV (wash/fake-mcap) read. "
+    "Call before an agent commits capital."
+)
+
 _REPORT_DESCRIPTION = (
     "Generate a formatted report (HTML or markdown) for a completed research "
     "session. Reads the session's persisted state and renders verdict, sources, "
@@ -752,6 +759,23 @@ async def list_tools() -> list[Tool]:
                 "required": ["idea", "protocol"],
             },
         ),
+        Tool(
+            name="gecko_safety",
+            description=_SAFETY_DESCRIPTION,
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "mint": {
+                        "type": "string",
+                        "description": (
+                            "SPL mint address (base58). The token to check "
+                            "before committing capital."
+                        ),
+                    },
+                },
+                "required": ["mint"],
+            },
+        ),
     ]
 
 
@@ -942,6 +966,10 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             tier=str(tier_raw),
             mint=str(mint_raw) if mint_raw else None,
         )
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    if name == "gecko_safety":
+        result = await client.safety(mint=str(arguments["mint"]))
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
     raise ValueError(f"unknown tool: {name}")
