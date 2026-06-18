@@ -69,6 +69,36 @@ _NEWS_SEARCH_PATH = "/api/v5/orbit/news-search"
 # Fail-OPEN on timeout: the sentiment voice runs corpus-only, exactly as today.
 _HTTP_TIMEOUT_S = 4.0
 
+# The panel passes a `protocol` — often a slug ("jupiter", "kamino") — but OKX
+# news `ccyList` wants the asset TICKER ("JUP", "KMNO"). Without this map a
+# protocol-shaped query resolves to e.g. "JUPITER" and OKX returns no articles
+# (silently, fail-OPEN). Only HIGH-CONFIDENCE slug→ticker pairs go here; anything
+# unmapped falls through to ``proto.upper()`` — correct for inputs that are
+# ALREADY tickers ("SOL", "BTC") and harmlessly returns no news for unknown
+# slugs (today's behavior). Add a pair only when the ticker is certain.
+_SLUG_TO_TICKER: dict[str, str] = {
+    "jupiter": "JUP",
+    "kamino": "KMNO",
+    "raydium": "RAY",
+    "orca": "ORCA",
+    "drift": "DRIFT",
+    "marinade": "MNDE",
+    "jito": "JTO",
+    "tensor": "TNSR",
+    "pyth": "PYTH",
+    "bonk": "BONK",
+    "solana": "SOL",
+}
+
+
+def _ccy_for(protocol: str) -> str:
+    """Resolve a panel protocol/slug to an OKX ``ccyList`` ticker.
+
+    Known slug → its ticker; otherwise upper-case passthrough (already-ticker
+    inputs work; unknown slugs return no news, same as before this map).
+    """
+    return _SLUG_TO_TICKER.get(protocol.strip().lower(), protocol.strip().upper())
+
 
 def _okx_timestamp() -> str:
     """UTC ISO-8601 with millisecond precision + ``Z`` — the OKX V5 format.
@@ -127,12 +157,20 @@ class OKXHttpNewsProvider:
         try:
             articles = await self._fetch_articles(proto, max_results)
         except Exception as exc:
-            # Fail-OPEN. Class name only — the URL/key/secret/passphrase must
-            # never reach logs.
+            # Fail-OPEN. Secret-safe diagnostics: on an HTTP error, surface the
+            # status code + the OKX error code/msg from the JSON body (e.g.
+            # "401 / 50104 invalid passphrase") so prod logs name the actual
+            # cause instead of a bare exception class. NEVER log headers, creds,
+            # signed URL, or the prehash — only the status + OKX code/msg, which
+            # carry no secret material.
+            status, okx_code, okx_msg = _diagnose_http_error(exc)
             _log.warning(
-                "okx_http_news.fetch_failed protocol=%s err=%s",
+                "okx_http_news.fetch_failed protocol=%s err=%s http_status=%s okx_code=%s okx_msg=%s",
                 proto,
                 type(exc).__name__,
+                status,
+                okx_code,
+                okx_msg,
             )
             return []
 
@@ -159,16 +197,16 @@ class OKXHttpNewsProvider:
         """Signed GET against ``/api/v5/orbit/news-search`` (coin-scoped).
 
         Query mirrors the CLI's ``news_get_by_coin`` handler: ``sortBy=latest``,
-        ``ccyList=<TICKER>``, ``limit=<n>``. ``ccyList`` accepts standard
-        uppercase tickers; many protocol slugs (e.g. "kamino") map cleanly, and
-        the search index is forgiving — anything it can't resolve simply returns
-        no articles, which fails-OPEN at the call site.
+        ``ccyList=<TICKER>``, ``limit=<n>``. ``ccyList`` needs the asset TICKER,
+        so a panel protocol/slug ("jupiter") is resolved via ``_ccy_for``
+        (→"JUP"); already-ticker inputs ("SOL") pass through. Anything OKX can't
+        resolve simply returns no articles, which fails-OPEN at the call site.
         """
         # Build the query string in a stable order and sign over the EXACT
         # request path (path + "?query"), per the OKX V5 prehash rule.
         params: dict[str, str | int] = {
             "sortBy": "latest",
-            "ccyList": proto.upper(),
+            "ccyList": _ccy_for(proto),
             "limit": max_results,
         }
         request = httpx.Request("GET", self._base_url + _NEWS_SEARCH_PATH, params=params)
@@ -207,6 +245,37 @@ class OKXHttpNewsProvider:
         if self._passphrase:
             headers["OK-ACCESS-PASSPHRASE"] = self._passphrase
         return headers
+
+
+def _diagnose_http_error(exc: BaseException) -> tuple[int | None, str | None, str | None]:
+    """Extract (http_status, okx_code, okx_msg) from a failed request, secret-safe.
+
+    ``httpx.HTTPStatusError`` (raised by ``raise_for_status``) carries the
+    ``response``; OKX V5 returns a JSON body ``{"code": "50104", "msg": "..."}``
+    even on a 401. We pull ONLY the status code + the OKX ``code``/``msg`` — none
+    of which contain credentials, the signed URL, headers, or the prehash. Any
+    non-HTTP error (timeout, connect) yields all-``None`` and the caller still
+    logs the exception class. Never raises (it runs inside the fail-OPEN path).
+    """
+    resp = getattr(exc, "response", None)
+    if resp is None:
+        return None, None, None
+    status = getattr(resp, "status_code", None)
+    okx_code: str | None = None
+    okx_msg: str | None = None
+    try:
+        body = resp.json()
+        if isinstance(body, dict):
+            code_val = body.get("code")
+            msg_val = body.get("msg")
+            okx_code = None if code_val is None else str(code_val)
+            # Cap the message — OKX msgs are short, but never trust unbounded.
+            okx_msg = None if msg_val is None else str(msg_val)[:200]
+    except Exception:
+        # Non-JSON body (e.g. an HTML 401 page). Status alone is still useful;
+        # do NOT log the raw body — it could be arbitrarily large/HTML.
+        okx_code, okx_msg = None, None
+    return status, okx_code, okx_msg
 
 
 def _extract_published(a: dict[str, Any]) -> str | None:

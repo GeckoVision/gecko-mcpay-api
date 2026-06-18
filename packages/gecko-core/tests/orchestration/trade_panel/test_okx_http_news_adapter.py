@@ -96,8 +96,24 @@ def test_request_hits_okx_v5_news_path_with_coin_query() -> None:
     provider = _provider(handler)
     asyncio.run(provider.fetch_news_chunks("kamino"))
     assert seen["path"] == "/api/v5/orbit/news-search"
-    assert seen["ccyList"] == "KAMINO"  # ticker-normalized uppercase
+    # "kamino" is a protocol slug → resolved to its OKX ticker, not "KAMINO"
+    # (which returns no news). See _SLUG_TO_TICKER.
+    assert seen["ccyList"] == "KMNO"
     assert seen["sortBy"] == "latest"
+
+
+def test_ccy_for_maps_slugs_and_passes_through_tickers() -> None:
+    from gecko_core.orchestration.trade_panel.okx_http_news_adapter import _ccy_for
+
+    # known slugs → tickers
+    assert _ccy_for("jupiter") == "JUP"
+    assert _ccy_for("Kamino") == "KMNO"  # case-insensitive
+    assert _ccy_for(" jito ") == "JTO"  # trimmed
+    # already-ticker inputs pass straight through (upper-cased)
+    assert _ccy_for("SOL") == "SOL"
+    assert _ccy_for("btc") == "BTC"
+    # unknown slug → upper-case passthrough (OKX returns no news; fail-OPEN)
+    assert _ccy_for("totallyunknown") == "TOTALLYUNKNOWN"
 
 
 def test_hmac_auth_headers_present_and_signed() -> None:
