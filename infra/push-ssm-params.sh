@@ -5,7 +5,10 @@
 # parameter name and result status.
 #
 # Usage:
-#   ./infra/push-ssm-params.sh [--region us-east-2] [--env-file .env]
+#   ./infra/push-ssm-params.sh [--region us-east-2] [--env-file .env] [--dry-run]
+#
+#   --dry-run   Show what WOULD push (real value vs sentinel) per param, read
+#               back current SSM state, but write NOTHING. Use before a real run.
 #
 # Switching networks (devnet ↔ mainnet) post-deploy:
 #   aws ssm put-parameter --name /gecko-api/X402_NETWORK \
@@ -19,14 +22,20 @@ set -euo pipefail
 REGION="${AWS_DEFAULT_REGION:-us-east-2}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/../.env"
+DRY_RUN=0
 
 while [[ $# -gt 0 ]]; do
   case $1 in
     --region)   REGION="$2";   shift 2 ;;
     --env-file) ENV_FILE="$2"; shift 2 ;;
+    --dry-run)  DRY_RUN=1;     shift   ;;
     *) echo "Unknown argument: $1"; exit 1 ;;
   esac
 done
+
+# Sentinel that runtime code treats as "truly unset" (see _env_clean across the
+# codebase). Used here to classify real-vs-sentinel in the dry-run + verify table.
+SENTINEL="__unset__"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "ERROR: env file '$ENV_FILE' not found" >&2
@@ -249,38 +258,103 @@ declare -A REQUIRED_AT_BOOT=(
 SKIPPED=()
 PUSHED=()
 PLACEHOLDED=()
+FAILED=()
+# Track every param we INTENDED to have a real (non-sentinel) value, so the
+# post-push verify step can flag any that silently landed as a sentinel.
+declare -A INTENDED_REAL=()
+
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  echo "==> DRY RUN — no writes. Showing what WOULD push (real vs sentinel):"
+  echo ""
+fi
+
+# Single put-parameter call. Robust to values with leading dashes, special
+# chars, and trailing newlines: the value is passed via a temp file
+# (file://...) so the AWS CLI never tries to parse it as an argument. This is
+# the root-cause fix for the `--value: expected one argument` halt — a value
+# that began with `-` (or was empty after a stray-newline strip) made the CLI
+# treat the next token as the option's argument and error out mid-list.
+# Returns 0 on success, non-zero on failure; prints OK/FAIL line. Never echoes
+# the value.
+put_param() {
+  local pname="$1" pvalue="$2"
+  local tmp version
+  tmp="$(mktemp)"
+  # printf %s — no trailing newline added; we already stripped any inbound one.
+  printf '%s' "$pvalue" > "$tmp"
+  if version="$(aws ssm put-parameter \
+        --name "${SSM_PREFIX}/${pname}" \
+        --value "file://${tmp}" \
+        --type SecureString \
+        --overwrite \
+        --region "$REGION" \
+        --output text \
+        --query 'Version' 2>&1)"; then
+    rm -f "$tmp"
+    echo "  OK    $SSM_PREFIX/$pname  (version ${version})"
+    return 0
+  fi
+  rm -f "$tmp"
+  # version holds the captured stderr on failure — safe: it's an AWS error, not
+  # our value (value went via the temp file, never the command line).
+  echo "  FAIL  $SSM_PREFIX/$pname  (${version})" >&2
+  return 1
+}
 
 for PARAM_NAME in "${!PARAMS[@]}"; do
   VAR_NAME="${PARAMS[$PARAM_NAME]}"
   VALUE="${!VAR_NAME:-}"
+  # Strip a single trailing newline that `source .env` can carry in (CRLF files,
+  # `KEY=val\n`). A trailing newline in a SecureString breaks downstream auth
+  # (e.g. an HMAC secret with a stray \n signs wrong → OKX 401) and can also
+  # trip CLI arg parsing.
+  VALUE="${VALUE%$'\n'}"
+  VALUE="${VALUE%$'\r'}"
 
+  IS_SENTINEL=0
   if [[ -z "$VALUE" ]]; then
     if [[ -n "${REQUIRED_AT_BOOT[$PARAM_NAME]:-}" ]]; then
       VALUE="${REQUIRED_AT_BOOT[$PARAM_NAME]}"
-      echo "  PLACEHOLDER  $SSM_PREFIX/$PARAM_NAME  (${VAR_NAME} empty; pushing sentinel '$VALUE')"
+      [[ "$VALUE" == "$SENTINEL" ]] && IS_SENTINEL=1
+      echo "  PLACEHOLDER  $SSM_PREFIX/$PARAM_NAME  (${VAR_NAME} empty; would push sentinel '$VALUE')"
       PLACEHOLDED+=("$PARAM_NAME")
     else
       echo "  SKIP  $SSM_PREFIX/$PARAM_NAME  (${VAR_NAME} is empty in $ENV_FILE)"
       SKIPPED+=("$PARAM_NAME")
       continue
     fi
+  else
+    [[ "$VALUE" == "$SENTINEL" ]] && IS_SENTINEL=1
+    if [[ "$IS_SENTINEL" -eq 0 ]]; then
+      INTENDED_REAL[$PARAM_NAME]=1
+    fi
   fi
 
-  aws ssm put-parameter \
-    --name "${SSM_PREFIX}/${PARAM_NAME}" \
-    --value "$VALUE" \
-    --type SecureString \
-    --overwrite \
-    --region "$REGION" \
-    --output text \
-    --query 'Version' \
-    | xargs -I{} echo "  OK    $SSM_PREFIX/$PARAM_NAME  (version {})"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    if [[ "$IS_SENTINEL" -eq 1 ]]; then
+      echo "  WOULD-PUSH (sentinel)  $SSM_PREFIX/$PARAM_NAME"
+    else
+      echo "  WOULD-PUSH (REAL)      $SSM_PREFIX/$PARAM_NAME"
+    fi
+    continue
+  fi
 
-  PUSHED+=("$PARAM_NAME")
+  # Do NOT halt on a single failure — collect it and continue so a mid-list
+  # error never silently skips later params (the bug that left the OKX trading
+  # secret/passphrase unpushed). `set -e` is suppressed for this call via `if`.
+  if put_param "$PARAM_NAME" "$VALUE"; then
+    PUSHED+=("$PARAM_NAME")
+  else
+    FAILED+=("$PARAM_NAME")
+  fi
 done
 
 echo ""
-echo "==> Done. ${#PUSHED[@]} pushed, ${#PLACEHOLDED[@]} placeholders, ${#SKIPPED[@]} skipped."
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  echo "==> DRY RUN complete. Nothing written."
+else
+  echo "==> Done. ${#PUSHED[@]} pushed, ${#PLACEHOLDED[@]} placeholders, ${#SKIPPED[@]} skipped, ${#FAILED[@]} FAILED."
+fi
 if [[ ${#PLACEHOLDED[@]} -gt 0 ]]; then
   echo "    Placeholder sentinels (set real values via .env or aws ssm put-parameter):"
   for P in "${PLACEHOLDED[@]}"; do echo "      - $SSM_PREFIX/$P"; done
@@ -292,6 +366,63 @@ if [[ ${#SKIPPED[@]} -gt 0 ]]; then
   for P in "${SKIPPED[@]}"; do
     echo "  - $SSM_PREFIX/$P"
   done
+fi
+
+if [[ ${#FAILED[@]} -gt 0 ]]; then
+  echo ""
+  echo "FAILED (re-run; these did NOT land in SSM):" >&2
+  for P in "${FAILED[@]}"; do
+    echo "  - $SSM_PREFIX/$P" >&2
+  done
+fi
+
+# ----------------------------------------------------------------------------
+# Post-push VERIFY — read back each param's presence + whether its value is the
+# sentinel. NEVER prints the decrypted value: we fetch WithDecryption only to
+# compare against the sentinel string locally and emit a boolean. The table
+# flags any param we INTENDED to be real that came back as a sentinel (the
+# config-drift footgun this whole change exists to catch).
+# ----------------------------------------------------------------------------
+if [[ "$DRY_RUN" -eq 0 ]]; then
+  echo ""
+  echo "==> VERIFY (presence + is-sentinel; values never printed):"
+  VERIFY_DRIFT=()
+  for PARAM_NAME in "${!PARAMS[@]}"; do
+    # Read back; suppress the value entirely — capture only sentinel-or-not.
+    if RAW="$(aws ssm get-parameter \
+          --name "${SSM_PREFIX}/${PARAM_NAME}" \
+          --with-decryption \
+          --region "$REGION" \
+          --output text \
+          --query 'Parameter.Value' 2>/dev/null)"; then
+      if [[ "$RAW" == "$SENTINEL" ]]; then
+        STATE="sentinel"
+      elif [[ -z "$RAW" ]]; then
+        STATE="EMPTY"
+      else
+        STATE="real"
+      fi
+      RAW=""  # drop the value from memory immediately
+      printf '  %-10s present  %s\n' "[$STATE]" "$SSM_PREFIX/$PARAM_NAME"
+      if [[ -n "${INTENDED_REAL[$PARAM_NAME]:-}" && "$STATE" != "real" ]]; then
+        VERIFY_DRIFT+=("$PARAM_NAME")
+      fi
+    else
+      printf '  %-10s ABSENT   %s\n' "[missing]" "$SSM_PREFIX/$PARAM_NAME"
+      VERIFY_DRIFT+=("$PARAM_NAME")
+    fi
+  done
+  if [[ ${#VERIFY_DRIFT[@]} -gt 0 ]]; then
+    echo ""
+    echo "!! VERIFY DRIFT — these were meant to be real but are sentinel/missing:" >&2
+    for P in "${VERIFY_DRIFT[@]}"; do echo "   - $SSM_PREFIX/$P" >&2; done
+  fi
+fi
+
+# Exit non-zero if anything failed to push, so CI / the founder never mistakes a
+# partial run for success.
+if [[ ${#FAILED[@]} -gt 0 ]]; then
+  exit 1
 fi
 
 echo ""

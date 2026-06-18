@@ -157,12 +157,20 @@ class OKXHttpNewsProvider:
         try:
             articles = await self._fetch_articles(proto, max_results)
         except Exception as exc:
-            # Fail-OPEN. Class name only — the URL/key/secret/passphrase must
-            # never reach logs.
+            # Fail-OPEN. Secret-safe diagnostics: on an HTTP error, surface the
+            # status code + the OKX error code/msg from the JSON body (e.g.
+            # "401 / 50104 invalid passphrase") so prod logs name the actual
+            # cause instead of a bare exception class. NEVER log headers, creds,
+            # signed URL, or the prehash — only the status + OKX code/msg, which
+            # carry no secret material.
+            status, okx_code, okx_msg = _diagnose_http_error(exc)
             _log.warning(
-                "okx_http_news.fetch_failed protocol=%s err=%s",
+                "okx_http_news.fetch_failed protocol=%s err=%s http_status=%s okx_code=%s okx_msg=%s",
                 proto,
                 type(exc).__name__,
+                status,
+                okx_code,
+                okx_msg,
             )
             return []
 
@@ -237,6 +245,37 @@ class OKXHttpNewsProvider:
         if self._passphrase:
             headers["OK-ACCESS-PASSPHRASE"] = self._passphrase
         return headers
+
+
+def _diagnose_http_error(exc: BaseException) -> tuple[int | None, str | None, str | None]:
+    """Extract (http_status, okx_code, okx_msg) from a failed request, secret-safe.
+
+    ``httpx.HTTPStatusError`` (raised by ``raise_for_status``) carries the
+    ``response``; OKX V5 returns a JSON body ``{"code": "50104", "msg": "..."}``
+    even on a 401. We pull ONLY the status code + the OKX ``code``/``msg`` — none
+    of which contain credentials, the signed URL, headers, or the prehash. Any
+    non-HTTP error (timeout, connect) yields all-``None`` and the caller still
+    logs the exception class. Never raises (it runs inside the fail-OPEN path).
+    """
+    resp = getattr(exc, "response", None)
+    if resp is None:
+        return None, None, None
+    status = getattr(resp, "status_code", None)
+    okx_code: str | None = None
+    okx_msg: str | None = None
+    try:
+        body = resp.json()
+        if isinstance(body, dict):
+            code_val = body.get("code")
+            msg_val = body.get("msg")
+            okx_code = None if code_val is None else str(code_val)
+            # Cap the message — OKX msgs are short, but never trust unbounded.
+            okx_msg = None if msg_val is None else str(msg_val)[:200]
+    except Exception:
+        # Non-JSON body (e.g. an HTML 401 page). Status alone is still useful;
+        # do NOT log the raw body — it could be arbitrarily large/HTML.
+        okx_code, okx_msg = None, None
+    return status, okx_code, okx_msg
 
 
 def _extract_published(a: dict[str, Any]) -> str | None:
