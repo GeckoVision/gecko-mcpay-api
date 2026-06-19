@@ -89,3 +89,60 @@ def test_endpoint_fail_open_never_5xx(client: TestClient, monkeypatch: pytest.Mo
     r = client.post("/safety", json={"mint": _BRCA})
     assert r.status_code == 200  # fail-OPEN, never 5xx on the fast path
     assert r.json()["gate"] == "unknown"
+
+
+def test_warm_hit_from_monitor_is_served(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Launch Firewall step 4 — Pattern-E reachability: an attack driven through
+    the monitor lands in the shared cache and /safety serves it WARM (gate=block,
+    source=monitor) without ever calling the on-demand read."""
+    import asyncio
+
+    # The on-demand path must NOT be hit on a warm read — make it explode if it is.
+    import gecko_core.orchestration.trade_panel.safety_check as sc
+    from gecko_api import main as api_main
+    from gecko_api.safety_fast import serve_safety
+    from gecko_core.trade_agent.hotpath.token_state import SwapEvent
+    from gecko_core.trade_agent.hotpath.wash_signals import PoolSnapshot
+
+    async def _must_not_run(*_a: object, **_k: object) -> SafetyBlock:
+        raise AssertionError("warm hit must not call evaluate_contract_safety")
+
+    monkeypatch.setattr(sc, "evaluate_contract_safety", _must_not_run)
+
+    store = api_main.app.state.safety_store
+    monitor = api_main.app.state.safety_monitor
+    now = 100_000.0
+    created = int(now - 120)
+    monitor.track(_BRCA, pool_created_ts=created)
+    price = 1.0
+    for i in range(38):
+        monitor.ingest_swap(
+            _BRCA,
+            SwapEvent(
+                ts=float(created + i),
+                wallet=f"bot{i % 3}",
+                side="buy",
+                notional_usd=30.0,
+                price_usd=price,
+            ),
+        )
+        price *= 1.01
+    monitor.update_pool(
+        _BRCA,
+        PoolSnapshot(pool_addr="deep", spot_price_usd=1.45, tvl_usd=400_000.0, swap_count_5m=38),
+    )
+    monitor.update_pool(
+        _BRCA, PoolSnapshot(pool_addr="bait", spot_price_usd=3.5, tvl_usd=200.0, swap_count_5m=0)
+    )
+
+    async def _scenario() -> dict:
+        await monitor.recompute(_BRCA, now)
+        return await serve_safety(_BRCA, store, monitor, now=now)
+
+    resp = asyncio.run(_scenario())
+    assert resp["gate"] == "block"
+    assert resp["source"] == "monitor"
+    assert resp["wash_risk"]["label"] == "manipulated"
+    assert resp["staleness_s"] == 0.0
