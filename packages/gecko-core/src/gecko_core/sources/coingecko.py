@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 from urllib.parse import quote
 
 import httpx
@@ -151,6 +152,54 @@ class OnchainTokenMarket(BaseModel):
         return None
 
 
+class OnchainPool(BaseModel):
+    """One DEX pool for a token, from the GeckoTerminal ``/tokens/{addr}/pools``
+    endpoint. The per-pool granularity the Launch-Firewall needs for multi-pool
+    price-bait detection + picking which pools to watch.
+
+    ``base_mint`` / ``quote_mint`` are the raw SPL mints (the ``solana_`` id
+    prefix stripped). ``quote_token_price_usd`` is the USD value of one quote
+    token — i.e. the quote→USD rate (≈1.0 for USDC, the live price for SOL).
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    pool_address: str
+    dex: str | None = None
+    base_mint: str | None = None
+    quote_mint: str | None = None
+    base_token_price_usd: float | None = None
+    quote_token_price_usd: float | None = None
+    reserve_in_usd: float | None = None
+    pool_created_at: str | None = None
+    buys_5m: int | None = None
+    sells_5m: int | None = None
+    volume_5m_usd: float | None = None
+
+
+def _strip_network_prefix(token_id: object) -> str | None:
+    """``"solana_<mint>"`` -> ``"<mint>"``; pass through a bare mint; None if absent."""
+    if not isinstance(token_id, str) or not token_id:
+        return None
+    return token_id.split("_", 1)[1] if "_" in token_id else token_id
+
+
+def _as_dict(value: object) -> dict[str, Any]:
+    """The value if it's a dict, else an empty dict (defensive payload nav)."""
+    return value if isinstance(value, dict) else {}
+
+
+def _rel_mint(rels: dict[str, Any], key: str) -> str | None:
+    """``relationships[key].data.id`` → bare mint (``solana_`` prefix stripped)."""
+    return _strip_network_prefix(_as_dict(_as_dict(rels.get(key)).get("data")).get("id"))
+
+
+def _rel_id(rels: dict[str, Any], key: str) -> str | None:
+    """``relationships[key].data.id`` as a plain string (e.g. the dex id)."""
+    val = _as_dict(_as_dict(rels.get(key)).get("data")).get("id")
+    return val if isinstance(val, str) else None
+
+
 def _coerce_float(value: object) -> float | None:
     """CoinGecko on-chain returns USD figures as JSON strings — coerce safely."""
     if value is None:
@@ -242,6 +291,56 @@ class CoinGeckoClient:
             total_reserve_in_usd=_coerce_float(attrs.get("total_reserve_in_usd")),
         )
 
+    async def onchain_token_pools(
+        self, address: str, *, network: str = "solana"
+    ) -> list[OnchainPool]:
+        """Per-pool data for a token from GeckoTerminal ``/tokens/{addr}/pools``.
+
+        Returns the pools the token trades in (pool address, dex, base/quote mint
+        + quote→USD price, reserve, 5-min buy/sell counts + volume). Fail-OPEN to
+        ``[]`` on 404 / malformed payload / any error — never fabricate. Keyless
+        (free tier). Malformed individual pools are skipped, not fatal.
+        """
+        path = f"/networks/{quote(network, safe='')}/tokens/{quote(address, safe='')}/pools"
+        try:
+            data = await self._get(path, base=self._onchain_base_url)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                return []
+            raise
+        rows = (data.get("data") if isinstance(data, dict) else None) or []
+        out: list[OnchainPool] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            attrs = row.get("attributes")
+            if not isinstance(attrs, dict):
+                continue
+            pool_addr = attrs.get("address")
+            if not isinstance(pool_addr, str) or not pool_addr:
+                continue
+            rels = _as_dict(row.get("relationships"))
+            m5 = _as_dict(_as_dict(attrs.get("transactions")).get("m5"))
+            vol = _as_dict(attrs.get("volume_usd"))
+            buys, sells = m5.get("buys"), m5.get("sells")
+            created = attrs.get("pool_created_at")
+            out.append(
+                OnchainPool(
+                    pool_address=pool_addr,
+                    dex=_rel_id(rels, "dex"),
+                    base_mint=_rel_mint(rels, "base_token"),
+                    quote_mint=_rel_mint(rels, "quote_token"),
+                    base_token_price_usd=_coerce_float(attrs.get("base_token_price_usd")),
+                    quote_token_price_usd=_coerce_float(attrs.get("quote_token_price_usd")),
+                    reserve_in_usd=_coerce_float(attrs.get("reserve_in_usd")),
+                    pool_created_at=created if isinstance(created, str) else None,
+                    buys_5m=buys if isinstance(buys, int) else None,
+                    sells_5m=sells if isinstance(sells, int) else None,
+                    volume_5m_usd=_coerce_float(vol.get("m5")),
+                )
+            )
+        return out
+
 
 __all__ = [
     "COINGECKO_BASE_URL",
@@ -249,6 +348,7 @@ __all__ = [
     "CoinGeckoClient",
     "CoinGeckoMarket",
     "CoinGeckoTicker",
+    "OnchainPool",
     "OnchainTokenMarket",
     "VenueDistribution",
 ]
