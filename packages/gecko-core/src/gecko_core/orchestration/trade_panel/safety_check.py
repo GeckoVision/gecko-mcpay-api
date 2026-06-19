@@ -453,6 +453,22 @@ async def evaluate_contract_safety(
     market = None if isinstance(market_res, BaseException) else market_res
     depeg = None if isinstance(depeg_res, BaseException) else depeg_res
 
+    # Fresh-launch fallback: the aggregate /tokens/{addr} endpoint frequently has
+    # NO mcap/liquidity for brand-new tokens, so the manipulation read went dark
+    # exactly on fresh launches (the firewall's core ICP — confirmed by a live
+    # scan: ~half of fresh tokens returned manipulation_check_unavailable). The
+    # per-pool /tokens/{addr}/pools endpoint DOES have reserves + price for those
+    # same tokens. When the aggregate is missing/incomplete, synthesize the market
+    # read from pools (liquidity = Σ reserves; mcap = supply × deepest-pool price).
+    if (
+        market is None
+        or market.effective_market_cap_usd is None
+        or market.total_reserve_in_usd is None
+    ):
+        fallback = await _market_from_pools(resolved, safety, market_client)
+        if fallback is not None:
+            market = _merge_market(market, fallback)
+
     return _block_from_token_safety(safety, top_pct, market, depeg)
 
 
@@ -476,6 +492,85 @@ async def _fetch_market(
             type(exc).__name__,
         )
         return None
+
+
+async def _market_from_pools(
+    mint: str,
+    safety: TokenSafety,
+    market_client: CoinGeckoClient | None,
+) -> OnchainTokenMarket | None:
+    """Synthesize a market read from per-pool data when the aggregate is empty.
+
+    The fresh-launch fallback: ``/tokens/{addr}/pools`` returns reserves + price
+    for brand-new tokens that the aggregate ``/tokens/{addr}`` endpoint hasn't
+    indexed yet. We derive:
+      - ``total_reserve_in_usd`` = Σ pool reserves (on-chain DEX liquidity),
+      - ``price_usd``            = the deepest pool's price for our mint,
+      - ``market_cap_usd``       = circulating supply × price (supply + decimals
+        come from the QuickNode chain read — no new dependency).
+
+    Fail-OPEN to None on any failure / no pools / no usable figure.
+    """
+    client = market_client if market_client is not None else CoinGeckoClient()
+    try:
+        pools = await client.onchain_token_pools(mint, network="solana")
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(
+            "trade_panel.safety_check.pools_error target=%s err_type=%s",
+            mint,
+            type(exc).__name__,
+        )
+        return None
+    if not pools:
+        return None
+
+    liquidity = sum(p.reserve_in_usd or 0.0 for p in pools)
+    # Deepest pool first; price for OUR mint is the base-leg price when our mint
+    # is the pool's base, else the quote-leg price.
+    price: float | None = None
+    for p in sorted(pools, key=lambda p: p.reserve_in_usd or 0.0, reverse=True):
+        price = p.base_token_price_usd if p.base_mint == mint else p.quote_token_price_usd
+        if price:
+            break
+
+    mcap: float | None = None
+    if price and safety.supply is not None and safety.decimals is not None:
+        try:
+            supply_ui = int(safety.supply) / (10 ** int(safety.decimals))
+            mcap = supply_ui * price
+        except (TypeError, ValueError, OverflowError):
+            mcap = None
+
+    if liquidity <= 0 and mcap is None:
+        return None
+    return OnchainTokenMarket(
+        address=mint,
+        price_usd=price,
+        market_cap_usd=mcap,
+        total_reserve_in_usd=liquidity or None,
+    )
+
+
+def _merge_market(
+    primary: OnchainTokenMarket | None,
+    fallback: OnchainTokenMarket,
+) -> OnchainTokenMarket:
+    """Prefer the aggregate read's fields; fill any gaps from the pool fallback."""
+    if primary is None:
+        return fallback
+    return OnchainTokenMarket(
+        address=primary.address or fallback.address,
+        name=primary.name,
+        symbol=primary.symbol,
+        price_usd=primary.price_usd if primary.price_usd is not None else fallback.price_usd,
+        market_cap_usd=primary.market_cap_usd
+        if primary.market_cap_usd is not None
+        else fallback.market_cap_usd,
+        fdv_usd=primary.fdv_usd,
+        total_reserve_in_usd=primary.total_reserve_in_usd
+        if primary.total_reserve_in_usd is not None
+        else fallback.total_reserve_in_usd,
+    )
 
 
 async def _fetch_depeg(
