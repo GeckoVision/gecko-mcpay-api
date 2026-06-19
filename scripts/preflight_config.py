@@ -4,17 +4,23 @@ WHY THIS EXISTS (the bug it catches): OKX news went DARK in prod because
 ``infra/push-ssm-params.sh`` errored mid-run and never pushed
 ``OKX_TRADING_SECRET_KEY`` + ``OKX_TRADING_PASSPHRASE`` to SSM. Locally
 everything worked (the creds were in ``.env``); prod got a partial credential
-set → OKX returned HTTP 401 → the adapter fail-OPENed to ``[]`` → silent dark
+set => OKX returned HTTP 401 => the adapter fail-OPENed to ``[]`` => silent dark
 wedge. The class of bug is "works locally but missing/wrong in PRD" — a
 local≠SSM config drift. This script catches it before the deploy, not after.
 
-WHAT IT DOES, per ENABLED provider (a provider is "enabled" when its flag/usage
-env says so, e.g. ``GECKO_NEWS_PROVIDER=okx``):
+PROVIDER LIST IS DATA, NOT CODE. The set of providers, their enabled-conditions,
+and required creds live in ``infra/secrets-manifest.yml`` — the single source of
+truth shared with the gecko-api boot banner and the parity drift test. This
+script READS the manifest via :mod:`gecko_core.config.provider_status`; adding a
+provider is a manifest edit, never a code edit here.
+
+WHAT IT DOES, per ENABLED provider (enabled per the manifest ``enabled_when``):
   1. LOCAL check — assert every required cred is present + non-sentinel in the
-     loaded environment (``.env`` via ``set -a; source .env``).
-  2. SSM check (``--check-ssm``) — read back each cred's SSM param via the
-     ``aws`` CLI (presence + is-sentinel ONLY, value never fetched-then-printed)
-     and DIFF local-has vs SSM-has. Any provider configured locally but
+     loaded environment (``.env`` via ``set -a; source .env``). ``resolve_all``
+     does this and returns LIVE / DARK / disabled per provider.
+  2. SSM check (``--check-ssm``) — read back each required cred's SSM param via
+     the ``aws`` CLI (presence + is-sentinel ONLY, value never fetched-then-
+     printed) and DIFF local-has vs SSM-has. Any cred real locally but
      sentinel/absent in SSM is flagged RED — that is the drift that bit us.
   3. Optional live auth ping (``--ping``) for OKX news — reuses the secret-safe
      HMAC probe pattern: prints only HTTP status + OKX code, never creds.
@@ -32,8 +38,9 @@ USAGE:
     uv run python scripts/preflight_config.py --check-ssm --ping
     uv run python scripts/preflight_config.py --region us-east-2
 
-EXIT CODE: non-zero if any enabled provider is mis-provisioned locally or (with
---check-ssm) drifts between local and SSM. Wire it into a pre-deploy gate.
+EXIT CODE: non-zero if any enabled provider is DARK locally (a required cred is
+sentinel/missing) or (with --check-ssm) drifts between local and SSM. Wire it
+into a pre-deploy gate.
 """
 
 from __future__ import annotations
@@ -42,117 +49,43 @@ import argparse
 import os
 import subprocess
 import sys
-from dataclasses import dataclass, field
+from pathlib import Path
+
+# Make gecko-core importable when this script is run with `uv run python` from
+# the repo root (uv resolves the workspace) — no path hacking needed there. The
+# explicit insert keeps a bare `python scripts/preflight_config.py` working too.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_CORE_SRC = _REPO_ROOT / "packages" / "gecko-core" / "src"
+if _CORE_SRC.is_dir() and str(_CORE_SRC) not in sys.path:
+    sys.path.insert(0, str(_CORE_SRC))
+
+from typing import Any  # noqa: E402
+
+from gecko_core.config.provider_status import (  # noqa: E402
+    SENTINEL,
+    ProviderStatus,
+    _is_real,
+    resolve_all,
+)
 
 SSM_PREFIX = "/gecko-api"
-SENTINEL = "__unset__"
+_MANIFEST = _REPO_ROOT / "infra" / "secrets-manifest.yml"
 
 
-def _clean(name: str) -> str:
-    """Env value, stripped, with the SSM sentinel treated as unset.
+def _manifest_providers() -> dict[str, dict[str, Any]]:
+    import yaml
 
-    Mirrors ``news_factory._env_clean`` / ``safety_check._env_clean`` — the
-    single house convention for "is this cred really set".
-    """
-    value = os.environ.get(name, "").strip()
-    return "" if value == SENTINEL else value
+    data = yaml.safe_load(_MANIFEST.read_text())
+    providers: dict[str, dict[str, Any]] = data["providers"]
+    return providers
 
 
-def _is_enabled_okx_news() -> bool:
-    return _clean("GECKO_NEWS_PROVIDER").lower() == "okx"
-
-
-def _is_enabled_simple(flag: str, *enabled_values: str) -> bool:
-    return _clean(flag).lower() in enabled_values
-
-
-@dataclass
-class Provider:
-    """One configurable provider and the creds it needs when enabled."""
-
-    name: str
-    enabled: bool
-    # SSM-param names (== env var names here) that MUST be real when enabled.
-    required: list[str] = field(default_factory=list)
-    # Optional creds — checked/reported but not required for "configured".
-    optional: list[str] = field(default_factory=list)
-    note: str = ""
-
-
-def _discover_providers() -> list[Provider]:
-    """Build the provider list from the current environment.
-
-    A provider only gates the run when it is ENABLED — a disabled provider with
-    sentinel creds is the intended default and never fails preflight.
-    """
-    return [
-        Provider(
-            name="okx-news",
-            enabled=_is_enabled_okx_news(),
-            required=["OKX_TRADING_API_KEY", "OKX_TRADING_SECRET_KEY"],
-            optional=["OKX_TRADING_PASSPHRASE"],
-            note="GECKO_NEWS_PROVIDER=okx ⇒ OKX V5 HMAC news. Passphrase optional "
-            "but if the key was issued with one it is REQUIRED for auth (401 otherwise).",
-        ),
-        Provider(
-            name="okx-onchainos",
-            # Enabled when a real OnchainOS key is present (no separate flag).
-            enabled=bool(_clean("OKX_ONCHAINOS_API_KEY")),
-            required=["OKX_ONCHAINOS_API_KEY"],
-            note="OnchainOS market client (token metrics / holders). Disabled = sentinel.",
-        ),
-        Provider(
-            name="solana-rpc",
-            # Either Helius OR a full QuickNode RPC URL enables the safety read.
-            enabled=bool(_clean("HELIUS_API_KEY")) or bool(_clean("QUICKNODE_RPC_URL")),
-            required=[],  # at-least-one — validated specially below
-            optional=["HELIUS_API_KEY", "QUICKNODE_RPC_URL"],
-            note="Safety/Information-MEV read. Needs Helius key OR QuickNode RPC URL.",
-        ),
-        Provider(
-            name="dune",
-            enabled=bool(_clean("DUNE_API_KEY")),
-            required=["DUNE_API_KEY"],
-            note="Dune aggregate queries. Disabled = sentinel (fail-OPEN).",
-        ),
-        Provider(
-            name="voyage-embed",
-            enabled=_is_enabled_simple("EMBED_PROVIDER", "voyage"),
-            required=["VOYAGE_API_KEY"],
-            note="EMBED_PROVIDER=voyage ⇒ Voyage embeddings need VOYAGE_API_KEY.",
-        ),
-        Provider(
-            name="voyage-rerank",
-            enabled=_is_enabled_simple("GECKO_RERANKER", "voyage"),
-            required=["VOYAGE_API_KEY"],
-            note="GECKO_RERANKER=voyage ⇒ reranker needs VOYAGE_API_KEY.",
-        ),
-        Provider(
-            name="mongo",
-            enabled=_is_enabled_simple("GECKO_CHUNK_STORE", "mongo")
-            or _is_enabled_simple("GECKO_TRANSCRIPT_STORE", "mongo"),
-            required=["MONGODB_URI"],
-            note="GECKO_CHUNK_STORE/TRANSCRIPT_STORE=mongo ⇒ needs MONGODB_URI.",
-        ),
-    ]
-
-
-# --- Local check -------------------------------------------------------------
-
-
-def _local_status(p: Provider) -> tuple[bool, list[str]]:
-    """Return (ok, problems) for a provider's LOCAL env state."""
-    problems: list[str] = []
-    if p.name == "solana-rpc":
-        if not (_clean("HELIUS_API_KEY") or _clean("QUICKNODE_RPC_URL")):
-            problems.append(
-                "neither HELIUS_API_KEY nor QUICKNODE_RPC_URL is set (both sentinel/absent)"
-            )
-        return (not problems, problems)
-    for var in p.required:
-        if not _clean(var):
-            problems.append(f"{var} is sentinel/absent locally")
-    return (not problems, problems)
+def _required_vars(name: str, providers: dict[str, dict[str, Any]]) -> list[str]:
+    """All cred env-vars worth checking in SSM for a provider (required + any-of)."""
+    spec = providers.get(name, {})
+    vars_: list[str] = list(spec.get("requires") or [])
+    vars_ += list(spec.get("requires_any_of") or [])
+    return vars_
 
 
 # --- SSM read-back (presence + is-sentinel, NO value printing) ---------------
@@ -187,8 +120,6 @@ def _ssm_state(param: str, region: str) -> str:
     except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
         return f"error:{type(exc).__name__}"
     if out.returncode != 0:
-        # ParameterNotFound (or perms). Treat not-found as missing; surface other
-        # errors distinctly without leaking anything sensitive.
         if "ParameterNotFound" in out.stderr:
             return "missing"
         return "error:aws"
@@ -198,10 +129,6 @@ def _ssm_state(param: str, region: str) -> str:
     if value == "":
         return "empty"
     return "real"  # value intentionally dropped here; never returned/printed
-
-
-def _ssm_vars_for(p: Provider) -> list[str]:
-    return list(p.required) + list(p.optional)
 
 
 # --- Live OKX news ping (secret-safe; status + okx code only) ----------------
@@ -215,8 +142,12 @@ def _okx_news_ping() -> str:
 
     import httpx
 
-    key, secret = _clean("OKX_TRADING_API_KEY"), _clean("OKX_TRADING_SECRET_KEY")
-    passphrase = _clean("OKX_TRADING_PASSPHRASE")
+    key = os.environ.get("OKX_TRADING_API_KEY", "").strip()
+    secret = os.environ.get("OKX_TRADING_SECRET_KEY", "").strip()
+    passphrase = os.environ.get("OKX_TRADING_PASSPHRASE", "").strip()
+    key = "" if key == SENTINEL else key
+    secret = "" if secret == SENTINEL else secret
+    passphrase = "" if passphrase == SENTINEL else passphrase
     if not key or not secret:
         return "skip (key/secret not both set locally)"
     host = "https://www.okx.com"
@@ -259,51 +190,39 @@ def main() -> int:
     ap.add_argument("--region", default=os.environ.get("AWS_DEFAULT_REGION", "us-east-2"))
     args = ap.parse_args()
 
-    providers = _discover_providers()
-    enabled = [p for p in providers if p.enabled]
+    providers_spec = _manifest_providers()
+    statuses: list[ProviderStatus] = resolve_all(_MANIFEST)
+    enabled = [s for s in statuses if s.enabled]
 
-    print("=== Preflight config-parity ===")
+    print("=== Preflight config-parity (manifest-driven) ===")
+    print(f"manifest={_MANIFEST.relative_to(_REPO_ROOT)}")
     print(f"region={args.region}  check_ssm={args.check_ssm}  ping={args.ping}")
-    print(f"enabled providers: {[p.name for p in enabled] or 'NONE'}")
+    print(f"enabled providers: {[s.name for s in enabled] or 'NONE'}")
     print("")
 
     failures: list[str] = []
 
-    for p in enabled:
-        ok, problems = _local_status(p)
-        status = "OK " if ok else "BAD"
-        print(f"[{status}] {p.name}  (LOCAL)")
-        print(f"        {p.note}")
-        for prob in problems:
-            print(f"        - LOCAL: {prob}")
-            failures.append(f"{p.name}: {prob}")
+    for s in enabled:
+        local_ok = s.status == "LIVE"
+        tag = "OK " if local_ok else "DARK"
+        print(f"[{tag}] {s.name}  (LOCAL)  fail_mode={s.fail_mode}")
+        print(f"        {s.reason}")
+        if not local_ok:
+            failures.append(f"{s.name}: {s.reason}")
 
         if args.check_ssm:
-            for var in _ssm_vars_for(p):
-                local = "real" if _clean(var) else "sentinel/absent"
+            for var in _required_vars(s.name, providers_spec):
+                local = "real" if _is_real(var) else "sentinel/absent"
                 remote = _ssm_state(var, args.region)
                 print(f"        SSM  {var}: local={local}  ssm={remote}")
-                required = var in p.required
-                # Drift = configured locally but NOT real in SSM. This is the
-                # exact failure mode that left OKX news dark.
-                if _clean(var) and remote != "real":
-                    sev = "REQUIRED" if required else "optional"
-                    msg = f"{p.name}: {var} is real LOCALLY but '{remote}' in SSM ({sev})"
-                    print(f"        !! DRIFT ({sev}): {var} local-real / ssm-{remote}")
-                    # Only required-cred drift fails the gate; optional drift warns.
-                    if required:
-                        failures.append(msg)
-            # solana-rpc special: at least one of the two must be real in SSM.
-            if p.name == "solana-rpc":
-                states = {v: _ssm_state(v, args.region) for v in p.optional}
-                if "real" not in states.values():
-                    failures.append(
-                        "solana-rpc: neither HELIUS_API_KEY nor QUICKNODE_RPC_URL is real in SSM"
-                    )
-                    print("        !! DRIFT (REQUIRED): no Solana RPC cred is real in SSM")
+                # Drift = real locally but NOT real in SSM. The exact failure
+                # mode that left OKX news dark.
+                if _is_real(var) and remote != "real":
+                    print(f"        !! DRIFT: {var} local-real / ssm-{remote}")
+                    failures.append(f"{s.name}: {var} is real LOCALLY but '{remote}' in SSM")
         print("")
 
-    if args.ping and any(p.name == "okx-news" for p in enabled):
+    if args.ping and any(s.name == "okx_news" for s in enabled):
         print("=== OKX news live auth ping (secret-safe) ===")
         print(f"  {_okx_news_ping()}")
         print("")
