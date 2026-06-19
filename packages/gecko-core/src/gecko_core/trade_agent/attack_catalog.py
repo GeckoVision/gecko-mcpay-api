@@ -183,9 +183,9 @@ CATALOG: tuple[AttackPattern, ...] = (
             "single highest-precision 'this is a bot, not a human' tell."
         ),
         on_chain_signature="tx transfers to one of the 8 Jito tip accounts (hotpath.jito.is_jito_bundle_tx)",
-        signals=[],
+        signals=["jito_bundle_snipe"],
         latency_tier="realtime",
-        coverage="planned",  # detection encoded (jito.py); needs the parsed-tx account-key path
+        coverage="partial",  # snipe_gate fires; awaits parsed-tx account-key ingest
         mitigations_issuer=["choose a launchpad with anti-snipe fee mechanics (Meteora)"],
         mitigations_agent=["abstain on bundle-snipe-dominated launches"],
     ),
@@ -198,9 +198,9 @@ CATALOG: tuple[AttackPattern, ...] = (
             "coordinated sniping no organic crowd produces."
         ),
         on_chain_signature="≥3 distinct makers on one low-liq pool within a single slot, similar size",
-        signals=[],
+        signals=["same_slot_co_buy"],
         latency_tier="realtime",
-        coverage="planned",  # needs signer-level attribution per swap
+        coverage="partial",  # snipe_gate fires; awaits signer-level attribution per swap
         melt_feature_group="bundle_statistics",
         mitigations_agent=["require N clean slots before entry"],
     ),
@@ -210,9 +210,9 @@ CATALOG: tuple[AttackPattern, ...] = (
         category="execution_mev",
         description="The early buyers are wallets created <24-48h before the launch — bot-spun, not real holders.",
         on_chain_signature="majority of first-buyers' accounts created <48h before first interaction",
-        signals=[],
+        signals=["fresh_wallet_swarm"],
         latency_tier="batch",
-        coverage="planned",  # needs account-age lookup (getAsset/creation slot)
+        coverage="partial",  # snipe_gate fires; awaits account-age lookup (getAsset/creation slot)
         melt_feature_group="contextual_info",
         mitigations_agent=["weight fresh-wallet-dominated demand as fake"],
     ),
