@@ -684,10 +684,30 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     if not getattr(_gecko_mcp.session_manager, "_has_started", False):
         mcp_cm = _gecko_mcp.session_manager.run()
         await mcp_cm.__aenter__()
+    # Launch Firewall (step 6) — start the live ingest runner IF enabled. Gated
+    # OFF by default: build_runner returns None unless GECKO_FIREWALL_ENABLED is
+    # truthy AND HELIUS_API_KEY is set, so this is a no-op in every current env.
+    # The runner feeds the shared monitor that /safety reads warm.
+    firewall_runner: Any = None
+    try:
+        from gecko_core.trade_agent.hotpath.launch_runner import build_runner
+
+        firewall_runner = build_runner(app.state.safety_monitor)
+        if firewall_runner is not None:
+            await firewall_runner.start()
+            app.state.safety_runner = firewall_runner
+            logger.info("launch_firewall.runner_started")
+    except Exception as exc:  # pragma: no cover - never let it block startup
+        logger.warning("launch_firewall.runner_start_failed err=%s", type(exc).__name__)
+        firewall_runner = None
+
     try:
         try:
             yield
         finally:
+            if firewall_runner is not None:
+                with contextlib.suppress(Exception):
+                    await firewall_runner.stop()
             # 2026-05-06 — ECS rolling-deploy / autoscale shutdown handler.
             # Production logs showed two `Shutting down` events mid-session:
             # the container's research workflow gets SIGTERMed, the session
@@ -757,6 +777,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.state.limiter = limiter
+
+# Launch Firewall (step 4) — one shared in-process verdict cache + monitor for
+# the whole app. The monitor pre-computes per-mint safety into the store; /safety
+# reads it warm. The live ingest task that feeds the monitor is wired in step 6;
+# until then the store is warmed by cold-miss writes (and, in tests, directly).
+# HotpathCache is pydantic/stdlib-only — no heavy import cost at module load.
+from gecko_core.trade_agent.hotpath.cache import HotpathCache  # noqa: E402
+from gecko_core.trade_agent.hotpath.launch_monitor import LaunchMonitor  # noqa: E402
+
+app.state.safety_store = HotpathCache()
+app.state.safety_monitor = LaunchMonitor(app.state.safety_store)
 
 
 async def _rate_limit_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -3593,32 +3624,16 @@ class SafetyCheckRequest(BaseModel):
 
 
 def _safety_gate(block: Any) -> str:
-    """One-glance pre-trade gate derived from the deterministic safety read.
+    """Thin delegate to the canonical gate kernel (Pattern A).
 
-    - ``block``   — hard stop: honeypot, fake market cap, material depeg, or a
-      'manipulated' Information-MEV read.
-    - ``caution`` — elevated manipulation / thin liquidity / holder
-      concentration / un-renounced mint or freeze authority.
-    - ``ok``      — checked and clean.
-    - ``unknown`` — the check could not run (fail-OPEN; never trust as safe).
+    The logic moved to ``gecko_core.trade_agent.hotpath.precomputed.safety_gate``
+    so the continuous Launch-Firewall monitor and this endpoint score with the
+    identical function instead of drifting copies. Imported lazily to keep the
+    hotpath dependency off the module-import path.
     """
-    if not getattr(block, "checked", False):
-        return "unknown"
-    flags = set(getattr(block, "rug_flags", None) or [])
-    if getattr(block, "honeypot", False) or (flags & {"fake_market_cap", "depeg_risk"}):
-        return "block"
-    imev = getattr(block, "information_mev", None)
-    if imev is not None and getattr(imev, "label", None) == "manipulated":
-        return "block"
-    caution_flags = {
-        "thin_liquidity_vs_mcap",
-        "high_holder_concentration",
-        "mint_not_renounced",
-        "freeze_not_renounced",
-    }
-    if (imev is not None and getattr(imev, "label", None) == "elevated") or (flags & caution_flags):
-        return "caution"
-    return "ok"
+    from gecko_core.trade_agent.hotpath.precomputed import safety_gate
+
+    return safety_gate(block)
 
 
 @app.post("/safety")
@@ -3629,21 +3644,16 @@ async def safety_check(req: SafetyCheckRequest) -> dict[str, Any]:
     contract-safety read (honeypot + mint/freeze authority + holder
     concentration + liquidity/mcap manipulation + peg) — never the LLM panel.
     Returns the full ``SafetyBlock`` plus a one-glance ``gate`` recommendation
-    (block | caution | ok | unknown). Fail-OPEN: any error/timeout yields a
-    ``checked=false`` block with ``gate=unknown`` — never a 5xx, never a
-    fabricated 'safe'. The considered adjudication lives at /trade_research.
+    (block | caution | ok | unknown), the Launch-Firewall ``wash_risk`` flow read
+    (when pre-computed), ``source`` (monitor warm / ondemand cold), and
+    ``staleness_s``. Warm path = a cache read (single-digit ms); cold miss falls
+    back to the on-demand read + arms the monitor. Fail-OPEN: any error/timeout
+    yields ``gate=unknown`` — never a 5xx, never a fabricated 'safe'. The
+    considered adjudication lives at /trade_research.
     """
-    from gecko_core.orchestration.trade_panel.models import SafetyBlock
-    from gecko_core.orchestration.trade_panel.safety_check import evaluate_contract_safety
+    from gecko_api.safety_fast import serve_safety
 
-    try:
-        block = await asyncio.wait_for(
-            evaluate_contract_safety(target=req.mint, mint=req.mint), timeout=4.0
-        )
-    except Exception:
-        block = SafetyBlock.unavailable(reason="safety_check_error")
-
-    return {"gate": _safety_gate(block), **block.model_dump(mode="json")}
+    return await serve_safety(req.mint, app.state.safety_store, app.state.safety_monitor)
 
 
 @app.get("/healthz")

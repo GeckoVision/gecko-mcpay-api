@@ -18,6 +18,7 @@ Design constraints:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from datetime import UTC, datetime
@@ -403,37 +404,54 @@ async def evaluate_contract_safety(
             return SafetyBlock.unavailable(reason="safety_check_unavailable")
         client = QuickNodeClient(url)
 
-    try:
-        safety = await client.token_safety(resolved)
-    except Exception as exc:  # pragma: no cover - defensive; never crash the panel
+    # Launch-Firewall latency win: the four source reads are independent, so fire
+    # them CONCURRENTLY instead of serially (was 4 round-trips back-to-back). The
+    # raw-chain ``token_safety`` is the load-bearing read — its failure is the
+    # only fail-OPEN; the other three are best-effort and degrade to None without
+    # dropping the chain read. ``_fetch_market`` / ``_fetch_depeg`` already
+    # swallow their own errors; ``return_exceptions=True`` guards the two raw RPC
+    # calls so one slow/failing source never sinks the others.
+    safety_res, largest_res, market_res, depeg_res = await asyncio.gather(
+        client.token_safety(resolved),
+        client.token_largest_accounts(resolved),
+        _fetch_market(resolved, market_client),
+        _fetch_depeg(resolved, peg_client),
+        return_exceptions=True,
+    )
+
+    if isinstance(safety_res, BaseException):  # pragma: no cover - defensive
         # Redact: log the exception type only, never the RPC URL or full body.
         logger.warning(
-            "trade_panel.safety_check.error target=%s err_type=%s", resolved, type(exc).__name__
+            "trade_panel.safety_check.error target=%s err_type=%s",
+            resolved,
+            type(safety_res).__name__,
         )
         return SafetyBlock.unavailable(reason="safety_check_unavailable")
+    safety = safety_res
 
     # Holder concentration is best-effort: a failure here must not drop the
-    # already-good mint/freeze read, so it is guarded independently.
+    # already-good mint/freeze read.
     top_pct: float | None = None
-    try:
-        largest = await client.token_largest_accounts(resolved)
-        top_pct = _top_holder_pct(largest, safety.supply)
-    except Exception as exc:  # pragma: no cover - defensive
+    if isinstance(largest_res, BaseException):  # pragma: no cover - defensive
         logger.warning(
             "trade_panel.safety_check.holders_error target=%s err_type=%s",
             resolved,
-            type(exc).__name__,
+            type(largest_res).__name__,
         )
+    else:
+        try:
+            top_pct = _top_holder_pct(largest_res, safety.supply)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "trade_panel.safety_check.holders_error target=%s err_type=%s",
+                resolved,
+                type(exc).__name__,
+            )
 
-    # Manipulation signals (mcap / liquidity) are best-effort too — fail-OPEN to
-    # None when CoinGecko is unreachable or doesn't know the token. The raw-chain
-    # rug read above is never dropped because the market source failed.
-    market = await _fetch_market(resolved, market_client)
-
-    # Phase 3.3 — peg state (Pegana). Best-effort, fail-OPEN to None: a non-peg
-    # token (Pegana 404s on the mint), Pegana being down, or any parse error all
-    # degrade to "no peg data" — never dropping the chain rug read.
-    depeg = await _fetch_depeg(resolved, peg_client)
+    # Market (mcap/liquidity) + peg are fail-OPEN to None; the helpers already
+    # catch, but a BaseException from gather still degrades cleanly here.
+    market = None if isinstance(market_res, BaseException) else market_res
+    depeg = None if isinstance(depeg_res, BaseException) else depeg_res
 
     return _block_from_token_safety(safety, top_pct, market, depeg)
 
