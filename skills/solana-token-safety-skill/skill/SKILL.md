@@ -52,8 +52,16 @@ Pick the path that fits the situation; load only the file you need
 | Understand each flag/signal it returns | [signals.md](signals.md) |
 | Act on the verdict (gate semantics, fail-OPEN) | [interpreting-verdicts.md](interpreting-verdicts.md) |
 | Wire it into an agent's pre-trade loop (MCP + HTTP) | [agent-integration.md](agent-integration.md) |
+| Vet a token's **launch** (issuer / launchpad side) | [launch-check.md](launch-check.md) |
+| See example verdicts (clean vs blocked) | [../examples/README.md](../examples/README.md) |
 
-There is also a ready command: [`/safety-check <mint>`](../commands/safety-check.md).
+This skill also ships:
+- **Commands** — [`/safety-check <mint>`](../commands/safety-check.md) (trader) and
+  [`/launch-check <mint>`](../commands/launch-check.md) (issuer / Block-Zero).
+- **Agent** — [`token-safety-auditor`](../agents/token-safety-auditor.md), a market-integrity
+  specialist that runs the full diligence flow and gives an act/abstain call.
+- **Rule** — [`pre-trade-safety`](../rules/pre-trade-safety.md): gate every token swap with a
+  safety check first (opt-in).
 
 ## The one thing to remember
 

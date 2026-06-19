@@ -1,0 +1,22 @@
+{
+  "_comment": "Real /safety response for JUP (Jupiter), captured 2026-06-19 from https://api.geckovision.tech/safety. A clean, established token: deep liquidity, no manipulation flags -> gate=ok.",
+  "gate": "ok",
+  "checked": true,
+  "honeypot": false,
+  "mint_mutable": false,
+  "freeze_mutable": false,
+  "tax_rate": null,
+  "top_holder_pct": null,
+  "market_cap_usd": 633701465.23,
+  "liquidity_usd": 2575540.65,
+  "liquidity_to_mcap_pct": 0.4064,
+  "rug_flags": [],
+  "information_mev": {
+    "score": 0.0,
+    "label": "clean",
+    "reasons": ["No manipulation signals: liquidity 0.406% of market cap."]
+  },
+  "depeg_risk": null,
+  "peg_status": null,
+  "source": "quicknode+coingecko"
+}

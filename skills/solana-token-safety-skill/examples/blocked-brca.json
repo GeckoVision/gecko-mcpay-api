@@ -1,0 +1,34 @@
+{
+  "_comment": "Illustrative BLOCKED verdict modeled on the documented BrCA case — a token a trading platform rated 'Normal' while its market was manufactured: a $5.73M headline market cap backed by only $6.5K of on-chain liquidity (0.11%), one wallet holding 72% of supply. Shape matches the live /safety response; values reflect the documented case, not a live capture.",
+  "gate": "block",
+  "checked": true,
+  "honeypot": false,
+  "mint_mutable": false,
+  "freeze_mutable": false,
+  "tax_rate": null,
+  "top_holder_pct": 0.72,
+  "market_cap_usd": 5730000.0,
+  "liquidity_usd": 6500.0,
+  "liquidity_to_mcap_pct": 0.1134,
+  "rug_flags": ["fake_market_cap", "thin_liquidity_vs_mcap", "high_holder_concentration"],
+  "information_mev": {
+    "score": 0.95,
+    "label": "manipulated",
+    "reasons": [
+      "fake market cap: $5.73M mcap on $6.5K liquidity (0.11%) — price unsupportable",
+      "single wallet holds 72% of supply — dump risk"
+    ]
+  },
+  "wash_risk": {
+    "score": 0.75,
+    "label": "manipulated",
+    "reasons": [
+      "thin-pool buy-loop: one-sided buys on tiny uniform size while price climbs",
+      "multi-pool price bait: quoted far above the liquidity-weighted index in dead satellite pools"
+    ],
+    "fired_signals": ["thin_pool_buy_loop", "multi_pool_price_bait"]
+  },
+  "depeg_risk": null,
+  "peg_status": null,
+  "source": "quicknode+coingecko"
+}

@@ -16,15 +16,24 @@ SKILL_NAME="solana-token-safety"
 
 echo "==> Installing the ${SKILL_NAME} skill into ${DEST}"
 
-mkdir -p "${DEST}/skills/${SKILL_NAME}" "${DEST}/commands"
+mkdir -p "${DEST}/skills/${SKILL_NAME}" "${DEST}/commands" "${DEST}/agents" "${DEST}/rules"
 
-# 1) The skill (SKILL.md + focused .md routing files)
+# 1) The skill (SKILL.md + focused .md routing files + examples)
 cp -R "${SRC_DIR}/skill/." "${DEST}/skills/${SKILL_NAME}/"
-echo "    • skill   -> ${DEST}/skills/${SKILL_NAME}/"
+cp -R "${SRC_DIR}/examples" "${DEST}/skills/${SKILL_NAME}/examples"
+echo "    • skill    -> ${DEST}/skills/${SKILL_NAME}/"
 
-# 2) The /safety-check command
-cp "${SRC_DIR}/commands/safety-check.md" "${DEST}/commands/safety-check.md"
-echo "    • command -> ${DEST}/commands/safety-check.md"
+# 2) Commands (/safety-check, /launch-check)
+cp "${SRC_DIR}/commands/"*.md "${DEST}/commands/"
+echo "    • commands -> ${DEST}/commands/ (safety-check, launch-check)"
+
+# 3) Agent persona (token-safety-auditor)
+cp "${SRC_DIR}/agents/"*.md "${DEST}/agents/"
+echo "    • agent    -> ${DEST}/agents/token-safety-auditor.md"
+
+# 4) Pre-trade rule (opt-in)
+cp "${SRC_DIR}/rules/"*.md "${DEST}/rules/"
+echo "    • rule     -> ${DEST}/rules/pre-trade-safety.md"
 
 cat <<'EOF'
 

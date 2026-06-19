@@ -53,8 +53,15 @@ Or point it at a custom config dir: `CLAUDE_DIR=/path bash install.sh`.
 ## Use
 
 - Ask your agent: *"is this token safe to trade: `<mint>`?"*
-- Run the command: `/safety-check <mint>`
+- Trader command: `/safety-check <mint>` · Issuer command: `/launch-check <mint>`
+- Agent persona: `token-safety-auditor` runs the full diligence flow
 - Wire it into an agent's pre-trade loop → [`skill/agent-integration.md`](skill/agent-integration.md)
+
+## Two sides, one check
+
+- **Agents** — gate a buy/swap before you sign (`/safety-check`, the `pre-trade-safety` rule).
+- **Issuers / launchpads** — vet a token's launch for bot manipulation in the first
+  candles (`/launch-check`, the Block-Zero read).
 
 ## Structure
 
@@ -65,10 +72,18 @@ skill/
   signals.md               what each flag/signal means
   interpreting-verdicts.md gate semantics + fail-OPEN + FP awareness
   agent-integration.md     MCP + HTTP pre-trade gate pattern
+  launch-check.md          issuer / Block-Zero read
 commands/
-  safety-check.md          /safety-check <mint>
+  safety-check.md          /safety-check <mint>   (trader)
+  launch-check.md          /launch-check <mint>   (issuer)
+agents/
+  token-safety-auditor.md  market-integrity specialist persona
+rules/
+  pre-trade-safety.md      opt-in: gate token swaps with a check first
+examples/
+  clean-jup.json           real OK verdict (verified) + blocked-brca.json (illustrative)
 install.sh                 copy-only installer (no binaries, no network)
-LICENSE                    MIT
+CLAUDE.md · LICENSE (MIT) · README.md
 ```
 
 ## How it works
