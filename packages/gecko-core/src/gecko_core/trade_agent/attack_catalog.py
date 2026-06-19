@@ -182,10 +182,10 @@ CATALOG: tuple[AttackPattern, ...] = (
             "A buy submitted inside a Jito bundle — categorically automated; the "
             "single highest-precision 'this is a bot, not a human' tell."
         ),
-        on_chain_signature="buy tx in a bundle that includes a Jito tip-account transfer in-slot",
+        on_chain_signature="tx transfers to one of the 8 Jito tip accounts (hotpath.jito.is_jito_bundle_tx)",
         signals=[],
         latency_tier="realtime",
-        coverage="planned",  # needs tip-account tagging on the parsed-tx path
+        coverage="planned",  # detection encoded (jito.py); needs the parsed-tx account-key path
         mitigations_issuer=["choose a launchpad with anti-snipe fee mechanics (Meteora)"],
         mitigations_agent=["abstain on bundle-snipe-dominated launches"],
     ),
