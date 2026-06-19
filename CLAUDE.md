@@ -76,7 +76,7 @@ gecko-mcp doctor
 
 ## Subagent team
 
-Core team: twelve specialists. Eleven own work in this repo; `frontend-engineer` is a cross-repo stub that surfaces coordination notes for their full counterpart in `gecko-mcpay-app`. Plus three Solana-specialist advisors (`solana-architect`, `defi-engineer`, `solana-researcher`) imported from Superteam's `solana-claude` config.
+Core team: twelve specialists. Eleven own work in this repo; `frontend-engineer` is a cross-repo stub that surfaces coordination notes for their full counterpart in `gecko-mcpay-app`. Plus four Solana-specialist advisors (`solana-architect`, `defi-engineer`, `solana-researcher` imported from Superteam's `solana-claude` config, and `jito-mev-architect`, Gecko's own).
 
 **Engineering (staff-engineer arbitrates across these lanes):**
 
@@ -97,8 +97,9 @@ Core team: twelve specialists. Eleven own work in this repo; `frontend-engineer`
 | `solana-architect` | System design, account structures, PDA schemes, token economics, multi-program architecture, "which on-chain design" calls |
 | `defi-engineer` | DeFi protocol integration — Jupiter, Drift, Kamino, Raydium, Orca, Meteora, Marginfi, Sanctum; swap routing, oracle feeds, composability |
 | `solana-researcher` | Ecosystem research, protocol/SDK investigation, comparing implementation approaches |
+| `jito-mev-architect` | Jito + Solana MEV/execution-infra architecture: bundles, tip accounts, block engine/auction, low-latency send, ShredStream, dontfront, BAM/ACE. Owns the "build-on-existing vs build-new vs improve" call for the Launch Firewall / Information-MEV layer. Read-only advisor; `web3-engineer` implements. |
 
-These three are read/research-oriented advisors. `web3-engineer` still owns the lane and the code; route architecture/DeFi-design questions to the specialists, then `web3-engineer` implements. Skill links inside these agent files point at the `solana-claude` skill tree, which is NOT installed here — those references degrade gracefully.
+These four are read/research-oriented advisors. `web3-engineer` still owns the lane and the code; route architecture/DeFi-design questions to the specialists, then `web3-engineer` implements. Skill links inside these agent files point at the `solana-claude` skill tree, which is NOT installed here — those references degrade gracefully.
 
 **Product:**
 
