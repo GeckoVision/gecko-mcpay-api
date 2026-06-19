@@ -1530,7 +1530,7 @@ requires-dist = [
 
 [[package]]
 name = "gecko-mcp"
-version = "0.2.26"
+version = "0.2.27"
 source = { editable = "packages/gecko-mcp" }
 dependencies = [
     { name = "click" },

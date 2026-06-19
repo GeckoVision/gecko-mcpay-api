@@ -85,6 +85,11 @@
     "input_schema_hash": "f27caedb53ac8989f1b9aff8989bac7369bdeed83ba1f742c2452174f4bd3cbb"
   },
   {
+    "name": "gecko_safety",
+    "description_hash": "6e00cd54696ed2771448627bb36afe3a022cbcab09e4f5bfde979a4abba5e3e2",
+    "input_schema_hash": "fd964556f8496a213bdc1f26bc7920a8e01f4131f402cfe5ccabab4682ec7888"
+  },
+  {
     "name": "gecko_scaffold",
     "description_hash": "da999aebd471df661f3e003428c87283b5927908e9ef80ca297f2d5f61c8c3d5",
     "input_schema_hash": "8eecdde1cb915f5a79ef3f6177be0e58a71dd1c647634e7bbaf7ce550f2fc6dc"
@@ -97,6 +102,6 @@
   {
     "name": "gecko_trade_research",
     "description_hash": "00ef5a50b771a6baae68123ea0f92202c15b0f3cf8aef835b566713e33588456",
-    "input_schema_hash": "a22912a98bb6b8c194c532e5a046fa23173970246b74415702eef6f1726a4257"
+    "input_schema_hash": "122191d8fa5bbe3ec24f44536719f011c455c033645d8abedacd076fa1ad2a0b"
   }
 ]

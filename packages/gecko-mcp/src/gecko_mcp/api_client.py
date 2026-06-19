@@ -976,6 +976,23 @@ class GeckoAPIClient:
             )
         return _parse_json_object(response, "/trade_research")
 
+    async def safety(self, mint: str) -> dict[str, Any]:
+        """POST /safety — sub-second deterministic pre-trade safety check (free).
+
+        No LLM panel, no retrieval: just the on-chain contract-safety +
+        Information-MEV read for an SPL mint. Mirrors the /trade_research
+        free-POST shape rather than going through the x402 paid-post helper —
+        /safety is unauthenticated and ungated.
+        """
+        http = await self._free_client()
+        try:
+            response = await http.post("/safety", json={"mint": mint})
+        except httpx.HTTPError as exc:
+            raise GeckoAPIError(f"could not reach gecko-api at {self.api_url}: {exc}") from exc
+        if response.status_code >= 400:
+            raise GeckoAPIError(f"/safety returned {response.status_code}: {response.text[:300]}")
+        return _parse_json_object(response, "/safety")
+
     async def list_sources(self, session_id: str) -> list[dict[str, Any]]:
         """GET /sessions/{id}/sources — free."""
         http = await self._free_client()
