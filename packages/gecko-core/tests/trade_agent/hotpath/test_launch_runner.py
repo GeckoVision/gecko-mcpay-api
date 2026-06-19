@@ -82,6 +82,16 @@ def test_build_runner_none_when_enabled_but_no_key(monkeypatch: pytest.MonkeyPat
     assert build_runner(LaunchMonitor(HotpathCache())) is None
 
 
+def test_build_runner_constructs_when_enabled_and_keyed(monkeypatch: pytest.MonkeyPatch):
+    # The path the gecko-api lifespan uses: enabled + a key -> a real runner
+    # (constructs the ws client; no network until start()).
+    monkeypatch.setenv("GECKO_FIREWALL_ENABLED", "true")
+    monkeypatch.setenv("HELIUS_API_KEY", "test-key-not-real")
+    runner = build_runner(LaunchMonitor(HotpathCache()))
+    assert isinstance(runner, LaunchRunner)
+    assert runner.tracked_pools == 0
+
+
 # --------------------------------------------------------------------------- #
 # End-to-end: live notifications → scorer → cache                             #
 # --------------------------------------------------------------------------- #
