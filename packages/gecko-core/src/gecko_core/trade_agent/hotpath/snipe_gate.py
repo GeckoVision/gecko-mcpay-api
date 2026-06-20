@@ -284,4 +284,4 @@ def assess_snipe(snap: SnipeSnapshot, tip_floor: TipFloor | None = None) -> Snip
     )
 
 
-__all__ = ["SnipeBlock", "SnipeLabel", "SnipeSnapshot", "assess_snipe"]
+__all__ = ["SnipeBlock", "SnipeLabel", "SnipeSnapshot", "TipFloor", "assess_snipe"]

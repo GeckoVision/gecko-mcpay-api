@@ -144,3 +144,52 @@ async def test_track_untrack_lifecycle():
     mon.untrack("A")
     assert not mon.is_tracked("A")
     assert mon.tracked_count == 1
+
+
+@pytest.mark.asyncio
+async def test_parsed_swaps_fold_snipe_into_block():
+    """THE keystone probe: signer-level parsed swaps → snipe verdict → cache block.
+
+    A fresh launch sniped by 4 fresh wallets co-buying one slot via Jito bundles
+    through a custom program reaches the served cache as `block` — the parsed-tx
+    path lighting up the snipe gate end-to-end through the real monitor.
+    """
+    from gecko_core.trade_agent.hotpath.snipe_features import LAMPORTS_PER_SOL, ParsedSwap
+
+    store = HotpathCache()
+    mon = LaunchMonitor(store)
+    now = 1030.0
+    mon.track("MINT", pool_created_ts=1000)  # 30s-old launch
+    sniper_prog = "Sn1per1111111111111111111111111111111111111"
+    for i in range(4):
+        mon.ingest_parsed_swap(
+            "MINT",
+            ParsedSwap(
+                signer=f"W{i}",
+                slot=500,
+                is_buy=True,
+                notional_sol=1.0,
+                tip_lamports=int(2e-4 * LAMPORTS_PER_SOL),
+                program_ids=[sniper_prog],
+                wallet_age_s=120.0,
+                timestamp=1000.0,
+            ),
+        )
+    pc = await mon.recompute("MINT", now)
+    assert pc is not None
+    assert pc.snipe is not None
+    assert pc.snipe.label in ("likely_sniped", "confirmed_wash")
+    assert pc.gate == "block"
+    # and it's served warm with the snipe block attached
+    served = pc.to_response(now)
+    assert served["gate"] == "block" and served["snipe"] is not None
+
+
+@pytest.mark.asyncio
+async def test_no_parsed_swaps_leaves_snipe_absent():
+    store = HotpathCache()
+    mon = LaunchMonitor(store)
+    now = 100_000.0
+    mon.track("X", pool_created_ts=int(now - 50_000))
+    pc = await mon.recompute("X", now)
+    assert pc is not None and pc.snipe is None  # fail-OPEN: no fabricated verdict

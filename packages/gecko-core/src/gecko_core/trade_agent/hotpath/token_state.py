@@ -27,6 +27,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from gecko_core.trade_agent.hotpath.snipe_features import ParsedSwap, build_snipe_snapshot
+from gecko_core.trade_agent.hotpath.snipe_gate import SnipeSnapshot
 from gecko_core.trade_agent.hotpath.wash_signals import (
     FirewallSnapshot,
     FlowWindow,
@@ -77,7 +79,16 @@ class TokenState:
     """Mutable rolling state for one mint. Not a pydantic model (it holds a deque
     and is mutated in place by the monitor)."""
 
-    __slots__ = ("_funding", "_pools", "_swaps", "cex_funders", "mint", "pool_created_ts")
+    __slots__ = (
+        "_funding",
+        "_parsed",
+        "_pools",
+        "_swaps",
+        "cex_funders",
+        "lp_drained",
+        "mint",
+        "pool_created_ts",
+    )
 
     def __init__(
         self,
@@ -90,15 +101,23 @@ class TokenState:
         self.mint = mint
         self.pool_created_ts = pool_created_ts
         self.cex_funders = cex_funders
+        self.lp_drained = False
         self._swaps: deque[SwapEvent] = deque(maxlen=max_swaps)
+        # Parsed (signer-level) swaps power the snipe gate (co-buy/jito/fresh/ALT);
+        # kept separate from the reserve-derived SwapEvents that power wash signals.
+        self._parsed: deque[ParsedSwap] = deque(maxlen=max_swaps)
         self._pools: dict[str, PoolSnapshot] = {}
         self._funding: dict[str, _WalletFunding] = {}
 
     # -- ingest (realtime, O(1)) -------------------------------------------- #
 
     def ingest_swap(self, ev: SwapEvent) -> None:
-        """Record a swap. O(1) append to the bounded ring buffer."""
+        """Record a reserve-derived swap (wash signals). O(1) append."""
         self._swaps.append(ev)
+
+    def ingest_parsed_swap(self, ev: ParsedSwap) -> None:
+        """Record a signer-level parsed swap (snipe gate). O(1) append."""
+        self._parsed.append(ev)
 
     def update_pool(self, pool: PoolSnapshot) -> None:
         """Upsert a pool's latest state (keyed by ``pool_addr``)."""
@@ -176,6 +195,23 @@ class TokenState:
         # Cap to top-N by total volume — only the volume-carriers matter.
         out.sort(key=lambda w: w.buy_vol_usd + w.sell_vol_usd, reverse=True)
         return out
+
+    def to_snipe_snapshot(self, now: float) -> SnipeSnapshot | None:
+        """Build the snipe-gate snapshot from accumulated parsed swaps.
+
+        Returns ``None`` when no parsed (signer-level) swaps have arrived — the
+        reserve-only path can't feed the snipe gate, so the verdict stays absent
+        (fail-OPEN) rather than fabricated.
+        """
+        if not self._parsed:
+            return None
+        return build_snipe_snapshot(
+            self.mint,
+            list(self._parsed),
+            now=now,
+            launch_time=float(self.pool_created_ts) if self.pool_created_ts is not None else None,
+            lp_drained=self.lp_drained,
+        )
 
     def _index_price(self) -> float | None:
         """Liquidity-weighted price across pools — the single source of truth."""
