@@ -142,6 +142,13 @@ declare -A PARAMS=(
   [HELIUS_API_KEY]="HELIUS_API_KEY"
   [QUICKNODE_RPC_URL]="QUICKNODE_RPC_URL"
 
+  # Launch Firewall — live snipe/wash ingest. GECKO_FIREWALL_ENABLED=1 turns ON
+  # the continuous pool-discovery + parsed-tx monitor that feeds /safety verdicts.
+  # Default OFF (a no-op without it AND without HELIUS_API_KEY). ⚠️ Flip to 1 ONLY
+  # after `scripts/firewall/live_smoke.py` passes against mainnet — it activates
+  # the live parser, and an unverified parser would poison prod verdicts.
+  [GECKO_FIREWALL_ENABLED]="GECKO_FIREWALL_ENABLED"
+
   # Phase 2.1 (context-engineering) — ENV-gated live-news for the
   # sentiment_analyst voice. GECKO_NEWS_PROVIDER selects the adapter (default
   # OFF); OKX_NEWS_API_URL + OKX_API_KEY drive the OKX direct-HTTP adapter.
@@ -231,6 +238,10 @@ declare -A REQUIRED_AT_BOOT=(
   # unset (fail-OPEN: no RPC -> safety_check_unavailable, never a broken URL).
   [HELIUS_API_KEY]="__unset__"
   [QUICKNODE_RPC_URL]="__unset__"
+  # Launch Firewall OFF by default — fail-safe. Flip to "1" in .env (or here) ONLY
+  # after the live smoke passes; with HELIUS_API_KEY also set, "1" starts the live
+  # snipe/wash monitor. "false" keeps the firewall dark with zero runtime impact.
+  [GECKO_FIREWALL_ENABLED]="false"
   # Phase 2.1 — live-news flag + OKX adapter creds. Sentinels keep ECS booting
   # before the key/url are provisioned; news_factory treats `__unset__` (and an
   # unset flag) as OFF, so the panel runs corpus-only until the founder flips

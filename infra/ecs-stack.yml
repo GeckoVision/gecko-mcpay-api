@@ -614,6 +614,11 @@ Resources:
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/HELIUS_API_KEY
             - Name: QUICKNODE_RPC_URL
               ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/QUICKNODE_RPC_URL
+            # Launch Firewall — "1" starts the live snipe/wash monitor (pool
+            # discovery + parsed-tx ingest feeding /safety). "false" by default
+            # (dark, zero runtime impact); flip only after the live smoke passes.
+            - Name: GECKO_FIREWALL_ENABLED
+              ValueFrom: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMPrefix}/GECKO_FIREWALL_ENABLED
             # Phase 2.1 (context-engineering) — ENV-gated live-news for the
             # sentiment_analyst voice. GECKO_NEWS_PROVIDER=okx + OKX_NEWS_API_URL
             # + OKX_API_KEY enable it; sentinels keep the panel corpus-only until
