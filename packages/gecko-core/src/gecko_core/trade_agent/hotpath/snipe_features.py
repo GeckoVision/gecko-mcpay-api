@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from gecko_core.trade_agent.hotpath.alt_identity import shared_alt_buyers
 from gecko_core.trade_agent.hotpath.program_reputation import has_unknown_program
 from gecko_core.trade_agent.hotpath.snipe_gate import (
     FRESH_WALLET_MAX_AGE_S,
@@ -53,6 +54,10 @@ class ParsedSwap(BaseModel):
     )
     program_ids: list[str] = Field(
         default_factory=list, description="program ids the tx touched (for I2 attribution)."
+    )
+    alt_addresses: list[str] = Field(
+        default_factory=list,
+        description="address-lookup-table accounts the tx referenced (operator-rig identity).",
     )
     wallet_age_s: float | None = Field(
         default=None, ge=0.0, description="signer account age at swap time (None = unknown)."
@@ -116,6 +121,15 @@ def build_snipe_snapshot(
     }
     unknown_program_buys = len(unknown_program_buyers)
 
+    # shared-ALT operator clustering (the deep vein): distinct buyers sharing a
+    # non-public address-lookup-table = same execution rig, even across re-funded
+    # wallets (survives the funder-graph laundering F4 misses).
+    buyer_alts: dict[str, set[str]] = {}
+    for s in buys:
+        if s.alt_addresses:
+            buyer_alts.setdefault(s.signer, set()).update(s.alt_addresses)
+    shared_alt_buyers_n = shared_alt_buyers(buyer_alts)
+
     tips_sol = [s.tip_lamports / LAMPORTS_PER_SOL for s in buys if s.tip_lamports > 0]
     max_buy_tip_sol = max(tips_sol) if tips_sol else None
 
@@ -138,6 +152,7 @@ def build_snipe_snapshot(
         jito_bundle_buys=jito_bundle_buys,
         fresh_wallet_buyers=fresh_wallet_buyers,
         unknown_program_buys=unknown_program_buys,
+        shared_alt_buyers=shared_alt_buyers_n,
         max_buy_tip_sol=max_buy_tip_sol,
         notional_p50=notional_p50,
         notional_p95=notional_p95,

@@ -53,6 +53,7 @@ W_FEE_OUTLIER = 0.20
 W_UNKNOWN_PROGRAM = (
     0.20  # buy routed through a first-seen custom program (I2) — sniper-program tell
 )
+W_SHARED_ALT = 0.25  # distinct buyers sharing an execution rig (ALT) — survives funder laundering
 W_CO_BUY = 0.15
 W_LP_DRAIN = 0.45  # the inflate-then-dump tail — strong on its own
 
@@ -92,6 +93,11 @@ class SnipeSnapshot(BaseModel):
         ge=0,
         description="buys routed through a first-seen/unknown custom program (I2 attribution).",
     )
+    shared_alt_buyers: int = Field(
+        default=0,
+        ge=0,
+        description="distinct buyers sharing a non-public ALT (same execution rig).",
+    )
     lp_drained: bool = Field(
         default=False, description="large buys → reserve drop → same wallets exit."
     )
@@ -125,6 +131,7 @@ def _has_inputs(s: SnipeSnapshot) -> bool:
         or s.jito_bundle_buys
         or s.fresh_wallet_buyers
         or s.unknown_program_buys
+        or s.shared_alt_buyers
         or s.lp_drained
         or s.max_buy_tip_sol
     )
@@ -198,6 +205,18 @@ def _unknown_program(s: SnipeSnapshot) -> _Sig:
     )
 
 
+def _shared_alt(s: SnipeSnapshot) -> _Sig:
+    code = "shared_alt_rig"
+    if s.shared_alt_buyers < 2:
+        return _Sig(False, code, W_SHARED_ALT, None)
+    return _Sig(
+        True,
+        code,
+        W_SHARED_ALT,
+        f"{s.shared_alt_buyers} buyers share a custom address-lookup-table (same execution rig)",
+    )
+
+
 def _lp_drain(s: SnipeSnapshot) -> _Sig:
     code = "lp_drain"
     if not s.lp_drained:
@@ -233,6 +252,7 @@ def assess_snipe(snap: SnipeSnapshot, tip_floor: TipFloor | None = None) -> Snip
         _fresh_swarm(snap),
         _fee_outlier(snap, tip_floor),
         _unknown_program(snap),
+        _shared_alt(snap),
         _co_buy(snap),
         _lp_drain(snap),
     ]

@@ -132,6 +132,25 @@ CATALOG: tuple[AttackPattern, ...] = (
         example="MELT: 21% of pre-migration txns are wash/coordinated",
     ),
     AttackPattern(
+        id="shared_alt_rig",
+        name="Shared execution rig (ALT-as-operator-identity)",
+        category="market_data",
+        description=(
+            "Distinct, separately-funded buyers reference the SAME custom "
+            "address-lookup-table — the same bot rig operating rotated wallets. "
+            "Clusters by shared infrastructure, which survives the wallet re-funding "
+            "that defeats common-funder graphs."
+        ),
+        on_chain_signature="≥2 distinct buyers share a non-public ALT (addressTableLookups) at launch",
+        signals=["shared_alt_rig"],
+        latency_tier="realtime",
+        coverage="partial",  # scorer fires; awaits the parsed-tx ALT stream + public-ALT allowlist
+        melt_feature_group="bundle_statistics",
+        mitigations_issuer=["blocklist the rig's wallets (own frontend/launchpad only)"],
+        mitigations_agent=["abstain"],
+        example="Sniper rigs pre-warm ALTs to pack accounts; the ALT outlives the wallet",
+    ),
+    AttackPattern(
         id="fake_market_cap",
         name="Fake market cap (thin liquidity vs mcap)",
         category="market_data",
@@ -171,7 +190,7 @@ CATALOG: tuple[AttackPattern, ...] = (
         latency_tier="realtime",
         coverage="partial",
         mitigations_agent=["never use a thin/new token's pool price as an oracle input"],
-        example="Drift −$285M (Apr 2026) — fake CVT token, ~12-min wash history",
+        example="Drift -$285M (Apr 2026) — fake CVT token, ~12-min wash history",
     ),
     # ---- snipe / execution (real-time tells; need parsed-tx data) --------- #
     AttackPattern(
