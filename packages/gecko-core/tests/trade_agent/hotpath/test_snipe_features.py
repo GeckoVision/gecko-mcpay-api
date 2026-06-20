@@ -98,6 +98,38 @@ def test_end_to_end_probe_fresh_launch_snipe_is_caught():
     assert "unknown_program_route" in block.fired_signals  # I2 fed the verdict
 
 
+def test_alt_clustering_survives_wallet_rotation():
+    # THE deep-vein probe: 3 "unrelated" buyers (no shared funder, aged wallets,
+    # via Raydium) that share ONE custom ALT = same operator rig. Funder-graph
+    # clustering would miss this; ALT-identity catches it.
+    rig_alt = "ALT_sn1per_rig_1111111111111111111111111111111"
+    swaps = [
+        _swap(
+            f"Rot{i}",
+            500,
+            program_ids=[RAYDIUM],
+            alt_addresses=[rig_alt],
+            wallet_age_s=5e6,  # aged — defeats fresh-wallet signal
+            notional_sol=1.0,
+            timestamp=1000.0,
+        )
+        for i in range(3)
+    ]
+    snap = build_snipe_snapshot("MINT", swaps, now=1030.0, launch_time=1000.0)
+    assert snap.shared_alt_buyers == 3
+    block = assess_snipe(snap)
+    assert block is not None and "shared_alt_rig" in block.fired_signals
+
+
+def test_distinct_alts_do_not_cluster():
+    swaps = [
+        _swap(f"W{i}", 500, alt_addresses=[f"ALT_{i}"], wallet_age_s=5e6, notional_sol=0.5)
+        for i in range(4)
+    ]
+    snap = build_snipe_snapshot("MINT", swaps, now=1030.0, launch_time=1000.0)
+    assert snap.shared_alt_buyers == 0
+
+
 def test_end_to_end_organic_launch_stays_clean():
     # 30 distinct aged wallets, no tips, all via Raydium, spread across slots.
     swaps = [

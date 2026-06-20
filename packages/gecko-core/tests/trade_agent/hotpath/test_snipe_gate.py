@@ -71,6 +71,20 @@ def test_unknown_program_signal_fires():
     assert b.score >= 0.20
 
 
+def test_shared_alt_signal_fires():
+    snap = SnipeSnapshot(mint="X", age_seconds=AGED, buyer_count=10, shared_alt_buyers=4)
+    b = assess_snipe(snap)
+    assert b is not None and "shared_alt_rig" in b.fired_signals
+    assert b.score >= 0.25
+
+
+def test_lone_shared_alt_buyer_does_not_fire():
+    # a single buyer "sharing" with nobody isn't a cluster
+    snap = SnipeSnapshot(mint="X", age_seconds=AGED, buyer_count=10, shared_alt_buyers=1)
+    b = assess_snipe(snap)
+    assert b is not None and "shared_alt_rig" not in b.fired_signals
+
+
 def test_full_snipe_is_likely_sniped():
     # jito + fresh swarm + fee outlier + co-buy -> high score
     snap = SnipeSnapshot(
