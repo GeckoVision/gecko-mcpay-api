@@ -64,6 +64,13 @@ def test_co_buy_plus_automation_at_launch_escalates():
     assert {"same_slot_co_buy", "jito_bundle_snipe"} <= set(b.fired_signals)
 
 
+def test_unknown_program_signal_fires():
+    snap = SnipeSnapshot(mint="X", age_seconds=AGED, buyer_count=10, unknown_program_buys=3)
+    b = assess_snipe(snap)
+    assert b is not None and "unknown_program_route" in b.fired_signals
+    assert b.score >= 0.20
+
+
 def test_full_snipe_is_likely_sniped():
     # jito + fresh swarm + fee outlier + co-buy -> high score
     snap = SnipeSnapshot(

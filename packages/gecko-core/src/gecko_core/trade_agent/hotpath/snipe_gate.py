@@ -21,9 +21,11 @@ It composes the tells the firewall already has primitives for into ONE scored
 Pure + deterministic (``pydantic``/stdlib only): takes a :class:`SnipeSnapshot`
 of already-extracted features + an optional live tip floor, returns a
 :class:`SnipeBlock`. The feature extraction (per-wallet, per-slot, account-age)
-rides the parsed-transaction ingest path (deferred); this scorer is the brain and
-is falsifiable today against synthetic snapshots (Pattern B). Mirrors the
-``wash_signals`` discipline: FP guards inline, fail-OPEN, honest labels.
+is built by :func:`snipe_features.build_snipe_snapshot` from parsed swaps; the
+only deferred piece is the live Helius adapter that produces those parsed swaps.
+This scorer is the brain and is falsifiable today against synthetic snapshots
+(Pattern B). Mirrors the ``wash_signals`` discipline: FP guards inline,
+fail-OPEN, honest labels.
 """
 
 from __future__ import annotations
@@ -48,6 +50,9 @@ FRESH_RATIO_FLAG = 0.5  # ≥ half the buyers are fresh = swarm
 W_JITO_BUNDLE = 0.40
 W_FRESH_SWARM = 0.25
 W_FEE_OUTLIER = 0.20
+W_UNKNOWN_PROGRAM = (
+    0.20  # buy routed through a first-seen custom program (I2) — sniper-program tell
+)
 W_CO_BUY = 0.15
 W_LP_DRAIN = 0.45  # the inflate-then-dump tail — strong on its own
 
@@ -82,6 +87,11 @@ class SnipeSnapshot(BaseModel):
     )
     notional_p50: float | None = Field(default=None, ge=0.0)
     notional_p95: float | None = Field(default=None, ge=0.0)
+    unknown_program_buys: int = Field(
+        default=0,
+        ge=0,
+        description="buys routed through a first-seen/unknown custom program (I2 attribution).",
+    )
     lp_drained: bool = Field(
         default=False, description="large buys → reserve drop → same wallets exit."
     )
@@ -114,6 +124,7 @@ def _has_inputs(s: SnipeSnapshot) -> bool:
         or s.max_slot_unique_buyers
         or s.jito_bundle_buys
         or s.fresh_wallet_buyers
+        or s.unknown_program_buys
         or s.lp_drained
         or s.max_buy_tip_sol
     )
@@ -175,6 +186,18 @@ def _fee_outlier(s: SnipeSnapshot, tip_floor: TipFloor | None) -> _Sig:
     )
 
 
+def _unknown_program(s: SnipeSnapshot) -> _Sig:
+    code = "unknown_program_route"
+    if s.unknown_program_buys <= 0:
+        return _Sig(False, code, W_UNKNOWN_PROGRAM, None)
+    return _Sig(
+        True,
+        code,
+        W_UNKNOWN_PROGRAM,
+        f"{s.unknown_program_buys} buy(s) routed through a first-seen/unknown custom program",
+    )
+
+
 def _lp_drain(s: SnipeSnapshot) -> _Sig:
     code = "lp_drain"
     if not s.lp_drained:
@@ -209,6 +232,7 @@ def assess_snipe(snap: SnipeSnapshot, tip_floor: TipFloor | None = None) -> Snip
         _jito_bundle(snap),
         _fresh_swarm(snap),
         _fee_outlier(snap, tip_floor),
+        _unknown_program(snap),
         _co_buy(snap),
         _lp_drain(snap),
     ]
