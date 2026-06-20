@@ -77,6 +77,11 @@ class LaunchRunner:
     def tracked_pools(self) -> int:
         return len(self._pools)
 
+    @property
+    def ws_client(self) -> object:
+        """The shared websocket client (so discovery multiplexes on one connection)."""
+        return self._ws
+
     async def track_pool(
         self,
         *,

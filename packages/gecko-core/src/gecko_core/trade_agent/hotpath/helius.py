@@ -70,7 +70,7 @@ def _full_jitter_backoff(
 @dataclass
 class _Subscription:
     sub_id: int
-    method: str  # "accountSubscribe" | "programSubscribe"
+    method: str  # "accountSubscribe" | "programSubscribe" | "logsSubscribe"
     params: list[Any]
     callback: EventCallback
     # Helius assigns a server-side subscription id distinct from our
@@ -225,6 +225,32 @@ class HeliusWebSocketClient:
         """Subscribe to a program's account changes (e.g. SPL Token)."""
         params: list[Any] = [program_id, {"commitment": commitment, "encoding": encoding}]
         return await self._register("programSubscribe", params, callback)
+
+    async def subscribe_logs(
+        self,
+        mentions: list[str],
+        callback: EventCallback,
+        *,
+        commitment: str = "processed",
+    ) -> int:
+        """Subscribe to transaction logs that mention any of ``mentions`` (program ids).
+
+        Used by pool discovery to catch a new-pool init the moment it lands —
+        ``processed`` commitment so we hear it at/near Block 0 (the snipe window),
+        accepting the small reorg risk that the firewall reconciles downstream.
+
+        The Helius ``logsSubscribe`` filter takes a single ``{"mentions": [pubkey]}``
+        with EXACTLY ONE address, so one address per subscription. The callback
+        receives the raw notification ``params`` (``{"result": {...}, "subscription": N}``);
+        ``result.value`` carries ``signature`` + ``logs`` + ``err``.
+
+        There is NO HTTP polling fallback for logs subs (unlike account subs) — a
+        prolonged ws outage simply means missed discoveries, logged via stats.
+        """
+        if len(mentions) != 1:
+            raise ValueError("logsSubscribe accepts exactly one mention address per subscription")
+        params: list[Any] = [{"mentions": mentions}, {"commitment": commitment}]
+        return await self._register("logsSubscribe", params, callback)
 
     async def unsubscribe(self, sub_id: int) -> None:
         """Drop a subscription. Idempotent — re-calling with the same
@@ -426,7 +452,9 @@ class HeliusWebSocketClient:
                 # server_sub_id → local_sub_id mapping NOW, before the
                 # caller's await on the future returns. Any notification
                 # arriving on the next read tick will route correctly.
-                local_sub_id = self._pending_subscribe.get(rpc_id)
+                local_sub_id = (
+                    self._pending_subscribe.get(rpc_id) if isinstance(rpc_id, int) else None
+                )
                 if local_sub_id is not None and isinstance(result, int):
                     self._server_to_local[result] = local_sub_id
                 fut.set_result(result)

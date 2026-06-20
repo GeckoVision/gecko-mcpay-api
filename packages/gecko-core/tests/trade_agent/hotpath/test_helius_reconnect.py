@@ -234,3 +234,40 @@ async def test_unsubscribe_drops_local_state() -> None:
             await client.unsubscribe(sub_id)
         finally:
             await client.stop()
+
+
+@pytest.mark.asyncio
+async def test_subscribe_logs_speaks_helius_wire() -> None:
+    async with _HeliusMockServer() as srv:
+        client = HeliusWebSocketClient(
+            api_key="dummy",
+            base_ws=f"ws://127.0.0.1:{srv.port}/",
+            reconnect_initial_s=0.05,
+            polling_fallback_after_s=999.0,
+        )
+        await client.start()
+        try:
+
+            async def cb(_evt: dict[str, Any]) -> None:
+                pass
+
+            sub_id = await client.subscribe_logs(["ProgramId111"], cb)
+            assert isinstance(sub_id, int)
+            assert len(srv.subscribe_calls) == 1
+            call = srv.subscribe_calls[0]
+            assert call["method"] == "logsSubscribe"
+            assert call["params"][0] == {"mentions": ["ProgramId111"]}
+            assert call["params"][1].get("commitment") == "processed"
+        finally:
+            await client.stop()
+
+
+@pytest.mark.asyncio
+async def test_subscribe_logs_rejects_multi_mention() -> None:
+    client = HeliusWebSocketClient(api_key="dummy")
+
+    async def cb(_evt: dict[str, Any]) -> None:
+        pass
+
+    with pytest.raises(ValueError, match="exactly one"):
+        await client.subscribe_logs(["a", "b"], cb)
