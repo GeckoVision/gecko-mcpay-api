@@ -70,7 +70,7 @@ def _full_jitter_backoff(
 @dataclass
 class _Subscription:
     sub_id: int
-    method: str  # "accountSubscribe" | "programSubscribe" | "logsSubscribe"
+    method: str  # accountSubscribe | programSubscribe | logsSubscribe | transactionSubscribe
     params: list[Any]
     callback: EventCallback
     # Helius assigns a server-side subscription id distinct from our
@@ -251,6 +251,34 @@ class HeliusWebSocketClient:
             raise ValueError("logsSubscribe accepts exactly one mention address per subscription")
         params: list[Any] = [{"mentions": mentions}, {"commitment": commitment}]
         return await self._register("logsSubscribe", params, callback)
+
+    async def subscribe_transaction(
+        self,
+        account_include: list[str],
+        callback: EventCallback,
+        *,
+        commitment: str = "confirmed",
+    ) -> int:
+        """Subscribe to parsed transactions touching any of ``account_include``.
+
+        Uses Helius `transactionSubscribe` (the enhanced / geyser websocket — note
+        this requires a Helius plan that exposes it, unlike the standard account/
+        program/logs subs). Filters to txns that mention the given accounts (the
+        pool + its vaults), succeeded only (``failed: False``), and asks for the
+        jsonParsed, full-detail shape the tx parser consumes. ``confirmed``
+        commitment — reorg-safe, a few slots behind processed.
+        """
+        params: list[Any] = [
+            {"accountInclude": account_include, "failed": False},
+            {
+                "commitment": commitment,
+                "encoding": "jsonParsed",
+                "transactionDetails": "full",
+                "showRewards": False,
+                "maxSupportedTransactionVersion": 0,
+            },
+        ]
+        return await self._register("transactionSubscribe", params, callback)
 
     async def unsubscribe(self, sub_id: int) -> None:
         """Drop a subscription. Idempotent — re-calling with the same

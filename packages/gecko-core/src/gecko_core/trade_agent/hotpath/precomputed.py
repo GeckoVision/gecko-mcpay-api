@@ -26,6 +26,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from gecko_core.trade_agent.hotpath.snipe_gate import SnipeBlock
 from gecko_core.trade_agent.hotpath.wash_signals import WashRiskBlock
 
 # --------------------------------------------------------------------------- #
@@ -43,26 +44,50 @@ _CAUTION_FLAGS = frozenset(
 )
 
 
-def safety_gate(block: Any, *, wash: WashRiskBlock | None = None) -> str:
+def _snipe_gate_level(snipe: SnipeBlock | None) -> str | None:
+    """Map a snipe verdict to a gate level, or ``None`` if it says nothing.
+
+    ``confirmed_wash`` / ``likely_sniped`` → ``block`` (the launch's demand is
+    manufactured); ``suspicious`` → ``caution``; ``clean`` / ``None`` → no opinion.
+    """
+    if snipe is None:
+        return None
+    if snipe.label in ("confirmed_wash", "likely_sniped"):
+        return "block"
+    if snipe.label == "suspicious":
+        return "caution"
+    return None
+
+
+def safety_gate(
+    block: Any,
+    *,
+    wash: WashRiskBlock | None = None,
+    snipe: SnipeBlock | None = None,
+) -> str:
     """One-glance pre-trade gate derived from the deterministic safety read.
 
     Duck-typed over a ``SafetyBlock``-shaped object (``checked`` / ``rug_flags``
     / ``honeypot`` / ``information_mev``). Optionally folds in the Launch-Firewall
-    :class:`WashRiskBlock` flow read — a ``manipulated`` wash verdict is a hard
-    ``block``, an ``elevated`` one is at least ``caution``.
+    :class:`WashRiskBlock` flow read AND the :class:`SnipeBlock` launch-integrity
+    read — a ``manipulated`` wash OR a ``likely_sniped``/``confirmed_wash`` snipe
+    verdict is a hard ``block``; an ``elevated`` wash or ``suspicious`` snipe is at
+    least ``caution``.
 
     - ``block``   — honeypot, fake market cap, material depeg, a ``manipulated``
-      Information-MEV read, OR a ``manipulated`` wash read.
+      Information-MEV read, a ``manipulated`` wash read, OR a sniped launch.
     - ``caution`` — elevated manipulation / thin liquidity / holder concentration
-      / un-renounced mint or freeze authority / ``elevated`` wash read.
+      / un-renounced mint or freeze authority / ``elevated`` wash / ``suspicious`` snipe.
     - ``ok``      — checked and clean.
     - ``unknown`` — the check could not run (fail-OPEN; never trust as safe).
     """
+    snipe_level = _snipe_gate_level(snipe)
+
     if not getattr(block, "checked", False):
-        # Static read didn't run — but a wash read alone can still be decisive.
-        if wash is not None and wash.label == "manipulated":
+        # Static read didn't run — but a wash/snipe read alone can still be decisive.
+        if snipe_level == "block" or (wash is not None and wash.label == "manipulated"):
             return "block"
-        if wash is not None and wash.label == "elevated":
+        if snipe_level == "caution" or (wash is not None and wash.label == "elevated"):
             return "caution"
         return "unknown"
 
@@ -72,11 +97,20 @@ def safety_gate(block: Any, *, wash: WashRiskBlock | None = None) -> str:
 
     imev = getattr(block, "information_mev", None)
     imev_label = getattr(imev, "label", None) if imev is not None else None
-    if imev_label == "manipulated" or (wash is not None and wash.label == "manipulated"):
+    if (
+        imev_label == "manipulated"
+        or (wash is not None and wash.label == "manipulated")
+        or snipe_level == "block"
+    ):
         return "block"
 
     wash_elevated = wash is not None and wash.label == "elevated"
-    if imev_label == "elevated" or wash_elevated or (flags & _CAUTION_FLAGS):
+    if (
+        imev_label == "elevated"
+        or wash_elevated
+        or snipe_level == "caution"
+        or (flags & _CAUTION_FLAGS)
+    ):
         return "caution"
     return "ok"
 
@@ -106,6 +140,10 @@ class PrecomputedSafety(BaseModel):
     wash: WashRiskBlock | None = Field(
         default=None, description="Launch-Firewall flow read; None when no flow was assessed."
     )
+    snipe: SnipeBlock | None = Field(
+        default=None,
+        description="Launch-integrity (snipe-gate) read; None when no parsed-tx flow was assessed.",
+    )
     computed_at_epoch: float = Field(
         ..., description="Unix epoch seconds when this verdict was computed (writer-stamped)."
     )
@@ -131,6 +169,7 @@ class PrecomputedSafety(BaseModel):
         """
         out: dict[str, Any] = {"gate": self.gate, **self.safety}
         out["wash_risk"] = self.wash.model_dump(mode="json") if self.wash is not None else None
+        out["snipe"] = self.snipe.model_dump(mode="json") if self.snipe is not None else None
         out["source"] = self.source
         if now_epoch is not None:
             out["staleness_s"] = round(self.age_seconds(now_epoch), 3)

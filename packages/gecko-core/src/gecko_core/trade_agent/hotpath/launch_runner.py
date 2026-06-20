@@ -28,6 +28,7 @@ from typing import Any
 from gecko_core.trade_agent.hotpath.cache import HotpathCache
 from gecko_core.trade_agent.hotpath.launch_monitor import DEFAULT_TTL_S, LaunchMonitor
 from gecko_core.trade_agent.hotpath.swap_parser import PoolReserveTracker, parse_vault_balance
+from gecko_core.trade_agent.hotpath.tx_parser import parse_swap_tx
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +124,29 @@ class LaunchRunner:
         sub_a = await self._ws.subscribe_account(base_vault, _cb_base)  # type: ignore[attr-defined]
         sub_b = await self._ws.subscribe_account(quote_vault, _cb_quote)  # type: ignore[attr-defined]
         tp.sub_ids = [sub_a, sub_b]
+
+        # Parsed-tx (signer-level) stream powers the snipe gate — co-buy, jito,
+        # fresh-wallet, program-rep, ALT-identity. Optional: only if the client
+        # exposes transactionSubscribe (the enhanced ws); the vault subs above
+        # keep F1/F5 working regardless. Fail-OPEN if the enhanced sub is absent.
+        sub_tx = getattr(self._ws, "subscribe_transaction", None)
+        if callable(sub_tx):
+
+            async def _cb_tx(params: dict[str, Any], _mint: str = mint) -> None:
+                await self._on_tx_event(_mint, params)
+
+            try:
+                tp.sub_ids.append(await sub_tx([base_vault, quote_vault], _cb_tx))
+            except Exception as exc:  # never let an enhanced-sub failure break tracking
+                logger.warning(
+                    "firewall.tx_subscribe_failed mint=%s err=%s", mint, type(exc).__name__
+                )
+
+    async def _on_tx_event(self, mint: str, params: dict[str, Any]) -> None:
+        """Callback for a parsed transaction touching the pool — feed the snipe gate."""
+        swap = parse_swap_tx(params, timestamp=self._now())
+        if swap is not None:
+            self._mon.ingest_parsed_swap(mint, swap)
 
     async def _on_vault_event(self, pool_addr: str, params: dict[str, Any], *, vault: str) -> None:
         """Callback for a vault account update — parse, feed the monitor.

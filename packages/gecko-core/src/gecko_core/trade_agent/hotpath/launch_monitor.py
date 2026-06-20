@@ -31,6 +31,8 @@ from gecko_core.trade_agent.hotpath.precomputed import (
     SafetyStore,
     safety_gate,
 )
+from gecko_core.trade_agent.hotpath.snipe_features import ParsedSwap
+from gecko_core.trade_agent.hotpath.snipe_gate import TipFloor, assess_snipe
 from gecko_core.trade_agent.hotpath.token_state import SwapEvent, TokenState
 from gecko_core.trade_agent.hotpath.wash_signals import PoolSnapshot, assess_wash_risk
 
@@ -96,8 +98,12 @@ class LaunchMonitor:
     # -- ingest (realtime, O(1)) ------------------------------------------- #
 
     def ingest_swap(self, mint: str, swap: SwapEvent) -> None:
-        """Record a swap (auto-tracks the mint if new)."""
+        """Record a reserve-derived swap (auto-tracks the mint if new)."""
         self.track(mint).ingest_swap(swap)
+
+    def ingest_parsed_swap(self, mint: str, swap: ParsedSwap) -> None:
+        """Record a signer-level parsed swap for the snipe gate (auto-tracks)."""
+        self.track(mint).ingest_parsed_swap(swap)
 
     def update_pool(self, mint: str, pool: PoolSnapshot) -> None:
         self.track(mint).update_pool(pool)
@@ -123,6 +129,7 @@ class LaunchMonitor:
         now: float,
         *,
         static_block: Any | None = None,
+        tip_floor: TipFloor | None = None,
         ttl_s: float | None = None,
     ) -> PrecomputedSafety | None:
         """Score ``mint`` from its current state and write the verdict to cache.
@@ -139,7 +146,9 @@ class LaunchMonitor:
 
         snap = st.to_snapshot(now, window_s=self._window_s)
         wash = assess_wash_risk(snap)
-        gate = safety_gate(static_block, wash=wash)
+        snipe_snap = st.to_snipe_snapshot(now)
+        snipe = assess_snipe(snipe_snap, tip_floor) if snipe_snap is not None else None
+        gate = safety_gate(static_block, wash=wash, snipe=snipe)
 
         if static_block is not None:
             safety_dict = static_block.model_dump(mode="json")
@@ -156,6 +165,7 @@ class LaunchMonitor:
             gate=gate,
             safety=safety_dict,
             wash=wash,
+            snipe=snipe,
             computed_at_epoch=now,
             source="monitor",
         )
