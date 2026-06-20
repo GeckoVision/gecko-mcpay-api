@@ -691,11 +691,25 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     firewall_runner: Any = None
     try:
         from gecko_core.trade_agent.hotpath.launch_runner import build_runner
+        from gecko_core.trade_agent.hotpath.pool_discovery_runner import build_discovery
 
         firewall_runner = build_runner(app.state.safety_monitor)
         if firewall_runner is not None:
+            # The runner owns the shared ws client but doesn't start it — start it
+            # here so both vault subs (runner) and init-log subs (discovery)
+            # multiplex on one live connection.
+            ws = firewall_runner.ws_client
+            if hasattr(ws, "start"):
+                await ws.start()
             await firewall_runner.start()
             app.state.safety_runner = firewall_runner
+            # Pool discovery: the feed that finds new launch pools and registers
+            # them with the runner. Without it the runner watches nothing.
+            firewall_discovery = build_discovery(firewall_runner)
+            if firewall_discovery is not None:
+                await firewall_discovery.start()
+                app.state.safety_discovery = firewall_discovery
+                logger.info("launch_firewall.discovery_started")
             logger.info("launch_firewall.runner_started")
     except Exception as exc:  # pragma: no cover - never let it block startup
         logger.warning("launch_firewall.runner_start_failed err=%s", type(exc).__name__)
@@ -708,6 +722,10 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             if firewall_runner is not None:
                 with contextlib.suppress(Exception):
                     await firewall_runner.stop()
+                ws = firewall_runner.ws_client
+                if hasattr(ws, "stop"):
+                    with contextlib.suppress(Exception):
+                        await ws.stop()
             # 2026-05-06 — ECS rolling-deploy / autoscale shutdown handler.
             # Production logs showed two `Shutting down` events mid-session:
             # the container's research workflow gets SIGTERMed, the session
