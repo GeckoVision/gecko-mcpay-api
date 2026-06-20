@@ -382,7 +382,13 @@ class HeliusWebSocketClient:
         last_attempt_ts = time.monotonic()
         while self._running:
             try:
-                async with websockets.connect(self._base_ws) as ws:
+                # ping_interval=None: Helius's ws does not reliably pong client
+                # keepalive pings, so the websockets default (ping every 20s,
+                # close on no-pong in 20s) tears the connection down with a 1011
+                # keepalive-timeout — which cascades into subscribe-ACK timeouts.
+                # Disable client pings; the read loop + reconnect loop detect a
+                # genuinely dead socket. (Confirmed via the live smoke, 2026-06-20.)
+                async with websockets.connect(self._base_ws, ping_interval=None) as ws:
                     self._ws = ws
                     self._stats.connections += 1
                     if attempt > 0:

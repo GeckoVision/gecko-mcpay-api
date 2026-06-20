@@ -84,7 +84,10 @@ async def run_smoke(minutes: float, recompute_s: float) -> int:
             await runner.recompute_all()
             # Count how many tracked mints currently have a verdict in the cache.
             mints = {tp.mint for tp in runner._pools.values()}
-            verdicts_seen = sum(1 for m in mints if (await store.get(m)) is not None)
+            verdicts_seen = 0
+            for m in mints:
+                if (await store.get(m)) is not None:
+                    verdicts_seen += 1
             print(
                 "smoke: "
                 + _fmt(
