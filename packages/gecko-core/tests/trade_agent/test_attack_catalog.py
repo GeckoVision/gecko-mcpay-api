@@ -67,7 +67,9 @@ def test_patterns_for_signals_empty():
 def test_coverage_roadmap_nonempty():
     # The 'planned' set is our build roadmap — wash/sybil/snipe should be there.
     planned = {p.id for p in patterns_by_coverage("planned")}
-    assert {"same_slot_co_buy", "jito_bundle_snipe", "fresh_wallet_swarm"} <= planned
+    assert "rug_pull_lp_remove" in planned  # no detector yet (snipe_gate consumes lp_drained as input)
+    partial = {p.id for p in patterns_by_coverage("partial")}
+    assert {"same_slot_co_buy", "jito_bundle_snipe", "fresh_wallet_swarm"} <= partial  # snipe_gate fires
 
 
 def test_sandwich_has_jito_dontfront_mitigation():
