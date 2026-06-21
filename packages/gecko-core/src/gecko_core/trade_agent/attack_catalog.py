@@ -192,6 +192,35 @@ CATALOG: tuple[AttackPattern, ...] = (
         mitigations_agent=["never use a thin/new token's pool price as an oracle input"],
         example="Drift -$285M (Apr 2026) — fake CVT token, ~12-min wash history",
     ),
+    AttackPattern(
+        id="concentrated_capture",
+        name="Concentrated capture (the slot-spread evasion)",
+        category="market_data",
+        description=(
+            "The evasive snipe that turns every automation tell off: co-buys spread "
+            "across slots (beats same-slot co-buy), no Jito tip (no bundle/fee tell), "
+            "no shared ALT, multi-hop funding (beats common-funder), randomized "
+            "sizing (beats uniformity). The residual it CANNOT hide is the goal "
+            "itself — a few wallets capturing a disproportionate share of one-sided "
+            "early buy volume. Concentration without diversity is the fingerprint: "
+            "you cannot both capture the float and look like a diverse organic crowd."
+        ),
+        on_chain_signature=(
+            "top-5 buyers hold ≥60% of buy notional, ≥90% one-sided (buys≫sells), and "
+            "few wallets buying many times (buy_count/buyer_count ≥1.5) — independent "
+            "of slot/tip/ALT/funder. EXTREME tier: ≥85% top-5 share + ≥97% one-sided."
+        ),
+        signals=["concentrated_capture"],
+        latency_tier="realtime",
+        coverage="partial",  # snipe_gate fires from the same parsed-tx ParsedSwap stream
+        melt_feature_group="holding_concentration",
+        mitigations_issuer=["publish launch-integrity report", "delay aggregator listing 2-3 min"],
+        mitigations_agent=[
+            "abstain on a captured-float launch even when no automation tell fires",
+            "require a diverse-buyer / two-sided window before entry",
+        ],
+        example="The red-team evasion: every high-precision tell off, float still captured",
+    ),
     # ---- snipe / execution (real-time tells; need parsed-tx data) --------- #
     AttackPattern(
         id="jito_bundle_snipe",

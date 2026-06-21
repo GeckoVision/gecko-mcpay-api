@@ -67,12 +67,34 @@ def test_patterns_for_signals_empty():
 def test_coverage_roadmap_nonempty():
     # The 'planned' set is our build roadmap — wash/sybil/snipe should be there.
     planned = {p.id for p in patterns_by_coverage("planned")}
-    assert "rug_pull_lp_remove" in planned  # no detector yet (snipe_gate consumes lp_drained as input)
+    assert (
+        "rug_pull_lp_remove" in planned
+    )  # no detector yet (snipe_gate consumes lp_drained as input)
     partial = {p.id for p in patterns_by_coverage("partial")}
-    assert {"same_slot_co_buy", "jito_bundle_snipe", "fresh_wallet_swarm"} <= partial  # snipe_gate fires
+    assert {
+        "same_slot_co_buy",
+        "jito_bundle_snipe",
+        "fresh_wallet_swarm",
+    } <= partial  # snipe_gate fires
 
 
 def test_sandwich_has_jito_dontfront_mitigation():
     p = get_pattern("sandwich_mev")
     assert p is not None
     assert any("jitodontfront" in m for m in p.mitigations_agent)
+
+
+def test_concentrated_capture_pattern_registered():
+    p = get_pattern("concentrated_capture")
+    assert p is not None
+    assert p.category == "market_data"
+    assert p.coverage == "partial"
+    assert p.signals == ["concentrated_capture"]
+    # the honest framing: the residual that survives every automation tell off
+    assert p.on_chain_signature  # non-empty footprint description
+    assert p.mitigations_agent  # the agent has a documented response
+
+
+def test_concentrated_capture_signal_maps_to_pattern():
+    hits = {p.id for p in patterns_for_signals(["concentrated_capture"])}
+    assert "concentrated_capture" in hits
