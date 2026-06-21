@@ -20,11 +20,10 @@ from __future__ import annotations
 import logging
 import os
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from typing import Any
 
-import httpx
-
+from gecko_core.trade_agent.hotpath.helius_rpc import TxFetcher, make_tx_fetcher
 from gecko_core.trade_agent.hotpath.launch_runner import LaunchRunner, is_firewall_enabled
 from gecko_core.trade_agent.hotpath.pool_resolver import (
     ResolvedPool,
@@ -50,42 +49,6 @@ WATCHED_AMM_PROGRAMS: tuple[str, ...] = (
 )
 
 DEFAULT_MAX_POOLS = 200
-
-# A parsed-tx fetcher: signature -> parsed tx dict (or None). Injectable for tests.
-TxFetcher = Callable[[str], Awaitable[dict[str, Any] | None]]
-
-
-def _make_http_fetcher(api_key: str, http_base: str) -> TxFetcher:
-    url = f"{http_base}/?api-key={api_key}"
-
-    async def _fetch(signature: str) -> dict[str, Any] | None:
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as http:
-                resp = await http.post(
-                    url,
-                    json={
-                        "jsonrpc": "2.0",
-                        "id": 1,
-                        "method": "getTransaction",
-                        "params": [
-                            signature,
-                            {
-                                "encoding": "jsonParsed",
-                                "commitment": "confirmed",
-                                "maxSupportedTransactionVersion": 0,
-                            },
-                        ],
-                    },
-                )
-            result = resp.json().get("result")
-            return result if isinstance(result, dict) else None
-        except Exception as exc:  # fail-OPEN: a fetch error just skips this pool
-            logger.warning(
-                "discovery.fetch_failed sig=%s err=%s", signature[:16], type(exc).__name__
-            )
-            return None
-
-    return _fetch
 
 
 class PoolDiscovery:
@@ -196,7 +159,7 @@ def build_discovery(
     key = api_key or (os.environ.get("HELIUS_API_KEY") or "").strip()
     if not key or key == "__unset__":
         return None
-    return PoolDiscovery(runner, runner.ws_client, _make_http_fetcher(key, http_base))
+    return PoolDiscovery(runner, runner.ws_client, make_tx_fetcher(key, http_base=http_base))
 
 
 __all__ = [
