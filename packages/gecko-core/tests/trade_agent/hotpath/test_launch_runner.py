@@ -141,3 +141,119 @@ async def test_draining_buy_loop_reaches_cache():
     # The live path powers F1 (flow shape). It must at least flag elevated.
     assert pc.wash.label in {"elevated", "manipulated"}
     assert "thin_pool_buy_loop" in pc.wash.fired_signals
+
+
+# --------------------------------------------------------------------------- #
+# Free-path snipe ingest (logsSubscribe + getTransaction)                      #
+# --------------------------------------------------------------------------- #
+
+from gecko_core.trade_agent.hotpath.jito import JITO_TIP_ACCOUNTS  # noqa: E402
+from gecko_core.trade_agent.hotpath.snipe_features import LAMPORTS_PER_SOL  # noqa: E402
+
+_RAYDIUM = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
+_SYSTEM = "11111111111111111111111111111111"
+_TIP = next(iter(JITO_TIP_ACCOUNTS))
+
+
+class _FakeLogsWS:
+    """Fake ws exposing subscribe_account + subscribe_logs; captures callbacks."""
+
+    def __init__(self) -> None:
+        self.acct_cbs: dict[str, object] = {}
+        self.logs_cbs: list[object] = []
+        self._n = 0
+
+    async def subscribe_account(self, pubkey, callback):
+        self._n += 1
+        self.acct_cbs[pubkey] = callback
+        return self._n
+
+    async def subscribe_logs(self, mentions, callback):
+        self._n += 1
+        self.logs_cbs.append(callback)
+        return self._n
+
+
+def _logs_notif(sig: str) -> dict:
+    return {"result": {"value": {"signature": sig, "logs": ["Program log: ray_log"], "err": None}}}
+
+
+def _buy_tx(signer: str) -> dict:
+    return {
+        "blockTime": 1000,
+        "transaction": {
+            "message": {
+                "accountKeys": [{"pubkey": signer, "signer": True, "writable": True}],
+                "instructions": [
+                    {"programId": _RAYDIUM},
+                    {
+                        "programId": _SYSTEM,
+                        "parsed": {
+                            "type": "transfer",
+                            "info": {"destination": _TIP, "lamports": int(2e-4 * LAMPORTS_PER_SOL)},
+                        },
+                    },
+                ],
+            }
+        },
+        "meta": {
+            "err": None,
+            "preBalances": [int(5 * LAMPORTS_PER_SOL)],
+            "postBalances": [int(4 * LAMPORTS_PER_SOL)],
+            "innerInstructions": [],
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_free_logs_path_feeds_snipe_gate():
+    store = HotpathCache()
+    mon = LaunchMonitor(store)
+    ws = _FakeLogsWS()
+    fetched: list[str] = []
+
+    async def fake_fetch(sig: str):
+        fetched.append(sig)
+        return _buy_tx(f"W{len(fetched)}")  # a distinct fresh-ish buyer per sig
+
+    runner = LaunchRunner(mon, ws, tx_fetcher=fake_fetch, tx_mode="logs", now=lambda: 1030.0)
+    await runner.track_pool(
+        mint="MINT", pool_addr="P", base_vault="BV", quote_vault="QV", pool_created_ts=1000
+    )
+    assert ws.logs_cbs, "a logsSubscribe should have been registered for the free path"
+
+    # drive 4 swap-log notifications (4 distinct sigs) through the captured callback
+    cb = ws.logs_cbs[0]
+    for i in range(4):
+        await cb(_logs_notif(f"sig{i}"))
+
+    assert fetched == ["sig0", "sig1", "sig2", "sig3"]  # each unique sig fetched once
+    # de-dup: a repeat sig is not fetched again
+    await cb(_logs_notif("sig0"))
+    assert len(fetched) == 4
+
+    # the parsed swaps reached the monitor → a snipe verdict is produced
+    pc = await mon.recompute("MINT", 1030.0)
+    assert pc is not None and pc.snipe is not None
+    assert "jito_bundle_snipe" in pc.snipe.fired_signals
+
+
+@pytest.mark.asyncio
+async def test_logs_path_respects_fetch_cap():
+    from gecko_core.trade_agent.hotpath import launch_runner as lr
+
+    store = HotpathCache()
+    mon = LaunchMonitor(store)
+    ws = _FakeLogsWS()
+    calls = {"n": 0}
+
+    async def fake_fetch(sig: str):
+        calls["n"] += 1
+        return None  # parse result irrelevant; we're counting fetches
+
+    runner = LaunchRunner(mon, ws, tx_fetcher=fake_fetch, tx_mode="logs")
+    await runner.track_pool(mint="M", pool_addr="P", base_vault="BV", quote_vault="QV")
+    cb = ws.logs_cbs[0]
+    for i in range(lr.MAX_PARSED_FETCH_PER_POOL + 25):
+        await cb(_logs_notif(f"s{i}"))
+    assert calls["n"] == lr.MAX_PARSED_FETCH_PER_POOL  # capped (credit guard)
