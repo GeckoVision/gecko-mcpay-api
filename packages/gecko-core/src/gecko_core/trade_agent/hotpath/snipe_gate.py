@@ -17,6 +17,13 @@ It composes the tells the firewall already has primitives for into ONE scored
 * **uniform sizing** — bot loops use tight, identical sizes (fat-tailed = organic).
 * **LP drain** — the inflate-then-dump tail (large buys → reserve drop → same
   wallets exit).
+* **concentrated capture** — the residual fingerprint that survives every
+  automation tell being OFF (slot-spread + no tip + no shared ALT + multi-hop
+  funding + randomized sizing): a few wallets capturing a disproportionate share
+  of one-sided early buy volume. You can hide the *mechanism*; you cannot
+  simultaneously *capture the float* AND *look like a diverse organic crowd*. The
+  diversity-deficit (few wallets buying many times, not many wallets buying once)
+  is the discriminator vs a genuinely hyped fair launch.
 
 Pure + deterministic (``pydantic``/stdlib only): takes a :class:`SnipeSnapshot`
 of already-extracted features + an optional live tip floor, returns a
@@ -56,6 +63,21 @@ W_UNKNOWN_PROGRAM = (
 W_SHARED_ALT = 0.25  # distinct buyers sharing an execution rig (ALT) — survives funder laundering
 W_CO_BUY = 0.15
 W_LP_DRAIN = 0.45  # the inflate-then-dump tail — strong on its own
+
+# Concentrated-capture (the residual that survives every automation tell off). W
+# is tuned so the signal reaches `suspicious` ALONE (raises the floor from clean —
+# the honest win) and escalates to `block` WITH any corroborating tell (see
+# _concentration_corroborated). High enough to be decisive when fused; never a
+# block on its own except in the EXTREME tier below.
+W_CONCENTRATION = 0.30
+CONC_T = 0.60  # top-5 buyers hold ≥60% of buy notional = float-capture concentration
+ONESIDE_T = 0.90  # buy_notional/(buy+sell) ≥0.90 = pure accumulation, no discovery
+DIV_T = 1.5  # buy_count/buyer_count ≥1.5 = diversity-deficit (few wallets, many buys)
+MIN_CONC_BUYERS = 5  # never fire on a trivial 1-4 buyer pool (noise)
+# EXTREME tier: a near-single-wallet, near-zero-sell capture. No fair launch looks
+# like this; it blocks ALONE (even at launch), like lp_drain's escalation.
+EXTREME_CONC_T = 0.85
+EXTREME_ONESIDE_T = 0.97
 
 LABEL_SUSPICIOUS = 0.30
 LABEL_LIKELY_SNIPED = 0.65
@@ -98,6 +120,23 @@ class SnipeSnapshot(BaseModel):
         ge=0,
         description="distinct buyers sharing a non-public ALT (same execution rig).",
     )
+    buy_count: int = Field(
+        default=0,
+        ge=0,
+        description="number of buy swaps (vs buyer_count = distinct buyers); ratio = diversity-deficit.",
+    )
+    top_buyer_share: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="top-5 buyers' share of total BUY notional (float-capture concentration).",
+    )
+    one_sided_ratio: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="buy_notional / (buy_notional + sell_notional); →1.0 = pure accumulation.",
+    )
     lp_drained: bool = Field(
         default=False, description="large buys → reserve drop → same wallets exit."
     )
@@ -134,6 +173,7 @@ def _has_inputs(s: SnipeSnapshot) -> bool:
         or s.shared_alt_buyers
         or s.lp_drained
         or s.max_buy_tip_sol
+        or s.top_buyer_share
     )
 
 
@@ -226,7 +266,77 @@ def _lp_drain(s: SnipeSnapshot) -> _Sig:
     )
 
 
-def _label_for(score: float, *, lp_drained: bool) -> str:
+def _concentrated_capture(s: SnipeSnapshot) -> _Sig:
+    """The residual fingerprint: float-capture concentration without diversity.
+
+    Survives every automation tell being off (slot-spread, no tip, no shared ALT,
+    multi-hop funding, randomized sizing). FIRES when a few wallets hold a
+    disproportionate share of one-sided early buy volume AND the buys come from
+    few wallets buying many times (the diversity-deficit) — NOT from a diverse
+    crowd. The diversity-deficit gate is the key FP discriminator: a real hyped
+    fair launch has many distinct buyers each buying ~once (ratio →1, below DIV_T)
+    so it does NOT fire; a capture loop is few wallets buying many times (ratio
+    high) so it fires.
+    """
+    code = "concentrated_capture"
+    if (
+        s.buyer_count < MIN_CONC_BUYERS
+        or s.top_buyer_share is None
+        or s.one_sided_ratio is None
+        or s.buyer_count <= 0
+    ):
+        return _Sig(False, code, W_CONCENTRATION, None)
+    diversity_deficit = s.buy_count / s.buyer_count
+    if not (
+        s.top_buyer_share >= CONC_T
+        and s.one_sided_ratio >= ONESIDE_T
+        and diversity_deficit >= DIV_T
+    ):
+        return _Sig(False, code, W_CONCENTRATION, None)
+    return _Sig(
+        True,
+        code,
+        W_CONCENTRATION,
+        (
+            f"top-5 buyers hold {s.top_buyer_share:.0%} of buy notional, "
+            f"{s.one_sided_ratio:.0%} one-sided, {diversity_deficit:.1f} buys/buyer "
+            f"(few wallets capturing the float — not an organic crowd)"
+        ),
+    )
+
+
+def _is_extreme_concentration(s: SnipeSnapshot) -> bool:
+    """A near-single-wallet, near-zero-sell capture — no fair launch looks like this.
+
+    Mirrors the lp_drain escalation: an EXTREME structural read forces the label up
+    regardless of corroboration. Requires the base signal's diversity-deficit to
+    also hold (kept inside :func:`_concentrated_capture`'s fire check), so this is a
+    strictly-stronger tier of the same fired signal, never a standalone over-claim.
+    """
+    return bool(
+        s.buyer_count >= MIN_CONC_BUYERS
+        and s.top_buyer_share is not None
+        and s.one_sided_ratio is not None
+        and s.top_buyer_share >= EXTREME_CONC_T
+        and s.one_sided_ratio >= EXTREME_ONESIDE_T
+    )
+
+
+def _label_for(
+    score: float,
+    *,
+    lp_drained: bool,
+    concentration_corroborated: bool = False,
+    extreme_concentration: bool = False,
+) -> str:
+    # EXTREME concentration or concentration + any corroborating tell forces the
+    # verdict to at least likely_sniped (→ gate "block"), independent of the raw
+    # weight sum: W_CONCENTRATION alone is a `suspicious` floor by design, and a
+    # captured float corroborated by even one other tell is a block.
+    if extreme_concentration or concentration_corroborated:
+        if lp_drained:
+            return "confirmed_wash"
+        return "likely_sniped"
     if lp_drained and score >= LABEL_LIKELY_SNIPED:
         return "confirmed_wash"
     if score >= LABEL_LIKELY_SNIPED:
@@ -255,6 +365,7 @@ def assess_snipe(snap: SnipeSnapshot, tip_floor: TipFloor | None = None) -> Snip
         _shared_alt(snap),
         _co_buy(snap),
         _lp_drain(snap),
+        _concentrated_capture(snap),
     ]
     fired = [s for s in sigs if s.fired]
     if not fired:
@@ -275,10 +386,28 @@ def assess_snipe(snap: SnipeSnapshot, tip_floor: TipFloor | None = None) -> Snip
             fired_signals=[],
         )
 
+    # Concentrated-capture escalation (mirrors lp_drain): a captured float
+    # corroborated by ANY other fired tell is a block; an EXTREME capture
+    # (near-single-wallet, near-zero-sell) blocks alone — even at launch, since no
+    # fair launch shows that shape. A LONE moderate concentration stays a
+    # `suspicious` floor (W_CONCENTRATION = LABEL_SUSPICIOUS), incl. at launch:
+    # the launch FP guard is satisfied by NOT escalating it to block.
+    fired_codes = {s.code for s in fired}
+    concentration_fired = "concentrated_capture" in fired_codes
+    extreme_concentration = concentration_fired and _is_extreme_concentration(snap)
+    concentration_corroborated = concentration_fired and bool(
+        fired_codes - {"concentrated_capture"}
+    )
+
     score = min(1.0, sum(s.weight for s in fired))
     return SnipeBlock(
         score=round(score, 4),
-        label=_label_for(score, lp_drained=snap.lp_drained),
+        label=_label_for(
+            score,
+            lp_drained=snap.lp_drained,
+            concentration_corroborated=concentration_corroborated,
+            extreme_concentration=extreme_concentration,
+        ),
         reasons=[s.reason for s in fired if s.reason],
         fired_signals=[s.code for s in fired],
     )

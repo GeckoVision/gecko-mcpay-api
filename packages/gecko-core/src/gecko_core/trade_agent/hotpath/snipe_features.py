@@ -89,15 +89,19 @@ def build_snipe_snapshot(
 ) -> SnipeSnapshot:
     """Aggregate parsed swaps for one mint into a :class:`SnipeSnapshot`.
 
-    Only **buys** drive the launch-integrity signals (a snipe is a coordinated buy
-    cluster). ``now``/``launch_time`` set ``age_seconds`` so the gate's launch FP
-    guard can fire. ``lp_drained`` is passed through (its detector — reserve-series
-    drop + early-buyer exit — is a separate upstream signal not computed here).
+    Buys drive the launch-integrity signals (a snipe is a coordinated buy cluster);
+    sells contribute only to ``one_sided_ratio`` (the accumulation-vs-discovery
+    read for concentrated-capture). ``now``/``launch_time`` set ``age_seconds`` so
+    the gate's launch FP guard can fire. ``lp_drained`` is passed through (its
+    detector — reserve-series drop + early-buyer exit — is a separate upstream
+    signal not computed here).
     """
     buys = [s for s in swaps if s.is_buy]
+    sells = [s for s in swaps if not s.is_buy]
 
     buyers = {s.signer for s in buys}
     buyer_count = len(buyers)
+    buy_count = len(buys)
 
     # most distinct buyers seen in any single slot (the co-buy cluster)
     per_slot: dict[int, set[str]] = {}
@@ -137,6 +141,26 @@ def build_snipe_snapshot(
     notional_p50 = _percentile(notionals, 0.50)
     notional_p95 = _percentile(notionals, 0.95)
 
+    # --- concentrated-capture features (the residual that survives every tell off) #
+    # top_buyer_share: top-5 buyers' share of total BUY notional. High = a few
+    # wallets captured the float; can't look like a diverse organic crowd.
+    buy_notional_by_buyer: dict[str, float] = {}
+    for s in buys:
+        buy_notional_by_buyer[s.signer] = buy_notional_by_buyer.get(s.signer, 0.0) + s.notional_sol
+    total_buy_notional = sum(buy_notional_by_buyer.values())
+    top_buyer_share: float | None = None
+    if total_buy_notional > 0:
+        top5 = sorted(buy_notional_by_buyer.values(), reverse=True)[:5]
+        top_buyer_share = min(1.0, sum(top5) / total_buy_notional)
+
+    # one_sided_ratio: buy_notional / (buy + sell). →1.0 = pure accumulation, no
+    # price discovery. A two-sided market-maker is ~0.5 and won't trip the gate.
+    sell_notional = sum(s.notional_sol for s in sells)
+    one_sided_ratio: float | None = None
+    denom = total_buy_notional + sell_notional
+    if denom > 0:
+        one_sided_ratio = total_buy_notional / denom
+
     age_seconds: float | None = None
     if launch_time is None:
         ts = [s.timestamp for s in buys if s.timestamp is not None]
@@ -156,6 +180,9 @@ def build_snipe_snapshot(
         max_buy_tip_sol=max_buy_tip_sol,
         notional_p50=notional_p50,
         notional_p95=notional_p95,
+        buy_count=buy_count,
+        top_buyer_share=top_buyer_share,
+        one_sided_ratio=one_sided_ratio,
         lp_drained=lp_drained,
     )
 
