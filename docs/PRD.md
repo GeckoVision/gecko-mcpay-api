@@ -1,196 +1,274 @@
-# Builder Bootstrap Platform — PRD
+# Gecko — Decision Firewall for Solana — PRD
 
-**Version:** 1.3
-**Date:** May 2, 2026
+**Version:** 2.0
+**Date:** June 2026
 **Author:** Ernani Britto
-**Status:** Active — V1 shipped, S18 cutover in flight
+**Status:** Active — detection engine shipped; firewall dark in prod pending real-launch threshold validation
+
+> **Supersedes the Builder-Bootstrap research-tool era (≤ May 2026); current as of June 2026.**
+> The pre-pivot "idea → business plan / validation / PRD" product is dead. This document
+> describes the current product: a pre-trade decision firewall for Solana.
 
 ---
 
 ## Positioning / What Gecko Is
 
-> **Gecko gives crypto builders a deep, multi-voice verdict on their idea — with the dissent and falsifiers attached — so they know what to do next. Complementary to frames.ag (settlement) and Bazaar (marketplace).**
+> **Gecko is the decision firewall for Solana — it tells AI agents and launchpads whether a token's market is real or manufactured, before any capital moves.**
 
-This is the one sentence. It appears verbatim in `docs/product-story.md`, `app.geckovision.tech/skill.md` (sister repo `gecko-mcpay-skills`), and the CLI splash. Drift between them is a S18-WEDGE-CLAIM-01 regression — fix at the source, not by re-paraphrasing.
+**Tagline:** *Every tool checks the contract. Gecko checks the market is real.*
 
----
+**Peer-to-stack line:** *Execution has BAM. Decisions have Gecko.*
 
-## Vision
+This is the one positioning. It appears verbatim in `docs/product-story.md`, the public
+`app.geckovision.tech/skill.md` (sister repo `gecko-claude`), and any user-facing copy.
+Drift between surfaces is a regression — fix at the source, not by re-paraphrasing.
 
-> Turn a plain-language startup idea into a searchable knowledge base, a business plan, a validation report, and a PRD — in under 30 minutes — billed as a single session via x402 on Solana.
+### The wedge in one paragraph
 
----
-
-## Problem
-
-Every builder hits the same wall before writing a single line of code: hours of manual research, unstructured notes, and no clear signal on whether the market is real. The current workflow — find videos, manually transcribe, drown in notes, attempt a business plan from intuition — takes 20+ hours and still produces uncertain output. No tool solves the whole workflow. Tools exist for pieces of it; none deliver structured, cited, actionable output from a plain-language idea.
-
----
-
-## User Personas
-
-### Persona 1 — Claude Code / Cursor power user with founder ambition (V1 Primary)
-
-> **V1 ICP:** Claude Code / Cursor power users with founder ambition — technical or technical-adjacent.
-
-| Attribute | Detail |
-|-----------|--------|
-| **Who** | Claude Code / Cursor power users with founder ambition — technical or technical-adjacent. Senior engineers, technical founders, AI-native builders, and indie hackers who already live in the terminal and treat Claude Code skills as a native install surface. |
-| **Has** | Fluency with CLI tooling, AI-pair-programming workflow, idea backlog, willingness to pay per session |
-| **Lacks** | Market validation, structured research, fundable PRD before writing code |
-| **Goal** | Know if the idea is worth building — and walk away with the three docs that prove it — before opening the editor |
-| **Pain** | Research takes longer than building; output is unstructured and uncited; "vibe-coded" specs collapse on contact with the market |
-| **Interface** | CLI-first via `bb` / `gecko` skill; comfortable with terminal output, session IDs, and on-chain receipts |
-| **Distribution fit** | Lands inside Claude Code via `Read app.geckovision.tech/skill.md` — by definition, this audience is CC-literate |
-
-### Future expansion — Non-Technical Founder (Sprint 12+ / V2 audience)
-
-The thesis-research "Non-developer founders" dimension surfaces a real, underserved audience (~18% startup success rate without a technical co-founder). They are **not** a V1 target because the CLI is the wrong surface for them. They become reachable when the `app.geckovision.tech` web app ships in V2.
-
-| Attribute | Detail |
-|-----------|--------|
-| **Who** | Domain expert, operator, or solo founder with a business idea but no technical co-founder |
-| **Has** | Market instinct, lived pain, domain knowledge |
-| **Lacks** | Technical ability to build, structured data, validated market signal |
-| **Goal** | Get a business plan, validation report, and PRD without hiring a consultant or finding a CTO |
-| **Pain** | Tools require technical assembly; output is generic without domain context; CLI is a hard wall |
-| **Interface** | GUI-first via `app.geckovision.tech`; expects progress feedback and a polished document reveal moment |
-| **Unlock condition** | V2 web app ships with Privy embedded wallet + session sharing (Sprint 12+) |
+Contract scanners (RugCheck, GoPlus, Solsniffer) check the **code** — is the mint renounced,
+is there a freeze authority, is it a honeypot. That axis is crowded. Gecko checks a different,
+empty axis: **is the market real** — or is the demand manufactured by snipers, wash trades,
+and a painted price history. Gecko fuses on-chain behavior across **wallets × slots × pools**
+into a single pre-trade verdict (`ok` / `caution` / `block` + reasons + surviving dissent) that
+an agent or launchpad acts on **before committing capital**. Gecko **verifies; it never deploys,
+executes, custodies, or reorders.** That boundary is the product.
 
 ---
 
-## V1 — Hackathon Scope
+## The Problem (the narrative spine — two sourced failures)
 
-> **Status: Shipped.** All V1 requirements are implemented.
+### 1. The drain — Drift, ~$285M, April 2026
 
-### Core Requirements
+A governance / control-plane compromise, not a contract bug. Drift ran a Squads V4 multisig
+(2-of-5, **zero timelock**). A months-long social-engineering campaign compromised two signers'
+devices; the attacker pre-signed admin transactions with **durable nonces** (valid indefinitely,
+sat on-chain ~1 week), executed an `UpdateAdmin`, created a fake market for their own token (CVT)
+with a **controlled oracle** pricing fake collateral at $1, disabled circuit breakers, and drained
+~$285M. The contracts stayed intact the whole time.
 
-| Feature | Description | Acceptance Criteria |
-|---------|-------------|---------------------|
-| **CLI entry point** | `bb` command with three subcommands: `research`, `ask`, `sources` | `bb --help` lists all commands; each has `--help` with argument docs |
-| **`bb research`** | Main workflow: discover → index → pay → generate → output | Given a valid `--idea` and env vars, produces all three documents in terminal |
-| **`--tier basic\|pro`** | Selects orchestration and pricing tier | `basic` runs single-pass LLM; `pro` runs AutoGen GroupChat; default is `basic` |
-| **`--urls`** | User-provided seed URLs for indexing | Provided URLs are indexed alongside or instead of auto-discovered sources |
-| **Tavily source discovery** | Auto-discovers top sources when no URLs provided | Given an idea string, returns 5–10 relevant source URLs ranked by relevance |
-| **YouTube adapter** | Extracts transcript from YouTube URLs | Returns cleaned plain text from `youtube-transcript-api`; handles missing captions gracefully |
-| **Web adapter** | Extracts text from article/blog URLs | Returns main body text via `httpx`; strips nav, footer, boilerplate |
-| **Chunker** | Splits raw text into 512-token chunks with 50-token overlap | All chunks are ≤ 512 tokens; no chunk drops content between boundaries |
-| **Embedder** | Generates vector embeddings per chunk | Uses `text-embedding-3-small`; stores in Supabase pgvector |
-| **Ingestion pipeline** | Orchestrates extract → chunk → embed → store per source | Session, sources, and chunks are persisted; duplicate URLs are skipped |
-| **x402 payment gate** | Charges session fee before indexing starts | No indexing runs without a completed payment; `stub` mode passes gate for dev/testing |
-| **Basic orchestration** | Single GPT-4o-mini pass → three JSON documents | Returns valid JSON with `business_plan`, `validation_report`, `prd` keys |
-| **Pro orchestration** | AutoGen GroupChat with 5 specialist agents | Orchestrator, Research, Market Analyst, Technical Architect, Validator agents produce structured output; agents stay alive 72h post-session |
-| **RAG tool for Pro agents** | `rag_query()` available to Pro agents during GroupChat | Agents can pull context from the session knowledge base via pgvector similarity search |
-| **Document renderer** | Formats and prints all three documents to terminal | Output uses `rich` formatting; sections are clearly separated; sources are cited |
-| **`bb ask`** | Follow-up question against an existing session's knowledge base | Returns a grounded answer with citations from the session corpus |
-| **`bb sources`** | Lists all indexed sources for a session | Returns source URL, type (youtube/web), chunk count, and indexed timestamp |
-| **Session persistence** | Every workflow is stored as a session in Supabase | Session ID, tier, status, timestamps, and linked sources/chunks persist across restarts |
+**Honest framing:** Gecko **scores governance hygiene** (multisig threshold, timelock presence,
+authority-holder classification, upgrade/metadata authority) and **detects the manufactured market**
+(wash-traded price history, controlled-oracle divergence). Gecko does **not** run anyone's multisig
+and does **not** claim it would have stopped the signer compromise. The deck line is *"Gecko flags
+the control plane"* — never *"Gecko would have blocked Drift."* (Sources: CoinDesk, Chainalysis,
+BlockSec precise figure $285,279,417.69.)
 
-### Verdict vocabulary
+### 2. Launch mortality — the core wedge
 
-The structured single-token headline emitted alongside the three documents. Source of truth: ``gecko_core.models.Verdict``.
+- **>50% of pump.fun tokens are sniped in the exact creation block** (Pine Analytics, Apr 2025).
+- **~1% ever graduate** (The Block / pump.fun data).
+- **~75% are inactive within a day** (CCN).
 
-| Token | Trigger | Meaning |
-|-------|---------|---------|
-| **GO** | ``Partial:pricing`` / ``Partial:integration`` gap + advisor consensus ≥ 0.8 | Greenlit — ship V1 to the named buyer |
-| **REFINE** | ``Partial:segment``, ``Partial:UX``, ``Partial:geo`` gaps; or any partial without clean consensus; or low-grounding floor | Sharpen the wedge before building |
-| **PIVOT** | ``Full`` or ``False`` gap | Idea as-stated should be redirected, not built |
-| **KILL** | ≥2 voices in the pro debate flag premise incoherence (S20-COHERENCE-VERDICT-LABEL-01) | Premise is incoherent or unverifiable; no amount of refinement saves it |
-
-`KILL` is pro-tier-only — basic-tier never has the multi-voice signal to fire it. The S20 KILL is structurally distinct from the legacy v1 ``KILL`` token (renamed to ``PIVOT`` in S17): the trigger is premise incoherence, not "weak idea."
-
-### Pricing (V1)
-
-| Tier | Price | Mode |
-|------|-------|------|
-| Basic | $10–20 / session | x402, before indexing starts |
-| Pro | $50–100 / session | x402, before indexing starts |
-| `X402_MODE=stub` | $0 | Dev/demo — gate passes without charge |
+**The mechanism:** snipers capture supply at block 0 → manufactured volume paints the chart →
+real buyers arrive and become exit liquidity → the token dies. This is Gecko's core wedge: detecting
+manufactured launch demand at Block Zero, before an agent buys or a launchpad lists.
 
 ---
 
-## V2 — Post-Hackathon
+## Buyers / ICP
 
-> **Status: Planned.** Target: Months 1–3 post-hackathon.
+Two buyers, one product. Critically — **the issuer-as-victim is NOT the primary buyer.** Many
+memecoin issuers ARE the snipers, or are complicit/indifferent. "Retain your holders" is downstream
+evidence in a launchpad pitch, never the primary sell.
 
-- **Next.js web app** — GUI for non-technical founders; same workflow as CLI with progress indicators and a polished document reveal moment
-- **Creator attribution graph** — Every indexed source stores creator handle + platform from day one; graph accumulates which creators' content produces the most valuable research across domains
-- **Creator OAuth claim flow** — Creator logs in, sees "Your content was cited 47 times — $32 pending"; claims earnings without a cold pitch
-- **Creator earnings settlement** — 70% of Pro query fees flow to cited creators; batch-settled when ≥ $15 accumulated on-chain
-- **Web app auth** — Privy embedded wallet for non-technical founders; no seed phrase required
-- **Session sharing** — Session link shareable with co-founders; read-only knowledge base access
+| Buyer | JTBD | Why they pay |
+|---|---|---|
+| **AI agent runtimes / autonomous traders** (primary, decision-integrity) | "Is this launch clean before I deploy capital?" | Immediate, calculable WTP — a bad fill is a measurable loss. Synchronous per-call veto. |
+| **Launchpads** (reputation / integration revenue) | "Score and badge the tokens we list so real liquidity routes to us." | Reputation is at stake; they already pay. The GoPlus SafeToken playbook — **$1.7M revenue via launchpad integrations** (PancakeSwap Springboard, Clanker, etc.), not per-issuer sales. |
+
+**Distribution channels** (the long-tail carriers, not the buyer): agent-framework builders
+(SendAI / Solana Agent Kit, ElizaOS, OKX OnchainOS), DeFi protocols with collateral-whitelisting
+risk (post-Drift, actively shopping), agent marketplaces.
+
+> **Distribution is the binding constraint, not features.** Direct-to-indie-dev per-call is a trap
+> (micro-price can't fund discovery). The scalable path is framework-embedding — win 1–3 integrations,
+> they carry the long tail (the Snyk / GoPlus playbook). MCP + x402 solve "try it," not "make it default."
 
 ---
 
-## V3 — Marketplace
+## Distribution
 
-> **Status: Roadmap.** Target: Months 3–6 post-hackathon.
+The primary distribution surface is a **SendAI (Solana Agent Kit) adapter** — *"agents check before
+they operate"* — plus the **MCP** server (the Claude Code surface) and **x402** for metered payment.
+Launchpad integration is the second channel. Each is a thin transport layer over `gecko-core`.
 
-- **Creator marketplace** — Curated directory of high-signal creators by domain; builders can pay to access creator-specific knowledge bases
-- **Subscription Pro tier** — Monthly subscription unlocks unlimited sessions + persistent agent team
-- **Public Knowledge API** — Programmatic access to session knowledge bases; enables other tools to query indexed domain research
-- **Oracle social integrations** — Automated quality scoring for indexed sources (engagement, authority, recency)
-- **Multi-language support** — Spanish and Portuguese for SuperteamBrasil and LATAM communities
+---
+
+## The Product — two-tier surface
+
+| Surface | Price | What it does | Role |
+|---|---|---|---|
+| **`/safety` firewall** | **FREE** (sub-second) | Cache-read pre-trade verdict: `ok` / `caution` / `block` + reasons. Static contract read + the launch-integrity (snipe/wash) fusion. | **Acquires users, warms the cache, funds the moat.** Not a business on its own (~$3/agent/mo cost). |
+| **`/trade_research` oracle** | **PAID** (~$0.75/verdict) | Deep verdict: 7-voice adversarial debate, surviving dissent, citations, on-chain receipt. | **Earns the users with real money on the line.** 90–96% margin; concrete WTP. |
+
+> *The firewall acquires users; the oracle earns the ones with real money on the line.*
+
+Cache-then-charge is the margin lever: cost scales with **distinct tokens**, revenue with **agents**
+— sublinear. A "no" (block) is billed exactly like a "yes" — the verdict is the product, not the answer.
+
+---
+
+## The Moat — the compounding verdict ledger
+
+The moat is **not** the detector (an engine — copyable, table-stakes), **not** the flywheel (the
+distribution mechanism that *feeds* the moat), **not** the on-chain hook (a feature / switching cost).
+
+**The moat is the compounding ledger of verdicts Gecko commits BEFORE each launch resolves, then
+grades by what the launch actually did** — proprietary `(Block-0 signal → resolved outcome)` label
+pairs no competitor can backfill.
+
+> *Distribution buys traffic, not truth.* A competitor with 700M scans/month can match distribution,
+> but a contract scan is backfillable; a pre-act verdict with a pre-outcome timestamp is not.
+
+Compounding loop: pay → committed verdict → outcome resolves → label → precision rises + an auditable
+track record ("Gecko-verified rugged ~2% vs ~40% baseline") → agents route liquidity to verified
+tokens → verification becomes mandatory → more issuers seek it.
+
+---
+
+## Architecture — verify-not-execute, detect → verdict → receipt
+
+### Where Gecko sits (Jito / BAM neutrality)
+
+There are two distinct neutralities. Gecko owns the empty one.
+
+| Axis | Question | Owner |
+|---|---|---|
+| **Execution neutrality** | Whose tx goes first? Was it ordered honestly? | **BAM** (TEE-encrypted, cryptographically attested ordering) |
+| **Decision neutrality** | Is the market the decision rests on *real* — or sniped / wash-inflated / oracle-poisoned? | **Empty seat → Gecko** |
+
+> **BAM makes execution trustworthy; Gecko makes the decision trustworthy.**
+
+Orthogonality proof: BAM would have ordered and attested the Drift drain flawlessly — the money still
+leaves. Perfect execution neutrality, zero decision integrity. (Full treatment: `docs/concepts/jito-101.md`.)
+
+### Two enforcement postures (no in-flight intercept)
+
+Solana has **no mempool** — there is no pending-tx stream to intercept. Never claim Gecko "blocks in
+the block" or "intercepts in-flight." The two honest postures are:
+
+1. **ADVISE** — after `confirmed` (~0.6–2s), emit a verdict that guides whoever acts NEXT. Cannot undo
+   a landed tx; it is a first-mover signal layer. The shipped surface is `/safety` + the MCP
+   `gecko_safety` tool; the SendAI Agent-Kit pre-trade adapter is **designed, not built** (the
+   in-repo `sendai` modules are execution stubs — the prototype slice wires the firewall consumer).
+2. **ENFORCE** — a Token-2022 transfer-hook denylist: a PDA written *before* block 0; the hook reverts
+   disallowed transfers at execution time (downstream of Jito placement, never touching the auction).
+   Designed, not shipped.
+
+Programs have no network I/O — on-chain enforcement reads pre-published PDA state; it cannot call
+Gecko's API. (Full treatment: `docs/concepts/solana-101.md`.)
+
+### Signals the engine fuses (shipped)
+
+A single scored `launch_integrity` verdict, fused across wallets × slots × pools — the axis no one
+else occupies (Jito sees one bundle; scanners see one snapshot):
+
+- **Snipe gate** — same-slot co-buy, Jito-bundle snipe (tip-account transfer), fresh-wallet swarm,
+  fee/tip outlier (vs live p95 tip floor), unknown-program route, shared-ALT execution-rig identity,
+  LP drain (inflate-then-dump), concentrated-capture (the residual that survives every automation tell
+  being off — float-capture without crowd diversity).
+- **Wash signals** — thin-pool buy-loop, self-trade/ring, common-funder sybil, multi-pool price-bait
+  (index-price truth).
+- **Program reputation** — bundle → originating-program attribution; first-seen custom program tell.
+- **ALT identity** — clustering by shared execution rig, survives wallet re-funding that defeats funder graphs.
+
+Framing terms used internally and in technical copy: **"Information-MEV," "Layer 4," "Plane C ·
+Data-Integrity Gate."** Public surfaces show buckets (`ok` / `caution` / `block`), never raw scores.
+
+---
+
+## Roadmap tiers
+
+### Now (shipped / shipping)
+
+| Item | Status |
+|---|---|
+| Detection engine + all signals above | **Shipped** (in `gecko_core/trade_agent/hotpath/`) |
+| Mainnet-fork attack→block demo (surfpool, $0) — attack→block, evasion→caution, organic→clean | **Shipped + PASSES** |
+| `/safety` free firewall surface (cache-read) | **Shipped** (cold path on-demand; dark for live pools — see status table) |
+| MCP `gecko_safety` tool → `/safety` (free agent surface) | **Shipped** |
+| x402 receipt hash + `/v1/receipt/verify` | **Shipped** (on-chain anchor built, 0 callers — wired by the prototype) |
+| SendAI Agent-Kit pre-trade adapter (the "agent checks before it acts" consumer) | **Designed — NOT built** (in-repo `sendai` is execution-only; the prototype slice wires it) |
+| Verdict ledger (the moat — persisted, graded-by-outcome) | **Designed — NOT wired** (no verdict persisted today; the prototype writes the first row) |
+
+### Next (designed / partial)
+
+| Item | Status |
+|---|---|
+| Token-2022 transfer-hook enforcement (denylist PDA) | **Designed** |
+| Governance-hygiene scoring (multisig threshold, timelock, authority classification, durable-nonce detector) | **Designed / partial** (SafetyBlock has mint/freeze flags; ~70% of the slice exists) |
+| Real-launch threshold backtest → flip `GECKO_FIREWALL_ENABLED` on | **The open validation** (see status table) |
+| `/trade_research` paid oracle as the revenue surface | Built; gated on the firewall funnel maturing |
+
+### NCN — ~2027 (the "official layer + rail")
+
+A **Gecko Verification NCN** on Jito's **restaking** arm — operators run the panel, stakers back
+honesty, slashing if a verdict contradicts its evidence. Mirrors the accepted **Blocksize RPC-NCN**
+pattern; **JIP-fundable.** This is **not** a BAM plugin — a plugin governs sequencing, which would force
+Gecko into execution and break verify-not-execute. **Honest gap:** no named Jito-ecosystem design
+partner yet; the technical seam is real, the commercial seam is unvalidated.
+
+---
+
+## Honest status table (do NOT overclaim)
+
+| Capability | Maturity | Honest claim |
+|---|---|---|
+| Detection engine + signals | **SHIPPED** | Pure, deterministic, falsifiable against synthetic snapshots. |
+| Mainnet-fork attack→block demo (surfpool) | **SHIPPED, PASSES** | "Caught on real mainnet-forked state, $0." Fidelity gaps noted (wallet-age fresh-by-construction; Jito tip footprint-faithful not placement-faithful). |
+| `/safety` surface | **SHIPPED** | Cache-read verdict; runs on-demand today. |
+| Token-2022 enforcement hook | **DESIGNED** | Spec'd; not built. |
+| Governance-hygiene scoring | **PARTIAL** | Mint/freeze flags exist; multisig/timelock/durable-nonce scoring designed. |
+| Verification NCN | **DESIGNED, ~2027** | Technical seam real; no design partner; JIP-fundable. |
+| **Threshold validation** | **THE OPEN VALIDATION** | Thresholds are fork/synthetic-validated, **NOT yet validated against real-launch distributions.** The firewall stays **DARK in prod** (`GECKO_FIREWALL_ENABLED=false`) until a real-launch threshold backtest. The live-signal path also needs a Helius plan exposing `transactionSubscribe`. |
+| Payments | **STUB** | `X402_MODE=stub` — code path validated, no real settlement, pending explicit go-ahead. |
+
+**Standing honesty rules:**
+- Solana has no mempool → **never** claim "blocks in-block" or "intercepts in-flight." Detect-and-advise,
+  or enforce at transfer-exec.
+- **Fail-OPEN:** an `unknown` verdict is not "safe." Unknown ≠ pass.
+- **Buckets, not raw scores.** No public leaderboards.
 
 ---
 
 ## Non-Functional Requirements
 
 | Requirement | Target |
-|-------------|--------|
-| **Indexing latency** | Full ingestion pipeline (5 sources) completes in < 3 minutes |
-| **Document generation latency (Basic)** | Single LLM pass returns documents in < 60 seconds |
-| **Document generation latency (Pro)** | AutoGen GroupChat completes in < 5 minutes |
-| **Per-session cost ceiling** | Total infra cost (embeddings + LLM + Tavily + storage) ≤ $5 at Pro tier |
-| **Data retention** | Session knowledge bases retained for 90 days minimum; Pro agent context lives 72h post-session |
-| **Security** | No user private keys stored; `SUPABASE_SERVICE_ROLE_KEY` server-only; no model branding exposed to end users |
-| **Cost-per-query transparency** | Never shown to the user — session pricing is the unit, not per-operation cost |
-| **LLM output format** | All LLM responses use `response_format={"type": "json_object"}`; no free-form text parsing |
+|---|---|
+| **Warm-serve latency** (`/safety` cache hit) | Sub-millisecond — serve does zero reasoning; returns a pre-computed verdict from cache. |
+| **Detection latency** (ingest → verdict) | 0–2s window; verdict emitted at `confirmed` (~0.6s). ShredStream's ~120ms edge is irrelevant to this budget (we do not build it). |
+| **False-positive rate** | Near-zero required — a "no" has invisible/negative immediate value; devs disable a noisy firewall in a week. Every block carries its evidence envelope. |
+| **Security** | No user private keys stored; `SUPABASE_SERVICE_ROLE_KEY` server-only; `X402_MODE` passed through every payment-touching path (default `stub`); URLs validated (no SSRF); LLM input tokens capped. |
+| **Output discipline** | No model branding, no token counts, no per-operation cost shown to users. Buckets, not raw scores. No raw embeddings in output. LLM JSON responses use `response_format={"type": "json_object"}`. |
 
 ---
 
 ## Success Metrics
 
-### V1 — Hackathon
-
 | Metric | Target |
-|--------|--------|
-| Hackathon placement | Top 3, Stablecoins track |
-| Live sessions run during demo | ≥ 1 end-to-end session on stage |
-| Demo command | `bb research --idea "hotel guide in Brazil"` produces all three documents without error |
-| Judge comprehension | Judges can explain the product back in one sentence |
+|---|---|
+| Mainnet-fork demo | attack→`block`, evasion→`caution`, organic→`clean` — all green (**met**) |
+| Real-launch threshold backtest | Precision / FP-rate measured against labeled real-launch distributions before go-live (**[TBD]** — the gating validation) |
+| Framework integrations | ≥1 framework partnership (SendAI adapter live + carried) before a competitor copies the wash/oracle axis |
+| Verdict ledger | First N pre-committed verdicts graded by resolved outcome — the labeled-attack benchmark begins compounding |
+| Revenue (`/trade_research`) | First paid verdicts at ~$0.75 once the firewall funnel matures |
 
-### V2 — Post-Hackathon (Month 3)
-
-| Metric | Target |
-|--------|--------|
-| Monthly active sessions | ≥ 100 sessions/month |
-| Creator attribution claims | ≥ 10 creators claim profiles |
-| Web app conversion | ≥ 30% of web visitors start a session |
-| Pro tier adoption | ≥ 20% of sessions on Pro |
-
-### V3 — Marketplace (Month 6)
-
-| Metric | Target |
-|--------|--------|
-| Marketplace GMV | $5,000/month in creator earnings settled |
-| Knowledge API integrations | ≥ 3 external tools querying session knowledge bases |
-| SuperteamBrasil sessions | ≥ 50 sessions from LATAM developer community |
+> Numbers that cannot yet be defended against real-launch data are marked `[TBD]` rather than faked.
 
 ---
 
 ## Explicitly Out of Scope
 
 | Item | Reason |
-|------|--------|
-| Per-query micropayments ($0.005/query) | Creates friction on every action; session pricing is the right unit |
-| "Powered by GPT-4o" or model branding | Erodes product identity; implementation detail, not value |
-| Raw embeddings or vector scores in output | Plumbing; not product |
-| Gecko on-chain deal layer | Separate protocol play; 2027+ timing |
-| Oracle-driven social media attestation | V3 item; manual sponsor review for V1 |
-| Multi-tenant SaaS with team workspaces | V3 item; single-user sessions for V1/V2 |
-| On-chain program source | Deployed via x402 infrastructure; not in this repo |
+|---|---|
+| **"Deploy into the best yield" / Kamino-as-yield-product** | Milo-shaped. A separate track, NOT the firewall. Kamino enters only as a verify/compare target ("which position is safer, is the APY real"), never a money-deploy product. |
+| **The trade-agent (contest_bot)** | A **$0 PROOF artifact** — a public track record that proves the oracle works. Never a separate SKU. |
+| **Operating a multisig / custody / signing** | Squads' moat; off-thesis; key-custody liability; produces no pre-act verdict. We GRADE governance, we never PROVIDE it. |
+| **BAM plugin** | A plugin governs sequencing → forces Gecko into execution + ordering liability → breaks verify-not-execute. The rail is the restaking NCN, not a plugin. |
+| **In-flight / in-block interception** | No Solana mempool; no surface to intercept. Detect-and-advise or enforce at transfer-exec only. |
+| **Per-operation pricing, model branding, raw scores/embeddings in output** | Erodes identity / leaks plumbing / enables gaming. |
+| **Public leaderboards** | Anti-gaming; buckets only. |
 
 ---
 
-*Builder Bootstrap Platform · Ernani Britto · April 30, 2026 (v1.1 — S11-PRD-01 ICP convergence)*
+*Gecko — Decision Firewall for Solana · Ernani Britto · June 2026 (v2.0 — post-pivot rewrite, supersedes Builder-Bootstrap v1.3)*

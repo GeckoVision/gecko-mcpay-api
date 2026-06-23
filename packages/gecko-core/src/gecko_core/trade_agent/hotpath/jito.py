@@ -11,9 +11,11 @@ encode here, both pure + offline:
   (the vault-reserve path can't see the tip transfer; this is account-key level).
 
 * **dontfront** — adding a read-only account whose pubkey starts with
-  ``jitodontfront`` forces the block engine to place that tx at index 0 of any
-  bundle, so it can't be front-run. This is a *send-side mitigation* an issuer/
-  agent applies to its own swap; we can also DETECT whether a tx is protected.
+  ``jitodontfront`` makes the block engine REJECT any bundle containing that tx
+  unless the tx is at index 0 (it does NOT reorder you to the front — the bundle
+  is simply invalid otherwise), so the tx can't be front-run. This is a
+  *send-side mitigation* an issuer/agent applies to its own swap; we can also
+  DETECT whether a tx is protected.
 
 Hotpath-clean: stdlib only. Functions take the transaction's account-key strings
 (from a parsed tx) — no I/O. The tip-account set can drift; the canonical live
