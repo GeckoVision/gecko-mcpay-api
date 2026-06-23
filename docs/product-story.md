@@ -1,430 +1,251 @@
-# Builder Bootstrap Platform — Product Story
+# Gecko — Decision Firewall for Solana — Product Story
 **For:** Co-founder (Design)
-**Date:** April 25, 2026 (wedge sentence updated 2026-05-02 per S18-WEDGE-CLAIM-01)
+**Date:** June 2026
 **From:** Ernani
 
----
-
-> **Positioning:** Gecko gives crypto builders a deep, multi-voice verdict on their idea — with the dissent and falsifiers attached — so they know what to do next. Complementary to frames.ag (settlement) and Bazaar (marketplace).
-
----
-
-> This document covers everything: how we got here, what we learned building Gecko, why we stepped back, how we reasoned through the pivot, and why the Builder Bootstrap Platform is the stronger bet. I've written it section by section, including the reasoning steps — not just conclusions — so you can follow the thinking and push back on anything that doesn't feel right.
+> **Supersedes the Builder-Bootstrap research-tool era (≤ May 2026); current as of June 2026.**
+> Everything before this — the "describe your idea, get a business plan + validation + PRD"
+> product — is dead. This is the narrative for what Gecko actually is now.
 
 ---
 
-## Part I — Where We Started: Gecko
-
-### The Original Idea
-
-Gecko was born from a real, documented problem. Brands running creator campaigns on crypto-native platforms have no enforcement mechanism. A brand locks a deal with a creator, the creator posts the content, and the brand delays payment — or ghosts them entirely. On the flip side, a brand pays upfront and the creator disappears. Both scenarios happen constantly. We saw it in esports, in influencer marketing, in DeFi protocol promotions.
-
-The insight was clean: put the money in a smart contract vault. Neither party can move it until the conditions are met. The brand's budget is locked at campaign launch. The creator receives a guaranteed floor payment automatically. Performance milestones are enforced by an oracle — not by a promise.
-
-The core promise we landed on: **"The brand cannot cancel. The creator cannot be ghosted."**
-
-That is not a feature claim. It is a structural guarantee enforced by code on Solana, not by a terms of service that nobody reads.
-
-### What Gecko Built
-
-- Smart contract vaults where brands lock campaign budgets
-- A cliff date: brand cannot withdraw before it expires
-- A guaranteed floor yield stream to creators, regardless of campaign outcome
-- Performance-based milestone payouts triggered by oracle data
-- Squad campaigns: multiple creators, each with an on-chain allocation
-- A frontend that displays the locked funds, the timeline, and the protocol's enforcement state
-
-### The Validation Signal We Had
-
-The market signal was real:
-
-| Signal | What It Confirmed |
-|---|---|
-| Daisy Pay: $1M revenue in 7 months, $3.9M seed | Crypto stablecoin creator payments is a funded, working market |
-| Lever.io: live with real crypto brands | The demand for crypto-native influencer deals exists right now |
-| Traditional agencies doing $100M+ off-chain | Brands are manually hacking together contracts + PayPal — the problem is real, the solution is primitive |
-| Trexx (largest LATAM esports hub, 16+ teams, 42K MAU) | Spontaneous pain confirmation: founder immediately mapped Gecko to his biggest operational headache |
-| Failed projects (Friend.tech, DeSo, SocialFi wave) | Multiple funded teams proved the problem is real — they built the wrong solution (speculation), not the wrong market |
-
-The Colosseum research confirmed no one has won with this approach across 5,400+ Solana hackathon projects. The space is sparse. The opportunity is real.
+> **Gecko is the decision firewall for Solana — it tells AI agents and launchpads whether a
+> token's market is real or manufactured, before any capital moves.**
+>
+> *Every tool checks the contract. Gecko checks the market is real.*
+> *Execution has BAM. Decisions have Gecko.*
 
 ---
 
-## Part II — The Honest Critique of Gecko
-
-Despite the strong signals, Gecko has structural problems that slow it down. We need to be honest about them.
-
-### Problem 1: It's a Two-Sided Marketplace
-
-Gecko needs **brands** and **creators** simultaneously. Neither group shows up alone.
-
-A brand logs in, sees no creators — leaves. A creator logs in, sees no campaigns — leaves. This is the classic cold-start problem. Every two-sided marketplace in history has had to solve it, and most fail. Uber solved it city by city. Airbnb solved it by manually onboarding hosts in New York first. We don't have that runway.
-
-The only way to crack it is to find a single distribution partner who has both sides already assembled. Trexx was the lead candidate. But Trexx is **one company** — and their involvement is still a hypothesis, not a signed commitment.
-
-### Problem 2: The ICP Is Hard to Reach
-
-Crypto-native brands willing to put USDC into a smart contract vault are a small, specific audience. They are not easy to find at scale. The closest reference (Lever.io) built their client base through direct relationships, not inbound. That is a high-touch, slow GTM.
-
-### Problem 3: The Yield Story Is Regulatory Exposure
-
-Every version of Gecko's pitch that leads with "guaranteed yield" creates legal risk. The moment yield enters the conversation, we are describing something that looks like a financial product to a regulator who is not friendly. We solved this in messaging by leading with rug-protection, not yield — but it required constant discipline, and it limits how clearly we can explain the value to creators.
-
-### Problem 4: The Timeline Is Long
-
-Brands won't lock $5,000 in a smart contract on day one. The average campaign size grows over time as trust in the protocol builds. The revenue per transaction is real, but the time to meaningful volume is 12–18 months minimum with a well-funded team.
-
-### Why We Didn't Kill Gecko
-
-Gecko is not dead. The thesis is sound. The problem is real. The differentiation is strong. But it is a **protocol play** — it needs ecosystem timing, distribution partnerships, and potentially a regulatory environment that is still forming. The right version of this product will exist. Our assessment is that it is a 2027+ play, not a 2026 hackathon play.
+This document is the story: the two failures that define the problem, the one insight that
+separates us from every other safety tool, where we sit next to Jito's execution layer, what the
+moat actually is, who pays and why, and how we get distributed. It is written to be argued with —
+push back on anything that feels like a stretch, because the honest version is the only one worth
+telling.
 
 ---
 
-## Part III — Stepping Back: The Problem-First Reset
+## Part I — Two failures that define the problem
 
-In late April 2026, we stopped building for two days and asked a different question.
+Gecko exists because of a gap that two very different on-chain disasters expose from opposite ends.
 
-> **Not:** "How do we make Gecko's GTM faster?"
-> **But:** "If we are building on Solana, have access to x402, and want to win a hackathon in two weeks — what is the most acutely painful problem we can solve for developers right now?"
+### Failure 1 — The drain: Drift, ~$285M, April 2026
 
-This is the reasoning methodology we used. It has a name: **problem-first thinking**. We had been doing solution-first thinking (we have a good solution — how do we sell it?). Problem-first reverses the order: what problem is so painful that people will pay $20 right now to make it go away?
+In April 2026 an attacker drained roughly $285M from Drift Protocol. There was no contract bug.
 
-### Step 1: Map the Competitive Landscape for Context
+Drift's admin control was a Squads V4 multisig — 2-of-5, with **no timelock**. Over months, a
+social-engineering campaign compromised two signers' laptops (a malicious VS Code repo that
+auto-ran on open, plus TestFlight malware). The attacker pre-signed admin transactions using
+**durable nonces** — transactions that never expire and can sit on-chain for weeks. When the
+threshold was finally met, they fired an `UpdateAdmin`, spun up a **fake market** for their own
+token with a **controlled oracle** valuing fake collateral at $1, switched off the circuit
+breakers, and emptied the protocol. The code was never broken. The control plane and the market
+data were.
 
-We ran the Colosseum Copilot analysis — 5,400+ Solana hackathon projects, 293 winners, gap analysis between what winners build and what the field builds.
+**What this proves:** the thing that failed wasn't the contract — it was the *integrity of the
+configuration and the market the protocol trusted.* A contract scanner reads the code and sees
+nothing wrong. That's exactly the blind spot.
 
-**What winners build (overindexed vs. the field):**
+**The honest version (and we hold this line hard):** Gecko **scores the control plane** — multisig
+threshold, missing timelock, who actually holds the upgrade authority — and **detects the
+manufactured market** — the wash-traded price history, the controlled-oracle divergence. Gecko does
+**not** run anyone's multisig and would **not** have stopped two compromised laptops. So the deck
+says *"Gecko flags the control plane,"* never *"Gecko would have blocked Drift."* The difference
+matters: we GRADE governance hygiene, we never PROVIDE governance.
 
-| Signal | Lift vs. Field |
-|---|---|
-| Oracle-based data feeds | +27% |
-| Natural language processing | +24% |
-| Infrastructure / tooling layer | +19% |
-| Payment rails + settlement | +15% |
+### Failure 2 — Launch mortality (the core wedge)
 
-**What losers build:**
+The everyday version of the same gap, at massive scale:
 
-| Signal | Lift vs. Field (negative) |
-|---|---|
-| NFT-based features | -66% |
-| Decentralized social / SocialFi | -64% |
-| Token rewards / creator economy platforms | -100% (zero winners) |
+- **More than half of pump.fun tokens are sniped in the exact block they're created** (Pine Analytics).
+- **About 1% ever graduate** (The Block).
+- **Around 75% are dead within a day** (CCN).
 
-**Implication:** Winners build infrastructure that other builders use. Losers build consumer apps that require network effects to have value.
+Here's the mechanism, because the design has to make it legible: a new token launches. Bots capture
+the supply *in block zero*, before any human can react. They then trade it back and forth among
+themselves — **manufactured volume that paints a healthy-looking chart.** Real buyers see the chart,
+buy in, and become the snipers' exit liquidity. The price collapses. The token dies.
 
-We also found our closest ally: **MCPay** — the $25k first-place winner at Cypherpunk, now in the Frames C4 accelerator. MCPay uses the x402 protocol (HTTP 402 payment standard, backed by the Linux Foundation, 65% of transactions running on Solana) as a payment gate for MCP tools. They proved the x402 + Solana formula works at a high level. We are not competing with them — they are validation that the infrastructure layer is where you win.
-
-### Step 2: Identify the Real Bottleneck
-
-We asked: before a developer writes their first line of code, what is the hardest thing they face?
-
-The answer came from a real story. A co-founder spent **hours** transcribing YouTube videos manually. The auto-captions were wrong. By the time he finished, he was overwhelmed by unstructured notes, hadn't started the business plan, and wasn't sure if the market was real. He did the research. He still didn't know what to build or whether it was worth building.
-
-This is the wall every builder hits:
-
-**Two types of builders. Same wall. V1 only ships for the first one.**
-
-| Builder Type | Has | Lacks | V1? |
-|---|---|---|---|
-| Claude Code / Cursor power user with founder ambition (technical or technical-adjacent) | Can write the code, lives in the terminal, AI-pair-programming workflow | Domain knowledge, research, business plan, market validation | **V1 primary** |
-| Non-technical founder | Domain insight, market instinct, lived pain | Data, structured output, the ability to build | Sprint 12+ via web app |
-
-The current workflow:
-1. Find relevant videos and articles
-2. Manually transcribe (bad quality, slow)
-3. Drown in unstructured notes
-4. Try to write a business plan from scattered information
-5. Give up, or ship something based on intuition that turns out to be wrong
-
-Nobody has solved the **whole workflow**. Tools exist for pieces of it (search, transcription, document writing) — but they require assembly, technical knowledge, and still produce unstructured output.
-
-### Step 3: Validate the Problem Severity
-
-We asked three diagnostic questions:
-
-**1. Would I pay for this right now?**
-Yes. If we had this tool when building Gecko, we could have validated the ICP problem in hours instead of weeks.
-
-**2. Does this save a measurable amount of time?**
-Yes. 20+ hours of research, transcription, and document writing → 30 minutes of indexed, queryable knowledge base + structured output.
-
-**3. Does the ROI justify the price?**
-A $20 session that saves a developer from building the wrong thing for six months has infinite ROI. The comparison is not "$20 vs. free." It is "$20 vs. six months of wasted work."
-
-### Step 4: Critique the Original Pricing Model
-
-Our initial design used **per-query micropayments** via x402: $0.005 per query, $0.20 per video indexed.
-
-We killed this model for three reasons:
-
-1. **Friction creates avoidance.** Every time a user considers indexing a video, they must evaluate whether it's worth $0.20. They will second-guess. They will index fewer sources. The product becomes worse because of the pricing model.
-
-2. **The value is in the output, not the indexing.** Nobody wants to "index videos." They want a business plan. They want to know if their idea is viable. The $0.20 price attaches value to the wrong thing.
-
-3. **The session is the natural unit.** "I'm researching the hotel market in Brazil" is one session. The user pays once for that session. Everything inside the session is invisible infrastructure.
-
-**New model:** Session-based billing.
-- Basic: $10–20/session → single LLM pass → business plan + validation report + PRD
-- Pro: $50–100/session → AutoGen agent team pre-loaded with domain context + live follow-up
-
-### Step 5: Pick the Right Product Shape
-
-We considered three directions:
-
-**Option A — Full Platform:** Automatic discovery + indexing + structured documents + optional agent team. Solves the whole workflow.
-
-**Option B — Claude Skill (Original):** Keep the existing design, add auto-discovery. Narrower scope, faster to build, but doesn't solve the research bottleneck.
-
-**Option C — Two Products:** Research tool for non-technical founders + Knowledge API for developers. More addressable market, but two GTMs = two cold-start problems.
-
-**We chose A.** The reasoning: the whole workflow is the moat. Individual pieces of it are tools. A tool that does everything from "I have an idea" to "here is your business plan, validation report, PRD, and an agent team that already knows your domain" is a different product category. That product justifies a higher price and creates a stronger reason to come back.
+This is Gecko's core wedge: catching manufactured launch demand at Block Zero — before an agent
+buys, before a launchpad lists.
 
 ---
 
-## Part IV — The Product: Builder Bootstrap Platform
+## Part II — The insight: contract vs. market
 
-### One-Sentence Version
+Every safety tool on Solana checks the same thing: **the contract.** Is the mint renounced? Is there
+a freeze authority? Is it a honeypot? RugCheck, GoPlus, Solsniffer — all excellent, all crowded, all
+on the *code* axis.
 
-> You describe your idea in plain language. 30 minutes later, you have a searchable knowledge base, a business plan, a validation report, a PRD, and — in the Pro tier — a team of AI agents that already know your domain and are ready to help you build.
+Both failures above sail straight through a contract check. Drift's contracts were fine. A sniped
+pump.fun token's contract is often fine. The damage lives somewhere a code scan can't see:
 
-### User Flow
+> **The contract can be perfect and the market can still be a lie.**
 
-```
-1. Describe your idea
-   "I want to build a local guide for hotels in Brazil"
+Gecko checks the empty axis: **is the market real?** Is the demand manufactured by snipers, inflated
+by wash trades, propped up by a controlled oracle? We answer that by fusing on-chain behavior across
+**many wallets, across slots, across pools** — not a single-transaction rule, not a static snapshot —
+into one verdict: `ok`, `caution`, or `block`, with the reasons attached and any surviving dissent
+preserved. An agent or a launchpad acts on it **before committing capital.**
 
-2. Choose your sources
-   [A] I know a source → paste URLs
-   [B] Find for me → Tavily auto-discovers top sources
-
-3. Platform proposes source list → you approve
-
-4. Ingestion runs automatically
-   source → raw text → 512-token chunks → vector embedding → Supabase pgvector
-
-5. Basic:  single GPT-4o-mini pass → 3 documents
-   Pro:    AutoGen GroupChat → 4 specialist agents → 3 documents + live agent team
-
-6. x402 payment gate (before indexing starts)
-   No payment = no session. No partial charge.
-
-7. Documents delivered. Knowledge base stays alive.
-   Ask follow-up questions anytime.
-```
-
-### The Three Documents
-
-Every session produces:
-
-**Business Plan** — ICP definition, market size with cited sources, competitive landscape, pricing model, revenue projections, GTM strategy (first 3 months), moat analysis.
-
-**Validation Report** — Demand signals scored by strength (strong/moderate/weak/none), crypto necessity check ("what breaks without blockchain?"), risk map by category and severity, Go/No-Go verdict (score ≥ 8/15 = Go), 2-week sprint plan if Go.
-
-**PRD** — Stack recommendation, MVP scope (what's in, what's explicitly out), core data model, key API routes, user stories, build-vs-integrate assessment.
-
-### Pro Tier: The Agent Team
-
-When a user pays for Pro, they get more than documents. They get **five specialist agents** pre-loaded with their domain context:
-
-- **Orchestrator** — Reads the idea, assigns tasks, merges outputs, handles follow-up questions
-- **Research Agent** — Queries the knowledge base across multiple angles, returns structured research context
-- **Market Analyst** — ICP definition, pricing model, revenue projections, GTM, competitive differentiation, moat analysis
-- **Technical Architect** — Stack recommendation, MVP scope, data model, API design, build-vs-integrate assessment
-- **Validator** — Stress-tests the plan, scores demand signals, maps risks, delivers Go/No-Go
-
-These agents stay alive for **72 hours** after session completion. A user can come back and ask: "What's the biggest technical risk in my MVP scope?" and the Validator answers from context, not from scratch.
+And the boundary that makes this safe to build: **Gecko verifies; it never deploys, executes,
+custodies, or reorders.** We are the empty seat at the table that has an opinion and no stake in the
+outcome. The moment we'd "deploy your money into the best yield," we've stopped being a firewall and
+become a fund. We don't cross that line.
 
 ---
 
-## Part V — Why This Beats Gecko in the Current Window
+## Part III — Where we sit: BAM vs. Gecko
 
-This is not about which product is "better." It's about which product is the right bet **right now**, for a two-person team with two weeks to a hackathon.
+The cleanest way to explain Gecko to anyone who knows Solana is by contrast with Jito's BAM.
 
-| Dimension | Gecko | Builder Bootstrap |
+There are **two different kinds of neutrality** on a trade:
+
+| Axis | The question it answers | Who owns it |
 |---|---|---|
-| **Who buys it** | Brands AND creators (two-sided) | Claude Code / Cursor power users with founder ambition — technical or technical-adjacent (one buyer) |
-| **Cold-start problem** | Yes — both sides must show up | No — single buyer, immediate utility |
-| **Time to first revenue** | Weeks/months (brand acquisition) | Minutes (session purchase) |
-| **Proof of value** | Requires a live campaign to demonstrate | Demonstrates value in the first session |
-| **GTM** | Direct sales to crypto brands + creator network | Claude marketplace distribution |
-| **Regulatory surface** | High (yield, locked funds, escrow) | Low (SaaS tool, no financial product) |
-| **Requires ecosystem timing** | Yes (DeFi yield, oracle data) | No |
-| **Hackathon demo-ability** | Hard (needs live brand + creator) | Easy (one `bb research` command) |
-| **Unit economics** | $75/campaign average, slow ramp | $10–100/session, immediate |
-| **Revenue ceiling** | Very high (protocol fees at scale) | High (SaaS + API layer) |
+| **Execution neutrality** | Whose transaction goes first? Was the ordering honest? | **BAM** — TEE-encrypted, cryptographically attested ordering |
+| **Decision neutrality** | Is the market this trade rests on *real*, or manufactured? | **Empty seat → Gecko** |
 
-The honest summary: Gecko is a **protocol play** that wins at scale. Builder Bootstrap is a **tool play** that wins immediately. For a hackathon in two weeks, the tool wins.
+> **BAM makes execution trustworthy; Gecko makes the decision trustworthy.**
 
----
+The proof that these don't overlap is Drift again: **BAM would have ordered and attested that $285M
+drain flawlessly.** Perfect execution neutrality, zero decision integrity — the money still leaves.
+Different layer, different problem, empty seat.
 
-## Part VI — The Moat
+A subtlety the design shouldn't fudge: **Solana has no mempool.** There's no stream of pending
+transactions to intercept. So Gecko never "blocks the transaction in the block." It either **advises**
+the next actor right after a transaction confirms (a first-mover signal — it can't undo what landed),
+or, in the enforcement posture, a token can wire in a **Token-2022 transfer hook** that reverts
+disallowed transfers at execution time from a list Gecko publishes ahead of block zero. Detect and
+advise, or enforce at the transfer — never intercept in-flight.
 
-This is the question that matters most for a designer building the product: **what makes this hard to copy?**
-
-A product's moat is not one thing. It's layers. Here is how the Builder Bootstrap moat stacks:
-
-### Layer 1 — Session Data (Weak Alone, Strong Over Time)
-
-Every session produces structured, validated research on a specific domain. The more sessions we run, the more domain knowledge we accumulate about what builders are researching, what markets are hot, what validation patterns repeat. This becomes a data asset no competitor can replicate without running the sessions themselves.
-
-### Layer 2 — Creator Attribution Graph (Unique, Deferred to V2)
-
-Every source we index comes from a creator — a YouTube channel, a blog, a podcast. We store the creator handle and platform from day one. As sessions scale, we build a graph of which creators' content produces the most valuable research across which domains.
-
-When a creator claims their profile (via OAuth), they see: "Your content has been cited 47 times. $32 pending." That notification is not a cold pitch — it is a **statement of earned value**. No competitor has this graph because no competitor is doing domain-specific, session-scoped indexing at this layer.
-
-### Layer 3 — The Agent Context Advantage
-
-Pro tier agents are not generic AI assistants. They are pre-loaded with the specific knowledge base of a specific domain, indexed from real sources that a real builder curated. An agent team that already knows the Brazilian hotel market is different from ChatGPT in a blank context window. The user's follow-up questions are answered from that specific corpus — not from general training data.
-
-This is the "context as moat" insight. The value is not the agents. The value is the **pre-loaded domain context** that makes the agents useful from the first question.
-
-### Layer 4 — x402 Distribution (Structural)
-
-x402 is an HTTP 402 payment standard backed by the Linux Foundation. 65% of x402 transactions run on Solana. The Claude Code skill marketplace gives us access to every technical developer using Claude Code worldwide.
-
-This is not organic SEO growth. This is **infrastructure distribution** — the same channel that MCPay used to win $25k and get into the Frames C4 accelerator. The distribution is built into the platform, not acquired.
-
-### Layer 5 — The Winner Pattern (Meta-Level)
-
-The Colosseum research showed a consistent winner pattern: oracle data (+27%), NLP (+24%), infrastructure tooling (+19%), payment rails (+15%). Builder Bootstrap scores on three of four:
-
-- NLP: plain-language idea → structured research
-- Infrastructure tooling: the underlying knowledge base is usable by other products
-- Payment rails: x402 as the session gate
-
-We are not building to win a hackathon aesthetic. We are building to the same structural pattern that 293 winners built to, derived from empirical analysis of the full dataset.
+The long-term "official layer" path is a **Verification NCN on Jito's restaking arm** (~2027) — where
+operators run Gecko's panel, stakers back its honesty, and a verdict that contradicts its own evidence
+gets slashed. That mirrors the accepted Blocksize RPC-NCN pattern and is grant-fundable. It is **not** a
+BAM plugin — a plugin would drag Gecko into sequencing and break the verify-not-execute boundary.
+Honest gap: we have no named Jito-ecosystem design partner yet. The technical seam is real; the
+commercial one isn't proven. (`docs/concepts/jito-101.md` has the full treatment.)
 
 ---
 
-## Part VII — Business Plan (Summary)
+## Part IV — The moat: the verdict ledger
 
-### Pricing
+The natural assumption is that the moat is the detector — the clever fusion of snipe and wash signals.
+It isn't. A detector is an engine; engines get copied; detection is table stakes the moment someone
+with money decides to compete. The bigger threat is a player like GoPlus with hundreds of millions of
+scans a month who could extend into our axis tomorrow.
 
-| Tier | Price | When |
+So the moat has to be something distribution can't buy. It is:
+
+> **The compounding ledger of verdicts Gecko commits BEFORE each launch resolves, then grades by what
+> the launch actually did.**
+
+Every paid verdict is a timestamped prediction — `(Block-0 signal → resolved outcome)` — that becomes a
+labeled data pair the instant the launch plays out. **No competitor can backfill that**, because a
+contract scan can be re-run after the fact, but a *pre-act verdict with a pre-outcome timestamp* can
+only be created by being there first. The line:
+
+> *Distribution buys traffic, not truth.*
+
+The loop compounds: someone pays → we commit a verdict → the launch resolves → we get a labeled
+outcome → precision climbs and an auditable track record accrues ("Gecko-verified tokens rugged ~2% vs
+a ~40% baseline") → agents route liquidity to verified tokens → verification becomes the default → more
+issuers seek it. Detection depth feeds this ledger; the ledger is the moat depth feeds.
+
+---
+
+## Part V — Who pays, and why
+
+This is the part that's easy to get wrong, so it's stated bluntly: **the issuer is usually the wrong
+buyer.** "Protect your token, keep your holders" sounds like the pitch — but for most memecoin
+launches, the issuer *is* the sniper, or is fine with it. The genuinely-harmed serious project is the
+minority. Selling protection to the victim assumes a victim who wants it.
+
+The two real buyers:
+
+| Buyer | What they're buying | Why the WTP is real |
 |---|---|---|
-| Basic | $10–20/session | On session start, before indexing |
-| Pro | $50–100/session | On session start, before indexing |
-| Pro follow-up | $0.01/query | Per query to the live agent team |
-| Creator earnings (V2) | 70% of query fees | Batch-settled when ≥$15 accumulated |
+| **AI agent runtimes / autonomous traders** (primary) | Decision integrity — "is this launch clean before I deploy capital?" | A bad fill is a measurable, immediate loss. They'll pay per call to avoid it. |
+| **Launchpads** | Reputation and integration revenue — score and badge what they list so real liquidity routes to them | They already pay for this. The proof: GoPlus's SafeToken earns **$1.7M via launchpad integrations**, not per-issuer sales. |
 
-### Unit Economics (Pro session at $75)
+"Retain holders" stays in the deck — but as **downstream evidence in a launchpad pitch**, never the
+headline to an issuer who might be the problem.
 
-| Item | Cost |
-|---|---|
-| OpenAI embeddings (text-embedding-3-small) | ~$0.05 |
-| GPT-4o (Pro agents, ~$3 per session) | ~$3.00 |
-| Tavily search (auto-discovery) | ~$0.10 |
-| Supabase storage | ~$0.01 |
-| **Total cost** | **~$3.16** |
-| **Revenue** | **$75** |
-| **Gross margin** | **~96%** |
+The free `/safety` firewall and the paid `/trade_research` oracle map onto this:
 
-### Why Session Pricing Beats Per-Query
+> **The firewall acquires users; the oracle earns the ones with real money on the line.**
 
-Per-query pricing ($0.005/query) creates a mental tax on every action. The user thinks: "Should I index this video? Is it worth $0.20?" They index fewer sources. The knowledge base is weaker. The documents are worse. The product fails because of the pricing model.
-
-Session pricing removes the tax. The user pays once and indexes everything relevant. The knowledge base is richer. The documents are better. The user recommends it to their co-founder.
-
-### GTM: Three Phases
-
-**Phase 1 — Hackathon (2 weeks)**
-Ship the Claude Code skill. Demo the hotel guide in Brazil. Enter Stablecoins track (9.9% win rate vs. 4.3% for AI). Leverage MCPay as validation/ally.
-
-**Phase 2 — Marketplace Growth (Months 1–3)**
-Claude Code skill published to marketplace. Distribution is passive — every developer using Claude Code can discover and install. Target: SuperteamBrasil developer community as first concentrated user group.
-
-**Phase 3 — Web App + Creator Attribution (Months 3–6)**
-Next.js web app for non-technical founders. Creator OAuth claim flow. Pro tier agent subscriptions. Creator earnings notification system.
+The firewall is free, sub-second, and exists to bring agents in and warm the cache. The oracle is the
+paid, deep verdict — a multi-voice debate with surviving dissent, citations, and an on-chain receipt —
+for the moments where someone has real capital committed. Cost scales with distinct tokens; revenue
+scales with agents. That gap is the margin.
 
 ---
 
-## Part VIII — Design Implications
+## Part VI — Distribution
 
-This section is specifically for you.
+Features aren't the constraint; **distribution is.** Selling one indie developer at a time on a
+micro-priced call doesn't fund the company. The path that works is the one Snyk and GoPlus took: win a
+small number of **framework integrations**, and let them carry the long tail.
 
-### What the Interface Must Do
-
-The product has two distinct user types with different mental models:
-
-**The Claude Code / Cursor power user with founder ambition** (V1 primary — technical or technical-adjacent)
-- CLI-first. Already lives in Claude Code; installs via `Read app.geckovision.tech/skill.md`.
-- Wants: session ID they can reference, source list confirmation, confidence/verdict, on-chain receipt
-- Does not want: decorative UI, marketing copy, model branding, explanations of what "embedding" means
-- Key moments: payment confirmation, indexing progress, verdict (KILL/REFINE/BUILD), document output in terminal
-
-**The Non-Technical Founder** (Sprint 12+ / V2 audience — unlocks with `app.geckovision.tech` web app)
-- GUI-first. Never opened a terminal. Out of scope for V1 because the CLI is the wrong surface.
-- Wants: to see progress, feel that something is happening, receive something polished
-- Does not want: technical jargon, uncertainty about what the tool is doing with their idea
-- Key moments: session creation ("your idea is being researched"), document reveal, agent team introduction
-
-### Emotional Journey Map
-
-```
-Describe idea → [Relief: someone is listening to me]
-                     ↓
-Choose sources → [Agency: I'm directing this]
-                     ↓
-Indexing runs  → [Trust: something real is happening]
-                     ↓
-Documents arrive → [Surprise: this is actually good]
-                     ↓
-Agent team ready → [Excitement: I have a team now]
-```
-
-The emotional peak is **document reveal**. This is where the product proves its value. Design the reveal as a moment — not a file download, not a text dump. A structured reveal that feels like opening something.
-
-### What to Never Show
-
-- Cost per operation (kills the no-friction pricing advantage)
-- "Powered by GPT-4o" or any model branding (erodes the product's identity)
-- Raw JSON, embeddings, vector similarity scores (plumbing, not product)
-- "Indexing chunk 47 of 312" (progress indicator is fine, granular internals are not)
-
-### What to Always Show
-
-- Session ID (small, persistent — gives the user a sense of ownership)
-- Confidence level (high/medium/low — honest about what the product knows)
-- Sources cited (builds trust — "this came from real content")
-- Time saved (implicit or explicit — frame the ROI)
+So the primary surface is a **SendAI (Solana Agent Kit) adapter** — *agents check before they operate* —
+backed by the **MCP** server (so it drops natively into Claude Code) and **x402** for metered payment,
+with **launchpad integration** as the second channel. MCP and x402 make it trivial to *try*; the
+framework embed is what makes it the *default*.
 
 ---
 
-## Appendix: Reasoning Methodology
+## Part VII — Honest status (so the design tells the truth)
 
-This section documents exactly **how** we think through product decisions. It is not a one-time process — it is the method we use every time we are uncertain.
+The design has to reflect maturity, not aspiration. Where things actually stand:
 
-### The Five Questions
+- **Shipped:** the detection engine and all its signals (snipe gate, wash signals, program reputation,
+  ALT identity); a **mainnet-fork attack→block demo on surfpool that passes** (a real attack →
+  `block`, an evasion attempt → `caution` via concentrated-capture, an organic launch → `clean`), run
+  on real mainnet-forked state for $0; the `/safety` surface.
+- **Designed / partial:** the Token-2022 enforcement hook, the governance-hygiene scoring, the
+  Verification NCN.
+- **The open validation:** our thresholds are validated against fork and synthetic data — **not yet
+  against real-launch distributions.** Until a real-launch threshold backtest, the firewall stays
+  **dark in production** (`GECKO_FIREWALL_ENABLED=false`), and payments run in stub mode
+  (`X402_MODE=stub`).
 
-Every product decision passes through five questions, in order:
-
-**1. What problem are we actually solving?**
-Not the feature. The pain. "Indexing YouTube videos" is a feature. "A developer spends 20+ hours researching before writing a line of code and still doesn't know if the market is real" is a pain. The pain must be visceral before any architecture discussion starts.
-
-**2. Who has this problem badly enough to pay right now?**
-Not eventually. Right now. If the answer requires "once the market matures" or "when we have enough users," the timing is wrong. Builder Bootstrap's V1 answer: Claude Code / Cursor power users with founder ambition — technical or technical-adjacent. They have the pain today, they live where our distribution lands, and they will pay per session without a sales call. Fully non-technical founders share the pain but are a Sprint 12+ unlock once the web app ships.
-
-**3. What is the smallest thing that proves value?**
-Not the full product. The demo. For Builder Bootstrap, it is one command: `bb research --idea "hotel guide in Brazil"`. A terminal output that contains a real business plan, a real validation report, and a real PRD. That is the proof. Everything else is polish.
-
-**4. What makes it hard to copy?**
-If the answer is "nothing," reconsider. If the answer is a single layer (e.g., "we move fast"), it is fragile. The goal is multiple compounding layers, where each layer makes the previous one stronger. Builder Bootstrap's moat compounds: sessions produce a data asset, the data asset makes creator attribution possible, creator attribution makes the platform more valuable for research, more research produces better sessions.
-
-**5. Does the pricing model reinforce or undermine the value proposition?**
-Pricing is not just revenue mechanics. It is a message about what the product is worth. Per-query pricing says: "every action costs you something — proceed carefully." Session pricing says: "you paid for the session — use everything you need." The second message is the right one.
-
-### How We Used This in Practice
-
-We applied these five questions to the x402 micropayment model and killed it in one session. The problem it solved (predictable per-operation revenue) was ours, not the user's. The problem it created (friction on every action) was the user's.
-
-We applied them to the two-sided marketplace design of Gecko and identified the cold-start problem as the primary blocker — not the technology, not the market size, not the positioning.
-
-We applied them to the three product shapes (full platform / Claude skill / two products) and chose the full platform because it was the only one that answered question 3 with a single, demonstrable command.
-
-This methodology is not a formula. It is a discipline. The goal is to spend zero time building things that don't survive question 1.
+A few phrasings we never use, because they'd be lies: we never say "blocks in-block" or "intercepts
+in-flight" (no mempool exists to intercept), and an `unknown` verdict is never "safe" — we **fail open**,
+and unknown means unknown. Verdicts are shown as **buckets** (`ok` / `caution` / `block`), never raw
+scores, and there are **no public leaderboards.**
 
 ---
 
-*Document prepared by Ernani Britto · April 25, 2026 · gecko-mcpay-app project*
-*Updated 2026-04-30 (S11-PRD-01) — V1 ICP converged to "Claude Code / Cursor power users with founder ambition — technical or technical-adjacent"; non-technical founder moved to Sprint 12+ web-app expansion.*
+## Part VIII — Design implications
+
+This section is for you.
+
+### What the interface must make legible
+
+The whole product is one judgment rendered for someone about to risk money. Three things have to land
+instantly:
+
+- **The verdict** — `ok` / `caution` / `block`. One glance. This is the moment.
+- **The reasons** — why. Which signals fired (a sniped block-0, a wash loop, a thin-pool price bait, a
+  shaky control plane). A block with no reason gets disabled in a week.
+- **The dissent** — on the paid oracle, the surviving counter-argument. Honesty is the product; a verdict
+  that hides its own doubt erodes the thing we sell.
+
+### What to never show
+
+- Raw scores or confidence floats (we show buckets — anti-gaming).
+- Model names, token counts, per-operation cost (plumbing, and it erodes identity).
+- Anything that implies we *acted* — placed, blocked, reordered, or moved money. We **advise** and
+  **enforce-at-transfer**; we never execute.
+- A "safe" stamp on an `unknown`. Unknown is its own state; design it as caution-adjacent, not green.
+
+### What to always show
+
+- The verdict bucket, prominent and immediate.
+- The evidence behind it — the firewall earns trust by showing its work.
+- The boundary, implicitly: this is a *check*, not a *trade*. The user is still the one who acts.
+
+---
+
+*Gecko — Decision Firewall for Solana · Ernani Britto · June 2026 (post-pivot rewrite, supersedes the Builder-Bootstrap product story)*
